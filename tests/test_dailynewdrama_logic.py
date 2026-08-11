@@ -42,7 +42,7 @@ def load_top_level_helpers():
 
 
 def load_class_method(name: str):
-    """把 DailyNewDrama 的一个普通方法提取为可对假 self 调用的函数。"""
+    """把 DailyNewDrama 的一个方法提取为可独立调用的函数。"""
     for node in TREE.body:
         if isinstance(node, ast.ClassDef) and node.name == "DailyNewDrama":
             for fn in node.body:
@@ -83,7 +83,7 @@ HELPERS = load_top_level_helpers()
 
 
 class DummyConfig:
-    """给日期窗口纯逻辑方法提供最小 self。"""
+    """给依赖少量实例配置的纯逻辑方法提供最小 self。"""
 
     _coming_days = 30
     _recent_days = 21
@@ -107,6 +107,8 @@ class DailyNewDramaTests(unittest.TestCase):
         self.assertEqual(parse("2026-08-12T08:30:00"), datetime.date(2026, 8, 12))
         self.assertEqual(parse("Wed, 12 Aug 2026 00:00:00 GMT"), datetime.date(2026, 8, 12))
         self.assertIsNone(parse("not-a-date"))
+        self.assertIsNone(parse(""))
+        self.assertIsNone(parse(None))
 
     def test_coming_rss_uses_pubdate_as_air_date(self):
         parse = HELPERS["_parse_douban_rss"]
@@ -137,15 +139,52 @@ class DailyNewDramaTests(unittest.TestCase):
         self.assertIsNone(item["year"])
         self.assertEqual(item["rss_pub_date"], "2026-08-12")
 
+    def test_hot_rss_can_take_real_year_from_description(self):
+        parse = HELPERS["_parse_douban_rss"]
+        xml_text = """<rss><channel><item>
+        <title>今年的新剧</title>
+        <link>https://movie.douban.com/subject/9988776/</link>
+        <pubDate>Wed, 12 Aug 2026 00:00:00 GMT</pubDate>
+        <description><![CDATA[2025 / 中国大陆 / 剧情]]></description>
+        </item></channel></rss>"""
+        item = parse(xml_text, "hot")[0]
+        self.assertEqual(item["year"], 2025)
+        self.assertEqual(item["air_date"], "")
+
     def test_date_windows(self):
         eligible = load_class_method("_eligible_by_date")
         today = datetime.date(2026, 8, 12)
         dummy = DummyConfig()
         self.assertTrue(eligible(dummy, "coming", datetime.date(2026, 9, 1), today))
+        self.assertTrue(eligible(dummy, "coming", datetime.date(2026, 8, 11), today))
+        self.assertFalse(eligible(dummy, "coming", datetime.date(2026, 8, 10), today))
         self.assertFalse(eligible(dummy, "coming", datetime.date(2026, 10, 1), today))
         self.assertTrue(eligible(dummy, "hot", datetime.date(2026, 8, 1), today))
         self.assertFalse(eligible(dummy, "hot", datetime.date(2026, 7, 1), today))
+        self.assertFalse(eligible(dummy, "hot", datetime.date(2026, 8, 13), today))
         self.assertFalse(eligible(dummy, "hot", None, today))
+
+    def test_candidate_sort_order(self):
+        sort_key = load_class_method("_candidate_sort_key")
+        dummy = DummyConfig()
+        items = [
+            {"source": "hot", "air_date": "2026-08-01", "vote": 9.0, "title": "H1"},
+            {"source": "coming", "air_date": "2026-08-20", "vote": 7.0, "title": "C2"},
+            {"source": "hot", "air_date": "2026-08-10", "vote": 6.0, "title": "H2"},
+            {"source": "coming", "air_date": "2026-08-13", "vote": 8.0, "title": "C1"},
+        ]
+        ordered = sorted(items, key=lambda item: sort_key(dummy, item))
+        self.assertEqual([item["title"] for item in ordered], ["C1", "C2", "H2", "H1"])
+
+    def test_config_clamping(self):
+        to_int = load_class_method("_to_int")
+        to_float = load_class_method("_to_float")
+        self.assertEqual(to_int("15", 12, 1, 30), 15)
+        self.assertEqual(to_int("999", 12, 1, 30), 30)
+        self.assertEqual(to_int("bad", 12, 1, 30), 12)
+        self.assertEqual(to_float("8.5", 0.0, 0.0, 10.0), 8.5)
+        self.assertEqual(to_float("99", 0.0, 0.0, 10.0), 10.0)
+        self.assertEqual(to_float("bad", 0.0, 0.0, 10.0), 0.0)
 
     def test_air_timing_format(self):
         fmt = HELPERS["_format_air_timing_value"]
@@ -163,11 +202,19 @@ class DailyNewDramaTests(unittest.TestCase):
         self.assertIn('candidate_batches', SOURCE_TEXT)
         self.assertIn('notified_history', SOURCE_TEXT)
         self.assertIn('|sub|{batch_id}|', SOURCE_TEXT)
+        self.assertIn('全部数据源获取失败，本次不覆盖候选缓存', SOURCE_TEXT)
 
     def test_subscription_checks_real_add_result(self):
         self.assertIn('sid, err_msg = subscribe_chain.add(', SOURCE_TEXT)
         self.assertIn('message=False', SOURCE_TEXT)
         self.assertIn('if sid:', SOURCE_TEXT)
+        self.assertIn('exist_ok=True', SOURCE_TEXT)
+
+    def test_message_callback_batch_contract(self):
+        self.assertIn('text.startswith("sub|")', SOURCE_TEXT)
+        self.assertIn('batch_id = parts[1]', SOURCE_TEXT)
+        self.assertIn('index = int(parts[2])', SOURCE_TEXT)
+        self.assertIn('_subscribe_indexes([index], batch_id=batch_id)', SOURCE_TEXT)
 
     def test_public_methods_have_docstrings(self):
         required = {
