@@ -1,0 +1,25 @@
+name: Validate MoviePilot Plugins
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python syntax
+        run: |
+          python -m compileall -q plugins.v2
+          find plugins.v2 -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v2 -type f -name '*.pyc' -delete
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: JSON indexes
+        run: python -c "import json; [json.load(open(p,encoding='utf-8')) for p in ['plugin.json','package.v2.json']]"
+      - name: No generated Python artifacts
+        run: test -z "$(find . -type f -name '*.pyc' -o -type d -name '__pycache__')"
