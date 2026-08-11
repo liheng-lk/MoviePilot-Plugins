@@ -18,8 +18,95 @@ from app.log import logger
 from app.plugins import _PluginBase
 from app.schemas import MediaType
 from app.schemas.types import EventType
-from app.utils.dom import DomUtils
 from app.utils.http import RequestUtils
+
+
+def _parse_date_value(value: Any) -> Optional[datetime.date]:
+    """兼容 ISO 日期、日期时间和 RSS RFC822 日期格式。"""
+    if isinstance(value, datetime.datetime):
+        return value.date()
+    if isinstance(value, datetime.date):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.date.fromisoformat(text[:10])
+    except ValueError:
+        pass
+    try:
+        return parsedate_to_datetime(text).date()
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _parse_indexes_value(text: str) -> List[int]:
+    """解析单个序号、逗号列表和连续区间。"""
+    indexes = set()
+    for token in re.split(r"[,，\s]+", str(text or "").strip()):
+        if not token:
+            continue
+        match = re.fullmatch(r"(\d+)\s*[-~—]\s*(\d+)", token)
+        if match:
+            start, end = int(match.group(1)), int(match.group(2))
+            if start > end:
+                start, end = end, start
+            if end - start <= 100:
+                indexes.update(range(start, end + 1))
+        elif token.isdigit():
+            indexes.add(int(token))
+    return sorted(i for i in indexes if i > 0)
+
+
+def _xml_tag_value(node: Any, tag: str) -> str:
+    """读取 XML 节点下指定标签的文本或 CDATA 内容。"""
+    elements = node.getElementsByTagName(tag)
+    if not elements:
+        return ""
+    values = []
+    for child in elements[0].childNodes:
+        if child.nodeType in (child.TEXT_NODE, child.CDATA_SECTION_NODE):
+            values.append(child.data)
+    return "".join(values).strip()
+
+
+def _parse_douban_rss(xml_text: str, source: str) -> List[Dict[str, Any]]:
+    """把 RSSHub 豆瓣 RSS 文本解析成统一候选字典。"""
+    dom_tree = xml.dom.minidom.parseString(xml_text)
+    nodes = dom_tree.documentElement.getElementsByTagName("item")
+    result: List[Dict[str, Any]] = []
+    for node in nodes:
+        title = _xml_tag_value(node, "title")
+        link = _xml_tag_value(node, "link")
+        description = _xml_tag_value(node, "description")
+        pubdate = _xml_tag_value(node, "pubDate")
+        ids = re.findall(r"/(\d+)(?=/|$)", link or "")
+        years = re.findall(r"\b(19\d{2}|20\d{2})\b", f"{pubdate} {description}")
+        parsed_date = _parse_date_value(pubdate)
+        result.append({
+            "title": title,
+            "doubanid": ids[0] if ids else "",
+            "year": int(years[0]) if years else (parsed_date.year if parsed_date and source == "coming" else None),
+            "link": link,
+            "description": description,
+            # 只有“即将播出”路由的 pubDate 表示剧集播出日期；热门榜 RSS 时间不能当首播日期。
+            "air_date": parsed_date.isoformat() if parsed_date and source == "coming" else "",
+            "rss_pub_date": parsed_date.isoformat() if parsed_date else "",
+            "source": source,
+        })
+    return result
+
+
+def _format_air_timing_value(air_date: Optional[datetime.date], today: datetime.date) -> str:
+    """把首播日期格式化成通知中的相对时间文本。"""
+    if not air_date:
+        return "日期待定"
+    days = (air_date - today).days
+    if days == 0:
+        return "今天开播"
+    if days > 0:
+        return f"{air_date.isoformat()} · {days}天后"
+    return f"{air_date.isoformat()} · 已开播{-days}天"
 
 
 class DailyNewDrama(_PluginBase):
@@ -356,6 +443,7 @@ class DailyNewDrama(_PluginBase):
             "sources": source_status,
             "raw_count": len(raw_items),
             "candidate_count": 0,
+            "processing_errors": 0,
         }
 
         if not last_status["success"]:
@@ -381,10 +469,7 @@ class DailyNewDrama(_PluginBase):
                 meta.type = MediaType.TV
                 raw_year = raw.get("year")
                 if raw_year:
-                    try:
-                        meta.year = int(raw_year)
-                    except (TypeError, ValueError):
-                        pass
+                    meta.year = str(raw_year)
 
                 mediainfo = self._recognize(meta, doubanid)
                 if not mediainfo or mediainfo.type != MediaType.TV or not mediainfo.tmdb_id:
@@ -429,6 +514,7 @@ class DailyNewDrama(_PluginBase):
                     "source_label": "豆瓣即将播出" if raw.get("source") == "coming" else "豆瓣近期热播",
                 })
             except Exception as err:
+                last_status["processing_errors"] += 1
                 logger.warning("【每日新剧助手】处理候选条目失败 %s: %s", raw.get("title"), err)
                 continue
 
@@ -482,27 +568,7 @@ class DailyNewDrama(_PluginBase):
                 return [], "无响应"
             if getattr(response, "status_code", 200) >= 400:
                 return [], f"HTTP {response.status_code}"
-            dom_tree = xml.dom.minidom.parseString(response.text)
-            nodes = dom_tree.documentElement.getElementsByTagName("item")
-            result: List[Dict[str, Any]] = []
-            for node in nodes:
-                title = DomUtils.tag_value(node, "title", default="")
-                link = DomUtils.tag_value(node, "link", default="")
-                description = DomUtils.tag_value(node, "description", default="")
-                pubdate = DomUtils.tag_value(node, "pubDate", default="")
-                ids = re.findall(r"/(\d+)(?=/|$)", link or "")
-                years = re.findall(r"\b(19\d{2}|20\d{2})\b", f"{pubdate} {description}")
-                parsed_date = self._parse_date(pubdate)
-                result.append({
-                    "title": title,
-                    "doubanid": ids[0] if ids else "",
-                    "year": int(years[0]) if years else (parsed_date.year if parsed_date else None),
-                    "link": link,
-                    "description": description,
-                    "air_date": parsed_date.isoformat() if parsed_date else "",
-                    "source": source,
-                })
-            return result, None
+            return _parse_douban_rss(response.text, source=source), None
         except Exception as err:
             logger.error("【每日新剧助手】获取 RSS 失败 %s: %s", url, err)
             return [], str(err)
@@ -514,7 +580,9 @@ class DailyNewDrama(_PluginBase):
                 if settings.RECOGNIZE_SOURCE == "themoviedb":
                     tmdbinfo = MediaChain().get_tmdbinfo_by_doubanid(doubanid=doubanid, mtype=MediaType.TV)
                     if tmdbinfo and tmdbinfo.get("id"):
-                        return self.chain.recognize_media(meta=meta, tmdbid=tmdbinfo.get("id"))
+                        mediainfo = self.chain.recognize_media(meta=meta, tmdbid=tmdbinfo.get("id"))
+                        if mediainfo:
+                            return mediainfo
                 else:
                     mediainfo = self.chain.recognize_media(meta=meta, doubanid=doubanid)
                     if mediainfo:
@@ -525,9 +593,13 @@ class DailyNewDrama(_PluginBase):
             return None
 
     def _resolve_air_date(self, raw: Dict[str, Any], mediainfo: MediaInfo) -> Optional[datetime.date]:
-        """按 RSS 日期、TMDB 首播日期和发行日期顺序解析首播日期。"""
-        for value in (raw.get("air_date"), mediainfo.first_air_date, mediainfo.release_date):
-            parsed = self._parse_date(value)
+        """按可信 RSS 日期、TMDB 首播日期和发行日期顺序解析首播日期。"""
+        values = []
+        if raw.get("source") == "coming":
+            values.append(raw.get("air_date"))
+        values.extend([mediainfo.first_air_date, mediainfo.release_date])
+        for value in values:
+            parsed = _parse_date_value(value)
             if parsed:
                 return parsed
         return None
@@ -546,14 +618,14 @@ class DailyNewDrama(_PluginBase):
             return 0 <= days <= self._recent_days
         return False
 
-    def _candidate_sort_key(self, item: Dict[str, Any]) -> Tuple[int, datetime.date, float]:
-        """即将播出优先按日期升序，近期热播随后按日期倒序和评分排序。"""
-        air_date = self._parse_date(item.get("air_date")) or datetime.date.max
+    def _candidate_sort_key(self, item: Dict[str, Any]) -> Tuple[int, int, float]:
+        """即将播出按日期升序；近期热播按首播日期倒序，再按评分排序。"""
+        air_date = _parse_date_value(item.get("air_date"))
         vote = float(item.get("vote") or 0)
+        ordinal = air_date.toordinal() if air_date else datetime.date.max.toordinal()
         if item.get("source") == "coming":
-            return 0, air_date, -vote
-        ordinal = -air_date.toordinal() if air_date != datetime.date.max else 0
-        return 1, datetime.date.min + datetime.timedelta(days=max(0, ordinal + datetime.date.max.toordinal())), -vote
+            return 0, ordinal, -vote
+        return 1, -ordinal, -vote
 
     def _send_candidates(self, items: List[Dict[str, Any]], channel=None, userid=None, batch_id: str = "") -> None:
         """发送候选列表，支持按钮回调并保留普通命令方式。"""
@@ -568,10 +640,11 @@ class DailyNewDrama(_PluginBase):
         buttons: List[List[dict]] = []
         row: List[dict] = []
         for item in items:
-            air_date = self._parse_date(item.get("air_date"))
-            timing = self._format_air_timing(air_date, today)
+            air_date = _parse_date_value(item.get("air_date"))
+            timing = _format_air_timing_value(air_date, today)
             vote_text = f"⭐ {item.get('vote')}" if item.get("vote") else "暂无评分"
-            lines.append(f"{item['index']}. {item['title']} ({item.get('year') or '-'}) · {timing} · {vote_text}")
+            source_text = "待播" if item.get("source") == "coming" else "新近开播"
+            lines.append(f"{item['index']}. {item['title']} ({item.get('year') or '-'}) · {source_text} · {timing} · {vote_text}")
             row.append({
                 "text": f"{item['index']}. {str(item['title'])[:10]}",
                 "callback_data": f"[PLUGIN]{self.__class__.__name__}|sub|{batch_id}|{item['index']}",
@@ -587,6 +660,7 @@ class DailyNewDrama(_PluginBase):
             userid=userid,
             title=f"📺 今日豆瓣新剧 · {len(items)} 部可选",
             text="\n".join(lines),
+            image=items[0].get("poster") or None,
             buttons=buttons,
         )
 
@@ -612,7 +686,7 @@ class DailyNewDrama(_PluginBase):
                 meta = MetaInfo(item.get("title") or "")
                 meta.type = MediaType.TV
                 if item.get("year"):
-                    meta.year = int(item.get("year"))
+                    meta.year = str(item.get("year"))
                 mediainfo = self.chain.recognize_media(meta=meta, tmdbid=item.get("tmdbid"))
                 if not mediainfo:
                     failed.append(f"{index}.{item.get('title')}(识别失败)")
@@ -625,16 +699,21 @@ class DailyNewDrama(_PluginBase):
                 if subscribe_chain.exists(mediainfo=mediainfo, meta=meta):
                     skipped.append(f"{index}.{item.get('title')}(已订阅)")
                     continue
-                subscribe_chain.add(
+                sid, err_msg = subscribe_chain.add(
                     title=mediainfo.title,
                     year=mediainfo.year,
                     mtype=MediaType.TV,
                     tmdbid=mediainfo.tmdb_id,
+                    doubanid=item.get("doubanid") or mediainfo.douban_id,
                     season=meta.begin_season,
+                    message=False,
                     exist_ok=True,
                     username="每日新剧助手",
                 )
-                success.append(f"{index}.{mediainfo.title_year}")
+                if sid:
+                    success.append(f"{index}.{mediainfo.title_year}")
+                else:
+                    failed.append(f"{index}.{item.get('title')}({err_msg or '添加失败'})")
             except Exception as err:
                 logger.error("【每日新剧助手】订阅 %s 失败: %s", item.get("title"), err)
                 failed.append(f"{index}.{item.get('title')}(失败)")
@@ -667,7 +746,7 @@ class DailyNewDrama(_PluginBase):
         for batch in batches:
             if not isinstance(batch, dict):
                 continue
-            batch_date = self._parse_date(batch.get("date"))
+            batch_date = _parse_date_value(batch.get("date"))
             if batch_date and batch_date >= cutoff and batch.get("batch_id") != payload.get("batch_id"):
                 kept.append(batch)
         kept.append(payload)
@@ -681,7 +760,7 @@ class DailyNewDrama(_PluginBase):
         cutoff = datetime.date.today() - datetime.timedelta(days=max(self._repeat_days, 1) + 30)
         cleaned = {}
         for tmdbid, date_text in history.items():
-            notify_date = self._parse_date(date_text)
+            notify_date = _parse_date_value(date_text)
             if notify_date and notify_date >= cutoff:
                 cleaned[str(tmdbid)] = notify_date.isoformat()
         if cleaned != history:
@@ -692,7 +771,7 @@ class DailyNewDrama(_PluginBase):
         """判断指定 TMDB 条目是否仍处于重复提醒抑制周期。"""
         if self._repeat_days <= 0:
             return False
-        notify_date = self._parse_date(history.get(str(tmdbid)))
+        notify_date = _parse_date_value(history.get(str(tmdbid)))
         return bool(notify_date and (today - notify_date).days < self._repeat_days)
 
     def _save_config_state(self) -> None:
@@ -715,52 +794,8 @@ class DailyNewDrama(_PluginBase):
 
     @staticmethod
     def _parse_indexes(text: str) -> List[int]:
-        """解析单个序号、逗号列表和连续区间。"""
-        indexes = set()
-        for token in re.split(r"[,，\s]+", str(text or "").strip()):
-            if not token:
-                continue
-            match = re.fullmatch(r"(\d+)\s*[-~—]\s*(\d+)", token)
-            if match:
-                start, end = int(match.group(1)), int(match.group(2))
-                if start > end:
-                    start, end = end, start
-                if end - start <= 100:
-                    indexes.update(range(start, end + 1))
-            elif token.isdigit():
-                indexes.add(int(token))
-        return sorted(i for i in indexes if i > 0)
-
-    @staticmethod
-    def _parse_date(value: Any) -> Optional[datetime.date]:
-        """兼容 ISO 日期、日期时间和 RSS RFC822 日期格式。"""
-        if isinstance(value, datetime.datetime):
-            return value.date()
-        if isinstance(value, datetime.date):
-            return value
-        text = str(value or "").strip()
-        if not text:
-            return None
-        try:
-            return datetime.date.fromisoformat(text[:10])
-        except ValueError:
-            pass
-        try:
-            return parsedate_to_datetime(text).date()
-        except (TypeError, ValueError, OverflowError):
-            return None
-
-    @staticmethod
-    def _format_air_timing(air_date: Optional[datetime.date], today: datetime.date) -> str:
-        """把首播日期格式化成通知中的相对时间文本。"""
-        if not air_date:
-            return "日期待定"
-        days = (air_date - today).days
-        if days == 0:
-            return "今天开播"
-        if days > 0:
-            return f"{air_date.isoformat()} · {days}天后"
-        return f"{air_date.isoformat()} · 已开播{-days}天"
+        """代理纯函数序号解析，便于插件内部统一调用。"""
+        return _parse_indexes_value(text)
 
     @staticmethod
     def _to_int(value: Any, default: int, minimum: int, maximum: int) -> int:
