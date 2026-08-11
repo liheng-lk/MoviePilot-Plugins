@@ -22,6 +22,8 @@ def load_top_level_helpers():
         "_xml_tag_value",
         "_parse_douban_rss",
         "_format_air_timing_value",
+        "_parse_douban_direct_subjects",
+        "_extract_flaresolverr_response",
     }
     functions = [node for node in TREE.body if isinstance(node, ast.FunctionDef) and node.name in names]
     module = ast.Module(body=functions, type_ignores=[])
@@ -241,6 +243,34 @@ class DailyNewDramaTests(unittest.TestCase):
                 break
         else:
             self.fail("DailyNewDrama class not found")
+
+
+    def test_douban_direct_subject_parser(self):
+        parse = HELPERS["_parse_douban_direct_subjects"]
+        data = {"subjects": [{"id": "123", "title": "测试新剧", "pubdate": ["2026-08-20(中国大陆)"], "intro": "简介"}]}
+        item = parse(data)[0]
+        self.assertEqual(item["doubanid"], "123")
+        self.assertEqual(item["air_date"], "2026-08-20")
+        self.assertEqual(item["year"], 2026)
+        self.assertEqual(item["source"], "coming")
+
+    def test_flaresolverr_response_parser(self):
+        parse = HELPERS["_extract_flaresolverr_response"]
+        body, error = parse({"status": "ok", "solution": {"response": "<rss/>"}})
+        self.assertEqual(body, "<rss/>")
+        self.assertIsNone(error)
+        body, error = parse({"status": "error", "message": "challenge failed"})
+        self.assertIsNone(body)
+        self.assertIn("challenge failed", error)
+
+    def test_source_fallback_contract(self):
+        self.assertIn("_fetch_douban_direct_coming", SOURCE_TEXT)
+        self.assertIn("_fetch_rss_with_fallback", SOURCE_TEXT)
+        self.assertIn("_fetch_rss_via_flaresolverr", SOURCE_TEXT)
+        self.assertIn("flaresolverr_enabled", SOURCE_TEXT)
+        self.assertIn("flaresolverr_url", SOURCE_TEXT)
+        self.assertIn("豆瓣直连", SOURCE_TEXT)
+        self.assertIn("FlareSolverr", SOURCE_TEXT)
 
     def test_metadata_is_consistent(self):
         attrs = class_assignments()
