@@ -1,1 +1,27 @@
-{"ShukGuangYaDisk":{"name":"光鸭云盘助手","description":"MoviePilot 光鸭云盘存储助手，支持扫码/短信登录、目录浏览、整理上传、上传进度监控、网络容错、下载、移动、复制和 WebDAV。","labels":"存储,光鸭云盘,网盘,挂载,Emby","version":"1.0","icon":"Guangyadisk_A.png","author":"liheng-lk","level":1,"history":{"v1.0":"独立项目首个正式版本：整合 MoviePilot V2 兼容、Vue Federation、双登录、整理上传、上传进度监控、DNS/OSS 重试与 WebDAV。"}},"DailyNewDrama":{"name":"每日新剧助手","description":"每天推送豆瓣近期新剧，自动过滤媒体库已有和现有订阅，并支持按序号订阅。","labels":"豆瓣,电视剧,订阅,推荐,通知","version":"1.0","icon":"movie.jpg","author":"liheng-lk","level":1,"history":{"v1.0":"每日豆瓣新剧发现；过滤已入库/已订阅；支持序号命令和消息按钮订阅。"}}}
+{
+  "ShukGuangYaDisk": {
+    "name": "光鸭云盘助手",
+    "description": "MoviePilot 光鸭云盘存储助手，支持扫码/短信登录、目录浏览、整理上传、上传进度监控、网络容错、下载、移动、复制和 WebDAV。",
+    "labels": "存储,光鸭云盘,网盘,挂载,Emby",
+    "version": "1.0",
+    "icon": "Guangyadisk_A.png",
+    "author": "liheng-lk",
+    "level": 1,
+    "history": {
+      "v1.0": "独立项目首个正式版本：整合 MoviePilot V2 兼容、Vue Federation、双登录、整理上传、上传进度监控、DNS/OSS 重试与 WebDAV。"
+    }
+  },
+  "DailyNewDrama": {
+    "name": "每日新剧助手",
+    "description": "每天发现豆瓣即将播出和近期热播新剧，过滤已订阅/已入库内容，并支持按序号订阅。",
+    "labels": "豆瓣,电视剧,订阅,推荐,通知",
+    "version": "1.0",
+    "icon": "movie.jpg",
+    "author": "liheng-lk",
+    "level": 1,
+    "system_version": ">=2.5.7",
+    "history": {
+      "v1.0": "豆瓣即将播出主源 + 近期热播补充；媒体库/订阅/重复提醒过滤；支持序号命令与消息按钮订阅；数据源异常保留上次候选。"
+    }
+  }
+}
