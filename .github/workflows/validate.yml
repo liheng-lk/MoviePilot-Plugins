@@ -21,5 +21,9 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: JSON indexes
         run: python -c "import json; [json.load(open(p,encoding='utf-8')) for p in ['plugin.json','package.v2.json']]"
+      - name: Cleanup test artifacts
+        run: |
+          find . -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find . -type f -name '*.pyc' -delete
       - name: No generated Python artifacts
         run: test -z "$(find . -type f -name '*.pyc' -o -type d -name '__pycache__')"
