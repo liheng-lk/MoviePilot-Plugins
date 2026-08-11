@@ -173,7 +173,7 @@ class DailyNewDrama(_PluginBase):
     """每日发现豆瓣新剧并在过滤媒体库、订阅后提供交互订阅。"""
 
     plugin_name = "每日新剧助手"
-    plugin_desc = "发现豆瓣及腾讯视频、爱奇艺、优酷、芒果TV、哔哩哔哩近期上线和仍在更新的剧集，自动过滤已订阅/已入库内容。"
+    plugin_desc = "每天发现豆瓣及腾讯视频、爱奇艺、优酷、芒果TV、哔哩哔哩的近期上线和仍在更新剧集，过滤已订阅/已入库内容，并支持按序号订阅。"
     plugin_icon = "movie.jpg"
     plugin_version = "1.2"
     plugin_author = "liheng-lk"
