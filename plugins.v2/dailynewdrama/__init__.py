@@ -173,11 +173,11 @@ class DailyNewDrama(_PluginBase):
     """每日发现豆瓣新剧并在过滤媒体库、订阅后提供交互订阅。"""
 
     plugin_name = "每日新剧助手"
-    plugin_desc = "每天发现豆瓣即将播出和近期热播新剧，过滤已订阅/已入库内容，并支持按序号订阅。"
+    plugin_desc = "发现豆瓣及腾讯视频、爱奇艺、优酷、芒果TV、哔哩哔哩近期上线和仍在更新的剧集，自动过滤已订阅/已入库内容。"
     plugin_icon = "movie.jpg"
     plugin_version = "1.2"
     plugin_author = "liheng-lk"
-    plugin_label = "豆瓣,电视剧,订阅,推荐,通知"
+    plugin_label = "豆瓣,腾讯视频,爱奇艺,优酷,芒果TV,哔哩哔哩,电视剧,订阅,推荐,通知"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
     plugin_config_prefix = "dailynewdrama_"
     plugin_order = 20
@@ -535,7 +535,7 @@ class DailyNewDrama(_PluginBase):
 
     def refresh_and_notify(self, send_message: bool = True, suppress_recent: bool = True) -> List[Dict[str, Any]]:
         """抓取、识别、过滤新剧，保存批次并按需发送通知。"""
-        logger.info("【每日新剧助手】开始刷新豆瓣新剧")
+        logger.info("【每日新剧助手】开始刷新多平台新剧/在播剧")
         now = datetime.datetime.now()
         today = now.date()
         raw_items, source_status = self._fetch_sources()
@@ -549,11 +549,11 @@ class DailyNewDrama(_PluginBase):
         }
 
         if not last_status["success"]:
-            last_status["error"] = "全部豆瓣数据源获取失败，保留上次候选列表。"
+            last_status["error"] = "全部新剧数据源获取失败，保留上次候选列表。"
             self.save_data("last_run", last_status)
             logger.error("【每日新剧助手】全部数据源获取失败，本次不覆盖候选缓存")
             if send_message:
-                self.post_message(title="📺 每日新剧助手获取失败", text="豆瓣/RSSHub 数据源暂时不可用，本次未覆盖上次候选列表，请稍后重试。")
+                self.post_message(title="📺 每日新剧助手获取失败", text="豆瓣及视频平台数据源暂时不可用，本次未覆盖上次候选列表，请稍后重试。")
             return list((self.get_data("daily_candidates") or {}).get("items") or [])
 
         batch_id = now.strftime("%Y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:8]
@@ -589,6 +589,11 @@ class DailyNewDrama(_PluginBase):
                                 state = "更新中" if raw.get("ongoing") or existing.get("ongoing") else "近期上线"
                                 existing["source_label"] = " / ".join(merged_platforms) + f" · {state}"
                             existing["ongoing"] = bool(existing.get("ongoing") or raw.get("ongoing"))
+                            remarks = list(existing.get("platform_remarks") or [])
+                            new_remark = str(raw.get("platform_remark") or "").strip()
+                            if new_remark and new_remark not in remarks:
+                                remarks.append(new_remark)
+                            existing["platform_remarks"] = remarks
                             break
                     continue
                 seen_tmdb.add(mediainfo.tmdb_id)
@@ -626,6 +631,7 @@ class DailyNewDrama(_PluginBase):
                     "platforms": raw.get("platforms") or [],
                     "ongoing": bool(raw.get("ongoing")),
                     "platform_remark": raw.get("platform_remark") or "",
+                    "platform_remarks": [raw.get("platform_remark")] if raw.get("platform_remark") else [],
                 })
             except Exception as err:
                 last_status["processing_errors"] += 1
@@ -864,7 +870,7 @@ class DailyNewDrama(_PluginBase):
     def _send_candidates(self, items: List[Dict[str, Any]], channel=None, userid=None, batch_id: str = "") -> None:
         """发送候选列表，支持按钮回调并保留普通命令方式。"""
         if not items:
-            self.post_message(channel=channel, userid=userid, title="📺 今日豆瓣新剧", text="今天没有发现新的、且尚未入库或订阅的剧集。")
+            self.post_message(channel=channel, userid=userid, title="📺 今日新剧/在播剧", text="今天没有发现新的、仍在更新且尚未入库或订阅的剧集。")
             return
         if not batch_id:
             batch_id = str((self.get_data("daily_candidates") or {}).get("batch_id") or "")
@@ -883,7 +889,9 @@ class DailyNewDrama(_PluginBase):
                 source_text = "新近开播"
             else:
                 source_text = item.get("source_label") or ("更新中" if item.get("ongoing") else "近期上线")
-            lines.append(f"{item['index']}. {item['title']} ({item.get('year') or '-'}) · {source_text} · {timing} · {vote_text}")
+            remarks = [str(x).strip() for x in (item.get("platform_remarks") or []) if str(x).strip()]
+            remark_text = f" · {' / '.join(remarks[:2])}" if remarks else ""
+            lines.append(f"{item['index']}. {item['title']} ({item.get('year') or '-'}) · {source_text}{remark_text} · {timing} · {vote_text}")
             row.append({
                 "text": f"{item['index']}. {str(item['title'])[:10]}",
                 "callback_data": f"[PLUGIN]{self.__class__.__name__}|sub|{batch_id}|{item['index']}",
@@ -897,7 +905,7 @@ class DailyNewDrama(_PluginBase):
         self.post_message(
             channel=channel,
             userid=userid,
-            title=f"📺 今日豆瓣新剧 · {len(items)} 部可选",
+            title=f"📺 今日新剧/在播剧 · {len(items)} 部可选",
             text="\n".join(lines),
             image=items[0].get("poster") or None,
             buttons=buttons,
