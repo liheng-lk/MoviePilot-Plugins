@@ -1,12 +1,13 @@
 {
   "name": "每日新剧助手",
   "description": "每天发现豆瓣即将播出和近期热播新剧，过滤已订阅/已入库内容，并支持按序号订阅。",
-  "version": "1.0",
+  "version": "1.1",
   "icon": "movie.jpg",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=2.5.7",
   "history": {
+    "v1.1": "新增豆瓣 Frodo 直连主通道、RSSHub 自动备用和 FlareSolverr Cloudflare 过盾兜底；增加分层数据源错误日志与 Cloudflare Challenge 检测。",
     "v1.0": "豆瓣即将播出主源 + 近期热播补充；媒体库/订阅/重复提醒过滤；支持序号命令与消息按钮订阅；数据源异常保留上次候选。"
   }
 }
