@@ -1,0 +1,35 @@
+name: Fix DailyNewDrama v1.2 Metadata
+on:
+  push:
+    branches: [dailynewdrama-multiplatform]
+permissions:
+  contents: write
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dailynewdrama-multiplatform
+      - name: Sync runtime metadata
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('plugins.v2/dailynewdrama/__init__.py')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace(
+            '    plugin_desc = "发现豆瓣及腾讯视频、爱奇艺、优酷、芒果TV、哔哩哔哩近期上线和仍在更新的剧集，自动过滤已订阅/已入库内容。"',
+            '    plugin_desc = "每天发现豆瓣及腾讯视频、爱奇艺、优酷、芒果TV、哔哩哔哩的近期上线和仍在更新剧集，过滤已订阅/已入库内容，并支持按序号订阅。"',
+            1,
+          )
+          p.write_text(s,encoding='utf-8')
+          PY
+          python -m py_compile plugins.v2/dailynewdrama/__init__.py plugins.v2/dailynewdrama/platform_sources.py
+      - name: Commit
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add plugins.v2/dailynewdrama/__init__.py
+          git diff --cached --quiet || git commit -m 'fix: sync DailyNewDrama v1.2 metadata'
+          git push
