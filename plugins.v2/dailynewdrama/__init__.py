@@ -173,7 +173,7 @@ class DailyNewDrama(_PluginBase):
     plugin_name = "每日新剧助手"
     plugin_desc = "每天发现豆瓣即将播出和近期热播新剧，过滤已订阅/已入库内容，并支持按序号订阅。"
     plugin_icon = "movie.jpg"
-    plugin_version = "1.0"
+    plugin_version = "1.1"
     plugin_author = "liheng-lk"
     plugin_label = "豆瓣,电视剧,订阅,推荐,通知"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
