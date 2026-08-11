@@ -1,8 +1,6 @@
-# liheng-lk MoviePilot Plugins
+# MoviePilot Plugins
 
-这是由 **liheng-lk** 维护的 MoviePilot V2 插件合集。
-
-MoviePilot 自定义插件源只需要添加一次：
+MoviePilot 自定义插件源：
 
 ```text
 https://github.com/liheng-lk/MoviePilot-Plugins
