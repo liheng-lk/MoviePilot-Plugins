@@ -81,7 +81,8 @@ def _parse_douban_rss(xml_text: str, source: str) -> List[Dict[str, Any]]:
         description = _xml_tag_value(node, "description")
         pubdate = _xml_tag_value(node, "pubDate")
         ids = re.findall(r"/(\d+)(?=/|$)", link or "")
-        years = re.findall(r"\b(19\d{2}|20\d{2})\b", f"{pubdate} {description}")
+        year_text = f"{pubdate} {description}" if source == "coming" else description
+        years = re.findall(r"\b(19\d{2}|20\d{2})\b", year_text)
         parsed_date = _parse_date_value(pubdate)
         result.append({
             "title": title,
