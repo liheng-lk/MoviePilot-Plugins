@@ -81,15 +81,23 @@ class DailyNewDrama(_PluginBase):
             self._year_span = 1
         self._notify_empty = bool(config.get("notify_empty", True))
 
-        if self._onlyonce:
-            self._onlyonce = False
-            self._save_config_state()
+        # onlyonce 由 get_service() 注册一次性任务，避免保存配置时同步阻塞。
 
     def get_state(self) -> bool:
         return self._enabled
 
     def get_service(self) -> List[Dict[str, Any]]:
         services = []
+        if self._onlyonce:
+            self._onlyonce = False
+            self._save_config_state()
+            services.append({
+                "id": "DailyNewDramaOnce",
+                "name": "立即刷新每日新剧",
+                "trigger": "date",
+                "func": self.refresh_and_notify,
+                "kwargs": {},
+            })
         if self._enabled:
             try:
                 trigger = CronTrigger.from_crontab(self._cron)
