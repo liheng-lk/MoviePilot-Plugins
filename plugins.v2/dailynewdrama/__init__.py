@@ -24,6 +24,8 @@ from app.schemas import MediaType
 from app.schemas.types import EventType
 from app.utils.http import RequestUtils
 
+from .platform_sources import fetch_platform_sources
+
 
 def _parse_date_value(value: Any) -> Optional[datetime.date]:
     """兼容 ISO 日期、日期时间和 RSS RFC822 日期格式。"""
@@ -173,7 +175,7 @@ class DailyNewDrama(_PluginBase):
     plugin_name = "每日新剧助手"
     plugin_desc = "每天发现豆瓣即将播出和近期热播新剧，过滤已订阅/已入库内容，并支持按序号订阅。"
     plugin_icon = "movie.jpg"
-    plugin_version = "1.1"
+    plugin_version = "1.2"
     plugin_author = "liheng-lk"
     plugin_label = "豆瓣,电视剧,订阅,推荐,通知"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -196,6 +198,11 @@ class DailyNewDrama(_PluginBase):
     _include_hot = True
     _repeat_days = 7
     _notify_empty = False
+    _platform_tencent = True
+    _platform_iqiyi = True
+    _platform_youku = True
+    _platform_mgtv = True
+    _platform_bilibili = True
 
     def init_plugin(self, config: dict = None) -> None:
         """读取配置并初始化插件运行参数。"""
@@ -209,6 +216,11 @@ class DailyNewDrama(_PluginBase):
         self._flaresolverr_url = str(config.get("flaresolverr_url") or "http://flaresolverr:8191").rstrip("/")
         self._include_hot = bool(config.get("include_hot", True))
         self._notify_empty = bool(config.get("notify_empty", False))
+        self._platform_tencent = bool(config.get("platform_tencent", True))
+        self._platform_iqiyi = bool(config.get("platform_iqiyi", True))
+        self._platform_youku = bool(config.get("platform_youku", True))
+        self._platform_mgtv = bool(config.get("platform_mgtv", True))
+        self._platform_bilibili = bool(config.get("platform_bilibili", True))
         self._vote = self._to_float(config.get("vote"), 0.0, 0.0, 10.0)
         self._max_items = self._to_int(config.get("max_items"), 12, 1, 30)
         self._coming_days = self._to_int(config.get("coming_days"), 30, 1, 120)
@@ -362,11 +374,21 @@ class DailyNewDrama(_PluginBase):
                         ],
                     },
                     {
+                        "component": "VRow",
+                        "content": [
+                            {"component": "VCol", "props": {"cols": 6, "md": 2}, "content": [{"component": "VSwitch", "props": {"model": "platform_tencent", "label": "腾讯视频"}}]},
+                            {"component": "VCol", "props": {"cols": 6, "md": 2}, "content": [{"component": "VSwitch", "props": {"model": "platform_iqiyi", "label": "爱奇艺"}}]},
+                            {"component": "VCol", "props": {"cols": 6, "md": 2}, "content": [{"component": "VSwitch", "props": {"model": "platform_youku", "label": "优酷"}}]},
+                            {"component": "VCol", "props": {"cols": 6, "md": 2}, "content": [{"component": "VSwitch", "props": {"model": "platform_mgtv", "label": "芒果TV"}}]},
+                            {"component": "VCol", "props": {"cols": 6, "md": 2}, "content": [{"component": "VSwitch", "props": {"model": "platform_bilibili", "label": "哔哩哔哩"}}]},
+                        ],
+                    },
+                    {
                         "component": "VAlert",
                         "props": {
                             "type": "info",
                             "variant": "tonal",
-                            "text": "数据源自动降级：豆瓣直连 → RSSHub → FlareSolverr（开启时）。RSSHub 仅作为备用；FlareSolverr 建议与 MoviePilot 放在同一 Docker 网络，地址可填 http://flaresolverr:8191。媒体库已有和 MoviePilot 已订阅内容会自动过滤。",
+                            "text": "候选来源：豆瓣即将播出 + 近期热门，以及腾讯视频、爱奇艺、优酷、芒果TV、哔哩哔哩的近期上线/仍在更新剧集。数据源失败时自动尝试 FlareSolverr（开启时）。同剧多平台自动合并，媒体库已有和现有订阅统一过滤。",
                         },
                     },
                 ],
@@ -387,6 +409,11 @@ class DailyNewDrama(_PluginBase):
             "include_hot": True,
             "repeat_days": 7,
             "notify_empty": False,
+            "platform_tencent": True,
+            "platform_iqiyi": True,
+            "platform_youku": True,
+            "platform_mgtv": True,
+            "platform_bilibili": True,
         }
 
     def get_page(self) -> Optional[List[dict]]:
@@ -554,6 +581,15 @@ class DailyNewDrama(_PluginBase):
                 if not self._eligible_by_date(raw.get("source"), air_date, today):
                     continue
                 if mediainfo.tmdb_id in seen_tmdb:
+                    for existing in candidates:
+                        if existing.get("tmdbid") == mediainfo.tmdb_id:
+                            merged_platforms = list(dict.fromkeys((existing.get("platforms") or []) + (raw.get("platforms") or [])))
+                            existing["platforms"] = merged_platforms
+                            if merged_platforms:
+                                state = "更新中" if raw.get("ongoing") or existing.get("ongoing") else "近期上线"
+                                existing["source_label"] = " / ".join(merged_platforms) + f" · {state}"
+                            existing["ongoing"] = bool(existing.get("ongoing") or raw.get("ongoing"))
+                            break
                     continue
                 seen_tmdb.add(mediainfo.tmdb_id)
 
@@ -586,7 +622,10 @@ class DailyNewDrama(_PluginBase):
                     "overview": mediainfo.overview or "",
                     "air_date": air_date.isoformat() if air_date else "",
                     "source": raw.get("source"),
-                    "source_label": "豆瓣即将播出" if raw.get("source") == "coming" else "豆瓣近期热播",
+                    "source_label": raw.get("source_label") or ("豆瓣即将播出" if raw.get("source") == "coming" else "豆瓣近期热播"),
+                    "platforms": raw.get("platforms") or [],
+                    "ongoing": bool(raw.get("ongoing")),
+                    "platform_remark": raw.get("platform_remark") or "",
                 })
             except Exception as err:
                 last_status["processing_errors"] += 1
@@ -632,6 +671,21 @@ class DailyNewDrama(_PluginBase):
             hot, error, via = self._fetch_rss_with_fallback(hot_url, source="hot")
             status["近期热播"] = {"ok": error is None, "count": len(hot), "error": error or "", "via": via}
             items.extend(hot)
+
+        platform_items, platform_status = fetch_platform_sources(
+            {
+                "tencent": self._platform_tencent,
+                "iqiyi": self._platform_iqiyi,
+                "youku": self._platform_youku,
+                "mgtv": self._platform_mgtv,
+                "bilibili": self._platform_bilibili,
+            },
+            proxy=self._proxy,
+            flaresolverr_enabled=self._flaresolverr_enabled,
+            flaresolverr_url=self._flaresolverr_url,
+        )
+        items.extend(platform_items)
+        status.update(platform_status)
         return items, status
 
     def _fetch_coming_auto(self) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
@@ -789,6 +843,13 @@ class DailyNewDrama(_PluginBase):
                 return False
             days = (today - air_date).days
             return 0 <= days <= self._recent_days
+        if source == "platform_ongoing":
+            return True
+        if source == "platform_recent":
+            if not air_date:
+                return True
+            days = (today - air_date).days
+            return -self._coming_days <= days <= max(self._recent_days, 60)
         return False
 
     def _candidate_sort_key(self, item: Dict[str, Any]) -> Tuple[int, int, float]:
@@ -816,7 +877,12 @@ class DailyNewDrama(_PluginBase):
             air_date = _parse_date_value(item.get("air_date"))
             timing = _format_air_timing_value(air_date, today)
             vote_text = f"⭐ {item.get('vote')}" if item.get("vote") else "暂无评分"
-            source_text = "待播" if item.get("source") == "coming" else "新近开播"
+            if item.get("source") == "coming":
+                source_text = "待播"
+            elif item.get("source") == "hot":
+                source_text = "新近开播"
+            else:
+                source_text = item.get("source_label") or ("更新中" if item.get("ongoing") else "近期上线")
             lines.append(f"{item['index']}. {item['title']} ({item.get('year') or '-'}) · {source_text} · {timing} · {vote_text}")
             row.append({
                 "text": f"{item['index']}. {str(item['title'])[:10]}",
