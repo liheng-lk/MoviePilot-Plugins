@@ -1,5 +1,6 @@
 import datetime
 import re
+import uuid
 import xml.dom.minidom
 from typing import Any, Dict, List, Tuple
 
@@ -22,7 +23,7 @@ from app.utils.http import RequestUtils
 
 class DailyNewDrama(_PluginBase):
     plugin_name = "每日新剧助手"
-    plugin_desc = "每天推送豆瓣近期新剧，自动过滤已订阅和媒体库已有内容，并支持按序号订阅。"
+    plugin_desc = "每天推送豆瓣近期热门剧集候选，自动过滤已订阅和媒体库已有内容，并支持按序号订阅。"
     plugin_icon = "movie.jpg"
     plugin_version = "1.0"
     plugin_author = "liheng-lk"
@@ -178,7 +179,7 @@ class DailyNewDrama(_PluginBase):
                     },
                     {
                         "component": "VAlert",
-                        "props": {"type": "info", "variant": "tonal", "text": "每天读取豆瓣热门电视剧榜，只保留近年剧集；媒体库已存在或 MoviePilot 已订阅的内容会自动过滤。可用 /newdrama_sub 1,3 或 /newdrama_sub 1-3 订阅。"},
+                        "props": {"type": "info", "variant": "tonal", "text": "每天读取豆瓣热门电视剧榜并筛选近年剧集；媒体库已存在或 MoviePilot 已订阅的内容会自动过滤。可用 /newdrama_sub 1,3 或 /newdrama_sub 1-3 订阅。"},
                     },
                 ],
             }
@@ -269,11 +270,17 @@ class DailyNewDrama(_PluginBase):
         text = str(event_data.get("text") or "")
         if not text.startswith("sub|"):
             return
+        parts = text.split("|")
         try:
-            index = int(text.split("|", 1)[1])
-        except (TypeError, ValueError):
+            if len(parts) >= 3:
+                batch_id = parts[1]
+                index = int(parts[2])
+            else:
+                batch_id = ""
+                index = int(parts[1])
+        except (TypeError, ValueError, IndexError):
             return
-        result = self._subscribe_indexes([index])
+        result = self._subscribe_indexes([index], batch_id=batch_id)
         self.post_message(
             channel=event_data.get("channel"),
             userid=event_data.get("userid"),
@@ -290,67 +297,82 @@ class DailyNewDrama(_PluginBase):
         seen_tmdb = set()
         current_year = datetime.datetime.now().year
 
+        batch_id = datetime.datetime.now().strftime("%Y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:8]
+
         for raw in raw_items:
-            if len(candidates) >= self._max_items:
-                break
-            title = str(raw.get("title") or "").strip()
-            doubanid = str(raw.get("doubanid") or "").strip()
-            year = raw.get("year")
-            if not title:
-                continue
-            if year:
-                try:
-                    if int(year) < current_year - self._year_span:
-                        continue
-                except (TypeError, ValueError):
-                    pass
+            try:
+                if len(candidates) >= self._max_items:
+                    break
+                title = str(raw.get("title") or "").strip()
+                doubanid = str(raw.get("doubanid") or "").strip()
+                year = raw.get("year")
+                if not title:
+                    continue
+                if year:
+                    try:
+                        if int(year) < current_year - self._year_span:
+                            continue
+                    except (TypeError, ValueError):
+                        pass
 
-            meta = MetaInfo(title)
-            meta.type = MediaType.TV
-            if year:
-                try:
-                    meta.year = int(year)
-                except (TypeError, ValueError):
-                    pass
+                meta = MetaInfo(title)
+                meta.type = MediaType.TV
+                if year:
+                    try:
+                        meta.year = int(year)
+                    except (TypeError, ValueError):
+                        pass
 
-            mediainfo = self._recognize(meta, doubanid)
-            if not mediainfo or mediainfo.type != MediaType.TV:
-                continue
-            if mediainfo.tmdb_id in seen_tmdb:
-                continue
-            seen_tmdb.add(mediainfo.tmdb_id)
+                mediainfo = self._recognize(meta, doubanid)
+                if not mediainfo or mediainfo.type != MediaType.TV:
+                    continue
+                if not mediainfo.tmdb_id:
+                    logger.warning("【每日新剧助手】过滤无 TMDB ID 条目: %s", mediainfo.title_year)
+                    continue
+                if mediainfo.tmdb_id in seen_tmdb:
+                    continue
+                seen_tmdb.add(mediainfo.tmdb_id)
 
-            vote = float(mediainfo.vote_average or 0)
-            if self._vote and vote < self._vote:
-                continue
+                vote = float(mediainfo.vote_average or 0)
+                if self._vote and vote < self._vote:
+                    continue
 
-            exist_flag, _ = DownloadChain().get_no_exists_info(meta=meta, mediainfo=mediainfo)
-            if exist_flag:
-                logger.info("【每日新剧助手】过滤媒体库已存在: %s", mediainfo.title_year)
-                continue
+                exist_flag, _ = DownloadChain().get_no_exists_info(meta=meta, mediainfo=mediainfo)
+                if exist_flag:
+                    logger.info("【每日新剧助手】过滤媒体库已存在: %s", mediainfo.title_year)
+                    continue
 
-            subscribe_chain = SubscribeChain()
-            if subscribe_chain.exists(mediainfo=mediainfo, meta=meta):
-                logger.info("【每日新剧助手】过滤已订阅: %s", mediainfo.title_year)
-                continue
+                subscribe_chain = SubscribeChain()
+                if subscribe_chain.exists(mediainfo=mediainfo, meta=meta):
+                    logger.info("【每日新剧助手】过滤已订阅: %s", mediainfo.title_year)
+                    continue
 
-            candidates.append({
-                "index": len(candidates) + 1,
-                "title": mediainfo.title,
-                "year": mediainfo.year,
-                "vote": round(vote, 1) if vote else 0,
-                "tmdbid": mediainfo.tmdb_id,
-                "doubanid": doubanid,
-                "poster": mediainfo.get_poster_image(),
-                "overview": mediainfo.overview or "",
-            })
+                candidates.append({
+                    "index": len(candidates) + 1,
+                    "title": mediainfo.title,
+                    "year": mediainfo.year,
+                    "vote": round(vote, 1) if vote else 0,
+                    "tmdbid": mediainfo.tmdb_id,
+                    "doubanid": doubanid,
+                    "poster": mediainfo.get_poster_image(),
+                    "overview": mediainfo.overview or "",
+                })
+
+            except Exception as err:
+                logger.warning("【每日新剧助手】处理候选条目失败 %s: %s", raw.get("title"), err)
+                continue
 
         payload = {
+            "batch_id": batch_id,
             "date": datetime.datetime.now().strftime("%Y-%m-%d"),
             "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "items": candidates,
         }
         self.save_data("daily_candidates", payload)
+        batches = self.get_data("candidate_batches") or []
+        batches = [b for b in batches if isinstance(b, dict) and b.get("batch_id") != batch_id]
+        batches.append(payload)
+        self.save_data("candidate_batches", batches[-20:])
         logger.info("【每日新剧助手】刷新完成，未拥有且未订阅的新剧 %s 部", len(candidates))
 
         if send_message:
@@ -399,11 +421,13 @@ class DailyNewDrama(_PluginBase):
             logger.error("【每日新剧助手】获取豆瓣新剧失败: %s", err)
             return []
 
-    def _send_candidates(self, items: List[Dict[str, Any]], channel=None, userid=None):
+    def _send_candidates(self, items: List[Dict[str, Any]], channel=None, userid=None, batch_id: str = ""):
         if not items:
             self.post_message(channel=channel, userid=userid, title="📺 今日豆瓣新剧", text="今天没有发现你尚未拥有、尚未订阅的新剧。")
             return
 
+        if not batch_id:
+            batch_id = str((self.get_data("daily_candidates") or {}).get("batch_id") or "")
         lines = ["已自动过滤媒体库已有内容和现有订阅：", ""]
         buttons = []
         row = []
@@ -412,7 +436,7 @@ class DailyNewDrama(_PluginBase):
             lines.append(f"{item['index']}. {item['title']} ({item.get('year') or '-'}) · {vote_text}")
             row.append({
                 "text": f"{item['index']}. {item['title'][:10]}",
-                "callback_data": f"[PLUGIN]{self.__class__.__name__}|sub|{item['index']}",
+                "callback_data": f"[PLUGIN]{self.__class__.__name__}|sub|{batch_id}|{item['index']}",
             })
             if len(row) == 2:
                 buttons.append(row)
@@ -444,11 +468,16 @@ class DailyNewDrama(_PluginBase):
                 indexes.add(int(token))
         return sorted(i for i in indexes if i > 0)
 
-    def _subscribe_indexes(self, indexes: List[int]) -> Dict[str, Any]:
+    def _subscribe_indexes(self, indexes: List[int], batch_id: str = "") -> Dict[str, Any]:
         if not indexes:
             return {"success": False, "message": "未识别到有效序号，例如：/newdrama_sub 1,3 或 /newdrama_sub 1-3"}
 
         data = self.get_data("daily_candidates") or {}
+        if batch_id and str(data.get("batch_id") or "") != batch_id:
+            batches = self.get_data("candidate_batches") or []
+            data = next((b for b in reversed(batches) if isinstance(b, dict) and str(b.get("batch_id") or "") == batch_id), {})
+            if not data:
+                return {"success": False, "message": "该推荐批次已过期，请发送 /newdrama 获取最新列表。"}
         items = data.get("items") or []
         mapping = {int(item.get("index")): item for item in items if item.get("index")}
         success = []
