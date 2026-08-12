@@ -3,6 +3,7 @@
 在原 GuangYaApi 实现上补齐新版 MoviePilot 接口，并增强上传完成确认与可选进度日志。
 """
 
+import time
 from datetime import datetime
 from hashlib import md5
 from pathlib import Path
@@ -37,15 +38,75 @@ class GuangYaApi(_GuangYaApi):
             index += 1
         return f"{value:.2f} {units[index]}"
 
+    def _wait_task_done(
+        self,
+        task_id: str,
+        max_try: int = 300,
+        interval: int = 1,
+        allow_missing: bool = False,
+    ) -> bool:
+        """等待远端任务完成；145/147 视为任务记录过期并立即转文件可见性确认。"""
+        if not task_id:
+            return True
+
+        for index in range(max_try):
+            status_response = self.client.get_task_status(task_id)
+            status_code = status_response.get("code", -1)
+            status_data = status_response.get("data", {}) or {}
+            status = status_data.get("status")
+
+            if status == 2:
+                return True
+
+            if self._is_task_missing(status_response):
+                logger.info(
+                    "【光鸭云盘助手】任务 %s 状态记录已失效(code=%s)，转由目标文件可见性确认",
+                    task_id,
+                    status_code,
+                )
+                return True if allow_missing else False
+
+            if status in (0, 1, 3, 145, 146, 147, 155, 163) and index < max_try - 1:
+                time.sleep(interval)
+                continue
+
+            info_response = self.client.get_file_info_by_task_id(task_id)
+            info_code = info_response.get("code", -1)
+            info_data = info_response.get("data", {}) or {}
+            if info_data.get("fileId"):
+                return True
+
+            if self._is_task_missing(info_response):
+                logger.info(
+                    "【光鸭云盘助手】任务 %s 文件回执已失效(code=%s)，转由目标文件可见性确认",
+                    task_id,
+                    info_code,
+                )
+                return True if allow_missing else False
+
+            message = status_response.get("msg") or info_response.get("msg") or ""
+            logger.warning(
+                "【光鸭云盘助手】任务 %s 未确认完成: status=%s code=%s/%s msg=%s",
+                task_id,
+                status,
+                status_code,
+                info_code,
+                message,
+            )
+            return False
+
+        logger.error("【光鸭云盘助手】任务 %s 超时", task_id)
+        return False
+
     def _confirm_uploaded_item(
         self,
         target_dir_path: str,
         target_name: str,
         file_size: int,
-        max_try: int = 20,
-        interval: float = 0.5,
+        max_try: int = 90,
+        interval: float = 1.0,
     ) -> Optional[schemas.FileItem]:
-        """上传任务回执缺失时，按目标目录中的同名同大小文件兜底确认。"""
+        """任务回执缺失时，按目标目录中的同名同大小文件兜底确认。"""
         item = self._wait_item_visible(
             parent_path=target_dir_path,
             name=target_name,
@@ -66,6 +127,93 @@ class GuangYaApi(_GuangYaApi):
         self._cache_item(item)
         return item
 
+    def _find_existing_uploaded_item(
+        self,
+        target_dir_path: str,
+        target_name: str,
+        file_size: int,
+    ) -> Optional[schemas.FileItem]:
+        """上传前检查目标是否已有同名同大小文件，避免误判失败后的重复上传。"""
+        try:
+            item = self._find_item_in_parent(
+                parent_path=target_dir_path,
+                name=target_name,
+                expected_type="file",
+            )
+        except Exception as err:
+            logger.debug("【光鸭云盘助手】【上传】预检查目标文件失败: %s - %s", target_name, err)
+            return None
+        if not item:
+            return None
+        if item.size not in (None, 0, file_size):
+            return None
+        self._cache_item(item)
+        return item
+
+    def _recover_upload_folder_id(self, target_dir_path: str) -> Optional[str]:
+        """丢弃陈旧目录缓存，按路径重新解析；路径确实不存在时按 MoviePilot 目标路径重建。"""
+        normalized_path = self._normalize_path(target_dir_path)
+        self._invalidate_path_cache(normalized_path)
+        try:
+            folder_id = self._path_to_id(normalized_path)
+            if folder_id or normalized_path == "/":
+                return folder_id
+        except FileNotFoundError:
+            pass
+        except Exception as err:
+            logger.warning("【光鸭云盘助手】【上传】重新解析目标目录失败: %s - %s", normalized_path, err)
+
+        try:
+            folder = self.get_folder(Path(normalized_path))
+            if folder:
+                folder_id = str(folder.fileid or "")
+                logger.warning(
+                    "【光鸭云盘助手】【上传】目标目录已重新定位/创建: %s, fileId=%s",
+                    normalized_path,
+                    folder_id,
+                )
+                return folder_id
+        except Exception as err:
+            logger.warning("【光鸭云盘助手】【上传】重建目标目录失败: %s - %s", normalized_path, err)
+        return None
+
+    def _get_upload_token_with_folder_recovery(
+        self,
+        folder_id: str,
+        target_dir_path: str,
+        target_name: str,
+        file_size: int,
+        file_md5: str,
+    ) -> tuple[dict, str]:
+        """获取上传凭证；遇到 142 目录不存在时刷新目录 ID 并仅重试一次。"""
+        response = self.client.get_upload_token(
+            file_name=target_name,
+            file_size=file_size,
+            file_md5=file_md5,
+            parent_id=folder_id,
+            capacity=2,
+        )
+        if response.get("code") != 142:
+            return response, folder_id
+
+        logger.warning(
+            "【光鸭云盘助手】【上传】目标目录 ID 已失效: %s, old_fileId=%s，开始按路径恢复",
+            target_dir_path,
+            folder_id,
+        )
+        recovered_id = self._recover_upload_folder_id(target_dir_path)
+        if recovered_id is None:
+            return response, folder_id
+
+        response = self.client.get_upload_token(
+            file_name=target_name,
+            file_size=file_size,
+            file_md5=file_md5,
+            parent_id=recovered_id,
+            capacity=2,
+        )
+        return response, recovered_id
+
     def _upload_single_file(
         self,
         folder_id: str,
@@ -73,11 +221,20 @@ class GuangYaApi(_GuangYaApi):
         target_dir_path: str,
         target_name: str = None,
     ) -> Optional[schemas.FileItem]:
-        """上传单个文件，并提供实时进度日志与上传后可见性兜底确认。"""
+        """上传单个文件，并提供进度、目录恢复、幂等检查与上传后可见性兜底确认。"""
         target_name = target_name or local_path.name
         target_path = Path(target_dir_path) / target_name
         file_size = local_path.stat().st_size
         started_at = monotonic()
+
+        existing = self._find_existing_uploaded_item(target_dir_path, target_name, file_size)
+        if existing:
+            logger.warning(
+                "【光鸭云盘助手】【上传】目标已存在同名同大小文件，跳过重复上传: %s, fileId=%s",
+                target_name,
+                existing.fileid,
+            )
+            return existing
 
         logger.info(
             "【光鸭云盘助手】【上传】开始: %s -> %s, 大小=%s",
@@ -156,19 +313,20 @@ class GuangYaApi(_GuangYaApi):
             logger.debug("【光鸭云盘助手】【上传】秒传检查失败: %s - %s", target_name, err)
 
         try:
-            response = self.client.get_upload_token(
-                file_name=target_name,
+            response, folder_id = self._get_upload_token_with_folder_recovery(
+                folder_id=folder_id,
+                target_dir_path=target_dir_path,
+                target_name=target_name,
                 file_size=file_size,
                 file_md5=file_md5,
-                parent_id=folder_id,
-                capacity=2,
             )
 
             if response.get("code") == 156:
                 task_id = (response.get("data", {}) or {}).get("taskId", "")
                 if self.upload_progress_log:
                     logger.info("【光鸭云盘助手】【上传】服务端任务已存在: %s, task_id=%s", target_name, task_id)
-                if task_id and self._wait_task_done(task_id):
+                if task_id:
+                    self._wait_task_done(task_id)
                     task_response = self.client.get_file_info_by_task_id(task_id)
                     data = task_response.get("data", {}) or {}
                     file_id = str(data.get("fileId", ""))
@@ -270,10 +428,10 @@ class GuangYaApi(_GuangYaApi):
                 )
                 return confirmed
 
-            logger.error("【光鸭云盘助手】【上传】失败: %s，上传后未能确认目标文件", target_name)
+            logger.error("【光鸭云盘助手】【上传】失败: %s，上传后 90 秒仍未确认目标文件", target_name)
             return None
         except Exception as err:
-            confirmed = self._confirm_uploaded_item(target_dir_path, target_name, file_size, max_try=10)
+            confirmed = self._confirm_uploaded_item(target_dir_path, target_name, file_size, max_try=30)
             if confirmed:
                 mp_progress(100)
                 logger.warning(
