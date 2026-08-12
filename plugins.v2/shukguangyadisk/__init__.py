@@ -16,13 +16,12 @@ from ._plugin_legacy import ShukGuangYaDisk as _LegacyPlugin
 from .guangya_client import GuangYaClient
 
 
-
 class ShukGuangYaDisk(_LegacyPlugin):
     """光鸭云盘助手。"""
 
     plugin_name = "光鸭云盘助手"
     plugin_desc = "MoviePilot 光鸭云盘存储助手，支持扫码/短信登录、目录浏览、整理上传、下载、移动、复制和 Emby 直连。"
-    plugin_version = "1.1"
+    plugin_version = "1.1.1"
     plugin_author = "liheng-lk"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
 
@@ -91,10 +90,27 @@ class ShukGuangYaDisk(_LegacyPlugin):
         }
 
     def _get_config(self) -> Dict[str, Any]:
-        """读取配置，并补充上传监控与当前存储名称。"""
+        """读取配置；临时网络异常时保留本地登录态。"""
         data = super()._get_config()
         data["upload_progress_log"] = self._upload_progress_log
         data["storage_name"] = self._disk_name
+        data["remote_status_available"] = True
+        data["remote_status_message"] = ""
+
+        # legacy 配置读取会在用户信息/空间接口异常时将 logged_in 置 False。
+        # 对 DNS、超时等临时网络问题不应把有效 Token 误显示为掉登录；
+        # 只有 refresh_token 已明确判定失效时才保持未登录状态。
+        if self._access_token and not data.get("logged_in"):
+            refresh_invalid = bool(
+                self._client
+                and getattr(self._client, "last_refresh_attempted", False)
+                and getattr(self._client, "last_refresh_invalid", False)
+            )
+            if not refresh_invalid:
+                data["logged_in"] = True
+                data["remote_status_available"] = False
+                data["remote_status_message"] = "光鸭远端状态暂不可用，已保留本地登录态，稍后自动重试"
+
         return data
 
     def _save_config(self, config_payload: dict) -> Dict[str, Any]:
