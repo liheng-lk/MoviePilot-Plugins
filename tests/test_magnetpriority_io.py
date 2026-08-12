@@ -11,8 +11,7 @@ package = types.ModuleType(PKG)
 package.__path__ = [str(PLUGIN)]
 sys.modules.setdefault(PKG, package)
 
-# The repository CI is intentionally dependency-light. MoviePilot itself ships requests,
-# but these pure unit tests stub just enough of its surface to import the provider modules.
+# MoviePilot 运行环境自带 requests；仓库 CI 保持最小依赖，因此这里提供最小桩。
 requests_stub = types.ModuleType('requests')
 class RequestException(Exception):
     pass
@@ -34,6 +33,7 @@ def load(name, filename):
 
 core = load('core', 'core.py')
 torznab = load('torznab', 'torznab.py')
+sources = load('sources', 'sources.py')
 guangya = load('guangya_offline', 'guangya_offline.py')
 
 
@@ -78,19 +78,80 @@ class TorznabTests(unittest.TestCase):
             torznab.parse_torznab_xml('<bad', 'x')
 
     def test_http_error(self):
-        src = torznab.TorznabSource('x', 'http://indexer', 'k')
+        src = torznab.TorznabSource('x', 'http://indexer/api', 'k')
         session = FakeSession([FakeResponse(status=429)])
         with self.assertRaises(torznab.TorznabError):
             torznab.search_torznab(src, 'Show', session=session)
 
     def test_query_contains_tv_fields(self):
-        src = torznab.TorznabSource('x', 'http://indexer', 'k')
+        src = torznab.TorznabSource('x', 'http://indexer/torznab/api', 'k')
         session = FakeSession([FakeResponse(status=200, text=self.XML)])
         torznab.search_torznab(src, 'Show', season=1, episode=9, tmdb_id=123, session=session)
         url = session.calls[0][1]
         self.assertIn('season=1', url)
         self.assertIn('ep=9', url)
         self.assertIn('tmdbid=123', url)
+        self.assertIn('apikey=k', url)
+
+    def test_complete_api_url_is_not_rewritten(self):
+        endpoint = 'http://jackett:9117/api/v2.0/indexers/all/results/torznab/api'
+        src = torznab.TorznabSource('Jackett', endpoint, 'secret')
+        url = torznab.build_search_url(src, 'Show')
+        self.assertTrue(url.startswith(endpoint + '?'))
+        self.assertNotIn('/api/api', url)
+
+    def test_existing_query_string_is_preserved(self):
+        src = torznab.TorznabSource('x', 'http://host/feed?cat=5000', '')
+        url = torznab.build_search_url(src, 'Show')
+        self.assertIn('cat=5000', url)
+        self.assertIn('q=Show', url)
+
+    def test_invalid_url_rejected(self):
+        with self.assertRaises(torznab.TorznabError):
+            torznab.build_search_url(torznab.TorznabSource('bad', 'not-a-url'), 'Show')
+
+
+class BuiltinSourceTests(unittest.TestCase):
+    def test_jackett_preset(self):
+        result = sources.build_sources({
+            'jackett_enabled': True,
+            'jackett_api_key': 'JKEY',
+        })
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].name, 'Jackett')
+        self.assertEqual(result[0].url, sources.JACKETT_ALL_DEFAULT)
+        self.assertEqual(result[0].api_key, 'JKEY')
+
+    def test_prowlarr_preset_requires_feed_url(self):
+        self.assertEqual(sources.build_sources({'prowlarr_enabled': True}), [])
+        result = sources.build_sources({
+            'prowlarr_enabled': True,
+            'prowlarr_torznab_url': 'http://prowlarr/feed',
+            'prowlarr_api_key': 'PKEY',
+        })
+        self.assertEqual(result[0].name, 'Prowlarr')
+        self.assertEqual(result[0].url, 'http://prowlarr/feed')
+
+    def test_generic_torznab_preset(self):
+        result = sources.build_sources({
+            'torznab_enabled': True,
+            'torznab_name': 'Mine',
+            'torznab_url': 'http://mine/api',
+        })
+        self.assertEqual(result[0].name, 'Mine')
+
+    def test_advanced_json_and_dedupe(self):
+        result = sources.build_sources({
+            'torznab_enabled': True,
+            'torznab_name': 'Mine',
+            'torznab_url': 'http://mine/api',
+            'torznab_sources_json': '[{"name":"dup","url":"http://mine/api"},{"name":"two","url":"http://two/api"}]',
+        })
+        self.assertEqual([item.name for item in result], ['Mine', 'two'])
+
+    def test_bad_advanced_json_is_error(self):
+        with self.assertRaises(RuntimeError):
+            sources.build_sources({'torznab_sources_json': '{bad'})
 
 
 class GuangYaOfflineTests(unittest.TestCase):
