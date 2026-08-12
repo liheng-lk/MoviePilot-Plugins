@@ -7,9 +7,7 @@
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
-    "history": {
-      "v1.0": "独立项目首个正式版本：整合 MoviePilot V2 兼容、Vue Federation、双登录、整理上传、上传进度监控、DNS/OSS 重试与 WebDAV。"
-    }
+    "history": {"v1.0": "独立项目首个正式版本：整合 MoviePilot V2 兼容、Vue Federation、双登录、整理上传、上传进度监控、DNS/OSS 重试与 WebDAV。"}
   },
   "DailyNewDrama": {
     "name": "每日新剧助手",
@@ -25,5 +23,16 @@
       "v1.1": "新增豆瓣 Frodo 直连主通道、RSSHub 自动备用和 FlareSolverr Cloudflare 过盾兜底；增加分层数据源错误日志与 Cloudflare Challenge 检测。",
       "v1.0": "豆瓣即将播出主源 + 近期热播补充；媒体库/订阅/重复提醒过滤；支持序号命令与消息按钮订阅；数据源异常保留上次候选。"
     }
+  },
+  "MagnetPrioritySubscribe": {
+    "name": "磁力优先订阅",
+    "description": "订阅时优先搜索配置的 Torznab 磁力源，强制中文字幕，成功提交光鸭离线后再决定是否接管原生下载。",
+    "labels": "订阅,磁力,Torznab,光鸭云盘,中文字幕",
+    "version": "1.0-beta1",
+    "icon": "magnet.png",
+    "author": "liheng-lk",
+    "level": 1,
+    "system_version": ">=3.0.0",
+    "history": {"v1.0-beta1": "测试版：Torznab 多源、中文字幕硬过滤、季集匹配、质量评分、光鸭离线接口；默认安全测试模式，不拦截 MoviePilot 原生链路。"}
   }
 }
