@@ -15,10 +15,17 @@ class MagnetPriorityContractTests(unittest.TestCase):
         self.assertEqual(root_a['version'], local['version'])
         self.assertEqual(root_a['name'], local['name'])
         self.assertEqual(root_a['description'], local['description'])
+        self.assertIn('1.0-beta2', INIT)
 
     def test_beta_defaults_to_safe_dry_run(self):
         self.assertIn('"dry_run": True', INIT)
-        self.assertIn('beta1 intentionally does NOT suppress MoviePilot native search/download yet', INIT)
+        self.assertIn('beta2 仍不抑制 MoviePilot 原生搜索/下载', INIT)
+
+    def test_builtin_source_configuration_present(self):
+        self.assertIn('jackett_enabled', INIT)
+        self.assertIn('prowlarr_enabled', INIT)
+        self.assertIn('torznab_enabled', INIT)
+        self.assertIn('build_sources', INIT)
 
     def test_subtitle_gate_is_hard(self):
         core = (ROOT / 'plugins.v2' / 'magnetprioritysubscribe' / 'core.py').read_text(encoding='utf-8')
