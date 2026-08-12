@@ -2,10 +2,10 @@
   "name": "磁力优先订阅",
   "description": "订阅时优先搜索配置的 Torznab 磁力源，强制中文字幕，成功提交光鸭离线后再决定是否接管原生下载。",
   "version": "1.0-beta1",
-  "icon": "magnet.png",
+  "icon": "magnet.svg",
   "author": "liheng-lk",
   "level": 1,
-  "system_version": ">=3.0.0",
+  "system_version": ">=2.5.7",
   "history": {
     "v1.0-beta1": "测试版：Torznab 多源、中文字幕硬过滤、季集匹配、质量评分、光鸭 resolve_res/create_task/list_task；默认安全测试模式，不拦截 MoviePilot 原生链路。"
   }
