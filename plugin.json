@@ -3,11 +3,12 @@
     "name": "光鸭云盘助手",
     "description": "MoviePilot 光鸭云盘存储助手，支持扫码/短信登录、目录浏览、整理上传、上传进度监控、网络容错、下载、移动、复制和 WebDAV。",
     "labels": "存储,光鸭云盘,网盘,挂载,Emby",
-    "version": "1.0",
+    "version": "1.1",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "history": {
+      "v1.1": "修复上传目标目录 fileId 失效导致 code=142；任务 145/147 自动切换文件可见性确认；增加上传幂等检查与 90 秒落盘确认，避免误判失败和重复上传。",
       "v1.0": "独立项目首个正式版本：整合 MoviePilot V2 兼容、Vue Federation、双登录、整理上传、上传进度监控、DNS/OSS 重试与 WebDAV。"
     }
   },
