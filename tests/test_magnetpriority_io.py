@@ -11,6 +11,17 @@ package = types.ModuleType(PKG)
 package.__path__ = [str(PLUGIN)]
 sys.modules.setdefault(PKG, package)
 
+# The repository CI is intentionally dependency-light. MoviePilot itself ships requests,
+# but these pure unit tests stub just enough of its surface to import the provider modules.
+requests_stub = types.ModuleType('requests')
+class RequestException(Exception):
+    pass
+class Session:
+    pass
+requests_stub.RequestException = RequestException
+requests_stub.Session = Session
+sys.modules.setdefault('requests', requests_stub)
+
 
 def load(name, filename):
     full = f'{PKG}.{name}'
@@ -88,16 +99,13 @@ class GuangYaOfflineTests(unittest.TestCase):
 
     def test_create_task_requires_taskid(self):
         s = FakeSession([FakeResponse(json_data={'msg': 'success', 'data': {}})])
-        c = guangya.GuangYaOfflineClient(self.cfg(), session=s)
         with self.assertRaises(guangya.GuangYaOfflineError):
-            c.create_task('magnet:?xt=urn:btih:x', 'p', 'name')
+            guangya.GuangYaOfflineClient(self.cfg(), session=s).create_task('magnet:?xt=urn:btih:x', 'p', 'name')
 
     def test_create_task_success(self):
         s = FakeSession([FakeResponse(json_data={'msg': 'success', 'data': {'taskId': 'T1'}})])
-        c = guangya.GuangYaOfflineClient(self.cfg(), session=s)
-        self.assertEqual(c.create_task('m', 'p', 'name'), 'T1')
-        url = s.calls[0][1]
-        self.assertTrue(url.endswith('/cloudcollection/v1/create_task'))
+        self.assertEqual(guangya.GuangYaOfflineClient(self.cfg(), session=s).create_task('m', 'p', 'name'), 'T1')
+        self.assertTrue(s.calls[0][1].endswith('/cloudcollection/v1/create_task'))
 
     def test_401_refresh_and_retry(self):
         s = FakeSession([
@@ -114,19 +122,16 @@ class GuangYaOfflineTests(unittest.TestCase):
 
     def test_business_error_is_failure_even_http_200(self):
         s = FakeSession([FakeResponse(status=200, json_data={'msg': '任务创建失败', 'data': {}})])
-        c = guangya.GuangYaOfflineClient(self.cfg(), session=s)
         with self.assertRaises(guangya.GuangYaOfflineError):
-            c.create_task('m', 'p', 'name')
+            guangya.GuangYaOfflineClient(self.cfg(), session=s).create_task('m', 'p', 'name')
 
     def test_resolve_magnet(self):
         s = FakeSession([FakeResponse(json_data={'msg': '', 'data': {'resType': 3, 'btResInfo': {'infoHash': 'x'}}})])
-        c = guangya.GuangYaOfflineClient(self.cfg(), session=s)
-        self.assertEqual(c.resolve_magnet('m')['resType'], 3)
+        self.assertEqual(guangya.GuangYaOfflineClient(self.cfg(), session=s).resolve_magnet('m')['resType'], 3)
 
     def test_list_task(self):
         s = FakeSession([FakeResponse(json_data={'msg': 'success', 'data': {'list': [{'taskId': 'T1', 'status': 1, 'progress': 50}]}})])
-        c = guangya.GuangYaOfflineClient(self.cfg(), session=s)
-        self.assertEqual(c.list_task('T1')['progress'], 50)
+        self.assertEqual(guangya.GuangYaOfflineClient(self.cfg(), session=s).list_task('T1')['progress'], 50)
 
 
 if __name__ == '__main__':
