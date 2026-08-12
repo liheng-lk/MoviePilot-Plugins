@@ -1,5 +1,6 @@
 import importlib.util
 import pathlib
+import sys
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -9,6 +10,7 @@ PLUGIN = ROOT / 'plugins.v2' / 'magnetprioritysubscribe'
 def load(name, file):
     spec = importlib.util.spec_from_file_location(name, PLUGIN / file)
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -22,18 +24,14 @@ class MagnetPriorityCoreTests(unittest.TestCase):
         self.assertEqual(core.magnet_info_hash(f'magnet:?xt=urn:btih:{h.lower()}'), h)
 
     def test_base32_magnet(self):
-        self.assertEqual(
-            core.magnet_info_hash('magnet:?xt=urn:btih:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
-            '0000000000000000000000000000000000000000'
-        )
+        self.assertEqual(core.magnet_info_hash('magnet:?xt=urn:btih:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'), '0000000000000000000000000000000000000000')
 
     def test_invalid_magnets(self):
         self.assertIsNone(core.magnet_info_hash('https://example.com/a.torrent'))
         self.assertIsNone(core.magnet_info_hash('magnet:?xt=urn:btih:1234'))
 
     def test_chinese_subtitle_positive(self):
-        positives = ['Movie 2160p CHS', 'Movie CHT', 'Movie 简繁中字', 'Movie 中文字幕', 'Movie 内封中文', 'Movie CNSUB']
-        for value in positives:
+        for value in ['Movie 2160p CHS', 'Movie CHT', 'Movie 简繁中字', 'Movie 中文字幕', 'Movie 内封中文', 'Movie CNSUB']:
             self.assertTrue(core.has_chinese_subtitle(value), value)
 
     def test_chinese_subtitle_negative_wins(self):
@@ -57,24 +55,20 @@ class MagnetPriorityCoreTests(unittest.TestCase):
         self.assertTrue(core.matches_episode_need('Show S01 Complete CHS', 1, [9, 10]))
 
     def test_quality_score(self):
-        best = core.score_result('Show 2160p WEB-DL HEVC HDR CHS', seeders=20)
-        lower = core.score_result('Show 1080p WEBRip H264 CHS', seeders=100)
-        self.assertGreater(best, lower)
+        self.assertGreater(core.score_result('Show 2160p WEB-DL HEVC HDR CHS', seeders=20), core.score_result('Show 1080p WEBRip H264 CHS', seeders=100))
 
     def test_select_best_hard_subtitle_gate(self):
         h1 = '0123456789ABCDEF0123456789ABCDEF01234567'
         h2 = '1123456789ABCDEF0123456789ABCDEF01234567'
         no_sub = core.normalize_result('Show S01E09-E10 2160p WEB-DL HEVC', f'magnet:?xt=urn:btih:{h1}', seeders=999)
         chinese = core.normalize_result('Show S01E09-E10 1080p WEB-DL CHS', f'magnet:?xt=urn:btih:{h2}', seeders=10)
-        selected = core.select_best([no_sub, chinese], 1, [9, 10])
-        self.assertEqual(selected.info_hash, h2)
+        self.assertEqual(core.select_best([no_sub, chinese], 1, [9, 10]).info_hash, h2)
 
     def test_dedupe_by_infohash(self):
         h = '2123456789ABCDEF0123456789ABCDEF01234567'
         a = core.normalize_result('Show S01E09-E10 1080p CHS', f'magnet:?xt=urn:btih:{h}', seeders=1)
         b = core.normalize_result('Show S01E09-E10 2160p HEVC CHS', f'magnet:?xt=urn:btih:{h}', seeders=3)
-        selected = core.select_best([a, b], 1, [9])
-        self.assertIn('2160p', selected.title)
+        self.assertIn('2160p', core.select_best([a, b], 1, [9]).title)
 
 
 if __name__ == '__main__':
