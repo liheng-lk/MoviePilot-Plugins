@@ -12,8 +12,14 @@ from app.helper.storage import StorageHelper
 from app.log import logger
 from app.schemas.types import SystemConfigKey
 
-from ._plugin_legacy import ShukGuangYaDisk as _LegacyPlugin
+from . import _plugin_legacy as _legacy_module
+from .guangya_api_v112 import GuangYaApi as _StableGuangYaApi
 from .guangya_client import GuangYaClient
+
+# legacy 插件在 init_plugin() 运行时从模块全局读取 GuangYaApi。
+# 在不改动已验证上传实现的前提下，把实例化类替换为 v1.1.2 稳定性适配层。
+_legacy_module.GuangYaApi = _StableGuangYaApi
+_LegacyPlugin = _legacy_module.ShukGuangYaDisk
 
 
 class ShukGuangYaDisk(_LegacyPlugin):
@@ -21,7 +27,7 @@ class ShukGuangYaDisk(_LegacyPlugin):
 
     plugin_name = "光鸭云盘助手"
     plugin_desc = "MoviePilot 光鸭云盘存储助手，支持扫码/短信登录、目录浏览、整理上传、下载、移动、复制和 Emby 直连。"
-    plugin_version = "1.1.1"
+    plugin_version = "1.1.2"
     plugin_author = "liheng-lk"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
 
