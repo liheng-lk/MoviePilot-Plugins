@@ -57,7 +57,7 @@ def _parse_indexes_value(text: str) -> List[int]:
             start, end = int(match.group(1)), int(match.group(2))
             if start > end:
                 start, end = end, start
-            if end - start <= 1000:
+            if end - start <= 100:
                 indexes.update(range(start, end + 1))
         elif token.isdigit():
             indexes.add(int(token))
