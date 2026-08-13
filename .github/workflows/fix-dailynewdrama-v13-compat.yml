@@ -1,0 +1,30 @@
+name: Fix DailyNewDrama v1.3 compatibility
+on:
+  push:
+    branches: [dailynewdrama-v1.3-subscribe-ui]
+    paths: [.github/workflows/fix-dailynewdrama-v13-compat.yml]
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dailynewdrama-v1.3-subscribe-ui
+      - name: Restore command range guard
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('plugins.v2/dailynewdrama/__init__.py')
+          s=p.read_text(encoding='utf-8').replace('if end - start <= 1000:', 'if end - start <= 100:')
+          p.write_text(s, encoding='utf-8')
+          PY
+          python -m compileall -q plugins.v2/dailynewdrama
+      - name: Commit
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add plugins.v2/dailynewdrama/__init__.py
+          git commit -m 'fix: preserve DailyNewDrama range command compatibility'
+          git push origin HEAD:dailynewdrama-v1.3-subscribe-ui
