@@ -1,0 +1,48 @@
+name: Patch DailyNewDrama v1.3
+
+on:
+  push:
+    branches:
+      - dailynewdrama-v1.3-subscribe-ui
+    paths:
+      - tools/patch_dailynewdrama_v13.py
+      - .github/workflows/patch-dailynewdrama-v13.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dailynewdrama-v1.3-subscribe-ui
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply patch
+        run: python tools/patch_dailynewdrama_v13.py
+      - name: Validate syntax and metadata
+        run: |
+          python -m compileall -q plugins.v2/dailynewdrama
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('.')
+          assert 'plugin_version = "1.3"' in (root/'plugins.v2/dailynewdrama/__init__.py').read_text()
+          assert 'candidates = candidates[: self._max_items]' not in (root/'plugins.v2/dailynewdrama/__init__.py').read_text()
+          assert '"text": "订阅"' in (root/'plugins.v2/dailynewdrama/__init__.py').read_text()
+          assert json.loads((root/'package.v2.json').read_text())['DailyNewDrama']['version']=='1.3'
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add plugins.v2/dailynewdrama/__init__.py plugins.v2/dailynewdrama/plugin.json package.v2.json plugin.json
+          if git diff --cached --quiet; then
+            echo 'No changes'
+            exit 0
+          fi
+          git commit -m 'feat: DailyNewDrama v1.3 unlimited page candidates and subscribe buttons'
+          git push origin HEAD:dailynewdrama-v1.3-subscribe-ui
