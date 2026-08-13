@@ -57,7 +57,7 @@ def _parse_indexes_value(text: str) -> List[int]:
             start, end = int(match.group(1)), int(match.group(2))
             if start > end:
                 start, end = end, start
-            if end - start <= 100:
+            if end - start <= 1000:
                 indexes.update(range(start, end + 1))
         elif token.isdigit():
             indexes.add(int(token))
@@ -173,9 +173,9 @@ class DailyNewDrama(_PluginBase):
     """每日发现豆瓣新剧并在过滤媒体库、订阅后提供交互订阅。"""
 
     plugin_name = "每日新剧助手"
-    plugin_desc = "每天发现豆瓣及腾讯视频、爱奇艺、优酷、芒果TV、哔哩哔哩的近期上线和仍在更新剧集，过滤已订阅/已入库内容，并支持按序号订阅。"
+    plugin_desc = "聚合豆瓣及腾讯视频、爱奇艺、优酷、芒果TV、哔哩哔哩的新剧与在播剧，仅过滤已入库/已订阅内容，页面不限候选数量并支持一键订阅。"
     plugin_icon = "movie.jpg"
-    plugin_version = "1.2"
+    plugin_version = "1.3"
     plugin_author = "liheng-lk"
     plugin_label = "豆瓣,腾讯视频,爱奇艺,优酷,芒果TV,哔哩哔哩,电视剧,订阅,推荐,通知"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -191,10 +191,9 @@ class DailyNewDrama(_PluginBase):
     _flaresolverr_enabled = False
     _flaresolverr_url = "http://flaresolverr:8191"
     _vote = 0.0
-    _max_items = 12
     _coming_days = 30
     _recent_days = 21
-    _coming_count = 40
+    _coming_count = 100
     _include_hot = True
     _repeat_days = 7
     _notify_empty = False
@@ -222,10 +221,9 @@ class DailyNewDrama(_PluginBase):
         self._platform_mgtv = bool(config.get("platform_mgtv", True))
         self._platform_bilibili = bool(config.get("platform_bilibili", True))
         self._vote = self._to_float(config.get("vote"), 0.0, 0.0, 10.0)
-        self._max_items = self._to_int(config.get("max_items"), 12, 1, 30)
         self._coming_days = self._to_int(config.get("coming_days"), 30, 1, 120)
         self._recent_days = self._to_int(config.get("recent_days"), 21, 0, 90)
-        self._coming_count = self._to_int(config.get("coming_count"), 40, 10, 100)
+        self._coming_count = self._to_int(config.get("coming_count"), 100, 10, 100)
         self._repeat_days = self._to_int(config.get("repeat_days"), 7, 0, 60)
 
     def get_state(self) -> bool:
@@ -323,13 +321,10 @@ class DailyNewDrama(_PluginBase):
                     {
                         "component": "VRow",
                         "content": [
-                            {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [
+                            {"component": "VCol", "props": {"cols": 12, "md": 6}, "content": [
                                 {"component": "VCronField", "props": {"model": "cron", "label": "每日推送时间", "placeholder": "0 9 * * *"}}
                             ]},
-                            {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [
-                                {"component": "VTextField", "props": {"model": "max_items", "label": "最多推送数量", "placeholder": "12", "type": "number"}}
-                            ]},
-                            {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [
+                            {"component": "VCol", "props": {"cols": 12, "md": 6}, "content": [
                                 {"component": "VTextField", "props": {"model": "vote", "label": "最低评分", "placeholder": "0 表示不限", "type": "number"}}
                             ]},
                         ],
@@ -347,7 +342,7 @@ class DailyNewDrama(_PluginBase):
                                 {"component": "VTextField", "props": {"model": "repeat_days", "label": "重复提醒间隔(天)", "placeholder": "7", "type": "number"}}
                             ]},
                             {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [
-                                {"component": "VTextField", "props": {"model": "coming_count", "label": "豆瓣新剧抓取数量", "placeholder": "40", "type": "number"}}
+                                {"component": "VTextField", "props": {"model": "coming_count", "label": "豆瓣单次抓取数量（最多100）", "placeholder": "100", "type": "number"}}
                             ]},
                         ],
                     },
@@ -388,7 +383,7 @@ class DailyNewDrama(_PluginBase):
                         "props": {
                             "type": "info",
                             "variant": "tonal",
-                            "text": "候选来源：豆瓣即将播出 + 近期热门，以及腾讯视频、爱奇艺、优酷、芒果TV、哔哩哔哩的近期上线/仍在更新剧集。数据源失败时自动尝试 FlareSolverr（开启时）。同剧多平台自动合并，媒体库已有和现有订阅统一过滤。",
+                            "text": "页面候选不限数量，仅过滤媒体库已有和 MoviePilot 已订阅内容；重复提醒间隔只影响消息推送，不会让候选从页面消失。每张剧集卡片可直接点击订阅。",
                         },
                     },
                 ],
@@ -402,10 +397,9 @@ class DailyNewDrama(_PluginBase):
             "flaresolverr_enabled": False,
             "flaresolverr_url": "http://flaresolverr:8191",
             "vote": 0,
-            "max_items": 12,
             "coming_days": 30,
             "recent_days": 21,
-            "coming_count": 40,
+            "coming_count": 100,
             "include_hot": True,
             "repeat_days": 7,
             "notify_empty": False,
@@ -421,6 +415,7 @@ class DailyNewDrama(_PluginBase):
         data = self.get_data("daily_candidates") or {}
         status = self.get_data("last_run") or {}
         items = data.get("items") or []
+        batch_id = str(data.get("batch_id") or "")
         contents: List[dict] = []
 
         if status:
@@ -450,12 +445,34 @@ class DailyNewDrama(_PluginBase):
             air = item.get("air_date") or "日期待定"
             source = item.get("source_label") or "豆瓣"
             vote = item.get("vote") or "-"
+            remarks = [str(x).strip() for x in (item.get("platform_remarks") or []) if str(x).strip()]
+            detail = f"{source} · {air} · 评分 {vote} · TMDB {item.get('tmdbid') or '-'}"
+            if remarks:
+                detail += " · " + " / ".join(remarks[:2])
             cards.append({
                 "component": "VCard",
-                "props": {"variant": "tonal"},
+                "props": {"variant": "tonal", "class": "h-100"},
                 "content": [
                     {"component": "VCardTitle", "text": f"{item.get('index')}. {item.get('title')} ({item.get('year') or '-'})"},
-                    {"component": "VCardText", "text": f"{source} · {air} · 评分 {vote} · TMDB {item.get('tmdbid') or '-'}"},
+                    {"component": "VCardText", "text": detail},
+                    {
+                        "component": "VCardActions",
+                        "content": [
+                            {"component": "VSpacer"},
+                            {
+                                "component": "VBtn",
+                                "props": {"color": "primary", "variant": "flat", "size": "small", "prepend-icon": "mdi-plus-circle"},
+                                "text": "订阅",
+                                "events": {
+                                    "click": {
+                                        "api": "plugin/DailyNewDrama/subscribe",
+                                        "method": "post",
+                                        "params": {"indexes": str(item.get("index") or ""), "batch_id": batch_id},
+                                    }
+                                },
+                            },
+                        ],
+                    },
                 ],
             })
         contents.append({"component": "div", "props": {"class": "grid gap-3 grid-info-card mt-3"}, "content": cards})
@@ -472,11 +489,31 @@ class DailyNewDrama(_PluginBase):
         return {"success": bool(status.get("success")), "count": len(items), "items": items, "status": status}
 
     def api_subscribe(self, payload: dict) -> Dict[str, Any]:
-        """按请求中的 indexes 字段订阅当前候选序号。"""
+        """订阅页面/消息中的候选序号，并从当前页面移除已处理条目。"""
         payload = payload or {}
         indexes = self._parse_indexes(str(payload.get("indexes") or ""))
         batch_id = str(payload.get("batch_id") or "")
-        return self._subscribe_indexes(indexes=indexes, batch_id=batch_id)
+        result = self._subscribe_indexes(indexes=indexes, batch_id=batch_id)
+        handled = [int(i) for i in (result.get("handled_indexes") or []) if str(i).isdigit()]
+        if handled:
+            self._remove_current_candidates(handled, batch_id=batch_id)
+        return result
+
+    def _remove_current_candidates(self, indexes: List[int], batch_id: str = "") -> None:
+        """从当前页面缓存移除已成功订阅或已确认入库/订阅的条目，历史批次保持不变。"""
+        current = self.get_data("daily_candidates") or {}
+        if batch_id and str(current.get("batch_id") or "") != str(batch_id):
+            return
+        remove_set = {int(i) for i in indexes}
+        items = [item for item in (current.get("items") or []) if int(item.get("index") or 0) not in remove_set]
+        if len(items) == len(current.get("items") or []):
+            return
+        current["items"] = items
+        self.save_data("daily_candidates", current)
+        status = self.get_data("last_run") or {}
+        if status:
+            status["candidate_count"] = len(items)
+            self.save_data("last_run", status)
 
     @eventmanager.register(EventType.PluginAction)
     def command_action(self, event: Event) -> None:
@@ -612,10 +649,6 @@ class DailyNewDrama(_PluginBase):
                     logger.info("【每日新剧助手】过滤已订阅: %s", mediainfo.title_year)
                     continue
 
-                if suppress_recent and self._recently_notified(mediainfo.tmdb_id, notified, today):
-                    logger.debug("【每日新剧助手】过滤近期已提醒: %s", mediainfo.title_year)
-                    continue
-
                 candidates.append({
                     "index": 0,
                     "title": mediainfo.title,
@@ -639,7 +672,6 @@ class DailyNewDrama(_PluginBase):
                 continue
 
         candidates.sort(key=self._candidate_sort_key)
-        candidates = candidates[: self._max_items]
         for index, item in enumerate(candidates, start=1):
             item["index"] = index
 
@@ -655,10 +687,19 @@ class DailyNewDrama(_PluginBase):
         self.save_data("last_run", last_status)
         logger.info("【每日新剧助手】刷新完成，当前可推荐 %s 部", len(candidates))
 
-        if send_message and (candidates or self._notify_empty):
-            self._send_candidates(candidates, batch_id=batch_id)
-            if candidates:
-                for item in candidates:
+        notify_candidates = candidates
+        if suppress_recent:
+            notify_candidates = [
+                item for item in candidates
+                if not self._recently_notified(item.get("tmdbid"), notified, today)
+            ]
+        last_status["notification_count"] = len(notify_candidates)
+        self.save_data("last_run", last_status)
+
+        if send_message and (notify_candidates or self._notify_empty):
+            self._send_candidates(notify_candidates, batch_id=batch_id)
+            if notify_candidates:
+                for item in notify_candidates:
                     notified[str(item.get("tmdbid"))] = today.isoformat()
                 self.save_data("notified_history", notified)
         return candidates
@@ -868,7 +909,7 @@ class DailyNewDrama(_PluginBase):
         return 1, -ordinal, -vote
 
     def _send_candidates(self, items: List[Dict[str, Any]], channel=None, userid=None, batch_id: str = "") -> None:
-        """发送候选列表，支持按钮回调并保留普通命令方式。"""
+        """分批发送全部候选，避免数量较多时超过消息渠道长度/按钮限制。"""
         if not items:
             self.post_message(channel=channel, userid=userid, title="📺 今日新剧/在播剧", text="今天没有发现新的、仍在更新且尚未入库或订阅的剧集。")
             return
@@ -876,40 +917,45 @@ class DailyNewDrama(_PluginBase):
             batch_id = str((self.get_data("daily_candidates") or {}).get("batch_id") or "")
 
         today = datetime.date.today()
-        lines = ["已过滤媒体库已有、现有订阅和近期重复提醒：", ""]
-        buttons: List[List[dict]] = []
-        row: List[dict] = []
-        for item in items:
-            air_date = _parse_date_value(item.get("air_date"))
-            timing = _format_air_timing_value(air_date, today)
-            vote_text = f"⭐ {item.get('vote')}" if item.get("vote") else "暂无评分"
-            if item.get("source") == "coming":
-                source_text = "待播"
-            elif item.get("source") == "hot":
-                source_text = "新近开播"
-            else:
-                source_text = item.get("source_label") or ("更新中" if item.get("ongoing") else "近期上线")
-            remarks = [str(x).strip() for x in (item.get("platform_remarks") or []) if str(x).strip()]
-            remark_text = f" · {' / '.join(remarks[:2])}" if remarks else ""
-            lines.append(f"{item['index']}. {item['title']} ({item.get('year') or '-'}) · {source_text}{remark_text} · {timing} · {vote_text}")
-            row.append({
-                "text": f"{item['index']}. {str(item['title'])[:10]}",
-                "callback_data": f"[PLUGIN]{self.__class__.__name__}|sub|{batch_id}|{item['index']}",
-            })
-            if len(row) == 2:
+        chunk_size = 20
+        total_chunks = (len(items) + chunk_size - 1) // chunk_size
+        for chunk_no, offset in enumerate(range(0, len(items), chunk_size), start=1):
+            chunk = items[offset: offset + chunk_size]
+            lines = ["已过滤媒体库已有和现有订阅；重复提醒只影响消息，不影响插件页面候选：", ""]
+            buttons: List[List[dict]] = []
+            row: List[dict] = []
+            for item in chunk:
+                air_date = _parse_date_value(item.get("air_date"))
+                timing = _format_air_timing_value(air_date, today)
+                vote_text = f"⭐ {item.get('vote')}" if item.get("vote") else "暂无评分"
+                if item.get("source") == "coming":
+                    source_text = "待播"
+                elif item.get("source") == "hot":
+                    source_text = "新近开播"
+                else:
+                    source_text = item.get("source_label") or ("更新中" if item.get("ongoing") else "近期上线")
+                remarks = [str(x).strip() for x in (item.get("platform_remarks") or []) if str(x).strip()]
+                remark_text = f" · {' / '.join(remarks[:2])}" if remarks else ""
+                lines.append(f"{item['index']}. {item['title']} ({item.get('year') or '-'}) · {source_text}{remark_text} · {timing} · {vote_text}")
+                row.append({
+                    "text": f"{item['index']}. {str(item['title'])[:10]}",
+                    "callback_data": f"[PLUGIN]{self.__class__.__name__}|sub|{batch_id}|{item['index']}",
+                })
+                if len(row) == 2:
+                    buttons.append(row)
+                    row = []
+            if row:
                 buttons.append(row)
-                row = []
-        if row:
-            buttons.append(row)
-        lines.extend(["", "普通消息渠道可发送：", "`/newdrama_sub 1,3` 或 `/newdrama_sub 1-3`"]) 
-        self.post_message(
-            channel=channel,
-            userid=userid,
-            title=f"📺 今日新剧/在播剧 · {len(items)} 部可选",
-            text="\n".join(lines),
-            image=items[0].get("poster") or None,
-            buttons=buttons,
-        )
+            lines.extend(["", "普通消息渠道可发送：", "`/newdrama_sub 1,3` 或 `/newdrama_sub 1-3`"])
+            suffix = f" · {chunk_no}/{total_chunks}" if total_chunks > 1 else ""
+            self.post_message(
+                channel=channel,
+                userid=userid,
+                title=f"📺 今日新剧/在播剧 · {len(items)} 部可选{suffix}",
+                text="\n".join(lines),
+                image=chunk[0].get("poster") or None,
+                buttons=buttons,
+            )
 
     def _subscribe_indexes(self, indexes: List[int], batch_id: str = "") -> Dict[str, Any]:
         """对指定候选批次中的序号执行订阅，并在订阅前再次去重。"""
@@ -923,6 +969,7 @@ class DailyNewDrama(_PluginBase):
         success: List[str] = []
         skipped: List[str] = []
         failed: List[str] = []
+        handled_indexes: List[int] = []
 
         for index in indexes:
             item = mapping.get(index)
@@ -941,10 +988,12 @@ class DailyNewDrama(_PluginBase):
                 exist_flag, _ = DownloadChain().get_no_exists_info(meta=meta, mediainfo=mediainfo)
                 if exist_flag:
                     skipped.append(f"{index}.{item.get('title')}(已入库)")
+                    handled_indexes.append(index)
                     continue
                 subscribe_chain = SubscribeChain()
                 if subscribe_chain.exists(mediainfo=mediainfo, meta=meta):
                     skipped.append(f"{index}.{item.get('title')}(已订阅)")
+                    handled_indexes.append(index)
                     continue
                 sid, err_msg = subscribe_chain.add(
                     title=mediainfo.title,
@@ -959,6 +1008,7 @@ class DailyNewDrama(_PluginBase):
                 )
                 if sid:
                     success.append(f"{index}.{mediainfo.title_year}")
+                    handled_indexes.append(index)
                 else:
                     failed.append(f"{index}.{item.get('title')}({err_msg or '添加失败'})")
             except Exception as err:
@@ -972,7 +1022,7 @@ class DailyNewDrama(_PluginBase):
             parts.append("⏭ 已跳过：\n" + "\n".join(skipped))
         if failed:
             parts.append("❌ 未完成：\n" + "\n".join(failed))
-        return {"success": bool(success), "message": "\n\n".join(parts) or "没有可处理的条目"}
+        return {"success": bool(success), "message": "\n\n".join(parts) or "没有可处理的条目", "handled_indexes": handled_indexes}
 
     def _get_candidate_batch(self, batch_id: str = "") -> Dict[str, Any]:
         """取得指定候选批次；未传批次时使用当前最新批次。"""
@@ -1029,14 +1079,20 @@ class DailyNewDrama(_PluginBase):
             "onlyonce": False,
             "proxy": self._proxy,
             "rsshub": self._rsshub,
+            "flaresolverr_enabled": self._flaresolverr_enabled,
+            "flaresolverr_url": self._flaresolverr_url,
             "vote": self._vote,
-            "max_items": self._max_items,
             "coming_days": self._coming_days,
             "recent_days": self._recent_days,
             "coming_count": self._coming_count,
             "include_hot": self._include_hot,
             "repeat_days": self._repeat_days,
             "notify_empty": self._notify_empty,
+            "platform_tencent": self._platform_tencent,
+            "platform_iqiyi": self._platform_iqiyi,
+            "platform_youku": self._platform_youku,
+            "platform_mgtv": self._platform_mgtv,
+            "platform_bilibili": self._platform_bilibili,
         })
 
     @staticmethod
