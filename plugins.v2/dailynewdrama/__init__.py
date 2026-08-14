@@ -175,7 +175,7 @@ class DailyNewDrama(_PluginBase):
     plugin_name = "每日新剧助手"
     plugin_desc = "聚合豆瓣及腾讯视频、爱奇艺、优酷、芒果TV、哔哩哔哩的新剧与在播剧，仅过滤已入库/已订阅内容，页面不限候选数量并支持一键订阅。"
     plugin_icon = "movie.jpg"
-    plugin_version = "1.3.3"
+    plugin_version = "1.3.4"
     plugin_author = "liheng-lk"
     plugin_label = "豆瓣,腾讯视频,爱奇艺,优酷,芒果TV,哔哩哔哩,电视剧,订阅,推荐,通知"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -290,7 +290,7 @@ class DailyNewDrama(_PluginBase):
             {
                 "path": "/subscribe",
                 "endpoint": self.api_subscribe,
-                "methods": ["POST"],
+                "methods": ["GET"],
                 "summary": "按序号订阅当前新剧",
             },
         ]
@@ -442,7 +442,7 @@ class DailyNewDrama(_PluginBase):
 
         page_token = str(getattr(settings, "API_TOKEN", "") or "")
         page_token_hash = hashlib.sha256(page_token.encode("utf-8")).hexdigest()[:8] if page_token else "-"
-        logger.info("【每日新剧助手】【页面鉴权诊断】构建订阅按钮: batch_id=%s, items=%s, apikey_present=%s, apikey_len=%s, apikey_sha256_8=%s", batch_id, len(items), bool(page_token), len(page_token), page_token_hash)
+        logger.info("【每日新剧助手】【页面鉴权诊断】构建GET订阅按钮: batch_id=%s, items=%s, apikey_present=%s, apikey_len=%s, apikey_sha256_8=%s", batch_id, len(items), bool(page_token), len(page_token), page_token_hash)
 
         cards = []
         for item in items:
@@ -470,7 +470,7 @@ class DailyNewDrama(_PluginBase):
                                 "events": {
                                     "click": {
                                         "api": "plugin/DailyNewDrama/subscribe",
-                                        "method": "post",
+                                        "method": "get",
                                         "params": {"indexes": str(item.get("index") or ""), "batch_id": batch_id, "apikey": settings.API_TOKEN},
                                     }
                                 },

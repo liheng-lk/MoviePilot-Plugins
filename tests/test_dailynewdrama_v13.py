@@ -9,13 +9,13 @@ SOURCE = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 
 class DailyNewDramaV13Tests(unittest.TestCase):
     def test_v13_metadata_is_consistent(self):
-        self.assertIn('plugin_version = "1.3.3"', SOURCE)
+        self.assertIn('plugin_version = "1.3.4"', SOURCE)
         local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
         package = json.loads((ROOT / "package.v2.json").read_text(encoding="utf-8"))["DailyNewDrama"]
         index = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))["DailyNewDrama"]
-        self.assertEqual(local["version"], "1.3.3")
-        self.assertEqual(package["version"], "1.3.3")
-        self.assertEqual(index["version"], "1.3.3")
+        self.assertEqual(local["version"], "1.3.4")
+        self.assertEqual(package["version"], "1.3.4")
+        self.assertEqual(index["version"], "1.3.4")
 
     def test_page_candidates_have_no_hard_display_limit(self):
         self.assertNotIn("_max_items", SOURCE)
@@ -25,7 +25,7 @@ class DailyNewDramaV13Tests(unittest.TestCase):
     def test_page_has_direct_subscribe_button(self):
         self.assertIn('"text": "订阅"', SOURCE)
         self.assertIn('"api": "plugin/DailyNewDrama/subscribe"', SOURCE)
-        self.assertIn('"method": "post"', SOURCE)
+        self.assertIn('"method": "get"', SOURCE)
         self.assertIn('"batch_id": batch_id', SOURCE)
         self.assertIn('"indexes": str(item.get("index") or "")', SOURCE)
 
