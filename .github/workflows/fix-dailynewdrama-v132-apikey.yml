@@ -1,3 +1,4 @@
+# trigger v1.3.2 hotfix
 name: Fix DailyNewDrama v1.3.2 API key contract
 on:
   push:
