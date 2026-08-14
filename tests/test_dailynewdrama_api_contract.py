@@ -12,6 +12,13 @@ block=text[text.index('def api_subscribe'):text.index('def _remove_current_candi
 assert 'payload: dict' not in block
 assert '"api": "plugin/DailyNewDrama/subscribe"' in text
 assert '"params": {"indexes":' in text
+page_pos=text.index('"api": "plugin/DailyNewDrama/subscribe"')
+page_block=text[max(0,page_pos-250):page_pos+650]
+assert '"method": "get"' in page_block
+assert '"apikey": settings.API_TOKEN' in page_block
+route_pos=text.index('"path": "/subscribe"')
+route_block=text[route_pos:route_pos+350]
+assert '"methods": ["GET"]' in route_block
 assert 'plugin_version = "1.3.4"' in text
 assert json.loads((ROOT/'package.v2.json').read_text())['DailyNewDrama']['version']=='1.3.4'
 assert json.loads((ROOT/'plugin.json').read_text())['DailyNewDrama']['version']=='1.3.4'
