@@ -6,4 +6,5 @@ cls=next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=='DailyNe
 fn=next(n for n in cls.body if isinstance(n,ast.FunctionDef) and n.name=='api_subscribe')
 assert [a.arg for a in fn.args.args]==['self','indexes','batch_id','apikey']
 assert '"apikey": settings.API_TOKEN' in text
-assert 'apikey != settings.API_TOKEN' in text
+assert 'received_token != expected_token' in text
+assert 'received_token == expected_token' in text

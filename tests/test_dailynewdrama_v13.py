@@ -9,13 +9,13 @@ SOURCE = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 
 class DailyNewDramaV13Tests(unittest.TestCase):
     def test_v13_metadata_is_consistent(self):
-        self.assertIn('plugin_version = "1.3.2"', SOURCE)
+        self.assertIn('plugin_version = "1.3.3"', SOURCE)
         local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
         package = json.loads((ROOT / "package.v2.json").read_text(encoding="utf-8"))["DailyNewDrama"]
         index = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))["DailyNewDrama"]
-        self.assertEqual(local["version"], "1.3.2")
-        self.assertEqual(package["version"], "1.3.2")
-        self.assertEqual(index["version"], "1.3.2")
+        self.assertEqual(local["version"], "1.3.3")
+        self.assertEqual(package["version"], "1.3.3")
+        self.assertEqual(index["version"], "1.3.3")
 
     def test_page_candidates_have_no_hard_display_limit(self):
         self.assertNotIn("_max_items", SOURCE)
