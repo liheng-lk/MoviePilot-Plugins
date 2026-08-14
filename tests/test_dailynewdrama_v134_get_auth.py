@@ -7,7 +7,7 @@ assert '"method": "get"' in block
 assert '"apikey": settings.API_TOKEN' in block
 pos2=text.index('"path": "/subscribe"'); route=text[pos2:pos2+350]
 assert '"methods": ["GET"]' in route
-assert 'plugin_version = "1.3.5"' in text
-assert json.loads((ROOT/'package.v2.json').read_text())['DailyNewDrama']['version']=='1.3.5'
-assert json.loads((ROOT/'plugin.json').read_text())['DailyNewDrama']['version']=='1.3.5'
-assert json.loads((ROOT/'plugins.v2/dailynewdrama/plugin.json').read_text())['version']=='1.3.5'
+assert 'plugin_version = "1.3.6"' in text
+assert json.loads((ROOT/'package.v2.json').read_text())['DailyNewDrama']['version']=='1.3.6'
+assert json.loads((ROOT/'plugin.json').read_text())['DailyNewDrama']['version']=='1.3.6'
+assert json.loads((ROOT/'plugins.v2/dailynewdrama/plugin.json').read_text())['version']=='1.3.6'

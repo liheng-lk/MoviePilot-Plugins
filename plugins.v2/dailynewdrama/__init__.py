@@ -175,7 +175,7 @@ class DailyNewDrama(_PluginBase):
     plugin_name = "每日新剧助手"
     plugin_desc = "聚合豆瓣及腾讯视频、爱奇艺、优酷、芒果TV、哔哩哔哩的新剧与在播剧，仅过滤已入库/已订阅内容，页面不限候选数量并支持一键订阅。"
     plugin_icon = "movie.jpg"
-    plugin_version = "1.3.5"
+    plugin_version = "1.3.6"
     plugin_author = "liheng-lk"
     plugin_label = "豆瓣,腾讯视频,爱奇艺,优酷,芒果TV,哔哩哔哩,电视剧,订阅,推荐,通知"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -1008,12 +1008,21 @@ class DailyNewDrama(_PluginBase):
                     skipped.append(f"{index}.{item.get('title')}(已订阅)")
                     handled_indexes.append(index)
                     continue
+                subscribe_media_source = getattr(mediainfo, "media_source", None) or MediaSource.TMDB
+                subscribe_media_id = getattr(mediainfo, "media_id", None) or getattr(mediainfo, "tmdb_id", None)
+                if not subscribe_media_id:
+                    failed.append(f"{index}.{item.get('title')}(缺少媒体ID)")
+                    continue
+                logger.info(
+                    "【每日新剧助手】【订阅链诊断】准备创建订阅: title=%s, media_source=%s, media_id=%s, season=%s",
+                    mediainfo.title, subscribe_media_source, subscribe_media_id, meta.begin_season
+                )
                 sid, err_msg = subscribe_chain.add(
                     title=mediainfo.title,
                     year=mediainfo.year,
                     mtype=MediaType.TV,
-                    tmdbid=mediainfo.tmdb_id,
-                    doubanid=item.get("doubanid") or mediainfo.douban_id,
+                    media_source=subscribe_media_source,
+                    media_id=str(subscribe_media_id),
                     season=meta.begin_season,
                     message=False,
                     exist_ok=True,
