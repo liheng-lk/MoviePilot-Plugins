@@ -1,0 +1,66 @@
+name: Finalize DailyNewDrama v1.3.2
+on:
+  push:
+    branches: [dailynewdrama-v1.3.2-apikey-fix]
+    paths: [.github/workflows/finalize-dailynewdrama-v132.yml]
+permissions:
+  contents: write
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dailynewdrama-v1.3.2-apikey-fix
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Patch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path('plugins.v2/dailynewdrama/__init__.py')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace('plugin_version = "1.3.1"','plugin_version = "1.3.2"',1)
+          s=s.replace('def api_subscribe(self, indexes: str = "", batch_id: str = "") -> Dict[str, Any]:','def api_subscribe(self, indexes: str = "", batch_id: str = "", apikey: str = "") -> Dict[str, Any]:',1)
+          needle='''        parsed_indexes = self._parse_indexes(str(indexes or ""))\n        batch_id = str(batch_id or "")\n        result = self._subscribe_indexes(indexes=parsed_indexes, batch_id=batch_id)'''
+          repl='''        if apikey != settings.API_TOKEN:\n            return {"success": False, "message": "API密钥错误", "handled_indexes": []}\n        parsed_indexes = self._parse_indexes(str(indexes or ""))\n        batch_id = str(batch_id or "")\n        result = self._subscribe_indexes(indexes=parsed_indexes, batch_id=batch_id)'''
+          if needle not in s: raise SystemExit('body pattern not found')
+          s=s.replace(needle,repl,1)
+          old='''"params": {"indexes": str(item.get("index") or ""), "batch_id": batch_id},'''
+          new='''"params": {"indexes": str(item.get("index") or ""), "batch_id": batch_id, "apikey": settings.API_TOKEN},'''
+          if old not in s: raise SystemExit('params pattern not found')
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          for name in ['package.v2.json','plugin.json']:
+              path=Path(name); data=json.loads(path.read_text(encoding='utf-8')); item=data['DailyNewDrama']; item['version']='1.3.2'; item['history']={'v1.3.2':'修复页面订阅按钮 apikey 鉴权失败',**(item.get('history') or {})}; path.write_text(json.dumps(data,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          path=Path('plugins.v2/dailynewdrama/plugin.json'); data=json.loads(path.read_text(encoding='utf-8')); data['version']='1.3.2'; data['history']={'v1.3.2':'修复页面订阅按钮 apikey 鉴权失败',**(data.get('history') or {})}; path.write_text(json.dumps(data,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          for test_name in ['tests/test_dailynewdrama_v13.py','tests/test_dailynewdrama_api_contract.py']:
+              tp=Path(test_name); ts=tp.read_text(encoding='utf-8'); ts=ts.replace('plugin_version = "1.3.1"','plugin_version = "1.3.2"').replace('"1.3.1"','"1.3.2"').replace("'1.3.1'","'1.3.2'").replace("['self','indexes','batch_id']", "['self','indexes','batch_id','apikey']"); tp.write_text(ts,encoding='utf-8')
+          PY
+      - name: Auth contract
+        run: |
+          cat > tests/test_dailynewdrama_auth_contract.py <<'PY'
+          import ast
+          from pathlib import Path
+          text=(Path(__file__).resolve().parents[1]/'plugins.v2/dailynewdrama/__init__.py').read_text(encoding='utf-8')
+          tree=ast.parse(text)
+          cls=next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=='DailyNewDrama')
+          fn=next(n for n in cls.body if isinstance(n,ast.FunctionDef) and n.name=='api_subscribe')
+          assert [a.arg for a in fn.args.args]==['self','indexes','batch_id','apikey']
+          assert '"apikey": settings.API_TOKEN' in text
+          assert 'apikey != settings.API_TOKEN' in text
+          PY
+      - name: Validate
+        run: |
+          python -m compileall -q plugins.v2/dailynewdrama
+          python -m unittest discover -s tests -p 'test_dailynewdrama*.py' -v
+          python tests/test_dailynewdrama_auth_contract.py
+      - name: Commit
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add plugins.v2/dailynewdrama/__init__.py plugins.v2/dailynewdrama/plugin.json package.v2.json plugin.json tests/test_dailynewdrama_v13.py tests/test_dailynewdrama_api_contract.py tests/test_dailynewdrama_auth_contract.py
+          git commit -m 'fix: DailyNewDrama v1.3.2 page auth contract'
+          git push origin HEAD:dailynewdrama-v1.3.2-apikey-fix
