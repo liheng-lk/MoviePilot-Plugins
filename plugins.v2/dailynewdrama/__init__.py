@@ -175,7 +175,7 @@ class DailyNewDrama(_PluginBase):
     plugin_name = "每日新剧助手"
     plugin_desc = "聚合豆瓣及腾讯视频、爱奇艺、优酷、芒果TV、哔哩哔哩的新剧与在播剧，仅过滤已入库/已订阅内容，页面不限候选数量并支持一键订阅。"
     plugin_icon = "movie.jpg"
-    plugin_version = "1.3.2"
+    plugin_version = "1.3.3"
     plugin_author = "liheng-lk"
     plugin_label = "豆瓣,腾讯视频,爱奇艺,优酷,芒果TV,哔哩哔哩,电视剧,订阅,推荐,通知"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -440,6 +440,10 @@ class DailyNewDrama(_PluginBase):
             })
             return contents
 
+        page_token = str(getattr(settings, "API_TOKEN", "") or "")
+        page_token_hash = hashlib.sha256(page_token.encode("utf-8")).hexdigest()[:8] if page_token else "-"
+        logger.info("【每日新剧助手】【页面鉴权诊断】构建订阅按钮: batch_id=%s, items=%s, apikey_present=%s, apikey_len=%s, apikey_sha256_8=%s", batch_id, len(items), bool(page_token), len(page_token), page_token_hash)
+
         cards = []
         for item in items:
             air = item.get("air_date") or "日期待定"
@@ -490,11 +494,19 @@ class DailyNewDrama(_PluginBase):
 
     def api_subscribe(self, indexes: str = "", batch_id: str = "", apikey: str = "") -> Dict[str, Any]:
         """订阅页面候选；参数与 MoviePilot get_page 事件 params 保持一致。"""
-        if apikey != settings.API_TOKEN:
+        received_token = str(apikey or "")
+        expected_token = str(getattr(settings, "API_TOKEN", "") or "")
+        received_hash = hashlib.sha256(received_token.encode("utf-8")).hexdigest()[:8] if received_token else "-"
+        expected_hash = hashlib.sha256(expected_token.encode("utf-8")).hexdigest()[:8] if expected_token else "-"
+        logger.info("【每日新剧助手】【订阅API诊断】收到请求: indexes=%s, batch_id=%s, apikey_present=%s, apikey_len=%s, apikey_sha256_8=%s, expected_present=%s, expected_len=%s, expected_sha256_8=%s, match=%s", indexes, batch_id, bool(received_token), len(received_token), received_hash, bool(expected_token), len(expected_token), expected_hash, received_token == expected_token)
+        if received_token != expected_token:
+            logger.warning("【每日新剧助手】【订阅API诊断】插件内部鉴权失败: received_len=%s expected_len=%s received_hash=%s expected_hash=%s", len(received_token), len(expected_token), received_hash, expected_hash)
             return {"success": False, "message": "API密钥错误", "handled_indexes": []}
         parsed_indexes = self._parse_indexes(str(indexes or ""))
         batch_id = str(batch_id or "")
+        logger.info("【每日新剧助手】【订阅API诊断】鉴权通过，准备执行订阅: parsed_indexes=%s, batch_id=%s", parsed_indexes, batch_id)
         result = self._subscribe_indexes(indexes=parsed_indexes, batch_id=batch_id)
+        logger.info("【每日新剧助手】【订阅API诊断】订阅链返回: success=%s, handled_indexes=%s, message=%s", result.get("success"), result.get("handled_indexes"), str(result.get("message") or "")[:300])
         handled = [int(i) for i in (result.get("handled_indexes") or []) if str(i).isdigit()]
         if handled:
             self._remove_current_candidates(handled, batch_id=batch_id)

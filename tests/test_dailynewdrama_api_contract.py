@@ -12,7 +12,7 @@ block=text[text.index('def api_subscribe'):text.index('def _remove_current_candi
 assert 'payload: dict' not in block
 assert '"api": "plugin/DailyNewDrama/subscribe"' in text
 assert '"params": {"indexes":' in text
-assert 'plugin_version = "1.3.2"' in text
-assert json.loads((ROOT/'package.v2.json').read_text())['DailyNewDrama']['version']=='1.3.2'
-assert json.loads((ROOT/'plugin.json').read_text())['DailyNewDrama']['version']=='1.3.2'
-assert json.loads((ROOT/'plugins.v2/dailynewdrama/plugin.json').read_text())['version']=='1.3.2'
+assert 'plugin_version = "1.3.3"' in text
+assert json.loads((ROOT/'package.v2.json').read_text())['DailyNewDrama']['version']=='1.3.3'
+assert json.loads((ROOT/'plugin.json').read_text())['DailyNewDrama']['version']=='1.3.3'
+assert json.loads((ROOT/'plugins.v2/dailynewdrama/plugin.json').read_text())['version']=='1.3.3'
