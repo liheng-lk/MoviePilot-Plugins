@@ -175,7 +175,7 @@ class DailyNewDrama(_PluginBase):
     plugin_name = "每日新剧助手"
     plugin_desc = "聚合豆瓣及腾讯视频、爱奇艺、优酷、芒果TV、哔哩哔哩的新剧与在播剧，仅过滤已入库/已订阅内容，页面不限候选数量并支持一键订阅。"
     plugin_icon = "movie.jpg"
-    plugin_version = "1.3"
+    plugin_version = "1.3.1"
     plugin_author = "liheng-lk"
     plugin_label = "豆瓣,腾讯视频,爱奇艺,优酷,芒果TV,哔哩哔哩,电视剧,订阅,推荐,通知"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -488,12 +488,11 @@ class DailyNewDrama(_PluginBase):
         status = self.get_data("last_run") or {}
         return {"success": bool(status.get("success")), "count": len(items), "items": items, "status": status}
 
-    def api_subscribe(self, payload: dict) -> Dict[str, Any]:
-        """订阅页面/消息中的候选序号，并从当前页面移除已处理条目。"""
-        payload = payload or {}
-        indexes = self._parse_indexes(str(payload.get("indexes") or ""))
-        batch_id = str(payload.get("batch_id") or "")
-        result = self._subscribe_indexes(indexes=indexes, batch_id=batch_id)
+    def api_subscribe(self, indexes: str = "", batch_id: str = "") -> Dict[str, Any]:
+        """订阅页面候选；参数与 MoviePilot get_page 事件 params 保持一致。"""
+        parsed_indexes = self._parse_indexes(str(indexes or ""))
+        batch_id = str(batch_id or "")
+        result = self._subscribe_indexes(indexes=parsed_indexes, batch_id=batch_id)
         handled = [int(i) for i in (result.get("handled_indexes") or []) if str(i).isdigit()]
         if handled:
             self._remove_current_candidates(handled, batch_id=batch_id)
