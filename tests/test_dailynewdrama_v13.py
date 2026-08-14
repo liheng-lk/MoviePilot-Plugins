@@ -28,6 +28,7 @@ class DailyNewDramaV13Tests(unittest.TestCase):
         self.assertIn('"method": "get"', SOURCE)
         self.assertIn('"batch_id": batch_id', SOURCE)
         self.assertIn('"indexes": str(item.get("index") or "")', SOURCE)
+        self.assertIn('"apikey": settings.API_TOKEN', SOURCE)
 
     def test_recent_notification_only_suppresses_message(self):
         self.assertNotIn("过滤近期已提醒", SOURCE)
