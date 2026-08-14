@@ -1,0 +1,71 @@
+name: Add DailyNewDrama v1.3.3 diagnostics
+on:
+  push:
+    branches: [dailynewdrama-v1.3.3-diagnostics]
+    paths: [.github/workflows/diagnose-dailynewdrama-v133.yml]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dailynewdrama-v1.3.3-diagnostics
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Patch diagnostics
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path('plugins.v2/dailynewdrama/__init__.py')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace('plugin_version = "1.3.2"','plugin_version = "1.3.3"',1)
+          needle='''        cards = []\n        for item in items:\n'''
+          repl='''        page_token = str(getattr(settings, "API_TOKEN", "") or "")\n        page_token_hash = hashlib.sha256(page_token.encode("utf-8")).hexdigest()[:8] if page_token else "-"\n        logger.info(\n            "【每日新剧助手】【页面鉴权诊断】构建订阅按钮: batch_id=%s, items=%s, apikey_present=%s, apikey_len=%s, apikey_sha256_8=%s",\n            batch_id, len(items), bool(page_token), len(page_token), page_token_hash\n        )\n\n        cards = []\n        for item in items:\n'''
+          if needle not in s: raise SystemExit('get_page cards marker not found')
+          s=s.replace(needle,repl,1)
+          old='''    def api_subscribe(self, indexes: str = "", batch_id: str = "", apikey: str = "") -> Dict[str, Any]:\n        """订阅页面候选；参数与 MoviePilot get_page 事件 params 保持一致。"""\n        if apikey != settings.API_TOKEN:\n            return {"success": False, "message": "API密钥错误", "handled_indexes": []}\n        parsed_indexes = self._parse_indexes(str(indexes or ""))\n        batch_id = str(batch_id or "")\n        result = self._subscribe_indexes(indexes=parsed_indexes, batch_id=batch_id)\n        handled = [int(i) for i in (result.get("handled_indexes") or []) if str(i).isdigit()]\n'''
+          new='''    def api_subscribe(self, indexes: str = "", batch_id: str = "", apikey: str = "") -> Dict[str, Any]:\n        """订阅页面候选；参数与 MoviePilot get_page 事件 params 保持一致。"""\n        received_token = str(apikey or "")\n        expected_token = str(getattr(settings, "API_TOKEN", "") or "")\n        received_hash = hashlib.sha256(received_token.encode("utf-8")).hexdigest()[:8] if received_token else "-"\n        expected_hash = hashlib.sha256(expected_token.encode("utf-8")).hexdigest()[:8] if expected_token else "-"\n        logger.info(\n            "【每日新剧助手】【订阅API诊断】收到请求: indexes=%s, batch_id=%s, apikey_present=%s, apikey_len=%s, apikey_sha256_8=%s, expected_present=%s, expected_len=%s, expected_sha256_8=%s, match=%s",\n            indexes, batch_id, bool(received_token), len(received_token), received_hash, bool(expected_token), len(expected_token), expected_hash, received_token == expected_token\n        )\n        if received_token != expected_token:\n            logger.warning(\n                "【每日新剧助手】【订阅API诊断】插件内部鉴权失败: received_len=%s expected_len=%s received_hash=%s expected_hash=%s",\n                len(received_token), len(expected_token), received_hash, expected_hash\n            )\n            return {"success": False, "message": "API密钥错误", "handled_indexes": []}\n        parsed_indexes = self._parse_indexes(str(indexes or ""))\n        batch_id = str(batch_id or "")\n        logger.info("【每日新剧助手】【订阅API诊断】鉴权通过，准备执行订阅: parsed_indexes=%s, batch_id=%s", parsed_indexes, batch_id)\n        result = self._subscribe_indexes(indexes=parsed_indexes, batch_id=batch_id)\n        logger.info(\n            "【每日新剧助手】【订阅API诊断】订阅链返回: success=%s, handled_indexes=%s, message=%s",\n            result.get("success"), result.get("handled_indexes"), str(result.get("message") or "")[:300]\n        )\n        handled = [int(i) for i in (result.get("handled_indexes") or []) if str(i).isdigit()]\n'''
+          if old not in s: raise SystemExit('api_subscribe marker not found')
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          for name in ['package.v2.json','plugin.json']:
+              path=Path(name); data=json.loads(path.read_text(encoding='utf-8')); item=data['DailyNewDrama']; item['version']='1.3.3'; item['history']={'v1.3.3':'增加页面订阅 API 鉴权诊断日志，定位宿主拦截/参数传递/订阅链问题',**(item.get('history') or {})}; path.write_text(json.dumps(data,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          path=Path('plugins.v2/dailynewdrama/plugin.json'); data=json.loads(path.read_text(encoding='utf-8')); data['version']='1.3.3'; data['history']={'v1.3.3':'增加页面订阅 API 鉴权诊断日志，定位宿主拦截/参数传递/订阅链问题',**(data.get('history') or {})}; path.write_text(json.dumps(data,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          for test_name in ['tests/test_dailynewdrama_v13.py','tests/test_dailynewdrama_api_contract.py','tests/test_dailynewdrama_auth_contract.py']:
+              tp=Path(test_name)
+              if tp.exists():
+                  ts=tp.read_text(encoding='utf-8').replace('"1.3.2"','"1.3.3"').replace("'1.3.2'","'1.3.3'").replace('plugin_version = "1.3.2"','plugin_version = "1.3.3"')
+                  tp.write_text(ts,encoding='utf-8')
+          PY
+      - name: Add diagnostics regression test
+        run: |
+          cat > tests/test_dailynewdrama_diagnostics.py <<'PY'
+          from pathlib import Path
+          import json
+          root=Path(__file__).resolve().parents[1]
+          text=(root/'plugins.v2/dailynewdrama/__init__.py').read_text(encoding='utf-8')
+          assert '【每日新剧助手】【页面鉴权诊断】构建订阅按钮' in text
+          assert '【每日新剧助手】【订阅API诊断】收到请求' in text
+          assert 'apikey_sha256_8' in text
+          assert 'received_token == expected_token' in text
+          assert 'plugin_version = "1.3.3"' in text
+          assert json.loads((root/'package.v2.json').read_text())['DailyNewDrama']['version']=='1.3.3'
+          assert json.loads((root/'plugin.json').read_text())['DailyNewDrama']['version']=='1.3.3'
+          assert json.loads((root/'plugins.v2/dailynewdrama/plugin.json').read_text())['version']=='1.3.3'
+          PY
+      - name: Validate
+        run: |
+          python -m compileall -q plugins.v2/dailynewdrama
+          python -m unittest discover -s tests -p 'test_dailynewdrama*.py' -v
+          python tests/test_dailynewdrama_diagnostics.py
+      - name: Commit diagnostics
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add plugins.v2/dailynewdrama/__init__.py plugins.v2/dailynewdrama/plugin.json package.v2.json plugin.json tests/test_dailynewdrama*.py
+          git commit -m 'diagnostics: DailyNewDrama v1.3.3 subscription auth logging'
+          git push origin HEAD:dailynewdrama-v1.3.3-diagnostics
