@@ -43,6 +43,14 @@ jobs:
               "replace_once(early, '', 'early completion')",
               "early_start = text.find('        # 兼容旧版本已经转存完'); early_end = text.index('        self.refresh_channels(force=False)\\n', early_start) if early_start >= 0 else -1; assert early_start >= 0 and early_end > early_start, 'early completion boundaries missing'; text = text[:early_start] + text[early_end:]",
           )
+          body = body.replace(
+              "assert notification_anchor in text, 'notification anchor missing'",
+              "notification_base = text.index('                lines = [', text.index('        if unique_paths:')); notification_start = text.index('                if remaining_due_to_cap:', notification_base); notification_end = text.index('                if task_ids:', notification_start)",
+          )
+          body = body.replace(
+              'text = text.replace(notification_anchor, notification_insert, 1)',
+              'text = text[:notification_start] + notification_insert + text[notification_end:]',
+          )
           exec(compile(body, '<guangya-v130-patch>', 'exec'), {})
       - name: Validate
         run: |
