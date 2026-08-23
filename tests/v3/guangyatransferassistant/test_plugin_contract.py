@@ -94,8 +94,8 @@ def test_pagination_episode_and_path_safety():
 def test_version_and_safety_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.2.1" and local["version"] == "1.2.1"
-    assert 'plugin_version = "1.2.1"' in text
+    assert package["version"] == "1.2.2" and local["version"] == "1.2.2"
+    assert 'plugin_version = "1.2.2"' in text
     for token in (
         "隐藏按钮", "包装按钮", "_extract_pagination_urls", "tmdb_id", "TMDB精确",
         "strict_subscription_rules", "best_version", "filter_groups", "state not in (\"N\", \"R\")",
@@ -137,3 +137,24 @@ def test_save_path_combobox_values_are_normalized():
     assert normalize("{'title': '/光鸭媒体库', 'value': '/光鸭媒体库'}") == "/光鸭媒体库"
     assert normalize('{"title": "/光鸭媒体库", "value": "/光鸭媒体库"}') == "/光鸭媒体库"
     assert 'result.append(row if raw else row["value"])' in text
+
+
+def test_subscription_selector_is_searchable_and_progress_aware():
+    assert '"component": "VAutocomplete"' in text
+    assert '搜索并选择仅使用光鸭转存的订阅' in text
+    assert '可按剧名、年份、季、类型或订阅ID搜索' in text
+    assert 'prepend-inner-icon' in text and 'mdi-magnify' in text
+    assert '_subscription_episode_progress' in text
+    assert '已完成 {done}/{total}' in text
+    assert '剩余 {lack}' in text
+
+
+def test_completed_guangya_subscription_uses_moviepilot_completion_flow():
+    assert 'build_subscribe_meta' in text
+    assert 'MediaChain().recognize_media' in text
+    assert 'SubscribeChain().finish_subscribe_or_not' in text
+    assert 'force=True' in text
+    assert '_finish_subscription_if_complete' in text
+    assert '_remove_selected_subscription' in text
+    assert '已通过 MoviePilot 官方流程移入订阅历史并从活动订阅移除' in text
+    assert '目标剧集已全部完成，订阅已移入历史' in text
