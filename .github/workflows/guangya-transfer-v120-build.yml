@@ -1,0 +1,56 @@
+name: GuangYa Transfer v1.2.0 Build
+
+on:
+  push:
+    branches:
+      - feat/guangya-transfer-v1.2.0-complete
+    paths:
+      - .github/workflows/guangya-transfer-v120-build.yml
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/guangya-transfer-v1.2.0-complete
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply v1.2.0 patch
+        run: python .github/guangya_transfer_v120_patch.py
+      - name: Validate plugin
+        run: |
+          python -m py_compile plugins.v3/guangyatransferassistant/__init__.py
+          python -m pip install -q pytest
+          python -m pytest -q tests/v3/guangyatransferassistant/test_plugin_contract.py
+          python -m json.tool package.v3.json >/dev/null
+          python -m json.tool plugins.v3/guangyatransferassistant/plugin.json >/dev/null
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('plugins.v3/guangyatransferassistant/__init__.py').read_text(encoding='utf-8')
+          required = [
+              'plugin_version = "1.2.0"',
+              '隐藏按钮', '包装按钮', '_extract_pagination_urls',
+              'TMDB精确', 'strict_subscription_rules',
+              'sync_subscription_progress', 'max_files_per_run',
+              'retry_minutes', 'clear_inventory',
+              'state not in ("N", "R")',
+              'SubscribeOper().update',
+          ]
+          for token in required:
+              assert token in text, token
+          print('GuangYa transfer v1.2.0 static contract OK')
+          PY
+      - name: Commit final files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/guangya_transfer_v120_patch.py .github/workflows/guangya-transfer-v120-build.yml
+          git add plugins.v3/guangyatransferassistant/__init__.py plugins.v3/guangyatransferassistant/plugin.json package.v3.json tests/v3/guangyatransferassistant/test_plugin_contract.py
+          git commit -m "feat: harden GuangYa transfer routing and link parsing"
+          git push origin HEAD:feat/guangya-transfer-v1.2.0-complete
