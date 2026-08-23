@@ -1,6 +1,6 @@
 name: Temporary GuangYa v1.3.0 Message Executor
 on:
-  push:
+  pull_request:
     branches: [main]
     paths:
       - '.guangya-v130-message-trigger'
@@ -36,7 +36,7 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git rm -f tools/patch_guangya_v130_dedupe_v2.py
+          git rm -f .guangya-v130-message-trigger tools/patch_guangya_v130_dedupe_v2.py
           git add plugins.v3/guangyatransferassistant/__init__.py tests/v3/guangyatransferassistant/test_plugin_contract.py
           git commit -m 'fix: preserve new GuangYa messages and sync library before matching'
           git push origin HEAD:feat/guangya-missing-episodes-airing-v1.3.0
