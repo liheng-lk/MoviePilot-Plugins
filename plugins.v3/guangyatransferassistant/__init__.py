@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import parse_qs, urlencode, unquote, urljoin, urlsplit, urlunsplit
 
+from apscheduler.triggers.cron import CronTrigger
+
 from app.chain.subscribe import SubscribeChain, build_subscribe_meta
 from app.chain.media import MediaChain
 from app.chain.download import DownloadChain
@@ -310,7 +312,7 @@ def _entry_matches_subscription(
         return False
 
     text_value = str(entry.get("text") or "")
-    if season not in (None, "", 0, "0"):
+    if season not in (None, ""):
         explicit = re.findall(r"(?i)\bS(?:eason)?\s*0*(\d{1,2})\b", text_value)
         if explicit and int(season) not in {int(value) for value in explicit}:
             return False
@@ -470,6 +472,19 @@ def _episode_numbers(path: Any) -> Tuple[Optional[int], List[int]]:
         if end >= start and end - start <= 300:
             episodes.update(range(start, end + 1))
 
+    # 特别篇 / SP / OVA / OAD 属于 Season 0。只有没有普通季集标记时才启用，
+    # 防止 Show.S01E08.SP1 把 SP1 误并入第一季完成集。
+    if not episodes:
+        special = re.search(
+            r"(?i)(?:^|[^A-Za-z0-9])(?:SP|SPECIAL|OVA|OAD)[\s._-]*0*(\d{1,4})(?=[^0-9]|$)",
+            value,
+        )
+        if not special:
+            special = re.search(r"(?:特别篇|番外|特典)\s*0*(\d{1,4})(?=[^0-9]|$)", value)
+        if special:
+            season = 0
+            episodes.add(int(special.group(1)))
+
     return season, sorted(ep for ep in episodes if ep > 0)
 
 
@@ -613,7 +628,7 @@ class GuangYaTransferAssistant(_PluginBase):
     plugin_name = "光鸭转存助手"
     plugin_desc = "订阅固定分流：手动勾选的订阅只使用光鸭频道转存，未勾选订阅只使用 MoviePilot 原生下载。"
     plugin_icon = "Guangyadisk_A.png"
-    plugin_version = "1.5.0"
+    plugin_version = "1.6.0"
     plugin_author = "liheng-lk"
     plugin_label = "光鸭云盘,转存,订阅,Telegram,网盘,固定分流"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -627,6 +642,8 @@ class GuangYaTransferAssistant(_PluginBase):
     _save_path = "/光鸭转存"
     _create_media_folder = False
     _notify = True
+    _daily_summary = False
+    _summary_cron = "30 22 * * *"
     _auto_transfer_on_refresh = True
     _strict_subscription_rules = True
     _media_only = True
@@ -644,7 +661,7 @@ class GuangYaTransferAssistant(_PluginBase):
     _inspect_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
     _state_lock = threading.RLock()
     _run_lock_minutes = 15
-    _data_schema_version = 4
+    _data_schema_version = 5
 
     def init_plugin(self, config: dict = None) -> None:
         """读取配置并安装订阅搜索分流。"""
@@ -658,6 +675,8 @@ class GuangYaTransferAssistant(_PluginBase):
         path_migrated = raw_save_path not in (None, "") and raw_save_path != self._save_path
         self._create_media_folder = bool(config.get("create_media_folder", False))
         self._notify = bool(config.get("notify", True))
+        self._daily_summary = bool(config.get("daily_summary", False))
+        self._summary_cron = str(config.get("summary_cron") or "30 22 * * *").strip()
         self._auto_transfer_on_refresh = bool(config.get("auto_transfer_on_refresh", True))
         self._strict_subscription_rules = bool(config.get("strict_subscription_rules", True))
         self._media_only = bool(config.get("media_only", True))
@@ -697,13 +716,27 @@ class GuangYaTransferAssistant(_PluginBase):
     def get_service(self) -> List[Dict[str, Any]]:
         if not self._enabled:
             return []
-        return [{
+        services: List[Dict[str, Any]] = [{
             "id": "GuangYaTransferAssistantTick",
             "name": "光鸭转存助手频道刷新与路由守护",
             "trigger": "interval",
             "func": self._tick,
             "kwargs": {"minutes": self._refresh_minutes},
         }]
+        if self._daily_summary:
+            try:
+                summary_trigger = CronTrigger.from_crontab(self._summary_cron)
+            except Exception:
+                logger.warning("【光鸭转存助手】【日报】Cron 配置无效，回退到每天 22:30")
+                summary_trigger = CronTrigger.from_crontab("30 22 * * *")
+            services.append({
+                "id": "GuangYaTransferAssistantDailySummary",
+                "name": "光鸭转存助手每日摘要",
+                "trigger": summary_trigger,
+                "func": self._send_daily_summary,
+                "kwargs": {},
+            })
+        return services
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
         subscriptions = self._subscription_options()
@@ -715,6 +748,11 @@ class GuangYaTransferAssistant(_PluginBase):
                     {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [{"component": "VSwitch", "props": {"model": "enabled", "label": "启用订阅固定分流"}}]},
                     {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [{"component": "VSwitch", "props": {"model": "notify", "label": "转存结果通知"}}]},
                     {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [{"component": "VSwitch", "props": {"model": "proxy", "label": "频道读取使用代理"}}]},
+                ]},
+                {"component": "VRow", "content": [
+                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "daily_summary", "label": "每日转存摘要"}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VTextField", "props": {"model": "summary_cron", "label": "摘要 Cron", "hint": "默认每天 22:30；关闭摘要时不会注册任务", "persistent-hint": True}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 6}, "content": [{"component": "VAlert", "props": {"type": "info", "variant": "tonal", "text": "日报只汇总当天新增文件、失败/待落盘任务和缺集/连载状态，不改变任何订阅或转存路线。"}}]},
                 ]},
                 {"component": "VRow", "content": [
                     {"component": "VCol", "props": {"cols": 12, "md": 7}, "content": [{"component": "VAutocomplete", "props": {"model": "selected_subscriptions", "label": "搜索并选择仅使用光鸭转存的订阅", "items": subscriptions, "multiple": True, "chips": True, "closable-chips": True, "clearable": True, "hide-selected": False, "hint": "可按剧名、年份、季、类型或订阅ID搜索", "persistent-hint": True, "prepend-inner-icon": "mdi-magnify"}}]},
@@ -751,6 +789,8 @@ class GuangYaTransferAssistant(_PluginBase):
             "save_path": self._save_path or "/光鸭转存",
             "create_media_folder": self._create_media_folder,
             "notify": self._notify,
+            "daily_summary": self._daily_summary,
+            "summary_cron": self._summary_cron or "30 22 * * *",
             "auto_transfer_on_refresh": self._auto_transfer_on_refresh,
             "strict_subscription_rules": self._strict_subscription_rules,
             "media_only": self._media_only,
@@ -781,6 +821,7 @@ class GuangYaTransferAssistant(_PluginBase):
         pending_status = {"submitted", "task_confirmed", "verifying"}
         pending_jobs = [row for row in jobs if str(row.get("status") or "") in pending_status]
         failed_jobs = [row for row in jobs if str(row.get("status") or "") == "failed"]
+        cancelled_jobs = [row for row in jobs if str(row.get("status") or "") == "cancelled"]
 
         processed_count = sum(
             1 for row in (self.get_data("processed_entries") or {}).values()
@@ -813,6 +854,9 @@ class GuangYaTransferAssistant(_PluginBase):
         elif latest_status == "failed" and failed_jobs:
             label = "最近转存失败，等待新消息/重试"
             alert_type = "error"
+        elif latest_status == "cancelled" and cancelled_jobs:
+            label = "旧卡住任务已忽略 · 等待新消息"
+            alert_type = "warning"
         elif total and lack > 0 and channel_state.get("ongoing"):
             label = f"连载中 · 缺 {lack} 集"
             alert_type = "info"
@@ -831,7 +875,7 @@ class GuangYaTransferAssistant(_PluginBase):
 
         return {
             "label": label, "alert_type": alert_type,
-            "pending_jobs": len(pending_jobs), "failed_jobs": len(failed_jobs),
+            "pending_jobs": len(pending_jobs), "failed_jobs": len(failed_jobs), "cancelled_jobs": len(cancelled_jobs),
             "processed_count": processed_count, "fact_count": fact_count,
             "last_message": last_message, "latest_event": latest_event,
             "done": done, "total": total, "lack": lack, "missing": missing,
@@ -861,7 +905,7 @@ class GuangYaTransferAssistant(_PluginBase):
         removed_jobs = 0
         for key in list(jobs.keys()):
             row = jobs.get(key) or {}
-            if isinstance(row, dict) and str(row.get("media") or "") == prefix and str(row.get("status") or "") in {"failed", "synced", "verified"}:
+            if isinstance(row, dict) and str(row.get("media") or "") == prefix and str(row.get("status") or "") in {"failed", "synced", "verified", "cancelled"}:
                 jobs.pop(key, None)
                 removed_jobs += 1
         self.save_data("transfer_jobs", jobs)
@@ -882,6 +926,100 @@ class GuangYaTransferAssistant(_PluginBase):
             "success": True,
             "message": f"已重置检查状态：消息 {removed_processed} 条、结束任务 {removed_jobs} 条；媒体事实/库存/订阅进度已保留",
         }
+
+    def _pending_jobs_for_subscription(self, subscribe: Any) -> List[Tuple[str, Dict[str, Any]]]:
+        prefix = self._media_fact_prefix(subscribe)
+        pending_status = {"submitted", "task_confirmed", "verifying"}
+        rows = []
+        for key, row in (self.get_data("transfer_jobs") or {}).items():
+            if not isinstance(row, dict) or str(row.get("media") or "") != prefix:
+                continue
+            if str(row.get("status") or "") in pending_status:
+                rows.append((str(key), dict(row)))
+        rows.sort(key=lambda pair: str((pair[1] or {}).get("updated") or ""), reverse=True)
+        return rows
+
+    def _cancel_pending_jobs(self, subscribe: Any) -> Dict[str, Any]:
+        """人工忽略当前媒体所有待落盘任务；旧消息保持 cancelled，不会自动重新提交。"""
+        pending = self._pending_jobs_for_subscription(subscribe)
+        if not pending:
+            return {"success": False, "message": "当前没有待落盘任务"}
+        jobs = self.get_data("transfer_jobs") or {}
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for key, row in pending:
+            current = dict(jobs.get(key) or row)
+            current["status"] = "cancelled"
+            current["updated"] = now
+            current["cancel_reason"] = "用户手动忽略待落盘任务；等待新消息，旧任务不自动重放"
+            jobs[key] = current
+        self.save_data("transfer_jobs", jobs)
+        logger.warning(
+            "【光鸭转存助手】【人工任务】#%s %s 已忽略 %s 个待落盘任务；旧消息不会自动重放，若需重试旧消息请先使用重置检查状态",
+            int(getattr(subscribe, "id", 0) or 0), getattr(subscribe, "name", ""), len(pending),
+        )
+        return {"success": True, "count": len(pending), "message": f"已忽略 {len(pending)} 个待落盘任务；旧消息不会自动重放，等待新消息"}
+
+    def _task_audit_rows(self, limit: int = 40) -> List[Dict[str, Any]]:
+        jobs = self.get_data("transfer_jobs") or {}
+        rows = []
+        for key, raw in jobs.items():
+            if not isinstance(raw, dict):
+                continue
+            row = dict(raw)
+            row["job_key"] = str(key)
+            rows.append(row)
+        rows.sort(key=lambda row: str(row.get("updated") or ""), reverse=True)
+        return rows[:max(1, min(int(limit or 40), 100))]
+
+    def _send_daily_summary(self, force: bool = False) -> Dict[str, Any]:
+        """发送当天运行摘要；定时任务按日期去重，手动触发可 force。"""
+        now = datetime.datetime.now()
+        day = now.strftime("%Y-%m-%d")
+        state = self.get_data("daily_summary_state") or {}
+        if not force and str(state.get("date") or "") == day:
+            return {"success": True, "skipped": True, "message": "今日摘要已发送"}
+
+        history = self.get_data("transfer_history") or {}
+        today_history = [row for row in history.values() if isinstance(row, dict) and str(row.get("time") or "").startswith(day)]
+        successful = [row for row in today_history if bool(row.get("success"))]
+        new_files = sum(max(0, int(row.get("new_count") or 0)) for row in successful)
+
+        jobs = [row for row in (self.get_data("transfer_jobs") or {}).values() if isinstance(row, dict) and str(row.get("updated") or "").startswith(day)]
+        failed = sum(1 for row in jobs if str(row.get("status") or "") == "failed")
+        pending = sum(1 for row in jobs if str(row.get("status") or "") in {"submitted", "task_confirmed", "verifying"})
+        cancelled = sum(1 for row in jobs if str(row.get("status") or "") == "cancelled")
+
+        index_items = (self.get_data("channel_index") or {}).get("items") or []
+        selected = set(self._selected_subscriptions)
+        subs = [sub for sub in self._list_subscriptions(None) if int(getattr(sub, "id", 0) or 0) in selected]
+        missing_subs = 0
+        ongoing_subs = 0
+        for sub in subs:
+            snap = self._subscription_console_snapshot(sub, index_items)
+            if int(snap.get("lack") or 0) > 0:
+                missing_subs += 1
+            if bool((snap.get("channel_state") or {}).get("ongoing")):
+                ongoing_subs += 1
+
+        lines = [
+            f"日期：{day}",
+            f"本日新增文件：{new_files}",
+            f"成功转存记录：{len(successful)}",
+            f"失败任务：{failed}",
+            f"待落盘确认：{pending}",
+            f"已人工忽略任务：{cancelled}",
+            f"当前转存订阅：{len(subs)}",
+            f"仍有缺集订阅：{missing_subs}",
+            f"连载中订阅：{ongoing_subs}",
+        ]
+        try:
+            self.post_message(mtype=NotificationType.Plugin, title="📊 光鸭转存日报", text="\n".join(lines))
+            self.save_data("daily_summary_state", {"date": day, "time": now.strftime("%Y-%m-%d %H:%M:%S")})
+            logger.info("【光鸭转存助手】【日报】已发送：新增文件=%s，失败=%s，待落盘=%s，订阅=%s", new_files, failed, pending, len(subs))
+            return {"success": True, "message": "每日摘要已发送", "new_files": new_files, "failed": failed, "pending": pending}
+        except Exception as err:
+            logger.warning("【光鸭转存助手】【日报】发送失败：%s", err)
+            return {"success": False, "message": f"摘要发送失败：{err}"}
 
     def get_page(self) -> Optional[List[dict]]:
         index = self.get_data("channel_index") or {}
@@ -928,6 +1066,12 @@ class GuangYaTransferAssistant(_PluginBase):
                     "props": {"size": "small", "variant": "outlined", "color": "warning", "prepend-icon": "mdi-file-sync-outline"},
                     "text": "复查待落盘",
                     "events": {"click": {"api": "plugin/GuangYaTransferAssistant/recheck_pending", "method": "get", "params": {"subscribe_id": sid, "token": settings.API_TOKEN}}},
+                })
+                actions.append({
+                    "component": "VBtn",
+                    "props": {"size": "small", "variant": "text", "color": "error", "prepend-icon": "mdi-cancel"},
+                    "text": "忽略卡住任务",
+                    "events": {"click": {"api": "plugin/GuangYaTransferAssistant/cancel_pending", "method": "get", "params": {"subscribe_id": sid, "token": settings.API_TOKEN}}},
                 })
             actions.append({
                 "component": "VBtn",
@@ -985,6 +1129,29 @@ class GuangYaTransferAssistant(_PluginBase):
         if rows:
             contents.append({"component": "div", "props": {"class": "grid gap-3 grid-info-card mt-3"}, "content": rows})
 
+        audit = []
+        for row in self._task_audit_rows(40):
+            paths = [str(value) for value in (row.get("paths") or []) if value]
+            detail = str(row.get("error") or row.get("verification_message") or row.get("cancel_reason") or row.get("message") or "").strip()
+            if paths:
+                detail = (detail + (" · " if detail else "") + "文件：" + "、".join(paths[:4]) + (f" 等{len(paths)}个" if len(paths) > 4 else ""))
+            audit.append({
+                "component": "VListItem",
+                "props": {
+                    "title": f"{row.get('updated') or '-'} · {row.get('status') or '-'} · {row.get('media') or '-'}",
+                    "subtitle": f"消息 {row.get('message_id') or '-'} · 分享 {row.get('share_id') or '-'} · {detail[:500] or '无附加错误'}",
+                },
+            })
+        contents.append({
+            "component": "VCard",
+            "props": {"variant": "outlined", "class": "mt-4"},
+            "content": [
+                {"component": "VCardTitle", "text": f"转存任务审计（最近 {len(audit)} 条）"},
+                {"component": "VCardText", "text": "submitted/task_confirmed/verifying 表示任务已经提交，不能用‘立即检查缺集’强制重放；如确需忽略卡住任务，请使用订阅卡片上的人工操作。"},
+                {"component": "VList", "props": {"density": "compact"}, "content": audit or [{"component": "VListItem", "props": {"title": "暂无转存任务记录"}}]},
+            ],
+        })
+
         resources = []
         for entry in list(index.get("items") or [])[:150]:
             matched = []
@@ -1030,6 +1197,8 @@ class GuangYaTransferAssistant(_PluginBase):
             {"path": "/release_native", "endpoint": self.api_release_native, "methods": ["GET"], "summary": "将指定转存订阅切换回 MoviePilot 普通下载"},
             {"path": "/recheck_pending", "endpoint": self.api_recheck_pending, "methods": ["GET"], "summary": "只复查指定订阅的待落盘任务，不自动重复提交"},
             {"path": "/reset_state", "endpoint": self.api_reset_state, "methods": ["GET"], "summary": "安全重置指定订阅的频道检查状态，保留媒体事实/库存/进度"},
+            {"path": "/cancel_pending", "endpoint": self.api_cancel_pending, "methods": ["GET"], "summary": "人工忽略指定订阅待落盘任务，旧消息不自动重放"},
+            {"path": "/daily_summary", "endpoint": self.api_daily_summary, "methods": ["GET"], "summary": "立即发送一次光鸭转存摘要"},
         ]
 
     def api_refresh(self) -> Dict[str, Any]:
@@ -1059,6 +1228,12 @@ class GuangYaTransferAssistant(_PluginBase):
             return {"success": False, "message": "订阅不存在"}
         if sid not in set(self._selected_subscriptions):
             return {"success": False, "message": "该订阅当前不是光鸭固定转存路线"}
+        pending = self._pending_jobs_for_subscription(subscribe)
+        if pending:
+            return {
+                "success": False, "pending": True,
+                "message": f"仍有 {len(pending)} 个已提交任务等待落盘确认；请先使用‘复查待落盘’，不会强制重复提交",
+            }
         self.refresh_channels(force=True)
         self._inspect_cache.clear()
         result = self._try_transfer_subscription(subscribe, force=True)
@@ -1090,6 +1265,18 @@ class GuangYaTransferAssistant(_PluginBase):
         if sid not in set(self._selected_subscriptions):
             return {"success": False, "message": "该订阅当前不是光鸭固定转存路线"}
         return self._reset_subscription_check_state(subscribe)
+
+    def api_cancel_pending(self, subscribe_id: int = 0) -> Dict[str, Any]:
+        sid = int(subscribe_id or 0)
+        subscribe = self._find_subscription(sid)
+        if not sid or not subscribe:
+            return {"success": False, "message": "订阅不存在"}
+        if sid not in set(self._selected_subscriptions):
+            return {"success": False, "message": "该订阅当前不是光鸭固定转存路线"}
+        return self._cancel_pending_jobs(subscribe)
+
+    def api_daily_summary(self) -> Dict[str, Any]:
+        return self._send_daily_summary(force=True)
 
     def api_release_native(self, subscribe_id: int = 0) -> Dict[str, Any]:
         """由用户明确操作后解除固定转存，后续交还 MoviePilot 原生订阅搜索。"""
@@ -1338,7 +1525,7 @@ class GuangYaTransferAssistant(_PluginBase):
             if not sid or (state not in ("N", "R") and sid not in selected):
                 continue
             season = getattr(sub, "season", None)
-            suffix = f" S{int(season):02d}" if season not in (None, 0) else ""
+            suffix = f" S{int(season):02d}" if season not in (None, "") else ""
             state_label = {"N": "新建", "R": "订阅中", "P": "待定", "S": "暂停"}.get(state, state or "-")
             media_type = str(getattr(sub, "type", "") or "").strip() or "媒体"
             done, total, lack = self._subscription_episode_progress(sub)
@@ -1380,6 +1567,8 @@ class GuangYaTransferAssistant(_PluginBase):
             "save_path": self._save_path,
             "create_media_folder": self._create_media_folder,
             "notify": self._notify,
+            "daily_summary": self._daily_summary,
+            "summary_cron": self._summary_cron,
             "auto_transfer_on_refresh": self._auto_transfer_on_refresh,
             "strict_subscription_rules": self._strict_subscription_rules,
             "media_only": self._media_only,
@@ -1520,7 +1709,7 @@ class GuangYaTransferAssistant(_PluginBase):
             version = 0
         if version >= self._data_schema_version:
             return
-        # v4 的媒体事实会从当前订阅库存/媒体库按需补建，避免一次性迁移误判。
+        # v5 延续 v4 媒体事实；新增日报与人工任务状态均为可选数据，无需破坏性迁移。
         self.save_data("data_meta", {
             "schema_version": self._data_schema_version,
             "migrated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -1544,7 +1733,8 @@ class GuangYaTransferAssistant(_PluginBase):
         if is_movie:
             return f"{source}:{media_id}:movie"
         try:
-            season = max(1, int(getattr(subscribe, "season", 0) or 1))
+            raw_season = getattr(subscribe, "season", None)
+            season = 1 if raw_season in (None, "") else max(0, int(raw_season))
         except (TypeError, ValueError):
             season = 1
         return f"{source}:{media_id}:s{season:02d}"
@@ -1558,8 +1748,16 @@ class GuangYaTransferAssistant(_PluginBase):
             return [prefix]
         wanted_season = getattr(subscribe, "season", None)
         file_season, episodes = _episode_numbers(path)
-        if wanted_season not in (None, 0) and file_season not in (None, int(wanted_season)):
-            return []
+        if wanted_season not in (None, ""):
+            try:
+                wanted_value = int(wanted_season)
+            except (TypeError, ValueError):
+                wanted_value = None
+            if wanted_value is not None:
+                if file_season is not None and file_season != wanted_value:
+                    return []
+                if wanted_value == 0 and file_season is None:
+                    return []
         return [f"{prefix}:e{int(ep):04d}" for ep in episodes]
 
     def _remember_media_facts(self, subscribe: Any, items: List[Dict[str, Any]], origin: str = "transfer") -> int:
@@ -2088,6 +2286,13 @@ class GuangYaTransferAssistant(_PluginBase):
             job_paths = [str(item.get("effective_path") or item.get("relative_path") or item.get("name") or "") for item in planned]
             pending_job = self._get_job_state(job_key)
             restored = None
+            if pending_job.get("status") == "cancelled" and set(pending_job.get("paths") or []) == set(job_paths):
+                synchronized_match = True
+                logger.info(
+                    "【光鸭转存助手】【人工任务】#%s %s share_id=%s 该旧消息任务已人工忽略，本轮不重复提交；等待新消息/新链接",
+                    sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0],
+                )
+                continue
             logger.info(
                 "【光鸭转存助手】【增量】#%s %s share_id=%s 叶子文件=%s，符合范围=%s，新增待转=%s，本轮=%s，库存=%s，剧集过滤=%s",
                 sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], probe.get("leaf_count") or len(probe.get("files") or []),
@@ -2305,9 +2510,18 @@ class GuangYaTransferAssistant(_PluginBase):
                 continue
             if is_tv and (is_video or is_subtitle):
                 file_season, episodes = _episode_numbers(effective)
-                if subscribe_season not in (None, 0) and file_season not in (None, int(subscribe_season)):
-                    counters["episode"] += 1
-                    continue
+                if subscribe_season not in (None, ""):
+                    try:
+                        wanted_season = int(subscribe_season)
+                    except (TypeError, ValueError):
+                        wanted_season = None
+                    if wanted_season is not None:
+                        if file_season is not None and file_season != wanted_season:
+                            counters["episode"] += 1
+                            continue
+                        if wanted_season == 0 and file_season is None:
+                            counters["episode"] += 1
+                            continue
                 if episodes:
                     wanted = [ep for ep in episodes if ep >= start_episode and (not total_episode or ep <= total_episode) and ep not in done_episodes]
                     if not wanted:
