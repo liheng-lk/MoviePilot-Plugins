@@ -1,0 +1,237 @@
+name: Dispatch ShukGuangYaDisk 3.0.0 V3 adaptation
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/dispatch-shukguangyadisk-v300.yml]
+permissions:
+  contents: write
+jobs:
+  adapt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: shukguangyadisk-v3.0.0-adaptation
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build V3 implementation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json, re, shutil
+
+          root = Path('.')
+          src = root / 'plugins.v2' / 'shukguangyadisk'
+          dst = root / 'plugins.v3' / 'shukguangyadisk'
+          if dst.exists():
+              shutil.rmtree(dst)
+          shutil.copytree(src, dst)
+
+          # -------- Python SDK migration --------
+          replacements = {
+              'from app.log import logger': 'from app.sdk.logging import logger',
+              'from app.core.event import Event, eventmanager': 'from app.sdk.events import Event, eventmanager',
+              'from app.helper.storage import StorageHelper': 'from app.sdk.services import StorageHelper',
+              'from app.utils.http import RequestUtils': 'from app.sdk.network import RequestUtils',
+          }
+          for py in dst.rglob('*.py'):
+              text = py.read_text(encoding='utf-8')
+              for old, new in replacements.items():
+                  text = text.replace(old, new)
+              py.write_text(text, encoding='utf-8')
+
+          entry = dst / '__init__.py'
+          text = entry.read_text(encoding='utf-8')
+          text = text.replace('from app.db.systemconfig_oper import SystemConfigOper\n', '')
+          text = text.replace('from app.schemas.types import SystemConfigKey\n', '')
+          text = text.replace('plugin_version = "1.1.2"', 'plugin_version = "3.0.0"', 1)
+          text = text.replace(
+              'plugin_desc = "MoviePilot 光鸭云盘存储助手，支持扫码/短信登录、目录浏览、整理上传、下载、移动、复制和 Emby 直连。"',
+              'plugin_desc = "MoviePilot V3 光鸭云盘存储助手，支持扫码/短信登录、目录浏览、整理上传、上传进度监控、下载、移动、复制、WebDAV 和 Emby 直连。"'
+          )
+          text = text.replace(
+              '    plugin_author = "liheng-lk"\n',
+              '    plugin_author = "liheng-lk"\n    plugin_label = "存储,光鸭云盘,网盘,挂载,Emby,WebDAV"\n',
+              1,
+          )
+          migrate_pattern = re.compile(r'    def _migrate_storage_name\(self\) -> None:\n.*?\n    def init_plugin\(self, config: dict = None\) -> None:', re.S)
+          migrate_impl = '''    def _migrate_storage_name(self) -> None:\n        \"\"\"V3 仅通过稳定 StorageHelper 确保存储存在，不直接写宿主系统配置表。\"\"\"\n        try:\n            storage_helper = StorageHelper()\n            storages = storage_helper.get_storagies() or []\n            if not any(s.type == self._disk_name for s in storages):\n                storage_helper.add_storage(storage=self._disk_name, name=self._disk_name, conf={})\n                logger.info(\"【光鸭云盘助手】MoviePilot V3 已注册存储: %s\", self._disk_name)\n        except Exception as err:\n            logger.warning(\"【光鸭云盘助手】V3 存储注册检查失败: %s\", err)\n\n    def init_plugin(self, config: dict = None) -> None:'''
+          text, count = migrate_pattern.subn(migrate_impl, text, count=1)
+          if count != 1:
+              raise RuntimeError('failed to replace V3 storage migration method')
+          entry.write_text(text, encoding='utf-8')
+
+          legacy = dst / '_plugin_legacy.py'
+          text = legacy.read_text(encoding='utf-8')
+          text = text.replace('plugin_version = "1.0"', 'plugin_version = "3.0.0"', 1)
+          text = re.sub(
+              r'    def stop_service\(self\):\n        \"\"\"\n        退出插件。\n        \"\"\"\n        pass',
+              '''    def stop_service(self):\n        \"\"\"释放 V3 插件运行时引用和临时登录状态，可安全重复调用。\"\"\"\n        self._device_code = \"\"\n        self._user_code = \"\"\n        self._verification_uri = \"\"\n        self._qr_expires_at = 0\n        self._sms_verification_id = \"\" if hasattr(self, \"_sms_verification_id\") else \"\"\n        self._sms_phone_number = \"\" if hasattr(self, \"_sms_phone_number\") else \"\"\n        self._sms_captcha_token = \"\" if hasattr(self, \"_sms_captcha_token\") else \"\"\n        self._guangya_api = None\n        self._client = None''',
+              text,
+              count=1,
+          )
+          legacy.write_text(text, encoding='utf-8')
+
+          # -------- Vue V3 API client contract --------
+          assets = dst / 'dist' / 'assets'
+          page = assets / '__federation_expose_AssistantPage-dev.js'
+          config = assets / '__federation_expose_AssistantConfig-dev.js'
+          dual = assets / '__federation_expose_DualLoginPage-213.js'
+
+          def v3_get_post(text: str) -> str:
+              text = re.sub(
+                  r"async function getApi\(props,path\)\{.*?\n\}",
+                  "async function getApi(props,path){\\n  const p=`plugin/${PLUGIN_ID}${path}`;\\n  const api=props.api||globalThis.MoviePilotAPI;\\n  if(api?.get) return api.get(p);\\n  throw new Error('MoviePilot V3 API client unavailable');\\n}",
+                  text, count=1, flags=re.S,
+              )
+              text = re.sub(
+                  r"async function postApi\(props,path,body=\{\}\)\{.*?\n\}",
+                  "async function postApi(props,path,body={}){\\n  const p=`plugin/${PLUGIN_ID}${path}`;\\n  const api=props.api||globalThis.MoviePilotAPI;\\n  if(api?.post) return api.post(p,body);\\n  throw new Error('MoviePilot V3 API client unavailable');\\n}",
+                  text, count=1, flags=re.S,
+              )
+              return text
+
+          page.write_text(v3_get_post(page.read_text(encoding='utf-8')), encoding='utf-8')
+          config.write_text(v3_get_post(config.read_text(encoding='utf-8')), encoding='utf-8')
+          dual_text = dual.read_text(encoding='utf-8')
+          dual_text = re.sub(
+              r"async function apiPost\(props, path, body\) \{.*?\n\}",
+              "async function apiPost(props, path, body) {\\n  const apiPath = `plugin/${PLUGIN_ID}${path}`;\\n  const api = props.api || globalThis.MoviePilotAPI;\\n  if (api?.post) return api.post(apiPath, body || {});\\n  throw new Error('MoviePilot V3 API client unavailable');\\n}",
+              dual_text, count=1, flags=re.S,
+          )
+          dual.write_text(dual_text, encoding='utf-8')
+
+          old_wrap = assets / '__federation_expose_AssistantPage-v111.js'
+          new_wrap = assets / '__federation_expose_AssistantPage-v300.js'
+          wrap_text = old_wrap.read_text(encoding='utf-8')
+          wrap_text = wrap_text.replace('GuangyaCloudAssistantV111', 'GuangyaCloudAssistantV300')
+          wrap_text = wrap_text.replace('?v=1.1.1', '?v=3.0.0')
+          wrap_text = wrap_text.replace('光鸭云盘助手 v1.1.1 · 前端故障隔离模式', '光鸭云盘助手 v3.0.0 · MoviePilot V3 前端故障隔离模式')
+          new_wrap.write_text(wrap_text, encoding='utf-8')
+
+          remote = assets / 'remoteEntry.js'
+          remote_text = remote.read_text(encoding='utf-8')
+          remote_text = remote_text.replace("./__federation_expose_AssistantPage-v111.js?v=1.1.1", "./__federation_expose_AssistantPage-v300.js?v=3.0.0")
+          remote_text = remote_text.replace("./__federation_expose_AssistantConfig-dev.js?v=1.1.1", "./__federation_expose_AssistantConfig-dev.js?v=3.0.0")
+          remote.write_text(remote_text, encoding='utf-8')
+
+          # Frontend package metadata
+          pkg_path = dst / 'package.json'
+          if pkg_path.exists():
+              pkg = json.loads(pkg_path.read_text(encoding='utf-8'))
+              pkg['version'] = '3.0.0'
+              pkg['description'] = '光鸭云盘助手 MoviePilot V3 Vue 前端'
+              pkg_path.write_text(json.dumps(pkg, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          # Plugin-local metadata
+          local_meta = dst / 'plugin.json'
+          if local_meta.exists():
+              meta = json.loads(local_meta.read_text(encoding='utf-8'))
+              meta['version'] = '3.0.0'
+              meta['system_version'] = '>=3.0.0'
+              meta['history'] = {'v3.0.0': 'MoviePilot V3 专用首版：迁移稳定 SDK、V3 生命周期与 Vue API 客户端合同，保留双登录、整理上传、上传容错、进度监控、WebDAV 与存储扩展能力。'}
+              local_meta.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          # -------- Repository indexes --------
+          p3 = root / 'package.v3.json'
+          data3 = json.loads(p3.read_text(encoding='utf-8')) if p3.exists() else {}
+          data3['ShukGuangYaDisk'] = {
+              'name': '光鸭云盘助手',
+              'description': 'MoviePilot V3 光鸭云盘存储助手，支持扫码/短信登录、目录浏览、整理上传、上传进度监控、网络容错、下载、移动、复制、WebDAV 和 Emby 直连。',
+              'labels': '存储,光鸭云盘,网盘,挂载,Emby,WebDAV',
+              'version': '3.0.0',
+              'icon': 'Guangyadisk_A.png',
+              'author': 'liheng-lk',
+              'level': 1,
+              'system_version': '>=3.0.0',
+              'history': {
+                  'v3.0.0': 'MoviePilot V3 专用首版：迁移至 plugins.v3/package.v3.json，使用 app.sdk 稳定接口，适配 V3 生命周期与 Vue API 客户端合同，保留双登录、存储扩展、整理上传、145/147 落盘确认、142 目录恢复、上传幂等、WebDAV 和进度监控。'
+              },
+          }
+          # keep deterministic order: existing then Shuk entry
+          p3.write_text(json.dumps(data3, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          for index_name in ['package.v2.json', 'plugin.json']:
+              path = root / index_name
+              data = json.loads(path.read_text(encoding='utf-8'))
+              data['ShukGuangYaDisk']['v3'] = False
+              path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          # -------- V3 contract tests --------
+          tests = root / 'tests' / 'v3' / 'shukguangyadisk'
+          tests.mkdir(parents=True, exist_ok=True)
+          (tests / 'test_plugin_contract.py').write_text(r'''from pathlib import Path
+import json
+
+ROOT = Path(__file__).resolve().parents[3]
+V3 = ROOT / "plugins.v3" / "shukguangyadisk"
+entry = (V3 / "__init__.py").read_text(encoding="utf-8")
+legacy = (V3 / "_plugin_legacy.py").read_text(encoding="utf-8")
+all_py = "\n".join(p.read_text(encoding="utf-8") for p in V3.rglob("*.py"))
+
+assert 'plugin_version = "3.0.0"' in entry
+assert 'from app.sdk.services import StorageHelper' in all_py
+assert 'from app.sdk.logging import logger' in all_py
+assert 'from app.sdk.events import Event, eventmanager' in all_py
+assert 'from app.db.systemconfig_oper import SystemConfigOper' not in all_py
+assert 'from app.helper.storage import StorageHelper' not in all_py
+assert 'from app.core.event import Event, eventmanager' not in all_py
+assert 'from app.log import logger' not in all_py
+assert 'from app.utils.http import RequestUtils' not in all_py
+assert 'def get_module(self)' in legacy
+assert 'ChainEventType.StorageOperSelection' in legacy
+for name in ['list_files','upload_file','download_file','delete_file','rename_file','get_file_item','get_parent_item','snapshot_storage','storage_usage','support_transtype']:
+    assert f'"{name}"' in legacy
+assert 'def stop_service(self)' in legacy
+assert 'self._guangya_api = None' in legacy and 'self._client = None' in legacy
+
+p3 = json.loads((ROOT / 'package.v3.json').read_text(encoding='utf-8'))['ShukGuangYaDisk']
+assert p3['version'] == '3.0.0'
+assert p3['system_version'] == '>=3.0.0'
+p2 = json.loads((ROOT / 'package.v2.json').read_text(encoding='utf-8'))['ShukGuangYaDisk']
+assert p2['version'] == '1.1.2'
+assert p2['v3'] is False
+
+assets = V3 / 'dist' / 'assets'
+remote = (assets / 'remoteEntry.js').read_text(encoding='utf-8')
+assert './__federation_expose_AssistantPage-v300.js?v=3.0.0' in remote
+assert './__federation_expose_AssistantConfig-dev.js?v=3.0.0' in remote
+for name in ['__federation_expose_AssistantPage-dev.js','__federation_expose_AssistantConfig-dev.js','__federation_expose_DualLoginPage-213.js']:
+    js = (assets / name).read_text(encoding='utf-8')
+    assert 'props.api' in js
+    assert "fetch(`/api/v1/plugin/${PLUGIN_ID}" not in js
+assert 'MoviePilot V3 API client unavailable' in (assets / '__federation_expose_AssistantPage-dev.js').read_text(encoding='utf-8')
+
+# Keep upload stability fixes in V3 copy.
+stable = (V3 / 'guangya_api.py').read_text(encoding='utf-8')
+stable112 = (V3 / 'guangya_api_v112.py').read_text(encoding='utf-8')
+combined = stable + '\n' + stable112
+assert '142' in combined
+assert '145' in combined and '147' in combined
+assert 'upload_progress_log' in combined
+''', encoding='utf-8')
+
+          # Compile all V3 Python sources.
+          forbidden = [
+              'from app.log import logger',
+              'from app.core.event import Event, eventmanager',
+              'from app.helper.storage import StorageHelper',
+              'from app.utils.http import RequestUtils',
+              'from app.db.systemconfig_oper import SystemConfigOper',
+          ]
+          v3_py = '\n'.join(p.read_text(encoding='utf-8') for p in dst.rglob('*.py'))
+          bad = [x for x in forbidden if x in v3_py]
+          if bad:
+              raise RuntimeError(f'legacy imports remain: {bad}')
+          PY
+          python -m compileall -q plugins.v3/shukguangyadisk
+          python tests/v3/shukguangyadisk/test_plugin_contract.py
+          python -m unittest discover -s tests -p 'test_guangya*.py' -v
+      - name: Commit V3 migration
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add plugins.v3/shukguangyadisk package.v3.json package.v2.json plugin.json tests/v3/shukguangyadisk
+          git commit -m 'feat: add ShukGuangYaDisk 3.0.0 for MoviePilot V3'
+          git push origin HEAD:shukguangyadisk-v3.0.0-adaptation
