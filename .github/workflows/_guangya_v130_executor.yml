@@ -40,6 +40,7 @@ jobs:
               if line.count("'''") % 2 == 1:
                   in_multiline = True
           body = '\n'.join(lines)
+          body = body.replace("api_insert = '''", "api_insert = r'''", 1)
           body = body.replace(
               "assert form_anchor in text, 'form anchor missing'",
               "textarea_line = '{\"component\": \"VTextarea\", \"props\": {\"model\": \"channel_urls\", \"label\": \"资源频道地址（每行一个）\", \"rows\": 3}}'; assert textarea_line in text, 'channel textarea missing'; form_row_start = text.rfind('                {\"component\": \"VRow\", \"content\": [\\n', 0, text.index(textarea_line)); assert form_row_start >= 0, 'channel row start missing'",
