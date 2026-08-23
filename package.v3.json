@@ -1,14 +1,15 @@
 {
   "DailyNewDrama": {
     "name": "每日新剧助手",
-    "description": "MoviePilot V3 新剧与在播剧聚合助手，聚合豆瓣、腾讯视频、爱奇艺、优酷、芒果TV、哔哩哔哩，仅展示未入库且未订阅内容，并支持页面一键订阅。",
+    "description": "MoviePilot V3 新剧与在播剧聚合助手；媒体库中已有任意剧集即过滤，并支持完整分批通知与页面一键订阅。",
     "labels": "豆瓣,腾讯视频,爱奇艺,优酷,芒果TV,哔哩哔哩,电视剧,订阅,推荐,通知",
-    "version": "3.0.0",
+    "version": "3.0.1",
     "icon": "movie.jpg",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v3.0.1": "修复媒体库部分入库剧集未过滤；定时推送默认发送完整候选，并缩小单条消息批次，避免重复提醒抑制和消息渠道长度/按钮限制导致推送缺项。",
       "v3.0.0": "MoviePilot V3 专用首版：迁移至 plugins.v3/package.v3.json，采用 app.sdk 稳定接口及 media_source + media_id 统一媒体身份，保留多平台发现、过滤、无限候选和页面一键订阅。"
     }
   },

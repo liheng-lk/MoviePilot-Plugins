@@ -167,13 +167,40 @@ def _format_air_timing_value(air_date: Optional[datetime.date], today: datetime.
     return f"{air_date.isoformat()} · 已开播{-days}天"
 
 
+def _media_library_has_content(mediainfo: MediaInfo, complete: bool, no_exists: Dict[str, Any]) -> bool:
+    """媒体库中只要已有该剧任意一季或任意一集，就视为已有内容。"""
+    if complete:
+        return True
+    if not no_exists:
+        return False
+    seasons = getattr(mediainfo, "seasons", None) or {}
+    expected_seasons = {int(season) for season, episodes in seasons.items() if episodes}
+    if not expected_seasons:
+        return False
+    missing_seasons = set()
+    for season_map in no_exists.values():
+        if not isinstance(season_map, dict):
+            continue
+        for season, detail in season_map.items():
+            try:
+                missing_seasons.add(int(season))
+            except (TypeError, ValueError):
+                continue
+            missing_episodes = getattr(detail, "episodes", None)
+            if missing_episodes is None and isinstance(detail, dict):
+                missing_episodes = detail.get("episodes")
+            if missing_episodes:
+                return True
+    return bool(expected_seasons - missing_seasons)
+
+
 class DailyNewDrama(_PluginBase):
     """每日发现豆瓣新剧并在过滤媒体库、订阅后提供交互订阅。"""
 
     plugin_name = "每日新剧助手"
     plugin_desc = "聚合豆瓣及腾讯视频、爱奇艺、优酷、芒果TV、哔哩哔哩的新剧与在播剧，仅过滤已入库/已订阅内容，页面不限候选数量并支持一键订阅。"
     plugin_icon = "movie.jpg"
-    plugin_version = "3.0.0"
+    plugin_version = "3.0.1"
     plugin_author = "liheng-lk"
     plugin_label = "豆瓣,腾讯视频,爱奇艺,优酷,芒果TV,哔哩哔哩,电视剧,订阅,推荐,通知"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -381,7 +408,7 @@ class DailyNewDrama(_PluginBase):
                         "props": {
                             "type": "info",
                             "variant": "tonal",
-                            "text": "页面候选不限数量，仅过滤媒体库已有和 MoviePilot 已订阅内容；重复提醒间隔只影响消息推送，不会让候选从页面消失。每张剧集卡片可直接点击订阅。",
+                            "text": "页面和定时消息均输出完整候选；媒体库中只要已有该剧任意一集或任意一季即过滤，同时过滤 MoviePilot 已订阅内容。消息按较小批次发送，避免渠道长度或按钮限制导致缺项。",
                         },
                     },
                 ],
@@ -581,7 +608,7 @@ class DailyNewDrama(_PluginBase):
             original_chat_id=event_data.get("original_chat_id"),
         )
 
-    def refresh_and_notify(self, send_message: bool = True, suppress_recent: bool = True) -> List[Dict[str, Any]]:
+    def refresh_and_notify(self, send_message: bool = True, suppress_recent: bool = False) -> List[Dict[str, Any]]:
         """抓取、识别、过滤新剧，保存批次并按需发送通知。"""
         logger.info("【每日新剧助手】开始刷新多平台新剧/在播剧")
         now = datetime.datetime.now()
@@ -650,9 +677,9 @@ class DailyNewDrama(_PluginBase):
                 if self._vote and vote < self._vote:
                     continue
 
-                exist_flag, _ = DownloadChain().get_no_exists_info(meta=meta, mediainfo=mediainfo)
-                if exist_flag:
-                    logger.info("【每日新剧助手】过滤媒体库已存在: %s", mediainfo.title_year)
+                exist_flag, no_exists = DownloadChain().get_no_exists_info(meta=meta, mediainfo=mediainfo)
+                if _media_library_has_content(mediainfo, exist_flag, no_exists):
+                    logger.info("【每日新剧助手】过滤媒体库已存在内容: %s", mediainfo.title_year)
                     continue
 
                 subscribe_chain = SubscribeChain()
@@ -928,11 +955,11 @@ class DailyNewDrama(_PluginBase):
             batch_id = str((self.get_data("daily_candidates") or {}).get("batch_id") or "")
 
         today = datetime.date.today()
-        chunk_size = 20
+        chunk_size = 8
         total_chunks = (len(items) + chunk_size - 1) // chunk_size
         for chunk_no, offset in enumerate(range(0, len(items), chunk_size), start=1):
             chunk = items[offset: offset + chunk_size]
-            lines = ["已过滤媒体库已有和现有订阅；重复提醒只影响消息，不影响插件页面候选：", ""]
+            lines = ["完整候选列表：已过滤媒体库中已有任意内容及现有订阅。", ""]
             buttons: List[List[dict]] = []
             row: List[dict] = []
             for item in chunk:
@@ -996,8 +1023,8 @@ class DailyNewDrama(_PluginBase):
                 if not mediainfo:
                     failed.append(f"{index}.{item.get('title')}(识别失败)")
                     continue
-                exist_flag, _ = DownloadChain().get_no_exists_info(meta=meta, mediainfo=mediainfo)
-                if exist_flag:
+                exist_flag, no_exists = DownloadChain().get_no_exists_info(meta=meta, mediainfo=mediainfo)
+                if _media_library_has_content(mediainfo, exist_flag, no_exists):
                     skipped.append(f"{index}.{item.get('title')}(已入库)")
                     handled_indexes.append(index)
                     continue
