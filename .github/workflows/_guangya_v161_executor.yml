@@ -1,6 +1,6 @@
 name: Temporary GuangYa v1.6.1 Hardening Executor
 on:
-  push:
+  pull_request:
     branches: [main]
     paths:
       - '.guangya-v161-trigger'
@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -29,4 +31,4 @@ jobs:
           git rm -f .guangya-v161-trigger tools/patch_guangya_v161.py .github/workflows/_guangya_v161_executor.yml
           git add package.v3.json plugins.v3/guangyatransferassistant/__init__.py plugins.v3/guangyatransferassistant/plugin.json tests/v3/guangyatransferassistant/test_plugin_contract.py
           git commit -m 'fix: harden GuangYa v1.6.1'
-          git push origin HEAD:feat/guangya-v1.6.1-hardening
+          git push origin HEAD:${{ github.head_ref }}
