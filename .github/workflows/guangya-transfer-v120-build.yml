@@ -21,6 +21,7 @@ jobs:
         run: |
           python .github/fix_guangya_v120_generator.py
           python .github/guangya_transfer_v120_patch.py
+          python .github/postfix_guangya_v120.py
       - name: Validate plugin
         run: |
           python -m py_compile plugins.v3/guangyatransferassistant/__init__.py
@@ -39,6 +40,7 @@ jobs:
               'retry_minutes', 'clear_inventory',
               'state not in ("N", "R")',
               'SubscribeOper().update',
+              'S01E23-E25',
           ]
           for token in required:
               assert token in text, token
@@ -48,7 +50,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm -f .github/fix_guangya_v120_generator.py .github/guangya_transfer_v120_patch.py .github/workflows/guangya-transfer-v120-build.yml
+          git rm -f .github/fix_guangya_v120_generator.py .github/guangya_transfer_v120_patch.py .github/postfix_guangya_v120.py .github/workflows/guangya-transfer-v120-build.yml
           git add plugins.v3/guangyatransferassistant/__init__.py plugins.v3/guangyatransferassistant/plugin.json package.v3.json tests/v3/guangyatransferassistant/test_plugin_contract.py
           git commit -m "feat: harden GuangYa transfer routing and link parsing"
           git push origin HEAD:feat/guangya-transfer-v1.2.0-complete
