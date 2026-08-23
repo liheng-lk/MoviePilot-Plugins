@@ -322,7 +322,7 @@ def test_restart_recovery_reads_old_job_before_planned_overwrite():
 
 def test_file_cap_is_reported_as_partial_until_all_files_processed():
     flow = text.split('    def _try_transfer_subscription_inner(', 1)[1].split('    def _target_path(', 1)[0]
-    assert 'partial = (bool(errors) or remaining_due_to_cap > 0) and not completed_subscription' in flow
+    assert 'partial = (bool(errors) or remaining_due_to_cap > 0 or pending_verification) and not completed_subscription' in flow
     assert 'if deferred_for_entry <= 0:' in flow
     assert '本轮完成后仍有 %s 个文件待下轮，不标记消息完成' in flow
 
@@ -331,3 +331,26 @@ def test_media_fact_progress_is_clipped_to_current_subscription_target():
     block = text.split('    def _sync_media_facts_progress(', 1)[1].split('    def _processed_entry_key(', 1)[0]
     assert 'episodes = episodes.intersection(target)' in block
     assert 'merged = current | episodes' in block
+
+
+
+def test_pending_visibility_never_downgrades_to_failed_or_auto_replays():
+    flow = text.split('    def _try_transfer_subscription_inner(', 1)[1].split('    def _target_path(', 1)[0]
+    assert 'pending_verification = False' in flow
+    assert '已提交任务不会自动重复提交' in flow
+    assert 'if restored.get("pending_verification"):' in flow
+    pending_branch = flow.split('if restored.get("pending_verification"):', 1)[1].split('else:', 1)[0]
+    assert '_set_job_state(job_key, "verifying"' in pending_branch
+    assert '_set_job_state(job_key, "failed"' not in pending_branch
+    assert 'if pending_verification and not errors:' in flow
+    assert '不会重复提交' in flow
+
+
+def test_visibility_timeout_remains_pending_until_manual_force():
+    flow = text.split('    def _try_transfer_subscription_inner(', 1)[1].split('    def _target_path(', 1)[0]
+    recovery = flow.split('pending_job.get("status") in ("submitted", "task_confirmed", "verifying")', 1)[1].split('if restored is None:', 1)[0]
+    assert '落盘确认已超等待窗口，保持待确认以避免重复提交' in recovery
+    assert 'continue' in recovery
+    assert 'force' in flow
+    restore = text.split('    def _restore_items(', 1)[1].split('    def _restore_share(', 1)[0]
+    assert '"pending_verification": True' in restore

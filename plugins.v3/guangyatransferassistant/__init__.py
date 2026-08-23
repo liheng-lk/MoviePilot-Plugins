@@ -1775,6 +1775,7 @@ class GuangYaTransferAssistant(_PluginBase):
         synchronized_match = False
         attempted_new = False
         remaining_due_to_cap = 0
+        pending_verification = False
         match_reasons = set()
         target_path = self._target_path(subscribe)
 
@@ -1868,9 +1869,14 @@ class GuangYaTransferAssistant(_PluginBase):
                         "confirmation": "重启恢复后通过目标文件可见性确认",
                     }
                     self._set_job_state(job_key, "verified", recovered=True)
-                elif age < self._retry_minutes * 60:
-                    errors.append(f"share_id={share_key.split('|', 1)[0]} 已有任务待落盘确认，暂不重复提交")
-                    logger.info("【光鸭转存助手】【恢复】#%s %s share_id=%s 已有持久任务待确认，本轮不重复转存", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0])
+                else:
+                    pending_verification = True
+                    wait_text = "等待落盘确认" if age < self._retry_minutes * 60 else "落盘确认已超等待窗口，保持待确认以避免重复提交"
+                    self._set_job_state(job_key, "verifying", verification_message=wait_text)
+                    logger.warning(
+                        "【光鸭转存助手】【恢复】#%s %s share_id=%s %s；已提交任务不会自动重复提交",
+                        sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], wait_text,
+                    )
                     continue
             if restored is None:
                 self._set_job_state(
@@ -1909,8 +1915,16 @@ class GuangYaTransferAssistant(_PluginBase):
                     self._set_job_state(job_key, "partial", deferred=deferred_for_entry)
                     logger.info("【光鸭转存助手】【分批】#%s %s share_id=%s 本轮完成后仍有 %s 个文件待下轮，不标记消息完成", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], deferred_for_entry)
             else:
-                self._set_job_state(job_key, "failed", error=str(restored.get("message") or "增量转存失败"))
-                errors.append(str(restored.get("message") or "增量转存失败"))
+                if restored.get("pending_verification"):
+                    pending_verification = True
+                    self._set_job_state(job_key, "verifying", verification_message=str(restored.get("message") or "等待落盘确认"))
+                    logger.warning(
+                        "【光鸭转存助手】【落盘确认】#%s %s share_id=%s 任务已提交但文件尚未全部确认；保持待确认，不自动重复提交",
+                        sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0],
+                    )
+                else:
+                    self._set_job_state(job_key, "failed", error=str(restored.get("message") or "增量转存失败"))
+                    errors.append(str(restored.get("message") or "增量转存失败"))
 
         unique_paths = []
         seen_paths = set()
@@ -1921,7 +1935,7 @@ class GuangYaTransferAssistant(_PluginBase):
                 unique_paths.append(rel)
         if unique_paths:
             completed_subscription = self._finish_subscription_if_complete(subscribe, channel_state=channel_state)
-            partial = (bool(errors) or remaining_due_to_cap > 0) and not completed_subscription
+            partial = (bool(errors) or remaining_due_to_cap > 0 or pending_verification) and not completed_subscription
             logger.info("【光鸭转存助手】【转存】#%s %s %s：新增 %s 个文件，累计去重 %s 个，剩余待下轮 %s，目标=%s", sid, getattr(subscribe, "name", ""), "订阅完成" if completed_subscription else ("部分完成" if partial else "增量完成"), len(unique_paths), len(assets), remaining_due_to_cap, target_path)
             if self._notify:
                 season = getattr(subscribe, "season", None)
@@ -1964,6 +1978,16 @@ class GuangYaTransferAssistant(_PluginBase):
             done, total, lack = self._subscription_episode_progress(subscribe)
             logger.info("【光鸭转存助手】【去重】#%s %s 所有有效匹配均无新增；订阅进度 %s/%s，剩余 %s；固定转存路线不触发重复下载", sid, getattr(subscribe, "name", ""), done, total, lack)
             return {"success": True, "handled": True, "already": True, "message": f"已同步，无新增资源；进度 {done}/{total}，剩余 {lack}" if total else "已同步，无新增资源"}
+
+        if pending_verification and not errors:
+            logger.info(
+                "【光鸭转存助手】【落盘确认】#%s %s 已有转存任务等待目标文件确认；本轮不重复提交、不触发失败通知",
+                sid, getattr(subscribe, "name", ""),
+            )
+            return {
+                "success": True, "handled": True, "pending": True,
+                "message": "转存任务已提交，等待目标文件落盘确认；不会重复提交",
+            }
 
         final_message = "；".join(dict.fromkeys(errors))[:1200] or "匹配分享均不可用"
         logger.warning("【光鸭转存助手】【失败】#%s %s 转存未完成：%s；固定转存路线不触发原生下载", sid, getattr(subscribe, "name", ""), final_message)
@@ -2482,7 +2506,10 @@ class GuangYaTransferAssistant(_PluginBase):
                 if not verified.get("success"):
                     message = f"转存任务已完成但目标文件未全部确认：{verified.get('message') or '-'}"
                     self._set_job_state(job_key, "verifying", error=message, task_ids=task_ids, group_paths=group_paths)
-                    return {"success": False, "message": message, "completed_items": completed, "task_ids": task_ids}
+                    return {
+                        "success": False, "pending_verification": True, "message": message,
+                        "completed_items": completed, "task_ids": task_ids,
+                    }
                 completed.extend(verified.get("verified_items") or group)
                 self._set_job_state(job_key, "verified", task_ids=task_ids, verified_paths=[str(item.get("effective_path") or item.get("relative_path") or item.get("name") or "") for item in completed])
                 logger.info("【光鸭转存助手】【落盘确认】目录 %s 已确认 %s 个文件可见且大小匹配", normalized, len(group))
