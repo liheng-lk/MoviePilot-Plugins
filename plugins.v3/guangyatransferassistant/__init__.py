@@ -40,6 +40,9 @@ TMDB_PATTERN = re.compile(r"(?i)\bTMDB\s*(?:ID)?\s*[：:#]?\s*(\d{2,9})")
 PAGINATION_KEYS = {"before", "after", "offset", "page", "cursor", "max_id", "min_id"}
 VIDEO_EXTENSIONS = {".mkv", ".mp4", ".ts", ".m2ts", ".avi", ".mov", ".wmv", ".flv", ".webm", ".iso", ".rmvb"}
 SUBTITLE_EXTENSIONS = {".srt", ".ass", ".ssa", ".vtt", ".sub", ".sup"}
+TOTAL_EPISODE_PATTERN = re.compile(r"(?:全|共|总共|共计)\s*(\d{1,4})\s*(?:集|话)", re.I)
+COMPLETE_HINT_PATTERN = re.compile(r"(?:已?完结|全集|全季|大结局|\bcomplete\b|\bend\b)", re.I)
+ONGOING_HINT_PATTERN = re.compile(r"(?:更新至|更新到|更至|连载中?|持续更新|热更中?)", re.I)
 
 def _normalize_media_text(value: Any) -> str:
     """标题匹配使用的宽松归一化。"""
@@ -160,7 +163,7 @@ def _entry_metadata(context_text: str, context_html: str = "") -> Dict[str, Any]
         if matched:
             episode_hint = matched.group(0)
             break
-    total_match = re.search(r"全\s*(\d{1,4})\s*集", text)
+    total_match = TOTAL_EPISODE_PATTERN.search(text)
     year_match = re.search(r"\b(19\d{2}|20\d{2})\b", display_title or text)
     post_match = re.search(r"(?i)\bdata-post\s*=\s*[\"'][^\"']+/(\d+)[\"']", context_html or "")
     return {
@@ -385,6 +388,38 @@ def _episode_numbers(path: Any) -> Tuple[Optional[int], List[int]]:
     return season, sorted(ep for ep in episodes if ep > 0)
 
 
+
+def _entry_serial_state(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """从频道消息判断当前更新集、明确总集数以及连载/完结提示。"""
+    value = str(entry.get("text") or "")
+    explicit_total = 0
+    try:
+        explicit_total = int(entry.get("total_episode_hint") or 0)
+    except (TypeError, ValueError):
+        explicit_total = 0
+    if not explicit_total:
+        total_match = TOTAL_EPISODE_PATTERN.search(value)
+        if total_match:
+            explicit_total = int(total_match.group(1))
+
+    current_episode = 0
+    _, episode_values = _episode_numbers(entry.get("episode_hint") or value)
+    if episode_values:
+        current_episode = max(episode_values)
+    if not current_episode:
+        current_match = re.search(r"(?:更新至|更新到|更至)\s*0*(\d{1,4})\s*(?:集|话)", value, re.I)
+        if current_match:
+            current_episode = int(current_match.group(1))
+
+    complete = bool(COMPLETE_HINT_PATTERN.search(value))
+    ongoing = bool(ONGOING_HINT_PATTERN.search(value)) and not complete
+    return {
+        "explicit_total": explicit_total,
+        "current_episode": current_episode,
+        "complete": complete,
+        "ongoing": ongoing,
+    }
+
 def _safe_relative_path(value: Any) -> str:
     """清理分享内相对路径，禁止 . / .. 逃逸目标目录。"""
     raw = str(value or "").replace("\\", "/").replace("\x00", "")
@@ -484,7 +519,7 @@ class GuangYaTransferAssistant(_PluginBase):
     plugin_name = "光鸭转存助手"
     plugin_desc = "订阅固定分流：手动勾选的订阅只使用光鸭频道转存，未勾选订阅只使用 MoviePilot 原生下载。"
     plugin_icon = "Guangyadisk_A.png"
-    plugin_version = "1.2.2"
+    plugin_version = "1.3.0"
     plugin_author = "liheng-lk"
     plugin_label = "光鸭云盘,转存,订阅,Telegram,网盘,固定分流"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -502,6 +537,8 @@ class GuangYaTransferAssistant(_PluginBase):
     _strict_subscription_rules = True
     _media_only = True
     _sync_subscription_progress = True
+    _protect_ongoing = True
+    _ongoing_guard_days = 10
     _history_pages = 3
     _retry_minutes = 30
     _max_files_per_run = 50
@@ -528,6 +565,8 @@ class GuangYaTransferAssistant(_PluginBase):
         self._strict_subscription_rules = bool(config.get("strict_subscription_rules", True))
         self._media_only = bool(config.get("media_only", True))
         self._sync_subscription_progress = bool(config.get("sync_subscription_progress", True))
+        self._protect_ongoing = bool(config.get("protect_ongoing", True))
+        self._ongoing_guard_days = self._to_int(config.get("ongoing_guard_days"), 10, 1, 60)
         self._history_pages = self._to_int(config.get("history_pages"), 3, 1, 10)
         self._retry_minutes = self._to_int(config.get("retry_minutes"), 30, 5, 720)
         self._max_files_per_run = self._to_int(config.get("max_files_per_run"), 50, 1, 500)
@@ -538,6 +577,7 @@ class GuangYaTransferAssistant(_PluginBase):
             self.save_data("transfer_inventory", {})
             self.save_data("transfer_history", {})
             self.save_data("failure_notices", {})
+            self.save_data("completion_guard", {})
             self._inspect_cache.clear()
             logger.warning("【光鸭转存助手】【去重】已按配置清空转存库存与历史记录")
             config["clear_inventory"] = False
@@ -591,6 +631,11 @@ class GuangYaTransferAssistant(_PluginBase):
                     {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "sync_subscription_progress", "label": "同步已转存剧集进度"}}]},
                 ]},
                 {"component": "VRow", "content": [
+                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "protect_ongoing", "label": "连载保护", "hint": "更新至/连载中的剧即使当前集数齐全，也不会立即判定订阅完成", "persistent-hint": True}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VTextField", "props": {"model": "ongoing_guard_days", "label": "无完结标记等待(天)", "type": "number", "hint": "频道仅写更新至N集且没有全N集/完结时，稳定达到当前总集数后至少等待该天数", "persistent-hint": True}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 6}, "content": [{"component": "VAlert", "props": {"type": "info", "variant": "tonal", "text": "频道若写明全N集/共N集，会自动把 MoviePilot 总集数向上校正；更新至N集只作为当前进度下限，不会误当完结。"}}]},
+                ]},
+                {"component": "VRow", "content": [
                     {"component": "VCol", "props": {"cols": 12, "md": 9}, "content": [{"component": "VTextarea", "props": {"model": "channel_urls", "label": "资源频道地址（每行一个）", "rows": 3}}]},
                     {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "clear_inventory", "label": "保存时清空去重记录", "hint": "仅故障恢复时使用，执行一次后自动关闭", "persistent-hint": True}}]},
                 ]},
@@ -607,6 +652,8 @@ class GuangYaTransferAssistant(_PluginBase):
             "strict_subscription_rules": self._strict_subscription_rules,
             "media_only": self._media_only,
             "sync_subscription_progress": self._sync_subscription_progress,
+            "protect_ongoing": self._protect_ongoing,
+            "ongoing_guard_days": self._ongoing_guard_days or 10,
             "history_pages": self._history_pages or 3,
             "retry_minutes": self._retry_minutes or 30,
             "max_files_per_run": self._max_files_per_run or 50,
@@ -633,13 +680,40 @@ class GuangYaTransferAssistant(_PluginBase):
             state_text = (f"{recent[0].get('time') or '-'} · {recent[0].get('message') or '-'}" if recent else "等待频道匹配")
             state = str(getattr(sub, "state", "") or "-")
             done, total, lack = self._subscription_episode_progress(sub)
+            missing = self._subscription_missing_episodes(sub)
             progress_text = f" · 已完成 {done}/{total} 集 · 剩余 {lack} 集" if total else ""
+            missing_text = ""
+            if missing:
+                shown = ",".join(f"E{value:02d}" for value in missing[:20])
+                missing_text = f" · 缺失 {shown}" + (f" 等{len(missing)}集" if len(missing) > 20 else "")
+            channel_state = self._channel_state_for_subscription(sub, index.get("items") or [])
+            serial_text = ""
+            if channel_state.get("explicit_total"):
+                serial_text += f" · 频道总集 {channel_state.get('explicit_total')}"
+            if channel_state.get("ongoing") and not channel_state.get("complete"):
+                serial_text += " · 连载中"
+            elif channel_state.get("complete"):
+                serial_text += " · 频道标记完结"
+            actions = [{
+                "component": "VBtn",
+                "props": {"size": "small", "variant": "outlined", "prepend-icon": "mdi-refresh"},
+                "text": "立即检查缺集",
+                "events": {"click": {"api": "plugin/GuangYaTransferAssistant/check_missing", "method": "get", "params": {"subscribe_id": sid, "token": settings.API_TOKEN}}},
+            }]
+            if lack > 0:
+                actions.append({
+                    "component": "VBtn",
+                    "props": {"size": "small", "variant": "text", "color": "warning", "prepend-icon": "mdi-download"},
+                    "text": "切换普通下载",
+                    "events": {"click": {"api": "plugin/GuangYaTransferAssistant/release_native", "method": "get", "params": {"subscribe_id": sid, "token": settings.API_TOKEN}}},
+                })
             rows.append({
                 "component": "VCard",
                 "props": {"variant": "tonal", "class": "h-100"},
                 "content": [
                     {"component": "VCardTitle", "text": f"{sub.name} ({getattr(sub, 'year', '') or '-'})"},
-                    {"component": "VCardText", "text": f"订阅ID {sid} · 状态 {state}{progress_text} · 去重资源 {asset_count} 个 · {state_text}"},
+                    {"component": "VCardText", "text": f"订阅ID {sid} · 状态 {state}{progress_text}{missing_text}{serial_text} · 去重资源 {asset_count} 个 · {state_text}"},
+                    {"component": "VCardActions", "content": actions},
                 ],
             })
         fresh_count = len([item for item in (index.get("items") or []) if not item.get("stale")])
@@ -715,6 +789,8 @@ class GuangYaTransferAssistant(_PluginBase):
             {"path": "/refresh", "endpoint": self.api_refresh, "methods": ["POST"], "summary": "立即刷新频道索引"},
             {"path": "/transfer", "endpoint": self.api_transfer, "methods": ["POST"], "summary": "立即尝试一个订阅的光鸭转存"},
             {"path": "/folders", "endpoint": self.api_folders, "methods": ["GET"], "summary": "读取光鸭根目录文件夹"},
+            {"path": "/check_missing", "endpoint": self.api_check_missing, "methods": ["GET"], "summary": "立即刷新并检查指定转存订阅缺集"},
+            {"path": "/release_native", "endpoint": self.api_release_native, "methods": ["GET"], "summary": "将指定转存订阅切换回 MoviePilot 普通下载"},
         ]
 
     def api_refresh(self) -> Dict[str, Any]:
@@ -735,6 +811,43 @@ class GuangYaTransferAssistant(_PluginBase):
 
     def api_folders(self) -> Dict[str, Any]:
         return {"success": True, "items": self._root_folder_options(raw=True)}
+
+    def api_check_missing(self, subscribe_id: int = 0) -> Dict[str, Any]:
+        """手动强制刷新频道并只检查该转存订阅当前缺失集。"""
+        sid = int(subscribe_id or 0)
+        subscribe = self._find_subscription(sid)
+        if not sid or not subscribe:
+            return {"success": False, "message": "订阅不存在"}
+        if sid not in set(self._selected_subscriptions):
+            return {"success": False, "message": "该订阅当前不是光鸭固定转存路线"}
+        self.refresh_channels(force=True)
+        self._inspect_cache.clear()
+        result = self._try_transfer_subscription(subscribe, force=True)
+        missing = self._subscription_missing_episodes(self._find_subscription(sid) or subscribe)
+        result["missing_episodes"] = missing
+        return result
+
+    def api_release_native(self, subscribe_id: int = 0) -> Dict[str, Any]:
+        """由用户明确操作后解除固定转存，后续交还 MoviePilot 原生订阅搜索。"""
+        sid = int(subscribe_id or 0)
+        subscribe = self._find_subscription(sid)
+        if not sid or not subscribe:
+            return {"success": False, "message": "订阅不存在"}
+        missing = self._subscription_missing_episodes(subscribe)
+        self._remove_selected_subscription(sid)
+        logger.warning("【光鸭转存助手】【人工分流】#%s %s 已由用户切换为 MoviePilot 普通下载；当前缺失=%s", sid, getattr(subscribe, "name", ""), missing)
+        if self._notify:
+            try:
+                self.post_message(
+                    mtype=NotificationType.Plugin,
+                    title="↪️ 光鸭订阅已切换普通下载",
+                    text=(f"媒体：{getattr(subscribe, 'name', '')} ({getattr(subscribe, 'year', '') or '-'})\n"
+                          f"缺失：{','.join(f'E{value:02d}' for value in missing) or '-'}\n"
+                          "后续：已解除光鸭固定转存，交还 MoviePilot 原生订阅路线；不会立即强制搜索。"),
+                )
+            except Exception as err:
+                logger.warning("【光鸭转存助手】【通知】发送人工切换通知失败：%s", err)
+        return {"success": True, "message": "已切换为普通下载，后续由 MoviePilot 原生订阅任务处理缺集", "missing_episodes": missing}
 
     def _tick(self) -> None:
         self._install_takeover()
@@ -958,6 +1071,7 @@ class GuangYaTransferAssistant(_PluginBase):
         if selected == self._selected_subscriptions:
             return
         self._selected_subscriptions = selected
+        self._clear_completion_guard(int(sid))
         self._save_config()
 
     def _save_config(self) -> None:
@@ -978,8 +1092,127 @@ class GuangYaTransferAssistant(_PluginBase):
             "refresh_minutes": self._refresh_minutes,
             "proxy": self._proxy,
             "max_share_files": self._max_share_files,
+            "protect_ongoing": self._protect_ongoing,
+            "ongoing_guard_days": self._ongoing_guard_days,
             "clear_inventory": False,
         })
+
+    @staticmethod
+    def _subscription_missing_episodes(subscribe: Any) -> List[int]:
+        """返回 MoviePilot 当前目标范围中尚未完成的真实集号。"""
+        try:
+            start = max(1, int(getattr(subscribe, "start_episode", 0) or 1))
+            total = int(getattr(subscribe, "total_episode", 0) or 0)
+        except (TypeError, ValueError):
+            return []
+        if total < start:
+            return []
+        done = set()
+        for value in (getattr(subscribe, "note", None) or []):
+            try:
+                done.add(int(value))
+            except (TypeError, ValueError):
+                continue
+        return sorted(set(range(start, total + 1)) - done)
+
+    def _channel_state_for_subscription(self, subscribe: Any, entries: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        """汇总该订阅所有新鲜频道消息的连载/总集/完结状态。"""
+        entries = list(entries if entries is not None else ((self.get_data("channel_index") or {}).get("items") or []))
+        states = []
+        for entry in entries:
+            if entry.get("stale"):
+                continue
+            matched, _ = _entry_match_reason(entry, subscribe)
+            if matched:
+                states.append(_entry_serial_state(entry))
+        return {
+            "explicit_total": max([int(item.get("explicit_total") or 0) for item in states] or [0]),
+            "current_episode": max([int(item.get("current_episode") or 0) for item in states] or [0]),
+            "complete": any(bool(item.get("complete")) for item in states),
+            "ongoing": any(bool(item.get("ongoing")) for item in states),
+            "matched": len(states),
+        }
+
+    def _sync_channel_episode_floor(self, subscribe: Any, channel_state: Dict[str, Any]) -> bool:
+        """频道明确的全N集或更新至N集只向上扩展 MoviePilot 目标，绝不向下缩减。"""
+        sid = int(getattr(subscribe, "id", 0) or 0)
+        try:
+            current_total = int(getattr(subscribe, "total_episode", 0) or 0)
+        except (TypeError, ValueError):
+            current_total = 0
+        floor = max(int(channel_state.get("explicit_total") or 0), int(channel_state.get("current_episode") or 0))
+        if not sid or floor <= current_total:
+            return False
+        done = set()
+        for value in (getattr(subscribe, "note", None) or []):
+            try:
+                done.add(int(value))
+            except (TypeError, ValueError):
+                continue
+        try:
+            start = max(1, int(getattr(subscribe, "start_episode", 0) or 1))
+        except (TypeError, ValueError):
+            start = 1
+        lack = len(set(range(start, floor + 1)) - done)
+        SubscribeOper().update(sid, {"total_episode": floor, "lack_episode": lack})
+        setattr(subscribe, "total_episode", floor)
+        setattr(subscribe, "lack_episode", lack)
+        logger.info(
+            "【光鸭转存助手】【追更】#%s %s 频道进度把目标总集数由 %s 向上校正为 %s，剩余 %s 集",
+            sid, getattr(subscribe, "name", ""), current_total, floor, lack,
+        )
+        return True
+
+    def _clear_completion_guard(self, sid: int) -> None:
+        guards = self.get_data("completion_guard") or {}
+        if str(sid) in guards:
+            guards.pop(str(sid), None)
+            self.save_data("completion_guard", guards)
+
+    def _completion_guard_allows(self, subscribe: Any, channel_state: Optional[Dict[str, Any]] = None) -> bool:
+        """当前集齐但仍标记连载时延迟完成，防止总集数后续继续增长。"""
+        if not self._protect_ongoing:
+            return True
+        sid = int(getattr(subscribe, "id", 0) or 0)
+        if not sid:
+            return False
+        if bool(getattr(subscribe, "manual_total_episode", False)):
+            self._clear_completion_guard(sid)
+            return True
+        state = channel_state or self._channel_state_for_subscription(subscribe)
+        explicit_total = int(state.get("explicit_total") or 0)
+        if bool(state.get("complete")) or explicit_total > 0:
+            self._clear_completion_guard(sid)
+            return True
+        if not bool(state.get("ongoing")):
+            self._clear_completion_guard(sid)
+            return True
+
+        done, total, lack = self._subscription_episode_progress(subscribe)
+        if not total or lack > 0:
+            self._clear_completion_guard(sid)
+            return False
+        guards = self.get_data("completion_guard") or {}
+        key = str(sid)
+        now = datetime.datetime.now()
+        row = guards.get(key) or {}
+        if int(row.get("total") or 0) != total or int(row.get("done") or 0) != done:
+            row = {"total": total, "done": done, "since": now.strftime("%Y-%m-%d %H:%M:%S")}
+            guards[key] = row
+            self.save_data("completion_guard", guards)
+        since = self._parse_datetime(row.get("since")) or now
+        elapsed_days = max(0.0, (now - since).total_seconds() / 86400)
+        if elapsed_days < self._ongoing_guard_days:
+            logger.info(
+                "【光鸭转存助手】【连载保护】#%s %s 当前 %s/%s 已齐，但频道仍标记更新中；已稳定 %.1f/%s 天，暂不完成订阅",
+                sid, getattr(subscribe, "name", ""), done, total, elapsed_days, self._ongoing_guard_days,
+            )
+            return False
+        logger.info(
+            "【光鸭转存助手】【连载保护】#%s %s 当前 %s/%s 已连续稳定 %.1f 天且未发现新集，允许完成订阅",
+            sid, getattr(subscribe, "name", ""), done, total, elapsed_days,
+        )
+        return True
 
     def _install_takeover(self) -> None:
         """只接管订阅搜索任务；未选择的订阅仍调用原生 SubscribeChain.search。"""
@@ -1089,9 +1322,6 @@ class GuangYaTransferAssistant(_PluginBase):
         if not allowed:
             logger.info("【光鸭转存助手】【规则】#%s %s 不接管：%s", sid, getattr(subscribe, "name", ""), guard_reason)
             return {"success": False, "handled": True, "message": guard_reason}
-        # 兼容旧版本已经转存完、note/lack_episode 已更新但尚未触发订阅完成的记录。
-        if self._finish_subscription_if_complete(subscribe):
-            return {"success": True, "handled": True, "completed": True, "message": "目标剧集已全部完成，订阅已移入历史"}
         self.refresh_channels(force=False)
         entries = list((self.get_data("channel_index") or {}).get("items") or [])
         matched_pairs = []
@@ -1109,6 +1339,12 @@ class GuangYaTransferAssistant(_PluginBase):
             logger.info("【光鸭转存助手】【匹配】#%s %s %s；固定转存路线不触发原生下载", sid, getattr(subscribe, "name", ""), detail)
             return {"success": False, "handled": True, "message": detail}
         logger.info("【光鸭转存助手】【匹配】#%s %s 命中 %s 个新鲜频道分享", sid, getattr(subscribe, "name", ""), len(matched_pairs))
+
+        channel_state = self._channel_state_for_subscription(subscribe, [item for item, _ in matched_pairs])
+        self._sync_channel_episode_floor(subscribe, channel_state)
+        # 兼容旧版本已经 N/N、剩余0 但尚未完成的记录；连载保护在这里统一判断。
+        if self._finish_subscription_if_complete(subscribe, channel_state=channel_state):
+            return {"success": True, "handled": True, "completed": True, "message": "目标剧集已全部完成，订阅已移入历史"}
 
         history = self.get_data("transfer_history") or {}
         inventory = self.get_data("transfer_inventory") or {}
@@ -1226,7 +1462,7 @@ class GuangYaTransferAssistant(_PluginBase):
                 seen_paths.add(rel)
                 unique_paths.append(rel)
         if unique_paths:
-            completed_subscription = self._finish_subscription_if_complete(subscribe)
+            completed_subscription = self._finish_subscription_if_complete(subscribe, channel_state=channel_state)
             partial = bool(errors) and not completed_subscription
             logger.info("【光鸭转存助手】【转存】#%s %s %s：新增 %s 个文件，累计去重 %s 个，剩余待下轮 %s，目标=%s", sid, getattr(subscribe, "name", ""), "订阅完成" if completed_subscription else ("部分完成" if partial else "增量完成"), len(unique_paths), len(assets), remaining_due_to_cap, target_path)
             if self._notify:
@@ -1248,6 +1484,12 @@ class GuangYaTransferAssistant(_PluginBase):
                     f"目标：{target_path}",
                     f"新增内容：{preview or '-'}",
                 ]
+                missing_now = self._subscription_missing_episodes(subscribe)
+                if missing_now:
+                    shown_missing = ",".join(f"E{value:02d}" for value in missing_now[:30])
+                    lines.append(f"缺失：{shown_missing}" + (f" 等{len(missing_now)}集" if len(missing_now) > 30 else ""))
+                if channel_state.get("ongoing") and not channel_state.get("complete") and not channel_state.get("explicit_total"):
+                    lines.append("追更状态：频道仍标记更新中，即使当前集数齐全也受连载保护，不会提前完成订阅")
                 if remaining_due_to_cap:
                     lines.append(f"待下轮：至少 {remaining_due_to_cap} 个文件")
                 if task_ids:
@@ -1259,7 +1501,7 @@ class GuangYaTransferAssistant(_PluginBase):
             return {"success": True, "handled": True, "message": f"增量转存成功，本次新增 {len(unique_paths)} 个文件", "new_count": len(unique_paths), "target_path": target_path, "remaining": remaining_due_to_cap}
 
         if valid_route_match and (synchronized_match or not attempted_new):
-            if self._finish_subscription_if_complete(subscribe):
+            if self._finish_subscription_if_complete(subscribe, channel_state=channel_state):
                 return {"success": True, "handled": True, "completed": True, "message": "目标剧集已全部完成，订阅已移入历史"}
             done, total, lack = self._subscription_episode_progress(subscribe)
             logger.info("【光鸭转存助手】【去重】#%s %s 所有有效匹配均无新增；订阅进度 %s/%s，剩余 %s；固定转存路线不触发重复下载", sid, getattr(subscribe, "name", ""), done, total, lack)
@@ -1441,8 +1683,8 @@ class GuangYaTransferAssistant(_PluginBase):
         except Exception as err:
             logger.warning("【光鸭转存助手】【进度】同步 MoviePilot 订阅进度失败：%s", err)
 
-    def _finish_subscription_if_complete(self, subscribe: Any) -> bool:
-        """目标集全部完成时调用 MoviePilot 官方完成流程并清理固定分流 ID。"""
+    def _finish_subscription_if_complete(self, subscribe: Any, channel_state: Optional[Dict[str, Any]] = None) -> bool:
+        """目标集全部完成且通过连载保护后，调用 MoviePilot 官方完成流程。"""
         if not self._sync_subscription_progress or bool(getattr(subscribe, "best_version", 0)):
             return False
         sid = int(getattr(subscribe, "id", 0) or 0)
@@ -1450,6 +1692,7 @@ class GuangYaTransferAssistant(_PluginBase):
             return False
         done, total, lack = self._subscription_episode_progress(subscribe)
         if not total or lack > 0:
+            self._clear_completion_guard(sid)
             if total:
                 try:
                     if int(getattr(subscribe, "lack_episode", lack) or 0) != lack:
@@ -1457,6 +1700,8 @@ class GuangYaTransferAssistant(_PluginBase):
                         setattr(subscribe, "lack_episode", lack)
                 except Exception as err:
                     logger.warning("【光鸭转存助手】【进度】更新剩余集数失败：%s", err)
+            return False
+        if not self._completion_guard_allows(subscribe, channel_state=channel_state):
             return False
         latest = self._find_subscription(sid)
         if not latest:
@@ -1485,10 +1730,11 @@ class GuangYaTransferAssistant(_PluginBase):
             if self._find_subscription(sid):
                 logger.warning("【光鸭转存助手】【完成】#%s %s 已完成 %s/%s，但 MoviePilot 完成流程后订阅仍存在", sid, getattr(latest, "name", ""), done, total)
                 return False
+            self._clear_completion_guard(sid)
             self._remove_selected_subscription(sid)
             logger.info("【光鸭转存助手】【完成】#%s %s 已完成 %s/%s，剩余 0；已通过 MoviePilot 官方流程移入订阅历史并从活动订阅移除", sid, getattr(latest, "name", ""), done, total)
             return True
-        except Exception as err:
+        except Exception:
             logger.exception("【光鸭转存助手】【完成】#%s %s 执行 MoviePilot 官方完成流程失败", sid, getattr(subscribe, "name", ""))
             return False
 

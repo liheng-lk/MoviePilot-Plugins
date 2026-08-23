@@ -94,8 +94,8 @@ def test_pagination_episode_and_path_safety():
 def test_version_and_safety_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.2.2" and local["version"] == "1.2.2"
-    assert 'plugin_version = "1.2.2"' in text
+    assert package["version"] == "1.3.0" and local["version"] == "1.3.0"
+    assert 'plugin_version = "1.3.0"' in text
     for token in (
         "隐藏按钮", "包装按钮", "_extract_pagination_urls", "tmdb_id", "TMDB精确",
         "strict_subscription_rules", "best_version", "filter_groups", "state not in (\"N\", \"R\")",
@@ -158,3 +158,20 @@ def test_completed_guangya_subscription_uses_moviepilot_completion_flow():
     assert '_remove_selected_subscription' in text
     assert '已通过 MoviePilot 官方流程移入订阅历史并从活动订阅移除' in text
     assert '目标剧集已全部完成，订阅已移入历史' in text
+
+
+
+def test_airing_and_missing_episode_contracts():
+    serial = ns["_entry_serial_state"]
+    current = serial({"text": "名称：测试剧 (2026) [更新至8集]", "episode_hint": "更新至8集"})
+    assert current["ongoing"] is True and current["complete"] is False
+    assert current["current_episode"] == 8 and current["explicit_total"] == 0
+    known = serial({"text": "集数：第23-25集 / 全36集", "episode_hint": "第23-25集", "total_episode_hint": 36})
+    assert known["current_episode"] == 25 and known["explicit_total"] == 36
+    finished = serial({"text": "全12集 已完结"})
+    assert finished["complete"] is True and finished["explicit_total"] == 12
+    assert 'api_check_missing' in text and 'api_release_native' in text
+    assert '立即检查缺集' in text and '切换普通下载' in text
+    assert 'completion_guard' in text and '连载保护' in text
+    assert '_sync_channel_episode_floor' in text
+    assert 'protect_ongoing' in text and 'ongoing_guard_days' in text
