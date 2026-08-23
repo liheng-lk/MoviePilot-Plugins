@@ -28,6 +28,7 @@ jobs:
           p = Path('tests/v3/guangyatransferassistant/test_plugin_contract.py')
           text = p.read_text(encoding='utf-8')
           text = text.replace("assert package['version']=='1.0.0' and local['version']=='1.0.0'", "assert package['version']=='1.0.1' and local['version']=='1.0.1'")
+          text = text.replace("assert 'plugin_version = \"1.0.0\"' in text", "assert 'plugin_version = \"1.0.1\"' in text")
           p.write_text(text, encoding='utf-8')
           PY
       - name: Validate
