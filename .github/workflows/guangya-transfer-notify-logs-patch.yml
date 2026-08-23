@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - fix/guangya-transfer-notify-logs-v1.0.1
+  pull_request:
 
 permissions:
   contents: write
