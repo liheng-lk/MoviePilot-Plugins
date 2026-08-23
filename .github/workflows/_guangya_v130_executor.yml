@@ -39,6 +39,10 @@ jobs:
               "replace_once(old_card, new_card, 'page subscription card')",
               "card_start = text.index('            done, total, lack = self._subscription_episode_progress(sub)\\n'); card_end = text.index('        fresh_count =', card_start); text = text[:card_start] + new_card + text[card_end:]",
           )
+          body = body.replace(
+              "replace_once(early, '', 'early completion')",
+              "early_start = text.find('        # 兼容旧版本已经转存完'); early_end = text.index('        self.refresh_channels(force=False)\\n', early_start) if early_start >= 0 else -1; assert early_start >= 0 and early_end > early_start, 'early completion boundaries missing'; text = text[:early_start] + text[early_end:]",
+          )
           exec(compile(body, '<guangya-v130-patch>', 'exec'), {})
       - name: Validate
         run: |
