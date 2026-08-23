@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urlencode, unquote, urljoin, urlsplit, urluns
 
 from app.chain.subscribe import SubscribeChain, build_subscribe_meta
 from app.chain.media import MediaChain
+from app.chain.download import DownloadChain
 from app.db.oper.subscribe import SubscribeOper
 from app.plugins import _PluginBase
 from app.schemas import NotificationType
@@ -279,6 +280,21 @@ def _share_identity(share_url: str) -> str:
     code = (query.get("code") or query.get("pwd") or [""])[0]
     return f"{share_id}|{code}" if share_id else ""
 
+
+
+def _entry_process_key(entry: Dict[str, Any]) -> str:
+    """同一频道消息+同一分享只处理一次；新消息或新链接会生成新键。"""
+    share_key = _share_identity(str(entry.get("share_url") or ""))
+    if not share_key:
+        return ""
+    source = str(entry.get("source_url") or entry.get("source_label") or "").strip()
+    message_id = str(entry.get("message_id") or "").strip()
+    if message_id:
+        message_marker = f"msg:{message_id}"
+    else:
+        stable_text = re.sub(r"\s+", " ", str(entry.get("text") or "")).strip()
+        message_marker = "txt:" + hashlib.sha256(stable_text.encode("utf-8")).hexdigest()[:20]
+    return hashlib.sha256(f"{source}|{message_marker}|{share_key}".encode("utf-8")).hexdigest()
 
 def _entry_matches_subscription(
     entry: Dict[str, Any], name: str, year: Any = None, season: Any = None,
@@ -578,6 +594,7 @@ class GuangYaTransferAssistant(_PluginBase):
             self.save_data("transfer_history", {})
             self.save_data("failure_notices", {})
             self.save_data("completion_guard", {})
+            self.save_data("processed_entries", {})
             self._inspect_cache.clear()
             logger.warning("【光鸭转存助手】【去重】已按配置清空转存库存与历史记录")
             config["clear_inventory"] = False
@@ -668,6 +685,7 @@ class GuangYaTransferAssistant(_PluginBase):
         history = self.get_data("transfer_history") or {}
         inventory = self.get_data("transfer_inventory") or {}
         last = self.get_data("last_run") or {}
+        processed_entries = self.get_data("processed_entries") or {}
         selected = set(self._selected_subscriptions)
         all_subs = self._list_subscriptions(None)
         selected_subs = [sub for sub in all_subs if int(getattr(sub, "id", 0) or 0) in selected]
@@ -723,7 +741,7 @@ class GuangYaTransferAssistant(_PluginBase):
             "props": {
                 "type": "warning" if last.get("stale_index") else ("success" if last.get("success") else "info"),
                 "variant": "tonal",
-                "text": f"频道索引 {len(index.get('items') or [])} 个（新鲜 {fresh_count} / 旧缓存 {stale_count}）· 已选择 {len(selected)} 个订阅 · 最近刷新 {index.get('time') or '-'}",
+                "text": f"频道索引 {len(index.get('items') or [])} 个（当前抓取 {fresh_count} / 回退缓存 {stale_count}）· 已处理消息/链接 {len(processed_entries)} · 已选择 {len(selected)} 个订阅 · 最近刷新 {index.get('time') or '-'}",
             },
         }]
         source_status = index.get("source_status") or {}
@@ -1071,7 +1089,6 @@ class GuangYaTransferAssistant(_PluginBase):
         if selected == self._selected_subscriptions:
             return
         self._selected_subscriptions = selected
-        self._clear_completion_guard(int(sid))
         self._save_config()
 
     def _save_config(self) -> None:
@@ -1214,6 +1231,107 @@ class GuangYaTransferAssistant(_PluginBase):
         )
         return True
 
+    def _entry_processed(self, entry: Dict[str, Any]) -> bool:
+        key = _entry_process_key(entry)
+        return bool(key and (self.get_data("processed_entries") or {}).get(key))
+
+    def _mark_entry_processed(self, entry: Dict[str, Any], status: str, message: str = "") -> None:
+        key = _entry_process_key(entry)
+        if not key:
+            return
+        records = self.get_data("processed_entries") or {}
+        records[key] = {
+            "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status": str(status or "processed"),
+            "message": str(message or "")[:300],
+            "share_id": str(entry.get("share_id") or ""),
+            "message_id": str(entry.get("message_id") or ""),
+            "source": str(entry.get("source_label") or entry.get("source_url") or ""),
+        }
+        if len(records) > 5000:
+            ordered = sorted(records.items(), key=lambda pair: str((pair[1] or {}).get("time") or ""), reverse=True)[:5000]
+            records = dict(ordered)
+        self.save_data("processed_entries", records)
+
+    def _sync_media_library_progress(self, subscribe: Any) -> Dict[str, Any]:
+        """以 MoviePilot 媒体库为事实源补齐 note/lack_episode，避免重复转存已入库剧集。"""
+        sid = int(getattr(subscribe, "id", 0) or 0)
+        media_type = str(getattr(subscribe, "type", "") or "").lower()
+        season = getattr(subscribe, "season", None)
+        if not sid or ("tv" not in media_type and "电视剧" not in str(getattr(subscribe, "type", "") or "") and season in (None, 0)):
+            return {"success": True, "existing": [], "missing": []}
+        try:
+            season = int(season or 0)
+            start = max(1, int(getattr(subscribe, "start_episode", 0) or 1))
+            total = int(getattr(subscribe, "total_episode", 0) or 0)
+        except (TypeError, ValueError):
+            return {"success": False, "existing": [], "missing": []}
+        if season <= 0 or total < start:
+            return {"success": False, "existing": [], "missing": []}
+        target = set(range(start, total + 1))
+        try:
+            meta = build_subscribe_meta(subscribe)
+            mediainfo = MediaChain().recognize_media(
+                meta=meta,
+                mtype=meta.type,
+                media_source=getattr(subscribe, "media_source", None),
+                media_id=getattr(subscribe, "media_id", None),
+                episode_group=getattr(subscribe, "episode_group", None),
+                cache=False,
+            )
+            if not mediainfo:
+                return {"success": False, "existing": [], "missing": sorted(target)}
+            complete, no_exists = DownloadChain().get_no_exists_info(
+                meta=meta,
+                mediainfo=mediainfo,
+                totals={season: total},
+            )
+            library_existing = set()
+            if complete:
+                library_existing = set(target)
+            elif no_exists:
+                season_detail = None
+                for season_map in no_exists.values():
+                    if not isinstance(season_map, dict):
+                        continue
+                    season_detail = season_map.get(season)
+                    if season_detail is None:
+                        season_detail = season_map.get(str(season))
+                    if season_detail is not None:
+                        break
+                if season_detail is None:
+                    library_existing = set(target)
+                else:
+                    missing_values = getattr(season_detail, "episodes", None)
+                    if missing_values is None and isinstance(season_detail, dict):
+                        missing_values = season_detail.get("episodes")
+                    if missing_values:
+                        missing_set = {int(value) for value in missing_values if str(value).isdigit()}
+                        library_existing = target.difference(missing_set)
+                    else:
+                        library_existing = set()
+            current = set()
+            for value in (getattr(subscribe, "note", None) or []):
+                try:
+                    current.add(int(value))
+                except (TypeError, ValueError):
+                    continue
+            merged = current | library_existing
+            lack = len(target.difference(merged))
+            current_lack = int(getattr(subscribe, "lack_episode", lack) or 0)
+            if merged != current or current_lack != lack:
+                SubscribeOper().update(sid, {"note": sorted(merged), "lack_episode": lack})
+                setattr(subscribe, "note", sorted(merged))
+                setattr(subscribe, "lack_episode", lack)
+                logger.info(
+                    "【光鸭转存助手】【媒体库同步】#%s %s 已从媒体库确认 %s 集；订阅进度 %s/%s，剩余 %s",
+                    sid, getattr(subscribe, "name", ""), len(library_existing), len(target.intersection(merged)), len(target), lack,
+                )
+            return {"success": True, "existing": sorted(library_existing), "missing": sorted(target.difference(merged))}
+        except Exception as err:
+            logger.warning("【光鸭转存助手】【媒体库同步】#%s %s 同步失败：%s", sid, getattr(subscribe, "name", ""), err)
+            return {"success": False, "existing": [], "missing": sorted(target)}
+
     def _install_takeover(self) -> None:
         """只接管订阅搜索任务；未选择的订阅仍调用原生 SubscribeChain.search。"""
         if not self._enabled:
@@ -1338,13 +1456,29 @@ class GuangYaTransferAssistant(_PluginBase):
             detail = "仅命中旧缓存，等待频道恢复" if stale_matches else "频道暂未匹配到光鸭分享"
             logger.info("【光鸭转存助手】【匹配】#%s %s %s；固定转存路线不触发原生下载", sid, getattr(subscribe, "name", ""), detail)
             return {"success": False, "handled": True, "message": detail}
-        logger.info("【光鸭转存助手】【匹配】#%s %s 命中 %s 个新鲜频道分享", sid, getattr(subscribe, "name", ""), len(matched_pairs))
+        logger.info("【光鸭转存助手】【匹配】#%s %s 命中 %s 个当前频道分享", sid, getattr(subscribe, "name", ""), len(matched_pairs))
 
         channel_state = self._channel_state_for_subscription(subscribe, [item for item, _ in matched_pairs])
         self._sync_channel_episode_floor(subscribe, channel_state)
+        self._sync_media_library_progress(subscribe)
         # 兼容旧版本已经 N/N、剩余0 但尚未完成的记录；连载保护在这里统一判断。
         if self._finish_subscription_if_complete(subscribe, channel_state=channel_state):
             return {"success": True, "handled": True, "completed": True, "message": "目标剧集已全部完成，订阅已移入历史"}
+
+        action_pairs = []
+        processed_matches = 0
+        for entry, reason in matched_pairs:
+            if not force and self._entry_processed(entry):
+                processed_matches += 1
+                continue
+            action_pairs.append((entry, reason))
+        if not action_pairs:
+            done, total, lack = self._subscription_episode_progress(subscribe)
+            logger.info(
+                "【光鸭转存助手】【消息去重】#%s %s 当前没有新链接/新消息，跳过已处理 %s 条；进度 %s/%s，剩余 %s",
+                sid, getattr(subscribe, "name", ""), processed_matches, done, total, lack,
+            )
+            return {"success": True, "handled": True, "already": True, "message": f"没有新链接/新消息；已处理记录不重复测试，进度 {done}/{total}，剩余 {lack}" if total else "没有新链接/新消息；已处理记录不重复测试"}
 
         history = self.get_data("transfer_history") or {}
         inventory = self.get_data("transfer_inventory") or {}
@@ -1362,7 +1496,7 @@ class GuangYaTransferAssistant(_PluginBase):
         match_reasons = set()
         target_path = self._target_path(subscribe)
 
-        for entry, match_reason in matched_pairs[:20]:
+        for entry, match_reason in action_pairs[:20]:
             share_url = entry.get("share_url") or ""
             share_key = _share_identity(share_url)
             if not share_key:
@@ -1375,8 +1509,9 @@ class GuangYaTransferAssistant(_PluginBase):
                 continue
             resource_allowed, resource_reason = self._subscription_resource_allowed(subscribe, entry, probe)
             if not resource_allowed:
-                logger.info("【光鸭转存助手】【规则】#%s %s share_id=%s 跳过：%s", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], resource_reason)
-                errors.append(resource_reason)
+                logger.info("【光鸭转存助手】【规则】#%s %s share_id=%s 跳过并记为已处理：%s", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], resource_reason)
+                self._mark_entry_processed(entry, "filtered", resource_reason)
+                synchronized_match = True
                 continue
             match_reasons.add(match_reason)
             source = str(entry.get("source_label") or "频道资源")
@@ -1395,11 +1530,13 @@ class GuangYaTransferAssistant(_PluginBase):
 
             stats: Dict[str, int] = {}
             planned = self._plan_incremental_files(probe, assets, subscribe=subscribe, target_path=target_path, stats=stats)
-            if stats.get("eligible", 0) <= 0:
-                errors.append("分享内没有符合订阅范围的媒体/字幕文件")
-                logger.info("【光鸭转存助手】【规则】#%s %s share_id=%s 没有符合订阅范围的可转存文件", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0])
-                continue
             valid_route_match = True
+            if stats.get("eligible", 0) <= 0:
+                message = "分享内没有需要的新剧集；已入库/已完成/范围外内容不再重复测试"
+                self._mark_entry_processed(entry, "no_new_episode", message)
+                synchronized_match = True
+                logger.info("【光鸭转存助手】【消息去重】#%s %s share_id=%s %s", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], message)
+                continue
 
             # 兼容 1.0.x / 1.1.0：旧版整份分享已成功且内容未变时，仅补建文件库存。
             if not assets and old.get("success") and old.get("fingerprint") in {fingerprint, legacy_fingerprint}:
@@ -1409,11 +1546,13 @@ class GuangYaTransferAssistant(_PluginBase):
                 inventory[sid_key] = {"assets": assets, "updated": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
                 self.save_data("transfer_inventory", inventory)
                 synchronized_match = True
+                self._mark_entry_processed(entry, "legacy_synced", "旧版成功记录已建立文件级索引")
                 logger.info("【光鸭转存助手】【去重】#%s %s 从旧版成功记录建立文件级索引 %s 个，不重复转存", sid, getattr(subscribe, "name", ""), len(migrated))
                 continue
 
             if not planned:
                 synchronized_match = True
+                self._mark_entry_processed(entry, "synced", "库存或订阅进度已覆盖，无新增文件")
                 logger.info(
                     "【光鸭转存助手】【去重】#%s %s share_id=%s 无新增文件（库存=%s，已完成剧集/范围过滤=%s），跳过",
                     sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], stats.get("inventory", 0), stats.get("episode", 0),
@@ -1451,7 +1590,9 @@ class GuangYaTransferAssistant(_PluginBase):
             history[history_key] = record
             self._trim_history(history)
             self.save_data("transfer_history", history)
-            if not restored.get("success"):
+            if restored.get("success"):
+                self._mark_entry_processed(entry, "transferred", restored.get("message") or "增量转存完成")
+            else:
                 errors.append(str(restored.get("message") or "增量转存失败"))
 
         unique_paths = []
@@ -1500,7 +1641,7 @@ class GuangYaTransferAssistant(_PluginBase):
                 return {"success": False, "handled": True, "message": f"部分转存 {len(unique_paths)} 个文件，剩余等待下轮转存", "new_count": len(unique_paths), "target_path": target_path}
             return {"success": True, "handled": True, "message": f"增量转存成功，本次新增 {len(unique_paths)} 个文件", "new_count": len(unique_paths), "target_path": target_path, "remaining": remaining_due_to_cap}
 
-        if valid_route_match and (synchronized_match or not attempted_new):
+        if valid_route_match and not errors and (synchronized_match or not attempted_new):
             if self._finish_subscription_if_complete(subscribe, channel_state=channel_state):
                 return {"success": True, "handled": True, "completed": True, "message": "目标剧集已全部完成，订阅已移入历史"}
             done, total, lack = self._subscription_episode_progress(subscribe)
@@ -1744,6 +1885,7 @@ class GuangYaTransferAssistant(_PluginBase):
         if selected == self._selected_subscriptions:
             return
         self._selected_subscriptions = selected
+        self._clear_completion_guard(int(sid))
         self._save_config()
 
     def _get_guangya_runtime(self) -> Tuple[Any, Any]:

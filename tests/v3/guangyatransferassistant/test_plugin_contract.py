@@ -175,3 +175,38 @@ def test_airing_and_missing_episode_contracts():
     assert 'completion_guard' in text and '连载保护' in text
     assert '_sync_channel_episode_floor' in text
     assert 'protect_ongoing' in text and 'ongoing_guard_days' in text
+
+
+
+def test_entry_process_key_only_changes_for_new_message_or_link():
+    key = ns["_entry_process_key"]
+    base = {
+        "source_url": "https://tgm.li668.asia/regengguangya",
+        "message_id": "100",
+        "share_url": "https://www.guangyapan.com/s/abc123",
+        "text": "名称：藏锋 更新至8集",
+    }
+    assert key(base) == key(dict(base))
+    new_message = dict(base, message_id="101")
+    new_link = dict(base, share_url="https://www.guangyapan.com/s/xyz999")
+    assert key(base) != key(new_message)
+    assert key(base) != key(new_link)
+
+
+def test_processed_message_and_media_library_sync_contracts():
+    assert 'from app.chain.download import DownloadChain' in text
+    assert '_sync_media_library_progress' in text
+    assert 'DownloadChain().get_no_exists_info' in text
+    assert 'processed_entries' in text
+    assert '_entry_process_key' in text
+    flow = text.split('    def _try_transfer_subscription(', 1)[1].split('    def _target_path(', 1)[0]
+    assert 'if not force and self._entry_processed(entry):' in flow
+    assert '_mark_entry_processed(entry, "no_new_episode"' in flow
+    assert '_mark_entry_processed(entry, "transferred"' in flow
+    assert 'errors.append("分享内没有符合订阅范围的媒体/字幕文件")' not in flow
+    assert '没有新链接/新消息' in flow
+    assert '当前抓取' in text and '回退缓存' in text
+    cleanup = text.split('    def _cleanup_selected_ids(', 1)[1].split('    def _save_config(', 1)[0]
+    assert '_clear_completion_guard(int(sid))' not in cleanup
+    removal = text.split('    def _remove_selected_subscription(', 1)[1].split('    def _get_guangya_runtime(', 1)[0]
+    assert '_clear_completion_guard(int(sid))' in removal
