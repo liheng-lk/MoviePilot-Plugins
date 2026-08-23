@@ -34,9 +34,9 @@ assert ns['_share_identity']('https://www.guangyapan.com/s/abc_DEF?code=9xY2')==
 
 package=json.loads((ROOT/'package.v3.json').read_text(encoding='utf-8'))['GuangYaTransferAssistant']
 local=json.loads((ROOT/'plugins.v3'/'guangyatransferassistant'/'plugin.json').read_text(encoding='utf-8'))
-assert package['version']=='1.0.0' and local['version']=='1.0.0'
+assert package['version']=='1.0.1' and local['version']=='1.0.1'
 assert package['system_version']=='>=3.0.0'
-assert 'plugin_version = "1.0.0"' in text
+assert 'plugin_version = "1.0.1"' in text
 assert 'subscribe_search' in text and 'new_subscribe_search' in text
 assert 'SubscribeChain().search' in text
 assert 'ShukGuangYaDisk' in text and 'get_plugin_attr' in text
@@ -52,3 +52,17 @@ print('GuangYaTransferAssistant contract OK')
 assert "stale_index" in text
 assert "source_successes" in text
 assert "if not valid:" in text
+
+
+def test_transfer_notification_and_logging_contract():
+    text = SRC.read_text(encoding="utf-8")
+    assert 'from app.schemas import NotificationType' in text
+    assert 'mtype=NotificationType.Plugin' in text
+    assert '✅ 光鸭转存成功' in text
+    assert '⚠️ 光鸭转存失败' in text
+    assert '【光鸭转存助手】【转存】' in text
+    assert '【光鸭转存助手】【回退】' in text
+    assert '【光鸭转存助手】【通知】' in text
+    assert '光鸭异步任务已确认完成' in text
+    assert 'confirmed' in text
+    assert 'task_id' in text
