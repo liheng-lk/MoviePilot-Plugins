@@ -48,3 +48,7 @@ assert 'VSelect' in text and 'selected_subscriptions' in text
 assert 'VCombobox' in text and 'save_path' in text
 assert 'fingerprint' in text
 print('GuangYaTransferAssistant contract OK')
+
+assert "stale_index" in text
+assert "source_successes" in text
+assert "if not valid:" in text

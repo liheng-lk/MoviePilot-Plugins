@@ -339,6 +339,7 @@ class GuangYaTransferAssistant(_PluginBase):
         entries: List[Dict[str, Any]] = []
         errors = []
         seen = set()
+        source_successes = 0
         for source_url in self._source_urls():
             label = "光鸭云盘影视热更频道" if "regeng" in source_url.lower() else "光鸭云盘资源分享频道"
             try:
@@ -347,6 +348,7 @@ class GuangYaTransferAssistant(_PluginBase):
                 if not response or getattr(response, "status_code", 200) >= 400:
                     errors.append(f"{label}: HTTP {getattr(response, 'status_code', '无响应')}")
                     continue
+                source_successes += 1
                 found = _extract_channel_entries(response.text or "", source_url, label)
                 for item in found:
                     key = _share_identity(item.get("share_url") or "")
@@ -356,6 +358,16 @@ class GuangYaTransferAssistant(_PluginBase):
             except Exception as err:
                 errors.append(f"{label}: {err}")
         entries.sort(key=lambda item: int(item.get("priority") or 0))
+        if not entries and current.get("items") and (errors or source_successes == 0):
+            logger.warning("【光鸭转存助手】本轮频道抓取未得到有效分享，保留上次索引，避免临时网络异常误触发原生下载")
+            self.save_data("last_run", {
+                "success": False,
+                "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "count": len(current.get("items") or []),
+                "errors": errors or ["频道返回空数据，已保留上次索引"],
+                "stale_index": True,
+            })
+            return list(current.get("items") or [])
         payload = {
             "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "items": entries[:1000],
@@ -397,6 +409,9 @@ class GuangYaTransferAssistant(_PluginBase):
 
     def _cleanup_selected_ids(self) -> None:
         valid = {int(getattr(item, "id", 0) or 0) for item in self._list_subscriptions("N,R,P")}
+        # 启动阶段订阅查询暂时不可用时，保留用户已经勾选的路由。
+        if not valid:
+            return
         selected = [sid for sid in self._selected_subscriptions if sid in valid]
         if selected == self._selected_subscriptions:
             return
