@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "光鸭频道转存优先路由：兼容明文/隐藏/包装分享链接，TMDB精确匹配，遵循订阅状态与规则，文件级增量去重并同步剧集进度。",
-  "version": "1.2.0",
+  "description": "订阅固定分流：勾选订阅只走光鸭转存，未勾选订阅只走 MoviePilot 原生下载；自动修复目标目录对象配置。",
+  "version": "1.2.1",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,

@@ -94,8 +94,8 @@ def test_pagination_episode_and_path_safety():
 def test_version_and_safety_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.2.0" and local["version"] == "1.2.0"
-    assert 'plugin_version = "1.2.0"' in text
+    assert package["version"] == "1.2.1" and local["version"] == "1.2.1"
+    assert 'plugin_version = "1.2.1"' in text
     for token in (
         "隐藏按钮", "包装按钮", "_extract_pagination_urls", "tmdb_id", "TMDB精确",
         "strict_subscription_rules", "best_version", "filter_groups", "state not in (\"N\", \"R\")",
@@ -115,3 +115,25 @@ def test_asset_identity_keeps_v11_compatibility_when_digest_absent():
     old_style = hashlib.sha256("season 1/e01.mkv|100".encode("utf-8")).hexdigest()
     assert ns["_asset_identity"]("Season 1/E01.mkv", 100) == old_style
     assert ns["_asset_identity"]("Season 1/E01.mkv", 100, "abc") != old_style
+
+
+
+def test_fixed_routing_never_falls_back_for_selected_subscriptions():
+    assert "_fallback_native" not in text
+    assert '"fallback_native"' not in text
+    dispatch = text.split("    def _dispatch_subscribe_search(", 1)[1].split("    def _subscription_static_guard(", 1)[0]
+    assert dispatch.count("SubscribeChain().search") == 2
+    assert "if int(sid) not in selected:" in dispatch
+    assert "if subscribe_id in selected:" in dispatch
+    assert "固定转存处理" in dispatch
+    assert "continue" in dispatch
+    assert "固定转存路线不触发原生下载" in text
+
+
+def test_save_path_combobox_values_are_normalized():
+    normalize = ns["_normalize_config_path"]
+    assert normalize("/光鸭媒体库") == "/光鸭媒体库"
+    assert normalize({"title": "/光鸭媒体库", "value": "/光鸭媒体库"}) == "/光鸭媒体库"
+    assert normalize("{'title': '/光鸭媒体库', 'value': '/光鸭媒体库'}") == "/光鸭媒体库"
+    assert normalize('{"title": "/光鸭媒体库", "value": "/光鸭媒体库"}') == "/光鸭媒体库"
+    assert 'result.append(row if raw else row["value"])' in text

@@ -4,23 +4,14 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-permissions:
-  contents: write
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: fix/guangya-transfer-fixed-routing-v1.2.1
-          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Repair and apply GuangYa v1.2.1 patch
-        run: |
-          python .github/fix_guangya_v121_generator.py
-          python .github/guangya_transfer_v121_patch.py
       - name: Python syntax
         run: |
           python -m compileall -q plugins.v2 plugins.v3
@@ -28,10 +19,6 @@ jobs:
           find plugins.v2 plugins.v3 -type f -name '*.pyc' -delete
       - name: Unit tests
         run: python -m unittest discover -s tests -v
-      - name: GuangYa v1.2.1 regression
-        run: |
-          python -m pip install -q pytest
-          python -m pytest -q tests/v3/guangyatransferassistant/test_plugin_contract.py
       - name: V3 plugin contract tests
         run: |
           python tests/v3/dailynewdrama/test_plugin_contract.py
@@ -53,35 +40,9 @@ jobs:
           PY
       - name: JSON indexes
         run: python -c "import json; [json.load(open(p,encoding='utf-8')) for p in ['plugin.json','package.v2.json','package.v3.json']]"
-      - name: Fixed routing static contract
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import json
-          text = Path('plugins.v3/guangyatransferassistant/__init__.py').read_text(encoding='utf-8')
-          assert 'plugin_version = "1.2.1"' in text
-          assert '_fallback_native' not in text
-          assert '"fallback_native"' not in text
-          assert '固定转存路线不触发原生下载' in text
-          assert '_normalize_config_path' in text
-          assert 'result.append(row if raw else row["value"])' in text
-          package = json.loads(Path('package.v3.json').read_text(encoding='utf-8'))
-          assert package['GuangYaTransferAssistant']['version'] == '1.2.1'
-          print('GuangYa v1.2.1 fixed routing contract OK')
-          PY
       - name: Cleanup test artifacts
         run: |
           find . -type d -name '__pycache__' -prune -exec rm -rf {} +
           find . -type f -name '*.pyc' -delete
       - name: No generated Python artifacts
         run: test -z "$(find . -type f -name '*.pyc' -o -type d -name '__pycache__')"
-      - name: Commit final files and restore workflow
-        if: github.event_name == 'pull_request'
-        run: |
-          git checkout origin/main -- .github/workflows/validate.yml
-          rm -f .github/fix_guangya_v121_generator.py .github/guangya_transfer_v121_patch.py .github/workflows/guangya-transfer-v121-build.yml
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add package.v3.json plugins.v3/guangyatransferassistant/__init__.py plugins.v3/guangyatransferassistant/plugin.json tests/v3/guangyatransferassistant/test_plugin_contract.py .github
-          git commit -m "fix: use deterministic GuangYa routing and normalize target path"
-          git push origin HEAD:fix/guangya-transfer-fixed-routing-v1.2.1
