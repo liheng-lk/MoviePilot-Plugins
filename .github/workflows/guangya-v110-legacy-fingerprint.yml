@@ -1,0 +1,35 @@
+name: GuangYa v1.1.0 Legacy Fingerprint
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/guangya-transfer-auto-incremental-v1.1.0
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply compatibility patch
+        run: python .github/guangya_v110_legacy_fingerprint.py
+      - name: Validate
+        run: |
+          python -m py_compile plugins.v3/guangyatransferassistant/__init__.py
+          python -m pip install -q pytest
+          python -m pytest -q tests/v3/guangyatransferassistant/test_plugin_contract.py
+          python -m json.tool package.v3.json >/dev/null
+      - name: Commit compatibility fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .github/guangya_v110_legacy_fingerprint.py .github/workflows/guangya-v110-legacy-fingerprint.yml
+          git add plugins.v3/guangyatransferassistant/__init__.py tests/v3/guangyatransferassistant/test_plugin_contract.py
+          git commit -m "fix: preserve GuangYa legacy transfer fingerprints"
+          git push origin HEAD:fix/guangya-transfer-auto-incremental-v1.1.0
