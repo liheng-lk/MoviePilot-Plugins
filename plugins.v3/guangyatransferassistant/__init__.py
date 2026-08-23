@@ -10,7 +10,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
-from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qs, urlencode, unquote, urljoin, urlsplit, urlunsplit
 
 from app.chain.subscribe import SubscribeChain
 from app.db.oper.subscribe import SubscribeOper
@@ -27,11 +27,18 @@ DEFAULT_CHANNEL_URLS = [
     "https://tgm.li668.asia/yunpanguangya",
 ]
 SHARE_PATTERN = re.compile(
-    r"https?://(?:www\.)?guangyapan\.com/(?:s|share)/[A-Za-z0-9_-]+(?:\?[^\s\"'<>]*)?",
+    r"(?:(?:https?:)?//)?(?:www\.)?guangyapan\.com/(?:s|share)/[A-Za-z0-9_-]+(?:\?[^\s\"'<>]*)?",
     re.I,
 )
 CODE_PATTERN = re.compile(r"(?:提取码|密码|code)\s*[：:]?\s*([A-Za-z0-9]{2,16})", re.I)
-
+ATTRIBUTE_URL_PATTERN = re.compile(
+    r"(?i)\b(href|data-href|data-url|data-link|data-button-url|onclick)\s*=\s*([\"'])(.*?)\2",
+    re.S,
+)
+TMDB_PATTERN = re.compile(r"(?i)\bTMDB\s*(?:ID)?\s*[：:#]?\s*(\d{2,9})")
+PAGINATION_KEYS = {"before", "after", "offset", "page", "cursor", "max_id", "min_id"}
+VIDEO_EXTENSIONS = {".mkv", ".mp4", ".ts", ".m2ts", ".avi", ".mov", ".wmv", ".flv", ".webm", ".iso", ".rmvb"}
+SUBTITLE_EXTENSIONS = {".srt", ".ass", ".ssa", ".vtt", ".sub", ".sup"}
 
 def _normalize_media_text(value: Any) -> str:
     """标题匹配使用的宽松归一化。"""
@@ -43,13 +50,22 @@ def _normalize_media_text(value: Any) -> str:
 
 
 def _canonical_share_url(raw_url: str, context: str = "") -> str:
-    """规范化光鸭分享链接并从消息文本补齐提取码。"""
-    raw_url = html.unescape(str(raw_url or "").strip()).rstrip(".,，。;；)")
+    """规范化明文、隐藏按钮和包装跳转中的光鸭分享链接。"""
+    raw_url = html.unescape(str(raw_url or "").strip()).replace("\\/", "/")
+    raw_url = raw_url.strip("\"'<> ").rstrip(".,，。;；)）]】")
+    if "guangyapan.com" not in raw_url.lower() and "%" in raw_url:
+        raw_url = _decode_url_layers(raw_url)
+    if raw_url.startswith("//"):
+        raw_url = "https:" + raw_url
+    elif re.match(r"(?i)^(?:www\.)?guangyapan\.com/", raw_url):
+        raw_url = "https://" + raw_url
     try:
         parsed = urlsplit(raw_url)
     except ValueError:
         return ""
     if not parsed.hostname or not parsed.hostname.lower().endswith("guangyapan.com"):
+        return ""
+    if not re.search(r"(?i)/(?:s|share)/[A-Za-z0-9_-]+", parsed.path or ""):
         return ""
     query = parse_qs(parsed.query)
     if not any(query.get(key) for key in ("code", "pwd")):
@@ -62,35 +78,184 @@ def _canonical_share_url(raw_url: str, context: str = "") -> str:
     return urlunsplit(("https", "www.guangyapan.com", parsed.path, normalized_query, ""))
 
 
-def _extract_channel_entries(page_text: str, source_url: str, source_label: str) -> List[Dict[str, Any]]:
-    """从 Telegram 镜像 HTML 中提取分享链接及附近消息文本。"""
-    decoded = html.unescape(str(page_text or ""))
-    entries: List[Dict[str, Any]] = []
+def _decode_url_layers(value: Any) -> str:
+    """解码 HTML 实体、JSON 斜杠和最多三层 URL 编码。"""
+    current = html.unescape(str(value or "")).replace("\\/", "/").strip()
+    for _ in range(3):
+        decoded = unquote(current)
+        if decoded == current:
+            break
+        current = decoded
+    return current
+
+
+def _html_to_text(fragment: str) -> str:
+    """HTML 转文本时保留消息换行，避免相邻字段粘连。"""
+    value = re.sub(r"<script\b[^>]*>.*?</script>", " ", str(fragment or ""), flags=re.I | re.S)
+    value = re.sub(r"<style\b[^>]*>.*?</style>", " ", value, flags=re.I | re.S)
+    value = re.sub(r"(?i)<br\s*/?>|</(?:div|p|li|section|article|blockquote)\s*>", "\n", value)
+    value = re.sub(r"<[^>]+>", " ", value)
+    value = html.unescape(value)
+    lines = [re.sub(r"\s+", " ", line).strip() for line in value.splitlines()]
+    return "\n".join(line for line in lines if line)
+
+
+def _message_context_html(page_text: str, position: int) -> str:
+    """优先按 Telegram data-post 消息边界取上下文，失败才回退固定窗口。"""
+    decoded = str(page_text or "")
+    markers = list(re.finditer(r"(?i)\bdata-post\s*=\s*[\"'][^\"']+[\"']", decoded))
+    if markers:
+        previous = None
+        next_marker = None
+        for marker in markers:
+            if marker.start() <= position:
+                previous = marker
+            elif marker.start() > position:
+                next_marker = marker
+                break
+        if previous:
+            start = decoded.rfind("<", 0, previous.start())
+            if start < 0:
+                start = previous.start()
+            if next_marker:
+                end = decoded.rfind("<", position, next_marker.start())
+                if end <= position:
+                    end = next_marker.start()
+            else:
+                end = min(len(decoded), position + 5000)
+            return decoded[start:end]
+    # 兼容没有 data-post 的镜像：优先寻找外层 message wrap。
+    left = decoded[max(0, position - 5000):position]
+    strong = list(re.finditer(
+        r"(?i)<(?:div|article)[^>]+class=[\"'][^\"']*(?:message_wrap|widget_message|tme_messages_message)[^\"']*[\"']",
+        left,
+    ))
+    if strong:
+        start = max(0, position - 5000) + strong[-1].start()
+        right = decoded[position:min(len(decoded), position + 6000)]
+        next_strong = re.search(
+            r"(?i)<(?:div|article)[^>]+class=[\"'][^\"']*(?:message_wrap|widget_message|tme_messages_message)[^\"']*[\"']",
+            right,
+        )
+        end = position + next_strong.start() if next_strong and next_strong.start() > 0 else min(len(decoded), position + 3500)
+        return decoded[start:end]
+    return decoded[max(0, position - 1800):min(len(decoded), position + 1800)]
+
+
+def _entry_metadata(context_text: str, context_html: str = "") -> Dict[str, Any]:
+    """提取频道消息中的标题、TMDB、集数提示和消息 ID。"""
+    text = str(context_text or "")
+    tmdb_match = TMDB_PATTERN.search(text)
+    name_match = re.search(r"(?im)(?:^|\n)\s*(?:名称|片名|剧名)\s*[：:]\s*([^\n]{2,180})", text)
+    display_title = name_match.group(1).strip() if name_match else ""
+    episode_hint = ""
+    for pattern in (
+        r"第\s*\d{1,3}\s*[-~—至]\s*\d{1,3}\s*集",
+        r"第\s*\d{1,3}\s*集",
+        r"(?:更新至|更至|更新到)\s*\d{1,3}\s*集",
+        r"(?i)S\d{1,2}\s*E\d{1,3}(?:\s*[-~]\s*E?\d{1,3})?",
+    ):
+        matched = re.search(pattern, text)
+        if matched:
+            episode_hint = matched.group(0)
+            break
+    total_match = re.search(r"全\s*(\d{1,4})\s*集", text)
+    year_match = re.search(r"\b(19\d{2}|20\d{2})\b", display_title or text)
+    post_match = re.search(r"(?i)\bdata-post\s*=\s*[\"'][^\"']+/(\d+)[\"']", context_html or "")
+    return {
+        "tmdb_id": tmdb_match.group(1) if tmdb_match else "",
+        "display_title": display_title,
+        "episode_hint": episode_hint,
+        "total_episode_hint": int(total_match.group(1)) if total_match else None,
+        "year_hint": int(year_match.group(1)) if year_match else None,
+        "message_id": post_match.group(1) if post_match else "",
+    }
+
+
+def _extract_share_candidates(page_text: str) -> List[Dict[str, Any]]:
+    """同时识别明文链接、隐藏按钮属性和 URL 编码包装链接。"""
+    decoded = html.unescape(str(page_text or "")).replace("\\/", "/")
+    candidates: List[Dict[str, Any]] = []
+    attr_spans: List[Tuple[int, int]] = []
+    for attr in ATTRIBUTE_URL_PATTERN.finditer(decoded):
+        attr_name = str(attr.group(1) or "").lower()
+        attr_value = _decode_url_layers(attr.group(3))
+        attr_spans.append((attr.start(), attr.end()))
+        tail = decoded[attr.end():min(len(decoded), attr.end() + 320)]
+        is_button = bool(re.search(r"(?i)(查看资源|资源链接|光鸭云盘.{0,30}(?:查看|资源))", _html_to_text(tail)))
+        matches = list(SHARE_PATTERN.finditer(attr_value))
+        for found in matches:
+            raw = found.group(0)
+            direct_attr = bool(re.match(r"(?i)^(?:(?:https?:)?//)?(?:www\.)?guangyapan\.com/", attr_value.strip()))
+            style = "隐藏按钮" if is_button and direct_attr else ("包装按钮" if is_button else ("链接属性" if direct_attr else "包装链接"))
+            candidates.append({"raw_url": raw, "position": attr.start(), "link_style": style, "attribute": attr_name})
+    for found in SHARE_PATTERN.finditer(decoded):
+        if any(start <= found.start() <= end for start, end in attr_spans):
+            continue
+        candidates.append({"raw_url": found.group(0), "position": found.start(), "link_style": "明文链接", "attribute": ""})
+    return candidates
+
+
+def _extract_pagination_urls(page_text: str, source_url: str) -> List[str]:
+    """从镜像页面发现同频道 before/page/offset 等历史翻页链接。"""
+    try:
+        base = urlsplit(source_url)
+    except ValueError:
+        return []
+    result: List[str] = []
     seen = set()
-    for match in SHARE_PATTERN.finditer(decoded):
-        start = max(0, match.start() - 900)
-        end = min(len(decoded), match.end() + 900)
-        context_html = decoded[start:end]
-        context = re.sub(r"<script\b[^>]*>.*?</script>", " ", context_html, flags=re.I | re.S)
-        context = re.sub(r"<style\b[^>]*>.*?</style>", " ", context, flags=re.I | re.S)
-        context = re.sub(r"<[^>]+>", " ", context)
-        context = re.sub(r"\s+", " ", html.unescape(context)).strip()
-        share_url = _canonical_share_url(match.group(0), context)
+    for attr in ATTRIBUTE_URL_PATTERN.finditer(html.unescape(str(page_text or ""))):
+        if str(attr.group(1) or "").lower() != "href":
+            continue
+        raw = _decode_url_layers(attr.group(3))
+        candidate = urljoin(source_url, raw)
+        try:
+            parsed = urlsplit(candidate)
+        except ValueError:
+            continue
+        if parsed.hostname != base.hostname or parsed.path.rstrip("/") != base.path.rstrip("/"):
+            continue
+        query = parse_qs(parsed.query)
+        if not PAGINATION_KEYS.intersection(query.keys()):
+            continue
+        if candidate not in seen and candidate != source_url:
+            seen.add(candidate)
+            result.append(candidate)
+    return result
+
+
+def _extract_channel_entries(page_text: str, source_url: str, source_label: str) -> List[Dict[str, Any]]:
+    """从 Telegram 镜像 HTML 提取分享；按钮文字是否显示 URL 都不影响。"""
+    decoded = html.unescape(str(page_text or "")).replace("\\/", "/")
+    by_key: Dict[str, Dict[str, Any]] = {}
+    for candidate in _extract_share_candidates(decoded):
+        position = int(candidate.get("position") or 0)
+        context_html = _message_context_html(decoded, position)
+        context = _html_to_text(context_html)
+        share_url = _canonical_share_url(str(candidate.get("raw_url") or ""), context)
         if not share_url:
             continue
         share_key = _share_identity(share_url)
-        if not share_key or share_key in seen:
+        if not share_key:
             continue
-        seen.add(share_key)
-        entries.append({
+        metadata = _entry_metadata(context, context_html)
+        entry = {
             "share_url": share_url,
             "share_id": share_key.split("|", 1)[0],
-            "text": context[:1800],
+            "text": context[:2200],
             "source_url": source_url,
             "source_label": source_label,
             "priority": 0 if "regeng" in source_url.lower() else 1,
-        })
-    return entries
+            "link_style": candidate.get("link_style") or "未知",
+            "stale": False,
+            **metadata,
+        }
+        old = by_key.get(share_key)
+        score = len(entry["text"]) + (600 if entry.get("tmdb_id") else 0) + (300 if entry.get("display_title") else 0)
+        old_score = len(str((old or {}).get("text") or "")) + (600 if (old or {}).get("tmdb_id") else 0) + (300 if (old or {}).get("display_title") else 0)
+        if not old or score > old_score:
+            by_key[share_key] = entry
+    return list(by_key.values())
 
 
 def _share_identity(share_url: str) -> str:
@@ -111,9 +276,27 @@ def _share_identity(share_url: str) -> str:
     return f"{share_id}|{code}" if share_id else ""
 
 
-def _entry_matches_subscription(entry: Dict[str, Any], name: str, year: Any = None, season: Any = None) -> bool:
-    """频道消息与 MoviePilot 订阅做保守标题/季匹配。"""
-    haystack = _normalize_media_text(entry.get("text"))
+def _entry_matches_subscription(
+    entry: Dict[str, Any], name: str, year: Any = None, season: Any = None,
+    media_source: Any = None, media_id: Any = None,
+) -> bool:
+    """优先使用频道 TMDB 精确匹配；没有可比身份时才回退标题/年份/季。"""
+    source = str(media_source or "").lower()
+    entry_tmdb = str(entry.get("tmdb_id") or "").strip()
+    subscribe_id = str(media_id or "").strip()
+    comparable_tmdb = bool(entry_tmdb and subscribe_id and ("tmdb" in source or "themoviedb" in source))
+    if comparable_tmdb and entry_tmdb != subscribe_id:
+        return False
+
+    text_value = str(entry.get("text") or "")
+    if season not in (None, "", 0, "0"):
+        explicit = re.findall(r"(?i)\bS(?:eason)?\s*0*(\d{1,2})\b", text_value)
+        if explicit and int(season) not in {int(value) for value in explicit}:
+            return False
+    if comparable_tmdb:
+        return True
+
+    haystack = _normalize_media_text("\n".join(filter(None, [str(entry.get("display_title") or ""), text_value])))
     if not haystack:
         return False
     raw_name = str(name or "").strip()
@@ -124,16 +307,106 @@ def _entry_matches_subscription(entry: Dict[str, Any], name: str, year: Any = No
     candidates = {value for value in candidates if len(value) >= 2}
     if not candidates or not any(value in haystack for value in candidates):
         return False
-    if season not in (None, "", 0, "0"):
-        explicit = re.findall(r"(?i)\bS(?:eason)?\s*0*(\d{1,2})\b", str(entry.get("text") or ""))
-        if explicit and int(season) not in {int(value) for value in explicit}:
-            return False
     if year:
-        years = {int(value) for value in re.findall(r"\b(19\d{2}|20\d{2})\b", str(entry.get("text") or ""))}
+        years = {int(value) for value in re.findall(r"\b(19\d{2}|20\d{2})\b", str(entry.get("display_title") or "") or text_value)}
         if years and int(year) not in years:
-            # 标题已经明确命中时，年份冲突才拒绝，避免同名翻拍误转存。
             return False
     return True
+
+
+def _entry_match_reason(entry: Dict[str, Any], subscribe: Any) -> Tuple[bool, str]:
+    source = str(getattr(subscribe, "media_source", "") or "").lower()
+    media_id = str(getattr(subscribe, "media_id", "") or "")
+    entry_tmdb = str(entry.get("tmdb_id") or "")
+    matched = _entry_matches_subscription(
+        entry,
+        getattr(subscribe, "name", ""),
+        getattr(subscribe, "year", None),
+        getattr(subscribe, "season", None),
+        source,
+        media_id,
+    )
+    if not matched:
+        return False, ""
+    if entry_tmdb and media_id and ("tmdb" in source or "themoviedb" in source) and entry_tmdb == media_id:
+        return True, "TMDB精确"
+    return True, "标题/年份/季匹配"
+
+
+def _safe_rule_match(pattern: Any, value: str) -> bool:
+    """订阅字段通常是正则；非法正则时退化为大小写不敏感字面匹配。"""
+    rule = str(pattern or "").strip()
+    if not rule:
+        return True
+    try:
+        return re.search(rule, value or "", re.I) is not None
+    except re.error:
+        return rule.lower() in str(value or "").lower()
+
+
+def _episode_numbers(path: Any) -> Tuple[Optional[int], List[int]]:
+    """从 S01E23、S01E23-E25、E23-E25、E23E24、中文第23-25集提取季和集。"""
+    value = str(path or "")
+    season = None
+    episodes = set()
+
+    # S01E23-E25 / S01E23E24 先处理，避免 E 前面是数字时被通用边界规则漏掉。
+    season_block = re.search(r"(?i)S(?:eason)?\s*0*(\d{1,2})\s*E(?:P)?\s*0*(\d{1,3})(?:\s*[-~—至]\s*E?(?:P)?\s*0*(\d{1,3}))?", value)
+    if season_block:
+        season = int(season_block.group(1))
+        start = int(season_block.group(2))
+        end = int(season_block.group(3)) if season_block.group(3) else start
+        if end >= start and end - start <= 200:
+            episodes.update(range(start, end + 1))
+        # 同一个 season token 后续可能是 E23E24E25。
+        suffix = value[season_block.start():]
+        for ep in re.findall(r"(?i)E(?:P)?\s*0*(\d{1,3})", suffix):
+            episodes.add(int(ep))
+    else:
+        season_match = re.search(r"(?i)(?:^|[^A-Za-z0-9])S(?:eason)?\s*0*(\d{1,2})(?=[^0-9]|$)", value)
+        if season_match:
+            season = int(season_match.group(1))
+
+    # 独立 E23 / E23-E25。
+    for matched in re.finditer(r"(?i)(?:^|[^A-Za-z0-9])E(?:P)?\s*0*(\d{1,3})(?:\s*[-~—至]\s*E?(?:P)?\s*0*(\d{1,3}))?", value):
+        start = int(matched.group(1))
+        end = int(matched.group(2)) if matched.group(2) else start
+        if end >= start and end - start <= 200:
+            episodes.update(range(start, end + 1))
+
+    # 中文 第23-25集 / 第23至25集。
+    for matched in re.finditer(r"第\s*(\d{1,3})(?:\s*[-~—至]\s*(\d{1,3}))?\s*集", value):
+        start = int(matched.group(1))
+        end = int(matched.group(2)) if matched.group(2) else start
+        if end >= start and end - start <= 200:
+            episodes.update(range(start, end + 1))
+
+    return season, sorted(ep for ep in episodes if ep > 0)
+
+
+def _safe_relative_path(value: Any) -> str:
+    """清理分享内相对路径，禁止 . / .. 逃逸目标目录。"""
+    raw = str(value or "").replace("\\", "/").replace("\x00", "")
+    parts = []
+    for part in raw.split("/"):
+        part = part.strip()
+        if not part or part in (".", ".."):
+            continue
+        parts.append(part)
+    return "/".join(parts)
+
+
+def _file_extension(value: Any) -> str:
+    name = str(value or "").rsplit("/", 1)[-1].lower()
+    return "." + name.rsplit(".", 1)[-1] if "." in name else ""
+
+
+def _is_video(value: Any) -> bool:
+    return _file_extension(value) in VIDEO_EXTENSIONS
+
+
+def _is_subtitle(value: Any) -> bool:
+    return _file_extension(value) in SUBTITLE_EXTENSIONS
 
 
 def _extract_result_list(response: Any) -> List[dict]:
@@ -153,7 +426,7 @@ def _extract_result_list(response: Any) -> List[dict]:
 
 
 def _cloud_item(raw: dict) -> Optional[Dict[str, Any]]:
-    """规范化光鸭分享文件。"""
+    """规范化光鸭分享文件，并尽可能保留服务端内容摘要。"""
     if not isinstance(raw, dict):
         return None
     file_id = raw.get("fileId") or raw.get("id") or raw.get("fid") or raw.get("resId")
@@ -164,18 +437,24 @@ def _cloud_item(raw: dict) -> Optional[Dict[str, Any]]:
     is_dir = bool(raw.get("isDir") or raw.get("is_dir") or raw.get("dir") or raw_type in (2, "2", "dir", "folder"))
     if raw_type in (0, 1, "0", "1", "file"):
         is_dir = False
+    digest = str(raw.get("sha1") or raw.get("md5") or raw.get("hash") or raw.get("etag") or "").strip()
     return {
         "id": str(file_id),
         "name": name,
         "is_dir": is_dir,
         "size": int(raw.get("fileSize") or raw.get("size") or 0),
+        "digest": digest,
     }
 
 
-def _asset_identity(relative_path: str, size: Any = 0) -> str:
-    """按目标内相对路径+大小生成稳定资源键，跨分享链接也能去重。"""
-    normalized = re.sub(r"/+", "/", str(relative_path or "").replace("\\", "/").strip("/")).lower()
-    return hashlib.sha256(f"{normalized}|{int(size or 0)}".encode("utf-8")).hexdigest()
+def _asset_identity(relative_path: str, size: Any = 0, digest: Any = "") -> str:
+    """目标相对路径+大小+可用摘要生成稳定资源键；无摘要时兼容 1.1.0。"""
+    normalized = re.sub(r"/+", "/", _safe_relative_path(relative_path)).lower()
+    suffix = str(digest or "").strip().lower()
+    base = f"{normalized}|{int(size or 0)}"
+    if suffix:
+        base += f"|{suffix}"
+    return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
 
 class GuangYaTransferAssistant(_PluginBase):
@@ -184,7 +463,7 @@ class GuangYaTransferAssistant(_PluginBase):
     plugin_name = "光鸭转存助手"
     plugin_desc = "读取指定 Telegram 光鸭资源频道，对手动勾选的 MoviePilot 订阅优先匹配并转存光鸭分享；未勾选或转存失败时继续原生订阅下载。"
     plugin_icon = "Guangyadisk_A.png"
-    plugin_version = "1.1.0"
+    plugin_version = "1.2.0"
     plugin_author = "liheng-lk"
     plugin_label = "光鸭云盘,转存,订阅,Telegram,网盘,下载回退"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -200,6 +479,12 @@ class GuangYaTransferAssistant(_PluginBase):
     _fallback_native = True
     _notify = True
     _auto_transfer_on_refresh = True
+    _strict_subscription_rules = True
+    _media_only = True
+    _sync_subscription_progress = True
+    _history_pages = 3
+    _retry_minutes = 30
+    _max_files_per_run = 50
     _refresh_minutes = 5
     _proxy = False
     _max_share_files = 5000
@@ -219,9 +504,22 @@ class GuangYaTransferAssistant(_PluginBase):
         self._fallback_native = bool(config.get("fallback_native", True))
         self._notify = bool(config.get("notify", True))
         self._auto_transfer_on_refresh = bool(config.get("auto_transfer_on_refresh", True))
+        self._strict_subscription_rules = bool(config.get("strict_subscription_rules", True))
+        self._media_only = bool(config.get("media_only", True))
+        self._sync_subscription_progress = bool(config.get("sync_subscription_progress", True))
+        self._history_pages = self._to_int(config.get("history_pages"), 3, 1, 10)
+        self._retry_minutes = self._to_int(config.get("retry_minutes"), 30, 5, 720)
+        self._max_files_per_run = self._to_int(config.get("max_files_per_run"), 50, 1, 500)
         self._proxy = bool(config.get("proxy", False))
         self._refresh_minutes = self._to_int(config.get("refresh_minutes"), 5, 1, 120)
         self._max_share_files = self._to_int(config.get("max_share_files"), 5000, 100, 20000)
+        if bool(config.get("clear_inventory", False)):
+            self.save_data("transfer_inventory", {})
+            self.save_data("transfer_history", {})
+            self.save_data("failure_notices", {})
+            self._inspect_cache.clear()
+            logger.warning("【光鸭转存助手】【去重】已按配置清空转存库存与历史记录")
+            config["clear_inventory"] = False
         self._cleanup_selected_ids()
         if self._enabled:
             self._install_takeover()
@@ -254,17 +552,26 @@ class GuangYaTransferAssistant(_PluginBase):
                 ]},
                 {"component": "VRow", "content": [
                     {"component": "VCol", "props": {"cols": 12, "md": 7}, "content": [{"component": "VSelect", "props": {"model": "selected_subscriptions", "label": "选择走光鸭优先的订阅", "items": subscriptions, "multiple": True, "chips": True, "clearable": True}}]},
-                    {"component": "VCol", "props": {"cols": 12, "md": 2}, "content": [{"component": "VTextField", "props": {"model": "refresh_minutes", "label": "频道刷新间隔(分钟)", "type": "number"}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 2}, "content": [{"component": "VTextField", "props": {"model": "refresh_minutes", "label": "刷新间隔(分钟)", "type": "number"}}]},
                     {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "auto_transfer_on_refresh", "label": "刷新后自动检查转存"}}]},
                 ]},
                 {"component": "VRow", "content": [
-                    {"component": "VCol", "props": {"cols": 12, "md": 9}, "content": [{"component": "VCombobox", "props": {"model": "save_path", "label": "光鸭目标文件夹", "items": folders, "clearable": False, "hint": "可选择根目录下已有文件夹，也可直接输入完整路径", "persistent-hint": True}}]},
-                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "create_media_folder", "label": "按媒体名建立子文件夹"}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 7}, "content": [{"component": "VCombobox", "props": {"model": "save_path", "label": "光鸭目标文件夹", "items": folders, "clearable": False, "hint": "可选择已有文件夹，也可直接输入完整路径", "persistent-hint": True}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 2}, "content": [{"component": "VSwitch", "props": {"model": "create_media_folder", "label": "媒体名子文件夹"}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "media_only", "label": "仅媒体/字幕文件"}}]},
                 ]},
                 {"component": "VRow", "content": [
-                    {"component": "VCol", "props": {"cols": 12}, "content": [{"component": "VTextarea", "props": {"model": "channel_urls", "label": "资源频道地址（每行一个）", "rows": 3}}]},
+                    {"component": "VCol", "props": {"cols": 6, "md": 2}, "content": [{"component": "VTextField", "props": {"model": "history_pages", "label": "每频道历史页数", "type": "number"}}]},
+                    {"component": "VCol", "props": {"cols": 6, "md": 2}, "content": [{"component": "VTextField", "props": {"model": "max_files_per_run", "label": "单次最多文件", "type": "number"}}]},
+                    {"component": "VCol", "props": {"cols": 6, "md": 2}, "content": [{"component": "VTextField", "props": {"model": "retry_minutes", "label": "失败重试(分钟)", "type": "number"}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "strict_subscription_rules", "label": "严格遵循订阅规则"}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "sync_subscription_progress", "label": "同步已转存剧集进度"}}]},
                 ]},
-                {"component": "VAlert", "props": {"type": "info", "variant": "tonal", "text": "未勾选订阅保持原路线；勾选订阅会在频道刷新后主动检查。转存按文件级增量去重：同一资源不会重复转存，热更只转存新增文件。登录态直接复用“光鸭云盘助手”。"}},
+                {"component": "VRow", "content": [
+                    {"component": "VCol", "props": {"cols": 12, "md": 9}, "content": [{"component": "VTextarea", "props": {"model": "channel_urls", "label": "资源频道地址（每行一个）", "rows": 3}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "clear_inventory", "label": "保存时清空去重记录", "hint": "仅故障恢复时使用，执行一次后自动关闭", "persistent-hint": True}}]},
+                ]},
+                {"component": "VAlert", "props": {"type": "info", "variant": "tonal", "text": "支持明文链接、查看资源隐藏按钮、URL编码/包装链接。仅接管手动勾选且状态为新建/订阅中的项目；暂停/待定、洗版订阅、严格模式下的复杂规则订阅继续走 MoviePilot 原路线。电视剧会跳过 note 已记录剧集，确认转存后再同步订阅进度。"}},
             ],
         }], {
             "enabled": self._enabled,
@@ -275,9 +582,16 @@ class GuangYaTransferAssistant(_PluginBase):
             "fallback_native": self._fallback_native,
             "notify": self._notify,
             "auto_transfer_on_refresh": self._auto_transfer_on_refresh,
+            "strict_subscription_rules": self._strict_subscription_rules,
+            "media_only": self._media_only,
+            "sync_subscription_progress": self._sync_subscription_progress,
+            "history_pages": self._history_pages or 3,
+            "retry_minutes": self._retry_minutes or 30,
+            "max_files_per_run": self._max_files_per_run or 50,
             "refresh_minutes": self._refresh_minutes or 5,
             "proxy": self._proxy,
             "max_share_files": self._max_share_files or 5000,
+            "clear_inventory": False,
         }
 
     def get_page(self) -> Optional[List[dict]]:
@@ -286,7 +600,8 @@ class GuangYaTransferAssistant(_PluginBase):
         inventory = self.get_data("transfer_inventory") or {}
         last = self.get_data("last_run") or {}
         selected = set(self._selected_subscriptions)
-        selected_subs = [sub for sub in self._list_subscriptions("N,R,P") if int(getattr(sub, "id", 0) or 0) in selected]
+        all_subs = self._list_subscriptions(None)
+        selected_subs = [sub for sub in all_subs if int(getattr(sub, "id", 0) or 0) in selected]
         rows = []
         for sub in selected_subs:
             sid = int(sub.id)
@@ -294,41 +609,70 @@ class GuangYaTransferAssistant(_PluginBase):
             recent.sort(key=lambda value: str(value.get("time") or ""), reverse=True)
             asset_count = len(((inventory.get(str(sid)) or {}).get("assets") or {}))
             state_text = (f"{recent[0].get('time') or '-'} · {recent[0].get('message') or '-'}" if recent else "等待频道匹配")
+            state = str(getattr(sub, "state", "") or "-")
             rows.append({
                 "component": "VCard",
                 "props": {"variant": "tonal", "class": "h-100"},
                 "content": [
                     {"component": "VCardTitle", "text": f"{sub.name} ({getattr(sub, 'year', '') or '-'})"},
-                    {"component": "VCardText", "text": f"订阅ID {sid} · 已记录去重资源 {asset_count} 个 · {state_text}"},
+                    {"component": "VCardText", "text": f"订阅ID {sid} · 状态 {state} · 去重资源 {asset_count} 个 · {state_text}"},
                 ],
             })
+        fresh_count = len([item for item in (index.get("items") or []) if not item.get("stale")])
+        stale_count = len(index.get("items") or []) - fresh_count
         contents: List[dict] = [{
             "component": "VAlert",
             "props": {
-                "type": "success" if last.get("success") else "info",
+                "type": "warning" if last.get("stale_index") else ("success" if last.get("success") else "info"),
                 "variant": "tonal",
-                "text": f"频道索引 {len(index.get('items') or [])} 个分享 · 已选择 {len(selected)} 个订阅 · 最近刷新 {index.get('time') or '-'}",
+                "text": f"频道索引 {len(index.get('items') or [])} 个（新鲜 {fresh_count} / 旧缓存 {stale_count}）· 已选择 {len(selected)} 个订阅 · 最近刷新 {index.get('time') or '-'}",
             },
         }]
+        source_status = index.get("source_status") or {}
+        if source_status:
+            status_items = []
+            for label, status in source_status.items():
+                status_items.append({
+                    "component": "VListItem",
+                    "props": {
+                        "title": label,
+                        "subtitle": (
+                            f"{'正常' if status.get('success') else '使用旧缓存'} · 页面 {status.get('pages') or 0} · "
+                            f"分享 {status.get('count') or 0} · 隐藏/包装按钮 {status.get('button_links') or 0} · "
+                            f"明文 {status.get('visible_links') or 0} · 未解析按钮 {status.get('unresolved_buttons') or 0}"
+                        ),
+                    },
+                })
+            contents.append({"component": "VCard", "props": {"variant": "outlined", "class": "mt-3"}, "content": [
+                {"component": "VCardTitle", "text": "频道解析状态"},
+                {"component": "VList", "props": {"density": "compact"}, "content": status_items},
+            ]})
         if rows:
             contents.append({"component": "div", "props": {"class": "grid gap-3 grid-info-card mt-3"}, "content": rows})
 
         resources = []
-        for entry in list(index.get("items") or [])[:100]:
-            matched = [
-                f"{getattr(sub, 'name', '')}#{int(getattr(sub, 'id', 0) or 0)}"
-                for sub in selected_subs
-                if _entry_matches_subscription(entry, getattr(sub, "name", ""), getattr(sub, "year", None), getattr(sub, "season", None))
-            ]
+        for entry in list(index.get("items") or [])[:150]:
+            matched = []
+            for sub in selected_subs:
+                ok, reason = _entry_match_reason(entry, sub)
+                if ok:
+                    matched.append(f"{getattr(sub, 'name', '')}#{int(getattr(sub, 'id', 0) or 0)}({reason})")
+            display = str(entry.get("display_title") or "").strip() or str(entry.get("source_label") or "频道资源")
             snippet = re.sub(r"https?://\S+", "", str(entry.get("text") or ""))
-            snippet = re.sub(r"\s+", " ", snippet).strip()[:180]
-            share_id = str(entry.get("share_id") or "-")
+            snippet = re.sub(r"\s+", " ", snippet).strip()[:160]
+            meta = [str(entry.get("link_style") or "未知链接")]
+            if entry.get("tmdb_id"):
+                meta.append(f"TMDB {entry.get('tmdb_id')}")
+            if entry.get("episode_hint"):
+                meta.append(str(entry.get("episode_hint")))
+            if entry.get("stale"):
+                meta.append("旧缓存")
             status = "匹配：" + "、".join(matched) if matched else "未匹配已勾选订阅"
             resources.append({
                 "component": "VListItem",
                 "props": {
-                    "title": f"{entry.get('source_label') or '频道资源'} · {share_id}",
-                    "subtitle": f"{status} · {snippet}",
+                    "title": f"{display} · {entry.get('share_id') or '-'}",
+                    "subtitle": f"{entry.get('source_label') or '-'} · {' · '.join(meta)} · {status} · {snippet}",
                 },
             })
         contents.append({
@@ -336,7 +680,7 @@ class GuangYaTransferAssistant(_PluginBase):
             "props": {"variant": "outlined", "class": "mt-4"},
             "content": [
                 {"component": "VCardTitle", "text": f"频道资源（{len(index.get('items') or [])}）"},
-                {"component": "VCardText", "text": "显示频道已识别资源及其与已勾选订阅的匹配结果；最多显示 100 条。"},
+                {"component": "VCardText", "text": "显示链接类型、TMDB/集数提示、缓存新鲜度及匹配原因；最多显示 150 条。"},
                 {"component": "VList", "props": {"density": "compact"}, "content": resources or [{"component": "VListItem", "props": {"title": "暂无频道资源"}}]},
             ],
         })
@@ -350,8 +694,9 @@ class GuangYaTransferAssistant(_PluginBase):
         ]
 
     def api_refresh(self) -> Dict[str, Any]:
+        self._inspect_cache.clear()
         items = self.refresh_channels(force=True)
-        routed = self._process_selected_subscriptions(trigger="手动刷新") if self._auto_transfer_on_refresh else []
+        routed = self._process_selected_subscriptions(trigger="手动刷新") if self._auto_transfer_on_refresh and any(not item.get("stale") for item in items) else []
         return {"success": True, "count": len(items), "items": items, "routes": routed}
 
     def api_transfer(self, payload: dict) -> Dict[str, Any]:
@@ -370,16 +715,22 @@ class GuangYaTransferAssistant(_PluginBase):
     def _tick(self) -> None:
         self._install_takeover()
         items = self.refresh_channels(force=True)
-        if self._auto_transfer_on_refresh and items:
+        # 分享内容可能在同一个 URL 内热更，每轮正式检查前清掉 API 文件缓存。
+        self._inspect_cache.clear()
+        if self._auto_transfer_on_refresh and any(not item.get("stale") for item in items):
             self._process_selected_subscriptions(trigger="频道定时刷新")
 
     def _process_selected_subscriptions(self, trigger: str = "后台检查") -> List[Dict[str, Any]]:
-        """频道刷新后主动检查已勾选订阅；这里只转存，不主动触发原生下载。"""
+        """频道刷新后只检查活跃订阅；不会在后台刷新任务里主动触发原生下载。"""
         results: List[Dict[str, Any]] = []
         with self._route_lock:
             for sid in list(self._selected_subscriptions):
                 subscribe = self._find_subscription(int(sid))
                 if not subscribe:
+                    continue
+                if str(getattr(subscribe, "state", "") or "") not in ("N", "R"):
+                    logger.info("【光鸭转存助手】【规则】%s #%s %s 当前状态=%s，后台不接管", trigger, sid, getattr(subscribe, "name", ""), getattr(subscribe, "state", ""))
+                    results.append({"subscribe_id": int(sid), "success": False, "handled": False, "message": "非活跃订阅，已跳过"})
                     continue
                 try:
                     result = self._try_transfer_subscription(subscribe)
@@ -391,51 +742,127 @@ class GuangYaTransferAssistant(_PluginBase):
         return results
 
     def refresh_channels(self, force: bool = False) -> List[Dict[str, Any]]:
-        """抓取频道镜像并建立光鸭分享索引。"""
+        """逐频道抓取并按源保留旧缓存；支持镜像页面自带历史翻页入口。"""
         current = self.get_data("channel_index") or {}
         current_time = self._parse_datetime(current.get("time"))
         if not force and current_time and (datetime.datetime.now() - current_time).total_seconds() < self._refresh_minutes * 60:
             return list(current.get("items") or [])
-        entries: List[Dict[str, Any]] = []
-        errors = []
-        seen = set()
+        previous_items = list(current.get("items") or [])
+        all_entries: List[Dict[str, Any]] = []
+        errors: List[str] = []
+        source_status: Dict[str, Any] = {}
         source_successes = 0
-        for source_url in self._source_urls():
+        urls = self._source_urls()
+        for source_url in urls:
             label = "光鸭云盘影视热更频道" if "regeng" in source_url.lower() else "光鸭云盘资源分享频道"
-            try:
-                request = RequestUtils(proxies=settings.PROXY) if self._proxy else RequestUtils()
-                response = request.get_res(source_url)
-                if not response or getattr(response, "status_code", 200) >= 400:
-                    errors.append(f"{label}: HTTP {getattr(response, 'status_code', '无响应')}")
+            queue = [source_url]
+            visited = set()
+            source_entries: List[Dict[str, Any]] = []
+            source_seen = set()
+            page_errors: List[str] = []
+            pages = 0
+            button_count = 0
+            button_links = 0
+            visible_links = 0
+            while queue and pages < self._history_pages:
+                page_url = queue.pop(0)
+                if page_url in visited:
                     continue
+                visited.add(page_url)
+                try:
+                    request = RequestUtils(proxies=settings.PROXY) if self._proxy else RequestUtils()
+                    response = request.get_res(page_url)
+                    if not response or getattr(response, "status_code", 200) >= 400:
+                        page_errors.append(f"HTTP {getattr(response, 'status_code', '无响应')} {page_url}")
+                        continue
+                    pages += 1
+                    page_html = response.text or ""
+                    button_count += len(re.findall(r"查看资源", page_html, re.I))
+                    found = _extract_channel_entries(page_html, source_url, label)
+                    for item in found:
+                        key = _share_identity(item.get("share_url") or "")
+                        if not key or key in source_seen:
+                            continue
+                        source_seen.add(key)
+                        item["stale"] = False
+                        source_entries.append(item)
+                        style = str(item.get("link_style") or "")
+                        if "按钮" in style or "包装" in style:
+                            button_links += 1
+                        if style == "明文链接":
+                            visible_links += 1
+                    for next_url in _extract_pagination_urls(page_html, source_url):
+                        if next_url not in visited and next_url not in queue and len(queue) < self._history_pages * 4:
+                            queue.append(next_url)
+                except Exception as err:
+                    page_errors.append(f"{page_url}: {err}")
+            unresolved = max(0, button_count - button_links)
+            parse_suspect = bool(pages and button_count and not source_entries and unresolved)
+            if pages > 0 and not parse_suspect:
                 source_successes += 1
-                found = _extract_channel_entries(response.text or "", source_url, label)
-                for item in found:
-                    key = _share_identity(item.get("share_url") or "")
-                    if key and key not in seen:
-                        seen.add(key)
-                        entries.append(item)
-            except Exception as err:
-                errors.append(f"{label}: {err}")
-        entries.sort(key=lambda item: int(item.get("priority") or 0))
-        if not entries and current.get("items") and (errors or source_successes == 0):
-            logger.warning("【光鸭转存助手】本轮频道抓取未得到有效分享，保留上次索引，避免临时网络异常误触发原生下载")
-            self.save_data("last_run", {
-                "success": False,
-                "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "count": len(current.get("items") or []),
-                "errors": errors or ["频道返回空数据，已保留上次索引"],
-                "stale_index": True,
-            })
-            return list(current.get("items") or [])
+                all_entries.extend(source_entries)
+                # 某个历史页失败时保留该源以前未被新结果覆盖的条目，但标为 stale，不能阻断原生下载。
+                if page_errors:
+                    fresh_keys = {_share_identity(item.get("share_url") or "") for item in source_entries}
+                    for old in previous_items:
+                        if old.get("source_label") != label:
+                            continue
+                        key = _share_identity(old.get("share_url") or "")
+                        if key and key not in fresh_keys:
+                            stale = dict(old)
+                            stale["stale"] = True
+                            all_entries.append(stale)
+                source_status[label] = {
+                    "success": True, "pages": pages, "count": len(source_entries),
+                    "button_links": button_links, "visible_links": visible_links,
+                    "unresolved_buttons": unresolved, "errors": page_errors,
+                }
+            else:
+                preserved = 0
+                for old in previous_items:
+                    if old.get("source_label") != label:
+                        continue
+                    stale = dict(old)
+                    stale["stale"] = True
+                    all_entries.append(stale)
+                    preserved += 1
+                reason = "页面存在查看资源按钮但未解析出分享链接" if parse_suspect else ("；".join(page_errors[:3]) or "频道未返回有效页面")
+                errors.append(f"{label}: {reason}")
+                source_status[label] = {
+                    "success": False, "pages": pages, "count": preserved,
+                    "button_links": button_links, "visible_links": visible_links,
+                    "unresolved_buttons": unresolved, "errors": page_errors or [reason],
+                }
+                if parse_suspect:
+                    logger.warning("【光鸭转存助手】【频道】%s 检测到 %s 个查看资源按钮但未解析到光鸭 URL，已保留旧索引", label, unresolved)
+
+        # 新鲜条目优先，热更频道优先；同一分享跨频道只保留最佳条目。
+        all_entries.sort(key=lambda item: (1 if item.get("stale") else 0, int(item.get("priority") or 0), -len(str(item.get("text") or ""))))
+        entries: List[Dict[str, Any]] = []
+        seen = set()
+        for item in all_entries:
+            key = _share_identity(item.get("share_url") or "")
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            entries.append(item)
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        all_failed = source_successes == 0
+        partial_stale = source_successes < len(urls)
         payload = {
-            "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "items": entries[:1000],
+            "time": now,
+            "items": entries[:2000],
             "errors": errors,
+            "source_status": source_status,
         }
         self.save_data("channel_index", payload)
-        self.save_data("last_run", {"success": bool(entries), "time": payload["time"], "count": len(entries), "errors": errors})
-        logger.info("【光鸭转存助手】频道刷新完成，识别分享 %s 个，错误 %s 个", len(entries), len(errors))
+        self.save_data("last_run", {
+            "success": bool(source_successes), "time": now, "count": len(entries), "errors": errors,
+            "stale_index": all_failed, "partial_stale": partial_stale,
+        })
+        fresh_count = len([item for item in entries if not item.get("stale")])
+        stale_count = len(entries) - fresh_count
+        logger.info("【光鸭转存助手】频道刷新完成，识别分享 %s 个（新鲜 %s / 旧缓存 %s），错误 %s 个", len(entries), fresh_count, stale_count, len(errors))
         return entries
 
     def _source_urls(self) -> List[str]:
@@ -444,17 +871,20 @@ class GuangYaTransferAssistant(_PluginBase):
 
     def _subscription_options(self) -> List[Dict[str, Any]]:
         options = []
-        for sub in self._list_subscriptions("N,R"):
+        selected = set(self._selected_subscriptions)
+        for sub in self._list_subscriptions(None):
             sid = int(getattr(sub, "id", 0) or 0)
-            if not sid:
+            state = str(getattr(sub, "state", "") or "")
+            if not sid or (state not in ("N", "R") and sid not in selected):
                 continue
             season = getattr(sub, "season", None)
             suffix = f" S{int(season):02d}" if season not in (None, 0) else ""
-            options.append({"title": f"{sub.name} ({getattr(sub, 'year', '') or '-'}){suffix} · #{sid}", "value": sid})
+            state_label = {"N": "新建", "R": "订阅中", "P": "待定", "S": "暂停"}.get(state, state or "-")
+            options.append({"title": f"{sub.name} ({getattr(sub, 'year', '') or '-'}){suffix} · {state_label} · #{sid}", "value": sid})
         return options
 
     @staticmethod
-    def _list_subscriptions(state: str = "N,R") -> List[Any]:
+    def _list_subscriptions(state: Optional[str] = "N,R") -> List[Any]:
         try:
             return list(SubscribeOper().list(state) or [])
         except Exception as err:
@@ -462,14 +892,15 @@ class GuangYaTransferAssistant(_PluginBase):
             return []
 
     def _find_subscription(self, sid: int) -> Optional[Any]:
-        for sub in self._list_subscriptions("N,R,P"):
-            if int(getattr(sub, "id", 0) or 0) == int(sid):
-                return sub
-        return None
+        try:
+            return SubscribeOper().get(int(sid))
+        except Exception as err:
+            logger.warning("【光鸭转存助手】读取订阅 #%s 失败: %s", sid, err)
+            return None
 
     def _cleanup_selected_ids(self) -> None:
-        valid = {int(getattr(item, "id", 0) or 0) for item in self._list_subscriptions("N,R,P")}
-        # 启动阶段订阅查询暂时不可用时，保留用户已经勾选的路由。
+        # 所有状态都视为有效，暂停/待定只是不自动接管；恢复状态后无需重新勾选。
+        valid = {int(getattr(item, "id", 0) or 0) for item in self._list_subscriptions(None)}
         if not valid:
             return
         selected = [sid for sid in self._selected_subscriptions if sid in valid]
@@ -488,9 +919,16 @@ class GuangYaTransferAssistant(_PluginBase):
             "fallback_native": self._fallback_native,
             "notify": self._notify,
             "auto_transfer_on_refresh": self._auto_transfer_on_refresh,
+            "strict_subscription_rules": self._strict_subscription_rules,
+            "media_only": self._media_only,
+            "sync_subscription_progress": self._sync_subscription_progress,
+            "history_pages": self._history_pages,
+            "retry_minutes": self._retry_minutes,
+            "max_files_per_run": self._max_files_per_run,
             "refresh_minutes": self._refresh_minutes,
             "proxy": self._proxy,
             "max_share_files": self._max_share_files,
+            "clear_inventory": False,
         })
 
     def _install_takeover(self) -> None:
@@ -565,16 +1003,63 @@ class GuangYaTransferAssistant(_PluginBase):
                 SubscribeChain().search(sid=subscribe_id, state=None, manual=manual, progress_callback=callback)
             return True
 
+    def _subscription_static_guard(self, subscribe: Any) -> Tuple[bool, str]:
+        state = str(getattr(subscribe, "state", "") or "")
+        if state not in ("N", "R"):
+            return False, f"订阅状态 {state or '-'} 非活跃"
+        if bool(getattr(subscribe, "best_version", 0)):
+            return False, "洗版订阅保留 MoviePilot 原生质量优先级逻辑"
+        mtype = str(getattr(subscribe, "type", "") or "").lower()
+        if mtype and not any(token in mtype for token in ("tv", "movie", "电视剧", "电影")):
+            return False, f"媒体类型 {getattr(subscribe, 'type', '')} 不适合网盘影视转存"
+        if self._strict_subscription_rules:
+            if getattr(subscribe, "filter_groups", None):
+                return False, "存在复杂过滤规则组，严格模式下交回原生下载"
+            if str(getattr(subscribe, "filter", "") or "").strip():
+                return False, "存在复杂过滤规则，严格模式下交回原生下载"
+        return True, ""
+
+    def _subscription_resource_allowed(self, subscribe: Any, entry: Dict[str, Any], probe: Dict[str, Any]) -> Tuple[bool, str]:
+        descriptor = "\n".join([
+            str(entry.get("text") or ""),
+            "\n".join(str(item.get("relative_path") or item.get("name") or "") for item in (probe.get("files") or [])[:300]),
+        ])
+        exclude = str(getattr(subscribe, "exclude", "") or "").strip()
+        if exclude and _safe_rule_match(exclude, descriptor):
+            return False, "命中订阅排除规则"
+        include = str(getattr(subscribe, "include", "") or "").strip()
+        if include and not _safe_rule_match(include, descriptor):
+            return False, "未命中订阅包含规则"
+        for field, label in (("resolution", "分辨率"), ("quality", "质量"), ("effect", "特效")):
+            rule = str(getattr(subscribe, field, "") or "").strip()
+            if rule and not _safe_rule_match(rule, descriptor):
+                return False, f"资源未满足订阅{label}规则"
+        return True, ""
+
     def _try_transfer_subscription(self, subscribe: Any, force: bool = False) -> Dict[str, Any]:
-        """匹配全部相关分享，只转存尚未记录的新文件；同一分享热更不会重转旧文件。"""
+        """对一个活跃订阅执行安全匹配、规则校验、文件级去重和增量转存。"""
         sid = int(getattr(subscribe, "id", 0) or 0)
+        allowed, guard_reason = self._subscription_static_guard(subscribe)
+        if not allowed:
+            logger.info("【光鸭转存助手】【规则】#%s %s 不接管：%s", sid, getattr(subscribe, "name", ""), guard_reason)
+            return {"success": False, "handled": False, "message": guard_reason}
         self.refresh_channels(force=False)
         entries = list((self.get_data("channel_index") or {}).get("items") or [])
-        matches = [item for item in entries if _entry_matches_subscription(item, getattr(subscribe, "name", ""), getattr(subscribe, "year", None), getattr(subscribe, "season", None))]
-        if not matches:
-            logger.info("【光鸭转存助手】【匹配】#%s %s 未命中频道分享；%s", sid, getattr(subscribe, "name", ""), "将由 MoviePilot 原订阅任务继续下载" if self._fallback_native else "原生下载回退已关闭")
-            return {"success": False, "handled": False, "message": "频道未匹配到光鸭分享"}
-        logger.info("【光鸭转存助手】【匹配】#%s %s 命中 %s 个频道分享", sid, getattr(subscribe, "name", ""), len(matches))
+        matched_pairs = []
+        stale_matches = 0
+        for item in entries:
+            matched, reason = _entry_match_reason(item, subscribe)
+            if not matched:
+                continue
+            if item.get("stale"):
+                stale_matches += 1
+                continue
+            matched_pairs.append((item, reason))
+        if not matched_pairs:
+            detail = "仅命中旧缓存，不能阻断原生下载" if stale_matches else "频道未匹配到光鸭分享"
+            logger.info("【光鸭转存助手】【匹配】#%s %s %s；%s", sid, getattr(subscribe, "name", ""), detail, "将由 MoviePilot 原订阅任务继续下载" if self._fallback_native else "原生下载回退已关闭")
+            return {"success": False, "handled": False, "message": detail}
+        logger.info("【光鸭转存助手】【匹配】#%s %s 命中 %s 个新鲜频道分享", sid, getattr(subscribe, "name", ""), len(matched_pairs))
 
         history = self.get_data("transfer_history") or {}
         inventory = self.get_data("transfer_inventory") or {}
@@ -585,11 +1070,14 @@ class GuangYaTransferAssistant(_PluginBase):
         transferred_assets: List[Dict[str, Any]] = []
         task_ids: List[str] = []
         sources = set()
-        valid_match = False
+        valid_route_match = False
+        synchronized_match = False
         attempted_new = False
+        remaining_due_to_cap = 0
+        match_reasons = set()
         target_path = self._target_path(subscribe)
 
-        for entry in matches[:20]:
+        for entry, match_reason in matched_pairs[:20]:
             share_url = entry.get("share_url") or ""
             share_key = _share_identity(share_url)
             if not share_key:
@@ -600,29 +1088,63 @@ class GuangYaTransferAssistant(_PluginBase):
                 logger.warning("【光鸭转存助手】【匹配】分享读取失败 share_id=%s：%s", share_key.split("|", 1)[0], error)
                 errors.append(error)
                 continue
-            valid_match = True
+            resource_allowed, resource_reason = self._subscription_resource_allowed(subscribe, entry, probe)
+            if not resource_allowed:
+                logger.info("【光鸭转存助手】【规则】#%s %s share_id=%s 跳过：%s", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], resource_reason)
+                errors.append(resource_reason)
+                continue
+            match_reasons.add(match_reason)
             source = str(entry.get("source_label") or "频道资源")
             sources.add(source)
             fingerprint = str(probe.get("fingerprint") or "")
+            legacy_fingerprint = str(probe.get("legacy_fingerprint") or "")
             history_key = f"{sid}:{share_key}"
             old = history.get(history_key) or {}
+            if not force and old and not old.get("success") and old.get("fingerprint") in {fingerprint, legacy_fingerprint}:
+                failed_at = self._parse_datetime(old.get("time"))
+                if failed_at and (datetime.datetime.now() - failed_at).total_seconds() < self._retry_minutes * 60:
+                    wait = self._retry_minutes - int((datetime.datetime.now() - failed_at).total_seconds() // 60)
+                    errors.append(f"share_id={share_key.split('|', 1)[0]} 失败退避中，约 {max(wait, 1)} 分钟后重试")
+                    logger.info("【光鸭转存助手】【重试】#%s %s share_id=%s 仍在失败退避期", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0])
+                    continue
 
-            planned = self._plan_incremental_files(probe, assets)
-            # 从 1.0.x 升级时，如果同一分享已经完整成功且内容未变，用当前文件清单补建增量索引，绝不重新转一遍。
-            if not assets and old.get("success") and old.get("fingerprint") in {fingerprint, str(probe.get("legacy_fingerprint") or "")}:
-                migrated = self._plan_incremental_files(probe, {})
+            stats: Dict[str, int] = {}
+            planned = self._plan_incremental_files(probe, assets, subscribe=subscribe, target_path=target_path, stats=stats)
+            if stats.get("eligible", 0) <= 0:
+                errors.append("分享内没有符合订阅范围的媒体/字幕文件")
+                logger.info("【光鸭转存助手】【规则】#%s %s share_id=%s 没有符合订阅范围的可转存文件", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0])
+                continue
+            valid_route_match = True
+
+            # 兼容 1.0.x / 1.1.0：旧版整份分享已成功且内容未变时，仅补建文件库存。
+            if not assets and old.get("success") and old.get("fingerprint") in {fingerprint, legacy_fingerprint}:
+                migrated_stats: Dict[str, int] = {}
+                migrated = self._plan_incremental_files(probe, {}, subscribe=subscribe, target_path=target_path, stats=migrated_stats)
                 self._remember_assets(assets, migrated, share_key, target_path)
                 inventory[sid_key] = {"assets": assets, "updated": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
                 self.save_data("transfer_inventory", inventory)
+                synchronized_match = True
                 logger.info("【光鸭转存助手】【去重】#%s %s 从旧版成功记录建立文件级索引 %s 个，不重复转存", sid, getattr(subscribe, "name", ""), len(migrated))
                 continue
 
             if not planned:
-                logger.info("【光鸭转存助手】【去重】#%s %s share_id=%s 无新增文件，已转存内容跳过", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0])
+                synchronized_match = True
+                logger.info(
+                    "【光鸭转存助手】【去重】#%s %s share_id=%s 无新增文件（库存=%s，已完成剧集/范围过滤=%s），跳过",
+                    sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], stats.get("inventory", 0), stats.get("episode", 0),
+                )
                 continue
 
             attempted_new = True
-            logger.info("【光鸭转存助手】【增量】#%s %s share_id=%s 扫描文件=%s，新增待转=%s，已记录=%s", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], probe.get("leaf_count") or len(probe.get("files") or []), len(planned), len(assets))
+            pending_count = len(planned)
+            if pending_count > self._max_files_per_run:
+                remaining_due_to_cap += pending_count - self._max_files_per_run
+                planned = planned[:self._max_files_per_run]
+            logger.info(
+                "【光鸭转存助手】【增量】#%s %s share_id=%s 叶子文件=%s，符合范围=%s，新增待转=%s，本轮=%s，库存=%s，剧集过滤=%s",
+                sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], probe.get("leaf_count") or len(probe.get("files") or []),
+                stats.get("eligible", 0), pending_count, len(planned), stats.get("inventory", 0), stats.get("episode", 0),
+            )
             restored = self._restore_items(probe, target_path, planned)
             completed = list(restored.get("completed_items") or [])
             if completed:
@@ -631,19 +1153,15 @@ class GuangYaTransferAssistant(_PluginBase):
                 self.save_data("transfer_inventory", inventory)
                 transferred_assets.extend(completed)
                 task_ids.extend([value for value in (restored.get("task_ids") or []) if value])
+                self._sync_progress(subscribe, completed)
             record = {
-                "success": bool(restored.get("success")),
-                "fingerprint": fingerprint,
+                "success": bool(restored.get("success")), "fingerprint": fingerprint,
+                "legacy_fingerprint": legacy_fingerprint,
                 "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "share_url": share_url,
-                "source": source,
-                "target_path": target_path,
-                "message": restored.get("message") or "",
-                "task_id": ",".join(restored.get("task_ids") or []),
-                "confirmed": bool(restored.get("success")),
-                "confirmation": restored.get("confirmation") or "",
-                "file_count": probe.get("leaf_count") or len(probe.get("files") or []),
-                "new_count": len(completed),
+                "share_url": share_url, "source": source, "target_path": target_path,
+                "message": restored.get("message") or "", "task_id": ",".join(restored.get("task_ids") or []),
+                "confirmed": bool(restored.get("success")), "confirmation": restored.get("confirmation") or "",
+                "file_count": probe.get("leaf_count") or len(probe.get("files") or []), "new_count": len(completed),
             }
             history[history_key] = record
             self._trim_history(history)
@@ -651,15 +1169,16 @@ class GuangYaTransferAssistant(_PluginBase):
             if not restored.get("success"):
                 errors.append(str(restored.get("message") or "增量转存失败"))
 
-        if transferred_assets:
-            unique_paths = []
-            seen_paths = set()
-            for item in transferred_assets:
-                rel = str(item.get("effective_path") or item.get("relative_path") or item.get("name") or "")
-                if rel and rel not in seen_paths:
-                    seen_paths.add(rel)
-                    unique_paths.append(rel)
-            logger.info("【光鸭转存助手】【转存】#%s %s 增量转存完成：新增 %s 个文件，累计去重记录 %s 个，目标=%s", sid, getattr(subscribe, "name", ""), len(unique_paths), len(assets), target_path)
+        unique_paths = []
+        seen_paths = set()
+        for item in transferred_assets:
+            rel = str(item.get("effective_path") or item.get("relative_path") or item.get("name") or "")
+            if rel and rel not in seen_paths:
+                seen_paths.add(rel)
+                unique_paths.append(rel)
+        if unique_paths:
+            partial = bool(errors)
+            logger.info("【光鸭转存助手】【转存】#%s %s %s：新增 %s 个文件，累计去重 %s 个，剩余待下轮 %s，目标=%s", sid, getattr(subscribe, "name", ""), "部分完成" if partial else "增量完成", len(unique_paths), len(assets), remaining_due_to_cap, target_path)
             if self._notify:
                 season = getattr(subscribe, "season", None)
                 media_text = f"{getattr(subscribe, 'name', '')} ({getattr(subscribe, 'year', '') or '-'})"
@@ -670,27 +1189,31 @@ class GuangYaTransferAssistant(_PluginBase):
                     preview += f" 等 {len(unique_paths)} 个"
                 lines = [
                     f"媒体：{media_text}",
-                    "状态：增量转存已确认完成",
+                    "状态：部分转存完成，剩余将回原订阅处理" if partial else "状态：增量转存已确认完成",
+                    f"匹配：{'、'.join(sorted(match_reasons)) or '-'}",
                     f"本次新增：{len(unique_paths)} 个文件",
                     f"累计去重：{len(assets)} 个文件",
                     f"来源：{'、'.join(sorted(sources))}",
                     f"目标：{target_path}",
                     f"新增内容：{preview or '-'}",
                 ]
+                if remaining_due_to_cap:
+                    lines.append(f"待下轮：至少 {remaining_due_to_cap} 个文件")
                 if task_ids:
                     lines.append(f"任务ID：{','.join(task_ids[:6])}")
-                self.post_message(mtype=NotificationType.Plugin, title="✅ 光鸭转存成功", text="\n".join(lines))
-                logger.info("【光鸭转存助手】【通知】已发送增量转存成功通知：#%s %s", sid, getattr(subscribe, "name", ""))
-            return {"success": True, "handled": True, "message": f"增量转存成功，本次新增 {len(unique_paths)} 个文件", "new_count": len(unique_paths), "target_path": target_path}
+                self.post_message(mtype=NotificationType.Plugin, title="⚠️ 光鸭部分转存" if partial else "✅ 光鸭转存成功", text="\n".join(lines))
+                logger.info("【光鸭转存助手】【通知】已发送%s通知：#%s %s", "部分转存" if partial else "增量转存成功", sid, getattr(subscribe, "name", ""))
+            if partial:
+                return {"success": False, "handled": False, "message": f"部分转存 {len(unique_paths)} 个文件，剩余回退原订阅", "new_count": len(unique_paths), "target_path": target_path}
+            return {"success": True, "handled": True, "message": f"增量转存成功，本次新增 {len(unique_paths)} 个文件", "new_count": len(unique_paths), "target_path": target_path, "remaining": remaining_due_to_cap}
 
-        if valid_match and not attempted_new:
-            # 有可读匹配分享且没有新增，说明该订阅已经被光鸭路线满足，不能再触发原生下载造成重复。
-            logger.info("【光鸭转存助手】【去重】#%s %s 所有匹配分享均无新增，保持光鸭优先，不触发重复下载", sid, getattr(subscribe, "name", ""))
+        if valid_route_match and (synchronized_match or not attempted_new):
+            logger.info("【光鸭转存助手】【去重】#%s %s 所有有效匹配均无新增，保持光鸭优先，不触发重复下载", sid, getattr(subscribe, "name", ""))
             return {"success": True, "handled": True, "already": True, "message": "已同步，无新增资源"}
 
-        final_message = "；".join(errors[:4]) or "匹配分享均不可用"
-        logger.warning("【光鸭转存助手】【回退】#%s %s 增量转存未完成：%s；%s", sid, getattr(subscribe, "name", ""), final_message, "将回退 MoviePilot 原生下载" if self._fallback_native else "原生下载回退已关闭")
-        if self._notify and matches:
+        final_message = "；".join(dict.fromkeys(errors))[:1200] or "匹配分享均不可用"
+        logger.warning("【光鸭转存助手】【回退】#%s %s 转存未完成：%s；%s", sid, getattr(subscribe, "name", ""), final_message, "将回退 MoviePilot 原生下载" if self._fallback_native else "原生下载回退已关闭")
+        if self._notify and matched_pairs:
             notices = self.get_data("failure_notices") or {}
             notice_key = f"{sid}:{hashlib.sha256(final_message.encode('utf-8')).hexdigest()[:12]}"
             last_notice = self._parse_datetime(notices.get(notice_key))
@@ -702,7 +1225,7 @@ class GuangYaTransferAssistant(_PluginBase):
                         title="⚠️ 光鸭转存失败",
                         text=(
                             f"媒体：{getattr(subscribe, 'name', '')} ({getattr(subscribe, 'year', '') or '-'})\n"
-                            f"状态：增量转存未完成\n原因：{final_message}\n"
+                            f"状态：转存未完成\n原因：{final_message}\n"
                             + ("后续：将回退 MoviePilot 原生下载" if self._fallback_native else "后续：原生下载回退已关闭")
                         ),
                     )
@@ -714,52 +1237,151 @@ class GuangYaTransferAssistant(_PluginBase):
         return {"success": False, "handled": False, "message": final_message}
 
     def _target_path(self, subscribe: Any) -> str:
-        base = "/" + self._save_path.strip("/") if self._save_path.strip("/") else "/"
+        base = "/" + _safe_relative_path(self._save_path) if _safe_relative_path(self._save_path) else "/"
         if not self._create_media_folder:
             return base
         name = re.sub(r"[\\/:*?\"<>|]+", " ", str(getattr(subscribe, "name", "") or "")).strip()
         year = str(getattr(subscribe, "year", "") or "").strip()
         folder = f"{name} ({year})" if year else name
-        return (base.rstrip("/") + "/" + folder).replace("//", "/")
+        return (base.rstrip("/") + "/" + _safe_relative_path(folder)).replace("//", "/")
 
-    def _plan_incremental_files(self, probe: Dict[str, Any], assets: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _plan_incremental_files(
+        self, probe: Dict[str, Any], assets: Dict[str, Any], subscribe: Any = None,
+        target_path: str = "", stats: Optional[Dict[str, int]] = None,
+    ) -> List[Dict[str, Any]]:
         files = [dict(item) for item in (probe.get("files") or []) if item.get("id")]
-        if not files:
-            return []
-        top_parts = {str(item.get("relative_path") or "").split("/", 1)[0] for item in files if "/" in str(item.get("relative_path") or "")}
+        counters = {"total": len(files), "eligible": 0, "inventory": 0, "episode": 0, "auxiliary": 0}
+        top_parts = {_safe_relative_path(item.get("relative_path")).split("/", 1)[0] for item in files if "/" in _safe_relative_path(item.get("relative_path"))}
         strip_root = next(iter(top_parts)) if self._create_media_folder and len(top_parts) == 1 else ""
+        done_episodes = set()
+        start_episode = 1
+        total_episode = 0
+        subscribe_season = None
+        is_tv = False
+        if subscribe is not None:
+            is_tv = "tv" in str(getattr(subscribe, "type", "") or "").lower() or "电视剧" in str(getattr(subscribe, "type", "") or "") or getattr(subscribe, "season", None) not in (None, 0)
+            subscribe_season = getattr(subscribe, "season", None)
+            try:
+                start_episode = max(1, int(getattr(subscribe, "start_episode", 0) or 1))
+            except (TypeError, ValueError):
+                start_episode = 1
+            try:
+                total_episode = max(0, int(getattr(subscribe, "total_episode", 0) or 0))
+            except (TypeError, ValueError):
+                total_episode = 0
+            for value in (getattr(subscribe, "note", None) or []):
+                try:
+                    done_episodes.add(int(value))
+                except (TypeError, ValueError):
+                    continue
         planned = []
         for item in files:
-            rel = str(item.get("relative_path") or item.get("name") or "").strip("/")
+            rel = _safe_relative_path(item.get("relative_path") or item.get("name") or "")
             effective = rel
             if strip_root and rel.startswith(strip_root + "/"):
                 effective = rel[len(strip_root) + 1:]
+            effective = _safe_relative_path(effective)
+            if not effective:
+                counters["auxiliary"] += 1
+                continue
+            is_video = _is_video(effective)
+            is_subtitle = _is_subtitle(effective)
+            if self._media_only and not (is_video or is_subtitle):
+                counters["auxiliary"] += 1
+                continue
+            if is_tv and (is_video or is_subtitle):
+                file_season, episodes = _episode_numbers(effective)
+                if subscribe_season not in (None, 0) and file_season not in (None, int(subscribe_season)):
+                    counters["episode"] += 1
+                    continue
+                if episodes:
+                    wanted = [ep for ep in episodes if ep >= start_episode and (not total_episode or ep <= total_episode) and ep not in done_episodes]
+                    if not wanted:
+                        counters["episode"] += 1
+                        continue
+                elif done_episodes or start_episode > 1:
+                    # 已有订阅进度时，无法识别集号的 TV 文件不冒险重复转存。
+                    counters["episode"] += 1
+                    continue
+            counters["eligible"] += 1
             parent = effective.rsplit("/", 1)[0] if "/" in effective else ""
-            asset_key = _asset_identity(effective, item.get("size") or 0)
-            if asset_key in assets:
+            digest = item.get("digest") or ""
+            asset_key = _asset_identity(effective, item.get("size") or 0, digest)
+            legacy_key = _asset_identity(effective, item.get("size") or 0)
+            existing = assets.get(asset_key) or assets.get(legacy_key)
+            if existing and str((existing or {}).get("target") or "") == str(target_path or ""):
+                counters["inventory"] += 1
                 continue
             item["effective_path"] = effective
             item["target_parent"] = parent
             item["asset_key"] = asset_key
+            item["legacy_asset_key"] = legacy_key
             planned.append(item)
+        planned.sort(key=lambda item: ((_episode_numbers(item.get("effective_path"))[1] or [999999])[0], str(item.get("effective_path") or "")))
+        if stats is not None:
+            stats.clear()
+            stats.update(counters)
         return planned
 
     @staticmethod
     def _remember_assets(assets: Dict[str, Any], items: List[Dict[str, Any]], share_key: str, target_path: str) -> None:
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         for item in items:
-            key = str(item.get("asset_key") or _asset_identity(item.get("effective_path") or item.get("relative_path") or item.get("name") or "", item.get("size") or 0))
+            effective = item.get("effective_path") or item.get("relative_path") or item.get("name") or ""
+            key = str(item.get("asset_key") or _asset_identity(effective, item.get("size") or 0, item.get("digest") or ""))
             assets[key] = {
-                "path": item.get("effective_path") or item.get("relative_path") or item.get("name") or "",
-                "size": int(item.get("size") or 0),
-                "share_id": str(share_key or "").split("|", 1)[0],
-                "target": target_path,
-                "time": now,
+                "path": effective, "size": int(item.get("size") or 0), "digest": str(item.get("digest") or ""),
+                "share_id": str(share_key or "").split("|", 1)[0], "target": target_path, "time": now,
             }
         if len(assets) > 20000:
             ordered = sorted(assets.items(), key=lambda pair: str((pair[1] or {}).get("time") or ""), reverse=True)[:20000]
             assets.clear()
             assets.update(dict(ordered))
+
+    def _sync_progress(self, subscribe: Any, completed: List[Dict[str, Any]]) -> None:
+        """确认转存成功后把剧集写入 MoviePilot note，避免后续原生搜索重复下载。"""
+        if not self._sync_subscription_progress or bool(getattr(subscribe, "best_version", 0)):
+            return
+        mtype = str(getattr(subscribe, "type", "") or "").lower()
+        if "tv" not in mtype and "电视剧" not in str(getattr(subscribe, "type", "") or "") and getattr(subscribe, "season", None) in (None, 0):
+            return
+        episodes = set()
+        wanted_season = getattr(subscribe, "season", None)
+        for item in completed:
+            path = item.get("effective_path") or item.get("relative_path") or item.get("name") or ""
+            if not _is_video(path):
+                continue
+            file_season, values = _episode_numbers(path)
+            if wanted_season not in (None, 0) and file_season not in (None, int(wanted_season)):
+                continue
+            episodes.update(values)
+        if not episodes:
+            return
+        current = set()
+        for value in (getattr(subscribe, "note", None) or []):
+            try:
+                current.add(int(value))
+            except (TypeError, ValueError):
+                continue
+        merged = current | episodes
+        if merged == current:
+            return
+        payload: Dict[str, Any] = {"note": sorted(merged)}
+        try:
+            start = max(1, int(getattr(subscribe, "start_episode", 0) or 1))
+            total = int(getattr(subscribe, "total_episode", 0) or 0)
+            if total >= start:
+                payload["lack_episode"] = len(set(range(start, total + 1)) - merged)
+        except (TypeError, ValueError):
+            pass
+        try:
+            SubscribeOper().update(int(getattr(subscribe, "id", 0) or 0), payload)
+            setattr(subscribe, "note", sorted(merged))
+            if "lack_episode" in payload:
+                setattr(subscribe, "lack_episode", payload["lack_episode"])
+            logger.info("【光鸭转存助手】【进度】#%s %s 已同步剧集 %s 到 MoviePilot note", getattr(subscribe, "id", 0), getattr(subscribe, "name", ""), ",".join(str(v) for v in sorted(episodes)))
+        except Exception as err:
+            logger.warning("【光鸭转存助手】【进度】同步 MoviePilot 订阅进度失败：%s", err)
 
     def _get_guangya_runtime(self) -> Tuple[Any, Any]:
         manager = PluginManager()
@@ -827,8 +1449,8 @@ class GuangYaTransferAssistant(_PluginBase):
                     if not item:
                         continue
                     count += 1
-                    rel = "/".join(value for value in (parent_path.strip("/"), item["name"].strip("/")) if value)
-                    fingerprint_rows.append(f"{item['id']}|{rel}|{item['size']}|{int(item['is_dir'])}")
+                    rel = _safe_relative_path("/".join(value for value in (parent_path.strip("/"), item["name"].strip("/")) if value))
+                    fingerprint_rows.append(f"{item['id']}|{rel}|{item['size']}|{int(item['is_dir'])}|{item.get('digest') or ''}")
                     legacy_fingerprint_rows.append(f"{item['id']}|{item['name']}|{item['size']}|{int(item['is_dir'])}")
                     if item["is_dir"]:
                         stack.append((item["id"], rel))
@@ -864,7 +1486,8 @@ class GuangYaTransferAssistant(_PluginBase):
         try:
             for relative_parent, group in groups.items():
                 base = "/" + str(save_path or "/").strip("/") if str(save_path or "/").strip("/") else "/"
-                normalized = (base.rstrip("/") + ("/" + relative_parent.strip("/") if relative_parent else "")) or "/"
+                relative_parent = _safe_relative_path(relative_parent)
+                normalized = (base.rstrip("/") + ("/" + relative_parent if relative_parent else "")) or "/"
                 folder = api.get_folder(Path(normalized))
                 if not folder and normalized != "/":
                     return {"success": False, "message": f"无法创建/定位目标目录 {normalized}", "completed_items": completed, "task_ids": task_ids}
