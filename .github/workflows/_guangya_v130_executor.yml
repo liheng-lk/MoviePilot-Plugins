@@ -20,13 +20,21 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
-          import re, textwrap
+          import re
           workflow = Path('.github/workflows/_build_guangya_v130.yml').read_text(encoding='utf-8')
           matched = re.search(r'- name: Apply v1\.3\.0 patch\n\s+shell: python\n\s+run: \|\n(?P<body>.*?)(?=\n\s+- name: Python syntax)', workflow, re.S)
           if not matched:
               raise SystemExit('patch block not found')
           lines = matched.group('body').splitlines()
           body = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines)
+          body = body.replace(
+              "assert form_anchor in text, 'form anchor missing'",
+              "textarea_line = '{\"component\": \"VTextarea\", \"props\": {\"model\": \"channel_urls\", \"label\": \"资源频道地址（每行一个）\", \"rows\": 3}}; assert textarea_line in text, 'channel textarea missing'; form_row_start = text.rfind('                {\"component\": \"VRow\", \"content\": [\\n', 0, text.index(textarea_line)); assert form_row_start >= 0, 'channel row start missing'",
+          )
+          body = body.replace(
+              'text = text.replace(form_anchor, form_insert + form_anchor, 1)',
+              'text = text[:form_row_start] + form_insert + text[form_row_start:]',
+          )
           exec(compile(body, '<guangya-v130-patch>', 'exec'), {})
       - name: Validate
         run: |
