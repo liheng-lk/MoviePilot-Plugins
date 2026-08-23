@@ -711,7 +711,7 @@ class GuangYaTransferAssistant(_PluginBase):
     plugin_name = "光鸭转存助手"
     plugin_desc = "订阅固定分流：手动勾选的订阅只使用光鸭频道转存，未勾选订阅只使用 MoviePilot 原生下载。"
     plugin_icon = "Guangyadisk_A.png"
-    plugin_version = "1.6.3"
+    plugin_version = "1.6.4"
     plugin_author = "liheng-lk"
     plugin_label = "光鸭云盘,转存,订阅,Telegram,网盘,固定分流"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -745,6 +745,7 @@ class GuangYaTransferAssistant(_PluginBase):
     _state_lock = threading.RLock()
     _run_lock_minutes = 15
     _data_schema_version = 6
+    _startup_pending = False
 
     def init_plugin(self, config: dict = None) -> None:
         """读取配置并安装订阅搜索分流。"""
@@ -790,6 +791,14 @@ class GuangYaTransferAssistant(_PluginBase):
         if path_migrated:
             self._plugin_log("INFO", "【光鸭转存助手】【路径】目标目录配置已规范化：%s -> %s", raw_save_path, self._save_path)
             self._save_config()
+        self._startup_pending = bool(self._enabled)
+        cached_count = len(((self.get_data("channel_index") or {}).get("items") or []))
+        self._plugin_log(
+            "INFO",
+            "【光鸭转存助手】【启动】v%s 启用=%s 自动转存=%s 刷新周期=%s分钟 固定转存订阅=%s 缓存索引=%s",
+            self.plugin_version, self._enabled, self._auto_transfer_on_refresh, self._refresh_minutes,
+            len(self._selected_subscriptions), cached_count,
+        )
         if self._enabled:
             self._install_takeover()
 
@@ -824,13 +833,23 @@ class GuangYaTransferAssistant(_PluginBase):
     def get_service(self) -> List[Dict[str, Any]]:
         if not self._enabled:
             return []
-        services: List[Dict[str, Any]] = [{
+        services: List[Dict[str, Any]] = []
+        if self._startup_pending:
+            self._startup_pending = False
+            services.append({
+                "id": "GuangYaTransferAssistantStartup",
+                "name": "光鸭转存助手启动缓存检查",
+                "trigger": "date",
+                "func": self._startup_check,
+                "kwargs": {},
+            })
+        services.append({
             "id": "GuangYaTransferAssistantTick",
-            "name": "光鸭转存助手频道刷新与路由守护",
+            "name": "光鸭转存助手频道增量刷新与路由守护",
             "trigger": "interval",
             "func": self._tick,
             "kwargs": {"minutes": self._refresh_minutes},
-        }]
+        })
         if self._daily_summary:
             try:
                 summary_trigger = CronTrigger.from_crontab(self._summary_cron)
@@ -1384,12 +1403,44 @@ class GuangYaTransferAssistant(_PluginBase):
             }
         return None
 
+    def _cached_matches_for_subscription(self, subscribe: Any) -> List[Tuple[Dict[str, Any], str]]:
+        """从本地频道索引直接取该订阅的已知分享；stale 只代表频道抓取失败，不代表光鸭分享失效。"""
+        entries = list(((self.get_data("channel_index") or {}).get("items") or []))
+        pairs: List[Tuple[Dict[str, Any], str]] = []
+        for entry in entries:
+            matched, reason = _entry_match_reason(entry, subscribe)
+            if matched and entry.get("share_url"):
+                pairs.append((entry, reason))
+        return pairs
+
+    def _prepare_cache_first_manual_check(self, subscribe: Any, action: str) -> List[Tuple[Dict[str, Any], str]]:
+        sid = int(getattr(subscribe, "id", 0) or 0)
+        pairs = self._cached_matches_for_subscription(subscribe)
+        if pairs:
+            fallback = sum(1 for entry, _ in pairs if entry.get("stale"))
+            self._plugin_log(
+                "INFO", "【光鸭转存助手】【缓存命中】%s #%s %s 命中本地索引 %s 个分享（故障缓存 %s）；不访问 Telegram，直接检查光鸭分享",
+                action, sid, getattr(subscribe, "name", ""), len(pairs), fallback,
+            )
+            return pairs
+        self._plugin_log(
+            "INFO", "【光鸭转存助手】【缓存未命中】%s #%s %s 本地索引没有可匹配分享，执行一次频道增量刷新",
+            action, sid, getattr(subscribe, "name", ""),
+        )
+        self.refresh_channels(force=True)
+        pairs = self._cached_matches_for_subscription(subscribe)
+        self._plugin_log(
+            "INFO", "【光鸭转存助手】【频道增量刷新】%s #%s %s 刷新后匹配分享=%s",
+            action, sid, getattr(subscribe, "name", ""), len(pairs),
+        )
+        return pairs
+
     def get_api(self) -> List[Dict[str, Any]]:
         return [
             {"path": "/refresh", "endpoint": self.api_refresh, "methods": ["POST"], "summary": "立即刷新频道索引"},
             {"path": "/transfer", "endpoint": self.api_transfer, "methods": ["POST"], "summary": "立即尝试一个订阅的光鸭转存"},
             {"path": "/folders", "endpoint": self.api_folders, "methods": ["GET"], "summary": "读取光鸭根目录文件夹"},
-            {"path": "/check_missing", "endpoint": self.api_check_missing, "methods": ["POST"], "summary": "立即刷新并检查指定转存订阅缺集"},
+            {"path": "/check_missing", "endpoint": self.api_check_missing, "methods": ["POST"], "summary": "缓存优先检查指定转存订阅缺集"},
             {"path": "/release_native", "endpoint": self.api_release_native, "methods": ["POST"], "summary": "将指定转存订阅切换回 MoviePilot 普通下载"},
             {"path": "/recheck_pending", "endpoint": self.api_recheck_pending, "methods": ["POST"], "summary": "只复查指定订阅的待落盘任务，不自动重复提交"},
             {"path": "/reset_state", "endpoint": self.api_reset_state, "methods": ["POST"], "summary": "安全重置指定订阅的频道检查状态，保留媒体事实/库存/进度"},
@@ -1425,26 +1476,32 @@ class GuangYaTransferAssistant(_PluginBase):
         subscribe = self._find_subscription(sid)
         if not subscribe:
             return {"success": False, "message": "订阅不存在"}
+        self._plugin_log("INFO", "【光鸭转存助手】【人工检查】立即转存 #%s %s 开始", sid, getattr(subscribe, "name", ""))
         guard = self._manual_transfer_guard(subscribe)
         if guard:
+            self._plugin_log("WARNING", "【光鸭转存助手】【门禁】立即转存 #%s %s 拒绝：%s", sid, getattr(subscribe, "name", ""), guard.get("message") or "未知原因")
             return guard
-        return self._try_transfer_subscription(subscribe, force=True)
+        self._prepare_cache_first_manual_check(subscribe, "立即转存")
+        self._inspect_cache.clear()
+        return self._try_transfer_subscription(subscribe, force=True, refresh_channel=False)
 
     def api_folders(self) -> Dict[str, Any]:
         return {"success": True, "items": self._root_folder_options(raw=True)}
 
     def api_check_missing(self, subscribe_id: int = 0) -> Dict[str, Any]:
-        """手动强制刷新频道并只检查该转存订阅当前缺失集。"""
+        """缓存优先检查缺集：已知分享直接访问光鸭；只有缓存未命中才刷新 Telegram 频道。"""
         sid = int(subscribe_id or 0)
         subscribe = self._find_subscription(sid)
         if not sid or not subscribe:
             return {"success": False, "message": "订阅不存在"}
+        self._plugin_log("INFO", "【光鸭转存助手】【人工检查】立即检查缺集 #%s %s 开始", sid, getattr(subscribe, "name", ""))
         guard = self._manual_transfer_guard(subscribe)
         if guard:
+            self._plugin_log("WARNING", "【光鸭转存助手】【门禁】立即检查缺集 #%s %s 拒绝：%s", sid, getattr(subscribe, "name", ""), guard.get("message") or "未知原因")
             return guard
-        self.refresh_channels(force=True)
+        self._prepare_cache_first_manual_check(subscribe, "立即检查缺集")
         self._inspect_cache.clear()
-        result = self._try_transfer_subscription(subscribe, force=True)
+        result = self._try_transfer_subscription(subscribe, force=True, refresh_channel=False)
         missing = self._subscription_missing_episodes(self._find_subscription(sid) or subscribe)
         result["missing_episodes"] = missing
         return result
@@ -1508,15 +1565,29 @@ class GuangYaTransferAssistant(_PluginBase):
                 self._plugin_log("WARNING", "【光鸭转存助手】【通知】发送人工切换通知失败：%s", err)
         return {"success": True, "message": "已切换为普通下载，后续由 MoviePilot 原生订阅任务处理缺集", "missing_episodes": missing}
 
+    def _startup_check(self) -> None:
+        """启动后先消费本地索引，不等待首个 interval；随后再按游标做一次到期增量发现。"""
+        cached = list(((self.get_data("channel_index") or {}).get("items") or []))
+        self._plugin_log("INFO", "【光鸭转存助手】【启动检查】缓存索引=%s，固定转存订阅=%s", len(cached), len(self._selected_subscriptions))
+        if self._auto_transfer_on_refresh and cached:
+            self._inspect_cache.clear()
+            self._process_selected_subscriptions(trigger="启动缓存检查", refresh_channel=False)
+        before_new = int((self.get_data("channel_index") or {}).get("new_count") or 0)
+        refreshed = self.refresh_channels(force=False)
+        after_new = int((self.get_data("channel_index") or {}).get("new_count") or 0)
+        if self._auto_transfer_on_refresh and refreshed and after_new > 0 and (not cached or after_new != before_new):
+            self._inspect_cache.clear()
+            self._process_selected_subscriptions(trigger="启动频道增量刷新", refresh_channel=False)
+
     def _tick(self) -> None:
         self._install_takeover()
-        items = self.refresh_channels(force=True)
-        # 分享内容可能在同一个 URL 内热更，每轮正式检查前清掉 API 文件缓存。
+        items = self.refresh_channels(force=False)
+        # 频道负责发现，缓存负责执行；Telegram 故障时已有分享仍可直接访问光鸭。
         self._inspect_cache.clear()
-        if self._auto_transfer_on_refresh and any(not item.get("stale") for item in items):
-            self._process_selected_subscriptions(trigger="频道定时刷新")
+        if self._auto_transfer_on_refresh and items:
+            self._process_selected_subscriptions(trigger="频道定时增量刷新", refresh_channel=False)
 
-    def _process_selected_subscriptions(self, trigger: str = "后台检查") -> List[Dict[str, Any]]:
+    def _process_selected_subscriptions(self, trigger: str = "后台检查", refresh_channel: bool = False) -> List[Dict[str, Any]]:
         """频道刷新后只检查活跃订阅；不会在后台刷新任务里主动触发原生下载。"""
         results: List[Dict[str, Any]] = []
         with self._route_lock:
@@ -1529,7 +1600,7 @@ class GuangYaTransferAssistant(_PluginBase):
                     results.append({"subscribe_id": int(sid), "success": False, "handled": False, "message": "非活跃订阅，已跳过"})
                     continue
                 try:
-                    result = self._try_transfer_subscription(subscribe)
+                    result = self._try_transfer_subscription(subscribe, refresh_channel=refresh_channel)
                     results.append({"subscribe_id": int(sid), **result})
                     self._plugin_log("INFO", "【光鸭转存助手】【自动】%s #%s %s：%s", trigger, sid, getattr(subscribe, "name", ""), result.get("message") or "完成")
                 except Exception as err:
@@ -2348,24 +2419,25 @@ class GuangYaTransferAssistant(_PluginBase):
                 return False, f"资源未满足订阅{label}规则"
         return True, ""
 
-    def _try_transfer_subscription(self, subscribe: Any, force: bool = False) -> Dict[str, Any]:
+    def _try_transfer_subscription(self, subscribe: Any, force: bool = False, refresh_channel: bool = True) -> Dict[str, Any]:
         token, lock_key = self._acquire_subscription_run(subscribe)
         if not token:
             self._plugin_log("INFO", "【光鸭转存助手】【并发】#%s %s 已有同媒体转存任务执行中，本次跳过", getattr(subscribe, "id", 0), getattr(subscribe, "name", ""))
             return {"success": True, "handled": True, "busy": True, "message": "已有同媒体转存任务执行中"}
         try:
-            return self._try_transfer_subscription_inner(subscribe, force=force)
+            return self._try_transfer_subscription_inner(subscribe, force=force, refresh_channel=refresh_channel)
         finally:
             self._release_subscription_run(lock_key, token)
 
-    def _try_transfer_subscription_inner(self, subscribe: Any, force: bool = False) -> Dict[str, Any]:
+    def _try_transfer_subscription_inner(self, subscribe: Any, force: bool = False, refresh_channel: bool = True) -> Dict[str, Any]:
         """对一个活跃订阅执行安全匹配、规则校验、文件级去重和增量转存。"""
         sid = int(getattr(subscribe, "id", 0) or 0)
         allowed, guard_reason = self._subscription_static_guard(subscribe)
         if not allowed:
             self._plugin_log("INFO", "【光鸭转存助手】【规则】#%s %s 不接管：%s", sid, getattr(subscribe, "name", ""), guard_reason)
             return {"success": False, "handled": True, "message": guard_reason}
-        self.refresh_channels(force=False)
+        if refresh_channel:
+            self.refresh_channels(force=False)
         # 先把旧版库存迁移成媒体语义事实，再同步事实和 MoviePilot 媒体库。
         self._sync_media_facts_from_inventory(subscribe)
         self._sync_media_facts_progress(subscribe)
@@ -2377,20 +2449,24 @@ class GuangYaTransferAssistant(_PluginBase):
             media_kind = "电影" if self._is_movie_subscription(subscribe) else "剧集"
             return {"success": True, "handled": True, "completed": True, "message": f"{media_kind}目标已完成，订阅已移入历史"}
         matched_pairs = []
-        stale_matches = 0
+        fallback_cache_matches = 0
         for item in entries:
             matched, reason = _entry_match_reason(item, subscribe)
             if not matched:
                 continue
             if item.get("stale"):
-                stale_matches += 1
-                continue
+                fallback_cache_matches += 1
             matched_pairs.append((item, reason))
         if not matched_pairs:
-            detail = "仅命中故障回退索引，等待频道恢复" if stale_matches else "频道暂未匹配到光鸭分享"
+            detail = "本地频道索引暂未匹配到光鸭分享"
             self._plugin_log("INFO", "【光鸭转存助手】【匹配】#%s %s %s；固定转存路线不触发原生下载", sid, getattr(subscribe, "name", ""), detail)
             return {"success": False, "handled": True, "message": detail}
-        self._plugin_log("INFO", "【光鸭转存助手】【匹配】#%s %s 命中 %s 个当前频道分享", sid, getattr(subscribe, "name", ""), len(matched_pairs))
+        self._plugin_log("INFO", "【光鸭转存助手】【匹配】#%s %s 命中 %s 个缓存/当前分享", sid, getattr(subscribe, "name", ""), len(matched_pairs))
+        if fallback_cache_matches:
+            self._plugin_log(
+                "WARNING", "【光鸭转存助手】【缓存回退】#%s %s 有 %s 个分享来自 Telegram 故障缓存；频道不可用不阻断已知光鸭链接转存",
+                sid, getattr(subscribe, "name", ""), fallback_cache_matches,
+            )
 
         channel_state = self._channel_state_for_subscription(subscribe, [item for item, _ in matched_pairs])
         if self._sync_channel_episode_floor(subscribe, channel_state):
