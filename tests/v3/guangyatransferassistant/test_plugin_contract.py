@@ -94,8 +94,8 @@ def test_pagination_episode_and_path_safety():
 def test_version_and_safety_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.6.2" and local["version"] == "1.6.2"
-    assert 'plugin_version = "1.6.2"' in text
+    assert package["version"] == "1.6.3" and local["version"] == "1.6.3"
+    assert 'plugin_version = "1.6.3"' in text
     for token in (
         "隐藏按钮", "包装按钮", "_extract_pagination_urls", "tmdb_id", "TMDB精确",
         "strict_subscription_rules", "best_version", "filter_groups", "state not in (\"N\", \"R\")",
@@ -260,10 +260,10 @@ def test_v140_reliability_contracts():
         'channel_cursors', 'last_message_id', 'reached_cursor',
         'transfer_jobs', 'active_runs', '_acquire_subscription_run',
         '_verify_restored_group', '【光鸭转存助手】【落盘确认】',
-        'data_schema_version = 5',
+        'data_schema_version = 6',
     ):
         assert token in text, token
-    assert 'plugin_version = "1.6.2"' in text
+    assert 'plugin_version = "1.6.3"' in text
     assert '本轮新增' in text and '保留索引' in text and '故障回退' in text
 
 
@@ -360,8 +360,8 @@ def test_visibility_timeout_remains_pending_until_manual_force():
 def test_v150_version_and_console_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.6.2" and local["version"] == "1.6.2"
-    assert 'plugin_version = "1.6.2"' in text
+    assert package["version"] == "1.6.3" and local["version"] == "1.6.3"
+    assert 'plugin_version = "1.6.3"' in text
     assert '_subscription_console_snapshot' in text
     assert '等待落盘确认' in text and '当前已齐 · 连载保护中' in text
     assert '复查待落盘' in text and '重置检查状态' in text
@@ -424,14 +424,14 @@ def test_failure_notice_fingerprint_ignores_dynamic_ids():
 def test_v160_operations_and_audit_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.6.2" and local["version"] == "1.6.2"
-    assert 'plugin_version = "1.6.2"' in text
+    assert package["version"] == "1.6.3" and local["version"] == "1.6.3"
+    assert 'plugin_version = "1.6.3"' in text
     assert '_task_audit_rows' in text and '转存任务审计' in text
     assert '忽略卡住任务' in text and '/cancel_pending' in text
     assert '旧消息不会自动重放' in text
     assert 'daily_summary' in text and 'summary_cron' in text and '光鸭转存日报' in text
     assert 'CronTrigger.from_crontab' in text
-    assert '_data_schema_version = 5' in text
+    assert '_data_schema_version = 6' in text
 
 
 def test_manual_missing_check_refuses_pending_force_replay():
@@ -447,7 +447,7 @@ def test_manual_missing_check_refuses_pending_force_replay():
 def test_cancelled_old_job_never_replays_until_reset():
     flow = text.split('    def _try_transfer_subscription_inner(', 1)[1].split('    def _target_path(', 1)[0]
     assert 'pending_job.get("status") == "cancelled"' in flow
-    cancelled = flow.split('pending_job.get("status") == "cancelled"', 1)[1].split('logger.info(', 1)[0]
+    cancelled = flow.split('pending_job.get("status") == "cancelled"', 1)[1].split('self._plugin_log("INFO", ', 1)[0]
     assert 'continue' not in cancelled  # continue follows the explanatory log, not before it
     assert '该旧消息任务已人工忽略' in flow and 'continue' in flow
     reset = text.split('    def _reset_subscription_check_state(', 1)[1].split('    def _pending_jobs_for_subscription(', 1)[0]
@@ -503,8 +503,8 @@ def test_inflight_only_message_is_not_marked_permanently_processed():
 def test_v161_season_zero_library_sync_and_manual_gate_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.6.2" and local["version"] == "1.6.2"
-    assert 'plugin_version = "1.6.2"' in text
+    assert package["version"] == "1.6.3" and local["version"] == "1.6.3"
+    assert 'plugin_version = "1.6.3"' in text
 
     sync = text.split('    def _sync_media_library_progress(', 1)[1].split('    def _install_takeover(', 1)[0]
     assert 'raw_season = getattr(subscribe, "season", None)' in sync
@@ -582,8 +582,35 @@ def test_v162_labelled_title_and_match_use_parsed_title_not_file_list_noise():
 def test_v162_version_contract():
     package = json.loads((ROOT / 'package.v3.json').read_text(encoding='utf-8'))['GuangYaTransferAssistant']
     local = json.loads((ROOT / 'plugins.v3' / 'guangyatransferassistant' / 'plugin.json').read_text(encoding='utf-8'))
-    assert package['version'] == '1.6.2' and local['version'] == '1.6.2'
-    assert 'plugin_version = "1.6.2"' in text
+    assert package['version'] == '1.6.3' and local['version'] == '1.6.3'
+    assert 'plugin_version = "1.6.3"' in text
     assert '_extract_channel_display_title' in text
     assert 'parsed_title if parsed_title else text_value' in text
     assert 'strip()[:420]' in text
+
+
+
+def test_v163_weak_episode_filename_fallbacks():
+    episode = ns["_episode_numbers"]
+    assert episode("[NC-Raws] Some Show - 06 (B-Global 1920x1080 AVC AAC).mkv")[1] == [6]
+    assert episode("06.mkv")[1] == [6]
+    assert episode("[07].mp4")[1] == [7]
+    assert episode("Some.Show.-.08v2.[1080p].mkv")[1] == [8]
+    assert episode("Some.Show.2026.2160p.x265.mkv")[1] == []
+
+
+def test_v163_unparsed_files_are_not_permanently_consumed_and_logs_are_plugin_scoped():
+    assert '_data_schema_version = 6' in text
+    assert '重新开放 %s 条旧 no_new_episode 记录' in text
+    planner = text.split('    def _plan_incremental_files(', 1)[1].split('    @staticmethod\n    def _remember_assets', 1)[0]
+    assert 'inferred_episode_by_id' in planner
+    assert 'len(video_rows) == total_episode' in planner
+    assert 'unparsed_paths' in planner
+    flow = text.split('    def _try_transfer_subscription_inner(', 1)[1].split('    def _target_path(', 1)[0]
+    assert '未标记为已处理' in flow
+    assert '【光鸭转存助手】【分享解析】' in flow
+    assert '【光鸭转存助手】【文件识别】' in flow
+    assert 'plugin_logs' in text
+    assert '光鸭转存助手插件日志' in text
+    assert 'api_plugin_logs' in text and 'api_clear_plugin_logs' in text
+    assert '这里只显示光鸭转存助手自己的完整日志' in text
