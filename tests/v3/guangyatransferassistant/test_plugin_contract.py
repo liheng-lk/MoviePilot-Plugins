@@ -471,3 +471,27 @@ def test_daily_summary_is_optional_and_deduplicated():
     assert 'daily_summary_state' in summary
     assert '今日摘要已发送' in summary
     assert 'force: bool = False' in text
+
+
+
+def test_inflight_reservations_prevent_cross_message_duplicate_submission():
+    assert '_pending_reservations' in text and '_filter_inflight_planned_items' in text
+    flow = text.split('    def _try_transfer_subscription_inner(', 1)[1].split('    def _target_path(', 1)[0]
+    plan_pos = flow.index('_plan_incremental_files')
+    reserve_pos = flow.index('_filter_inflight_planned_items')
+    submit_pos = flow.index('_restore_items')
+    assert plan_pos < reserve_pos < submit_pos
+    assert '【光鸭转存助手】【在途去重】' in flow
+    assert '可转内容全部已在其它任务中' in flow
+    helper = text.split('    def _pending_reservations(', 1)[1].split('    def _cancel_pending_jobs(', 1)[0]
+    assert '{"submitted", "task_confirmed", "verifying"}' in helper
+    assert 'episodes.update' in helper
+    assert 'movie_pending = True' in helper
+
+
+def test_inflight_only_message_is_not_marked_permanently_processed():
+    flow = text.split('    def _try_transfer_subscription_inner(', 1)[1].split('    def _target_path(', 1)[0]
+    block = flow.split('if not planned:', 1)[1].split('attempted_new = True', 1)[0]
+    inflight = block.split('if inflight_held:', 1)[1].split('self._mark_entry_processed', 1)[0]
+    assert 'continue' in inflight
+    assert '_mark_entry_processed' not in inflight

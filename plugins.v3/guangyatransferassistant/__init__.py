@@ -939,6 +939,50 @@ class GuangYaTransferAssistant(_PluginBase):
         rows.sort(key=lambda pair: str((pair[1] or {}).get("updated") or ""), reverse=True)
         return rows
 
+    def _pending_reservations(self, subscribe: Any, exclude_job_key: str = "") -> Dict[str, Any]:
+        """收集同媒体其它在途任务已占用的路径/剧集，避免新频道消息重复提交相同内容。"""
+        prefix = self._media_fact_prefix(subscribe)
+        pending_status = {"submitted", "task_confirmed", "verifying"}
+        paths = set()
+        episodes = set()
+        movie_pending = False
+        for key, row in (self.get_data("transfer_jobs") or {}).items():
+            if str(key) == str(exclude_job_key or "") or not isinstance(row, dict):
+                continue
+            if str(row.get("media") or "") != prefix or str(row.get("status") or "") not in pending_status:
+                continue
+            for raw_path in (row.get("paths") or []):
+                path = _safe_relative_path(raw_path)
+                if not path:
+                    continue
+                paths.add(path.lower())
+                if _is_video(path) or _is_subtitle(path):
+                    _, values = _episode_numbers(path)
+                    episodes.update(int(value) for value in values)
+                if self._is_movie_subscription(subscribe) and _is_video(path):
+                    movie_pending = True
+        return {"paths": paths, "episodes": episodes, "movie": movie_pending}
+
+    def _filter_inflight_planned_items(
+        self, subscribe: Any, planned: List[Dict[str, Any]], exclude_job_key: str = "",
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        reservations = self._pending_reservations(subscribe, exclude_job_key=exclude_job_key)
+        if not reservations["paths"] and not reservations["episodes"] and not reservations["movie"]:
+            return list(planned), []
+        ready: List[Dict[str, Any]] = []
+        held: List[Dict[str, Any]] = []
+        for item in planned:
+            path = _safe_relative_path(item.get("effective_path") or item.get("relative_path") or item.get("name") or "")
+            lowered = path.lower()
+            blocked = bool(lowered and lowered in reservations["paths"])
+            if not blocked and reservations["movie"] and self._is_movie_subscription(subscribe):
+                blocked = bool(_is_video(path) or _is_subtitle(path))
+            if not blocked and reservations["episodes"]:
+                _, values = _episode_numbers(path)
+                blocked = bool(set(values).intersection(reservations["episodes"]))
+            (held if blocked else ready).append(item)
+        return ready, held
+
     def _cancel_pending_jobs(self, subscribe: Any) -> Dict[str, Any]:
         """人工忽略当前媒体所有待落盘任务；旧消息保持 cancelled，不会自动重新提交。"""
         pending = self._pending_jobs_for_subscription(subscribe)
@@ -2248,6 +2292,14 @@ class GuangYaTransferAssistant(_PluginBase):
             stats: Dict[str, int] = {}
             planned = self._plan_incremental_files(probe, assets, subscribe=subscribe, target_path=target_path, stats=stats)
             valid_route_match = True
+            job_key = self._job_key(subscribe, entry)
+            planned, inflight_held = self._filter_inflight_planned_items(subscribe, planned, exclude_job_key=job_key)
+            if inflight_held:
+                pending_verification = True
+                logger.info(
+                    "【光鸭转存助手】【在途去重】#%s %s share_id=%s 新消息中 %s 个文件/剧集已被其它待落盘任务占用，本轮不重复提交",
+                    sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], len(inflight_held),
+                )
             if stats.get("eligible", 0) <= 0:
                 message = "分享内没有需要的新剧集；已入库/已完成/范围外内容不再重复测试"
                 self._mark_entry_processed(entry, "no_new_episode", message, subscribe)
@@ -2269,6 +2321,12 @@ class GuangYaTransferAssistant(_PluginBase):
 
             if not planned:
                 synchronized_match = True
+                if inflight_held:
+                    logger.info(
+                        "【光鸭转存助手】【在途去重】#%s %s share_id=%s 本条新消息可转内容全部已在其它任务中，保留消息为待检查，不标记永久处理",
+                        sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0],
+                    )
+                    continue
                 self._mark_entry_processed(entry, "synced", "库存或订阅进度已覆盖，无新增文件", subscribe)
                 logger.info(
                     "【光鸭转存助手】【去重】#%s %s share_id=%s 无新增文件（库存=%s，已完成剧集/范围过滤=%s），跳过",
@@ -2282,7 +2340,6 @@ class GuangYaTransferAssistant(_PluginBase):
             if deferred_for_entry:
                 remaining_due_to_cap += deferred_for_entry
                 planned = planned[:self._max_files_per_run]
-            job_key = self._job_key(subscribe, entry)
             job_paths = [str(item.get("effective_path") or item.get("relative_path") or item.get("name") or "") for item in planned]
             pending_job = self._get_job_state(job_key)
             restored = None
