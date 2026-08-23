@@ -19,6 +19,7 @@ from .models import (
     GuangYaConfigData,
     GuangYaConfigSaveResponse,
 )
+from .storage_contract import V3StorageContractMixin
 
 # legacy 主体在 init_plugin() 运行时从模块全局读取 GuangYaApi。
 # V3 继续替换为已经实机验证的 v1.1.2 稳定上传适配层，避免重写上传主链。
@@ -26,7 +27,7 @@ _legacy_module.GuangYaApi = _StableGuangYaApi
 _LegacyPlugin = _legacy_module.ShukGuangYaDisk
 
 
-class ShukGuangYaDisk(_LegacyPlugin):
+class ShukGuangYaDisk(V3StorageContractMixin, _LegacyPlugin):
     """光鸭云盘助手 MoviePilot V3 专用实现。"""
 
     plugin_name = "光鸭云盘助手"
