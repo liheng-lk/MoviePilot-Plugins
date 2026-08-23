@@ -26,6 +26,7 @@ jobs:
         run: |
           python .github/fix_guangya_v110_patch.py
           python .github/guangya_transfer_v110_patch.py
+          python .github/postfix_guangya_v110.py
       - name: Validate plugin
         run: |
           python -m py_compile plugins.v3/guangyatransferassistant/__init__.py
@@ -44,6 +45,8 @@ jobs:
               '_restore_items',
               '频道资源（',
               '同一分享热更不会重转旧文件',
+              'attempted_new = False',
+              'failure_notices',
           ]
           for token in required:
               assert token in text, token
@@ -54,7 +57,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/fix_guangya_v110_patch.py .github/guangya_transfer_v110_patch.py .github/workflows/guangya-transfer-v110-build.yml
+          git rm .github/fix_guangya_v110_patch.py .github/guangya_transfer_v110_patch.py .github/postfix_guangya_v110.py .github/workflows/guangya-transfer-v110-build.yml
           git add plugins.v3/guangyatransferassistant/__init__.py plugins.v3/guangyatransferassistant/plugin.json package.v3.json tests/v3/guangyatransferassistant/test_plugin_contract.py
           git commit -m "feat: make GuangYa transfer automatic and incremental"
           git push origin HEAD:fix/guangya-transfer-auto-incremental-v1.1.0
