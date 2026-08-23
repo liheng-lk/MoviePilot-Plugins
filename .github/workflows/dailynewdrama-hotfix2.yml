@@ -1,0 +1,93 @@
+name: DailyNewDrama V3 hotfix 2
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'fix/dailynewdrama-library-notify-complete' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/dailynewdrama-library-notify-complete
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Patch DailyNewDrama 3.0.1
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          p = Path('plugins.v3/dailynewdrama/__init__.py')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('    plugin_version = "3.0.0"', '    plugin_version = "3.0.1"', 1)
+
+          marker = '    return f"{air_date.isoformat()} · 已开播{-days}天"\n\n\nclass DailyNewDrama(_PluginBase):'
+          helper = '''    return f"{air_date.isoformat()} · 已开播{-days}天"\n\n\ndef _media_library_has_content(mediainfo: MediaInfo, complete: bool, no_exists: Dict[str, Any]) -> bool:\n    """媒体库中只要已有该剧任意一季或任意一集，就视为已有内容。"""\n    if complete:\n        return True\n    if not no_exists:\n        return False\n    seasons = getattr(mediainfo, "seasons", None) or {}\n    expected_seasons = {int(season) for season, episodes in seasons.items() if episodes}\n    if not expected_seasons:\n        return False\n    missing_seasons = set()\n    for season_map in no_exists.values():\n        if not isinstance(season_map, dict):\n            continue\n        for season, detail in season_map.items():\n            try:\n                missing_seasons.add(int(season))\n            except (TypeError, ValueError):\n                continue\n            missing_episodes = getattr(detail, "episodes", None)\n            if missing_episodes is None and isinstance(detail, dict):\n                missing_episodes = detail.get("episodes")\n            if missing_episodes:\n                return True\n    return bool(expected_seasons - missing_seasons)\n\n\nclass DailyNewDrama(_PluginBase):'''
+          assert marker in s
+          s = s.replace(marker, helper, 1)
+
+          old_sig = '    def refresh_and_notify(self, send_message: bool = True, suppress_recent: bool = True) -> List[Dict[str, Any]]:'
+          assert old_sig in s
+          s = s.replace(old_sig, old_sig.replace('True) ->', 'False) ->'), 1)
+
+          refresh_old = '''                exist_flag, _ = DownloadChain().get_no_exists_info(meta=meta, mediainfo=mediainfo)\n                if exist_flag:\n                    logger.info("【每日新剧助手】过滤媒体库已存在: %s", mediainfo.title_year)\n                    continue'''
+          refresh_new = '''                exist_flag, no_exists = DownloadChain().get_no_exists_info(meta=meta, mediainfo=mediainfo)\n                if _media_library_has_content(mediainfo, exist_flag, no_exists):\n                    logger.info("【每日新剧助手】过滤媒体库已存在内容: %s", mediainfo.title_year)\n                    continue'''
+          assert refresh_old in s
+          s = s.replace(refresh_old, refresh_new, 1)
+
+          subscribe_old = '''                exist_flag, _ = DownloadChain().get_no_exists_info(meta=meta, mediainfo=mediainfo)\n                if exist_flag:\n                    skipped.append(f"{index}.{item.get('title')}(已入库)")\n                    handled_indexes.append(index)\n                    continue'''
+          subscribe_new = '''                exist_flag, no_exists = DownloadChain().get_no_exists_info(meta=meta, mediainfo=mediainfo)\n                if _media_library_has_content(mediainfo, exist_flag, no_exists):\n                    skipped.append(f"{index}.{item.get('title')}(已入库)")\n                    handled_indexes.append(index)\n                    continue'''
+          assert subscribe_old in s
+          s = s.replace(subscribe_old, subscribe_new, 1)
+
+          assert '        chunk_size = 20' in s
+          s = s.replace('        chunk_size = 20', '        chunk_size = 8', 1)
+          s = s.replace(
+              '            lines = ["已过滤媒体库已有和现有订阅；重复提醒只影响消息，不影响插件页面候选：", ""]',
+              '            lines = ["完整候选列表：已过滤媒体库中已有任意内容及现有订阅。", ""]', 1)
+          s = s.replace(
+              '"text": "页面候选不限数量，仅过滤媒体库已有和 MoviePilot 已订阅内容；重复提醒间隔只影响消息推送，不会让候选从页面消失。每张剧集卡片可直接点击订阅。"',
+              '"text": "页面和定时消息均输出完整候选；媒体库中只要已有该剧任意一集或任意一季即过滤，同时过滤 MoviePilot 已订阅内容。消息按较小批次发送，避免渠道长度或按钮限制导致缺项。"', 1)
+          p.write_text(s, encoding='utf-8')
+
+          package_path = Path('package.v3.json')
+          package = json.loads(package_path.read_text(encoding='utf-8'))
+          daily = package['DailyNewDrama']
+          daily['version'] = '3.0.1'
+          daily['description'] = 'MoviePilot V3 新剧与在播剧聚合助手；媒体库中已有任意剧集即过滤，并支持完整分批通知与页面一键订阅。'
+          old_history = daily.get('history') or {}
+          daily['history'] = {
+              'v3.0.1': '修复媒体库部分入库剧集未过滤；定时推送默认发送完整候选，并缩小单条消息批次，避免重复提醒抑制和消息渠道长度/按钮限制导致推送缺项。',
+              **old_history,
+          }
+          package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          test_path = Path('tests/v3/dailynewdrama/test_plugin_contract.py')
+          t = test_path.read_text(encoding='utf-8')
+          t = t.replace('plugin_version = \\"3.0.0\\"', 'plugin_version = \\"3.0.1\\"')
+          t = t.replace('idx["version"]=="3.0.0"', 'idx["version"]=="3.0.1"')
+          if '# 3.0.1 regression contracts' not in t:
+              t += '''\n# 3.0.1 regression contracts\nassert "def _media_library_has_content" in text\nassert "suppress_recent: bool = False" in text\nassert "chunk_size = 8" in text\nassert text.count("_media_library_has_content(mediainfo, exist_flag, no_exists)") == 2\nassert "完整候选列表" in text\n\nimport ast\ntree = ast.parse(text)\nnode = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_media_library_has_content")\nnode.returns = None\nfor arg in node.args.args:\n    arg.annotation = None\nmod = ast.Module(body=[node], type_ignores=[])\nast.fix_missing_locations(mod)\nns = {}\nexec(compile(mod, str(V3 / "__init__.py"), "exec"), ns)\nhelper = ns["_media_library_has_content"]\nclass _Media:\n    seasons = {1: [1, 2, 3], 2: [1, 2]}\nclass _Missing:\n    def __init__(self, episodes): self.episodes = episodes\nassert helper(_Media(), True, {}) is True\nassert helper(_Media(), False, {"tmdb:1": {1: _Missing([]), 2: _Missing([])}}) is False\nassert helper(_Media(), False, {"tmdb:1": {1: _Missing([3]), 2: _Missing([])}}) is True\nassert helper(_Media(), False, {"tmdb:1": {2: _Missing([])}}) is True\n'''
+          test_path.write_text(t, encoding='utf-8')
+          PY
+      - name: Validate
+        run: |
+          python -m compileall -q plugins.v3/dailynewdrama
+          python tests/v3/dailynewdrama/test_plugin_contract.py
+          python -m json.tool package.v3.json >/dev/null
+      - name: Commit and push
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add plugins.v3/dailynewdrama/__init__.py package.v3.json tests/v3/dailynewdrama/test_plugin_contract.py
+          git commit -m "fix: DailyNewDrama 3.0.1 library filtering and complete notifications"
+          git push origin HEAD:fix/dailynewdrama-library-notify-complete
