@@ -1,11 +1,7 @@
 name: GuangYa Transfer v1.2.0 Build
 
 on:
-  push:
-    branches:
-      - feat/guangya-transfer-v1.2.0-complete
-    paths:
-      - .github/workflows/guangya-transfer-v120-build.yml
+  pull_request:
 
 permissions:
   contents: write
