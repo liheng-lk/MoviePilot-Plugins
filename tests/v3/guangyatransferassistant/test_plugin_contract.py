@@ -94,8 +94,8 @@ def test_pagination_episode_and_path_safety():
 def test_version_and_safety_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.5.0" and local["version"] == "1.5.0"
-    assert 'plugin_version = "1.5.0"' in text
+    assert package["version"] == "1.6.0" and local["version"] == "1.6.0"
+    assert 'plugin_version = "1.6.0"' in text
     for token in (
         "隐藏按钮", "包装按钮", "_extract_pagination_urls", "tmdb_id", "TMDB精确",
         "strict_subscription_rules", "best_version", "filter_groups", "state not in (\"N\", \"R\")",
@@ -260,10 +260,10 @@ def test_v140_reliability_contracts():
         'channel_cursors', 'last_message_id', 'reached_cursor',
         'transfer_jobs', 'active_runs', '_acquire_subscription_run',
         '_verify_restored_group', '【光鸭转存助手】【落盘确认】',
-        'data_schema_version = 4',
+        'data_schema_version = 5',
     ):
         assert token in text, token
-    assert 'plugin_version = "1.5.0"' in text
+    assert 'plugin_version = "1.6.0"' in text
     assert '本轮新增' in text and '保留索引' in text and '故障回退' in text
 
 
@@ -360,8 +360,8 @@ def test_visibility_timeout_remains_pending_until_manual_force():
 def test_v150_version_and_console_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.5.0" and local["version"] == "1.5.0"
-    assert 'plugin_version = "1.5.0"' in text
+    assert package["version"] == "1.6.0" and local["version"] == "1.6.0"
+    assert 'plugin_version = "1.6.0"' in text
     assert '_subscription_console_snapshot' in text
     assert '等待落盘确认' in text and '当前已齐 · 连载保护中' in text
     assert '复查待落盘' in text and '重置检查状态' in text
@@ -418,3 +418,80 @@ def test_failure_notice_fingerprint_ignores_dynamic_ids():
     left = fp('share_id=AbCdEf123 task_id=ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890 网络错误')
     right = fp('share_id=Other999 task_id=ZZZZZZZZZZZZZZZZZZZZZZZZZZZZ 网络错误')
     assert left == right
+
+
+
+def test_v160_operations_and_audit_contracts():
+    package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
+    local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
+    assert package["version"] == "1.6.0" and local["version"] == "1.6.0"
+    assert 'plugin_version = "1.6.0"' in text
+    assert '_task_audit_rows' in text and '转存任务审计' in text
+    assert '忽略卡住任务' in text and '/cancel_pending' in text
+    assert '旧消息不会自动重放' in text
+    assert 'daily_summary' in text and 'summary_cron' in text and '光鸭转存日报' in text
+    assert 'CronTrigger.from_crontab' in text
+    assert '_data_schema_version = 5' in text
+
+
+def test_manual_missing_check_refuses_pending_force_replay():
+    block = text.split('    def api_check_missing(', 1)[1].split('    def api_recheck_pending(', 1)[0]
+    guard_pos = block.index('_pending_jobs_for_subscription(subscribe)')
+    force_pos = block.index('_try_transfer_subscription(subscribe, force=True)')
+    assert guard_pos < force_pos
+    assert '请先使用‘复查待落盘’' in block
+
+
+def test_cancelled_old_job_never_replays_until_reset():
+    flow = text.split('    def _try_transfer_subscription_inner(', 1)[1].split('    def _target_path(', 1)[0]
+    assert 'pending_job.get("status") == "cancelled"' in flow
+    cancelled = flow.split('pending_job.get("status") == "cancelled"', 1)[1].split('logger.info(', 1)[0]
+    assert 'continue' not in cancelled  # continue follows the explanatory log, not before it
+    assert '该旧消息任务已人工忽略' in flow and 'continue' in flow
+    reset = text.split('    def _reset_subscription_check_state(', 1)[1].split('    def _pending_jobs_for_subscription(', 1)[0]
+    assert '"cancelled"' in reset
+
+
+def test_special_episode_parser_and_season_zero_identity():
+    parser = ns['_episode_numbers']
+    assert parser('Anime.OVA.01.1080p.mkv') == (0, [1])
+    assert parser('Anime.SP02.mkv') == (0, [2])
+    assert parser('动画 特别篇3.mp4') == (0, [3])
+    assert parser('Show.S00E04.mkv') == (0, [4])
+    assert parser('Show.S01E08.SP1.mkv') == (1, [8])
+    assert 'wanted_value == 0 and file_season is None' in text
+    assert 'wanted_season == 0 and file_season is None' in text
+
+
+def test_daily_summary_is_optional_and_deduplicated():
+    service = text.split('    def get_service(', 1)[1].split('    def get_form(', 1)[0]
+    assert 'if self._daily_summary:' in service
+    assert 'GuangYaTransferAssistantDailySummary' in service
+    summary = text.split('    def _send_daily_summary(', 1)[1].split('    def get_page(', 1)[0]
+    assert 'daily_summary_state' in summary
+    assert '今日摘要已发送' in summary
+    assert 'force: bool = False' in text
+
+
+
+def test_inflight_reservations_prevent_cross_message_duplicate_submission():
+    assert '_pending_reservations' in text and '_filter_inflight_planned_items' in text
+    flow = text.split('    def _try_transfer_subscription_inner(', 1)[1].split('    def _target_path(', 1)[0]
+    plan_pos = flow.index('_plan_incremental_files')
+    reserve_pos = flow.index('_filter_inflight_planned_items')
+    submit_pos = flow.index('_restore_items')
+    assert plan_pos < reserve_pos < submit_pos
+    assert '【光鸭转存助手】【在途去重】' in flow
+    assert '可转内容全部已在其它任务中' in flow
+    helper = text.split('    def _pending_reservations(', 1)[1].split('    def _cancel_pending_jobs(', 1)[0]
+    assert '{"submitted", "task_confirmed", "verifying"}' in helper
+    assert 'episodes.update' in helper
+    assert 'movie_pending = True' in helper
+
+
+def test_inflight_only_message_is_not_marked_permanently_processed():
+    flow = text.split('    def _try_transfer_subscription_inner(', 1)[1].split('    def _target_path(', 1)[0]
+    block = flow.split('if not planned:', 1)[1].split('attempted_new = True', 1)[0]
+    inflight = block.split('if inflight_held:', 1)[1].split('self._mark_entry_processed', 1)[0]
+    assert 'continue' in inflight
+    assert '_mark_entry_processed' not in inflight
