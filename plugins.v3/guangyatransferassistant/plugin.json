@@ -1,6 +1,6 @@
 {
   "name": "光鸭转存助手",
-  "description": "订阅固定分流：勾选订阅只走光鸭转存，未勾选订阅只走 MoviePilot 原生下载；自动修复目标目录对象配置。",
+  "description": "订阅固定分流：勾选订阅只走光鸭转存，未勾选订阅只走 MoviePilot 原生下载；自动修复目标目录对象配置，避免错误路径触发转存失败。",
   "version": "1.2.1",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
