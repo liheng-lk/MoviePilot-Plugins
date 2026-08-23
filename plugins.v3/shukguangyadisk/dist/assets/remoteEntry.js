@@ -1,6 +1,6 @@
 const moduleMap = {
-  './Page': () => import('./__federation_expose_AssistantPage-v111.js?v=1.1.1').then((mod) => () => mod.default),
-  './Config': () => import('./__federation_expose_AssistantConfig-dev.js?v=1.1.1').then((mod) => () => mod.default),
+  './Page': () => import('./__federation_expose_AssistantPage-v300.js?v=3.0.0').then((mod) => () => mod.default),
+  './Config': () => import('./__federation_expose_AssistantConfig-v300.js?v=3.0.0').then((mod) => () => mod.default),
 };
 
 const seenCss = new Set();
@@ -10,7 +10,7 @@ const dynamicLoadingCss = (cssFilePaths = [], dontAppendStylesToHead = false, ex
   for (const cssPath of cssFilePaths || []) {
     const href = new URL(cssPath, baseUrl).href;
     if (dontAppendStylesToHead) {
-      const key = `css__GuangYaDisk__${exposeItemName}`;
+      const key = `css__ShukGuangYaDisk__${exposeItemName}`;
       window[key] = window[key] || [];
       window[key].push(href);
       continue;
