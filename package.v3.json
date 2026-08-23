@@ -28,9 +28,9 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "光鸭订阅固定分流：缓存优先执行，频道只做增量发现；Telegram 故障时已知分享仍可转存，并修复有资源但被 stale 缓存阻断的问题。",
+    "description": "热升级即用：无需再次保存设置即可启动缓存检查与周期守护；宿主定时服务未重新注册时由内置守护自动接管，恢复后自动避免重复执行。",
     "labels": "光鸭云盘,转存,订阅,Telegram,网盘,缺集,追更",
-    "version": "1.6.4",
+    "version": "1.6.5",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
