@@ -1,0 +1,52 @@
+name: GuangYa Transfer v1.2.1 Build
+
+on:
+  push:
+    branches:
+      - fix/guangya-transfer-fixed-routing-v1.2.1
+    paths:
+      - .github/guangya_transfer_v121_patch.py
+      - .github/workflows/guangya-transfer-v121-build.yml
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/guangya-transfer-fixed-routing-v1.2.1
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply v1.2.1 patch
+        run: python .github/guangya_transfer_v121_patch.py
+      - name: Validate plugin
+        run: |
+          python -m py_compile plugins.v3/guangyatransferassistant/__init__.py
+          python -m pip install -q pytest
+          python -m pytest -q tests/v3/guangyatransferassistant/test_plugin_contract.py
+          python -m json.tool package.v3.json >/dev/null
+          python -m json.tool plugins.v3/guangyatransferassistant/plugin.json >/dev/null
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('plugins.v3/guangyatransferassistant/__init__.py').read_text(encoding='utf-8')
+          assert 'plugin_version = "1.2.1"' in text
+          assert '_fallback_native' not in text
+          assert '"fallback_native"' not in text
+          assert '固定转存路线不触发原生下载' in text
+          assert '_normalize_config_path' in text
+          assert 'result.append(row if raw else row["value"])' in text
+          print('GuangYa fixed-routing v1.2.1 static contract OK')
+          PY
+      - name: Commit final files
+        run: |
+          rm -f .github/guangya_transfer_v121_patch.py .github/workflows/guangya-transfer-v121-build.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add package.v3.json plugins.v3/guangyatransferassistant/__init__.py plugins.v3/guangyatransferassistant/plugin.json tests/v3/guangyatransferassistant/test_plugin_contract.py .github
+          git commit -m "fix: make GuangYa routing deterministic and normalize target path"
+          git push origin HEAD:fix/guangya-transfer-fixed-routing-v1.2.1
