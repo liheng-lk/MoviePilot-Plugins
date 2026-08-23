@@ -25,5 +25,18 @@
     "history": {
       "v3.0.0": "MoviePilot V3 专用首版：迁移至 plugins.v3/package.v3.json，采用稳定 SDK、明确 API 响应模型、V3 Federation API 注入壳和可重复生命周期清理；保留双登录、存储扩展、整理上传、142 目录恢复、145/147 落盘确认、上传幂等、进度监控与 WebDAV。"
     }
+  },
+  "GuangYaTransferAssistant": {
+    "name": "光鸭转存助手",
+    "description": "读取光鸭 Telegram 资源频道，对手动勾选的 MoviePilot 订阅优先转存光鸭分享，未勾选或转存失败时继续原生下载。",
+    "labels": "光鸭云盘,转存,订阅,Telegram,网盘,下载回退",
+    "version": "1.0.0",
+    "icon": "Guangyadisk_A.png",
+    "author": "liheng-lk",
+    "level": 1,
+    "system_version": ">=3.0.0",
+    "history": {
+      "v1.0.0": "首版：读取光鸭资源分享/影视热更 Telegram 镜像，按用户勾选的 MoviePilot 订阅精确分流，光鸭转存优先、原生下载回退，并支持目标文件夹选择与分享内容指纹热更。"
+    }
   }
 }

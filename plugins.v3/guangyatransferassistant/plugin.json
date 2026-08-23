@@ -1,0 +1,9 @@
+{
+  "name": "光鸭转存助手",
+  "description": "读取光鸭 Telegram 资源频道，对手动勾选的 MoviePilot 订阅优先转存光鸭分享，未勾选或失败时保持原生下载路线。",
+  "version": "1.0.0",
+  "icon": "Guangyadisk_A.png",
+  "author": "liheng-lk",
+  "level": 1,
+  "system_version": ">=3.0.0"
+}
