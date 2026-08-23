@@ -20,6 +20,7 @@ jobs:
         run: |
           python tools/patch_guangya_v163.py
           python tools/fix_guangya_v163_test_expectations.py
+          python tools/fix_guangya_v163_parser_pattern.py
       - name: Validate focused plugin
         run: |
           python -m py_compile plugins.v3/guangyatransferassistant/__init__.py
