@@ -1,0 +1,47 @@
+name: Temporary GuangYa v1.6.1 Clean Rebase
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.guangya-v161-rebase-trigger'
+permissions:
+  contents: write
+jobs:
+  rebase-clean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 1fd7b08116b2030f906bbed94316b6a0e083efa7
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Copy validated formal files onto clean main parent
+        run: |
+          git fetch origin feat/guangya-v1.6.1-hardening --depth=1
+          SOURCE=$(git rev-parse FETCH_HEAD)
+          git show "$SOURCE:package.v3.json" > package.v3.json
+          git show "$SOURCE:plugins.v3/guangyatransferassistant/__init__.py" > plugins.v3/guangyatransferassistant/__init__.py
+          git show "$SOURCE:plugins.v3/guangyatransferassistant/plugin.json" > plugins.v3/guangyatransferassistant/plugin.json
+          git show "$SOURCE:tests/v3/guangyatransferassistant/test_plugin_contract.py" > tests/v3/guangyatransferassistant/test_plugin_contract.py
+      - name: Validate clean tree
+        run: |
+          python -m py_compile plugins.v3/guangyatransferassistant/__init__.py
+          python - <<'PY'
+          import runpy
+          ns = runpy.run_path('tests/v3/guangyatransferassistant/test_plugin_contract.py')
+          tests = [(name, fn) for name, fn in ns.items() if name.startswith('test_') and callable(fn)]
+          for name, fn in tests:
+              fn()
+          print(f'{len(tests)} GuangYa contract tests passed')
+          PY
+          python -m json.tool package.v3.json >/dev/null
+          python -m json.tool plugins.v3/guangyatransferassistant/plugin.json >/dev/null
+      - name: Force-update feature branch from clean parent
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add package.v3.json plugins.v3/guangyatransferassistant/__init__.py plugins.v3/guangyatransferassistant/plugin.json tests/v3/guangyatransferassistant/test_plugin_contract.py
+          git commit -m 'fix: harden GuangYa v1.6.1'
+          git push --force origin HEAD:feat/guangya-v1.6.1-hardening
