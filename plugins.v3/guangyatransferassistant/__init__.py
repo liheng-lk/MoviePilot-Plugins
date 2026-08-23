@@ -396,6 +396,26 @@ def _safe_relative_path(value: Any) -> str:
     return "/".join(parts)
 
 
+
+def _normalize_config_path(value: Any, default: str = "/光鸭转存") -> str:
+    """把 VCombobox 的字符串/对象/旧对象字符串统一成绝对云盘路径。"""
+    candidate = value
+    if isinstance(candidate, dict):
+        candidate = candidate.get("value") or candidate.get("title") or default
+    elif isinstance(candidate, (list, tuple)) and candidate:
+        candidate = candidate[0]
+        if isinstance(candidate, dict):
+            candidate = candidate.get("value") or candidate.get("title") or default
+
+    raw = str(candidate if candidate not in (None, "") else default).strip()
+    # 兼容 1.2.0 错误持久化的：{'title': '/光鸭媒体库', 'value': '/光鸭媒体库'}
+    if raw.startswith("{") and ("value" in raw or "title" in raw):
+        matched = re.search(r"[\"'](?:value|title)[\"']\s*:\s*[\"']([^\"']+)[\"']", raw)
+        if matched:
+            raw = matched.group(1).strip()
+    normalized = _safe_relative_path(raw)
+    return f"/{normalized}" if normalized else "/"
+
 def _file_extension(value: Any) -> str:
     name = str(value or "").rsplit("/", 1)[-1].lower()
     return "." + name.rsplit(".", 1)[-1] if "." in name else ""
@@ -458,14 +478,14 @@ def _asset_identity(relative_path: str, size: Any = 0, digest: Any = "") -> str:
 
 
 class GuangYaTransferAssistant(_PluginBase):
-    """对用户勾选的订阅优先尝试光鸭频道转存，未勾选保持 MoviePilot 原生路线。"""
+    """对用户勾选的订阅固定走光鸭转存，未勾选固定走 MoviePilot 原生下载。"""
 
     plugin_name = "光鸭转存助手"
-    plugin_desc = "读取指定 Telegram 光鸭资源频道，对手动勾选的 MoviePilot 订阅优先匹配并转存光鸭分享；未勾选或转存失败时继续原生订阅下载。"
+    plugin_desc = "订阅固定分流：手动勾选的订阅只使用光鸭频道转存，未勾选订阅只使用 MoviePilot 原生下载。"
     plugin_icon = "Guangyadisk_A.png"
-    plugin_version = "1.2.0"
+    plugin_version = "1.2.1"
     plugin_author = "liheng-lk"
-    plugin_label = "光鸭云盘,转存,订阅,Telegram,网盘,下载回退"
+    plugin_label = "光鸭云盘,转存,订阅,Telegram,网盘,固定分流"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
     plugin_config_prefix = "guangyatransferassistant_"
     plugin_order = 24
@@ -476,7 +496,6 @@ class GuangYaTransferAssistant(_PluginBase):
     _selected_subscriptions: List[int] = []
     _save_path = "/光鸭转存"
     _create_media_folder = False
-    _fallback_native = True
     _notify = True
     _auto_transfer_on_refresh = True
     _strict_subscription_rules = True
@@ -499,9 +518,10 @@ class GuangYaTransferAssistant(_PluginBase):
         self._enabled = bool(config.get("enabled", False))
         self._channel_urls = str(config.get("channel_urls") or "\n".join(DEFAULT_CHANNEL_URLS)).strip()
         self._selected_subscriptions = sorted({int(value) for value in (config.get("selected_subscriptions") or []) if str(value).isdigit()})
-        self._save_path = str(config.get("save_path") or "/光鸭转存").strip() or "/"
+        raw_save_path = config.get("save_path")
+        self._save_path = _normalize_config_path(raw_save_path, "/光鸭转存")
+        path_migrated = raw_save_path not in (None, "") and raw_save_path != self._save_path
         self._create_media_folder = bool(config.get("create_media_folder", False))
-        self._fallback_native = bool(config.get("fallback_native", True))
         self._notify = bool(config.get("notify", True))
         self._auto_transfer_on_refresh = bool(config.get("auto_transfer_on_refresh", True))
         self._strict_subscription_rules = bool(config.get("strict_subscription_rules", True))
@@ -521,6 +541,9 @@ class GuangYaTransferAssistant(_PluginBase):
             logger.warning("【光鸭转存助手】【去重】已按配置清空转存库存与历史记录")
             config["clear_inventory"] = False
         self._cleanup_selected_ids()
+        if path_migrated:
+            logger.info("【光鸭转存助手】【路径】目标目录配置已规范化：%s -> %s", raw_save_path, self._save_path)
+            self._save_config()
         if self._enabled:
             self._install_takeover()
 
@@ -545,13 +568,12 @@ class GuangYaTransferAssistant(_PluginBase):
             "component": "VForm",
             "content": [
                 {"component": "VRow", "content": [
-                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "enabled", "label": "启用转存优先路由"}}]},
-                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "fallback_native", "label": "未命中/失败回退原生下载"}}]},
-                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "notify", "label": "转存结果通知"}}]},
-                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "proxy", "label": "频道读取使用代理"}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [{"component": "VSwitch", "props": {"model": "enabled", "label": "启用订阅固定分流"}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [{"component": "VSwitch", "props": {"model": "notify", "label": "转存结果通知"}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [{"component": "VSwitch", "props": {"model": "proxy", "label": "频道读取使用代理"}}]},
                 ]},
                 {"component": "VRow", "content": [
-                    {"component": "VCol", "props": {"cols": 12, "md": 7}, "content": [{"component": "VSelect", "props": {"model": "selected_subscriptions", "label": "选择走光鸭优先的订阅", "items": subscriptions, "multiple": True, "chips": True, "clearable": True}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 7}, "content": [{"component": "VSelect", "props": {"model": "selected_subscriptions", "label": "选择仅使用光鸭转存的订阅", "items": subscriptions, "multiple": True, "chips": True, "clearable": True}}]},
                     {"component": "VCol", "props": {"cols": 12, "md": 2}, "content": [{"component": "VTextField", "props": {"model": "refresh_minutes", "label": "刷新间隔(分钟)", "type": "number"}}]},
                     {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "auto_transfer_on_refresh", "label": "刷新后自动检查转存"}}]},
                 ]},
@@ -571,7 +593,7 @@ class GuangYaTransferAssistant(_PluginBase):
                     {"component": "VCol", "props": {"cols": 12, "md": 9}, "content": [{"component": "VTextarea", "props": {"model": "channel_urls", "label": "资源频道地址（每行一个）", "rows": 3}}]},
                     {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "clear_inventory", "label": "保存时清空去重记录", "hint": "仅故障恢复时使用，执行一次后自动关闭", "persistent-hint": True}}]},
                 ]},
-                {"component": "VAlert", "props": {"type": "info", "variant": "tonal", "text": "支持明文链接、查看资源隐藏按钮、URL编码/包装链接。仅接管手动勾选且状态为新建/订阅中的项目；暂停/待定、洗版订阅、严格模式下的复杂规则订阅继续走 MoviePilot 原路线。电视剧会跳过 note 已记录剧集，确认转存后再同步订阅进度。"}},
+                {"component": "VAlert", "props": {"type": "info", "variant": "tonal", "text": "固定分流模式：已勾选订阅只走光鸭转存，即使暂时无资源或转存失败也不会启动原生下载；未勾选订阅完全走 MoviePilot 原生下载。暂停/待定不会执行转存；洗版或复杂规则如需原生处理，请取消勾选。"}},
             ],
         }], {
             "enabled": self._enabled,
@@ -579,7 +601,6 @@ class GuangYaTransferAssistant(_PluginBase):
             "selected_subscriptions": self._selected_subscriptions,
             "save_path": self._save_path or "/光鸭转存",
             "create_media_folder": self._create_media_folder,
-            "fallback_native": self._fallback_native,
             "notify": self._notify,
             "auto_transfer_on_refresh": self._auto_transfer_on_refresh,
             "strict_subscription_rules": self._strict_subscription_rules,
@@ -916,7 +937,6 @@ class GuangYaTransferAssistant(_PluginBase):
             "selected_subscriptions": self._selected_subscriptions,
             "save_path": self._save_path,
             "create_media_folder": self._create_media_folder,
-            "fallback_native": self._fallback_native,
             "notify": self._notify,
             "auto_transfer_on_refresh": self._auto_transfer_on_refresh,
             "strict_subscription_rules": self._strict_subscription_rules,
@@ -972,7 +992,7 @@ class GuangYaTransferAssistant(_PluginBase):
             self._takeover_originals = {}
 
     def _dispatch_subscribe_search(self, sid: Optional[int] = None, state: Optional[str] = "R", manual: Optional[bool] = False, progress_callback=None):
-        """将勾选订阅转入光鸭优先，其余订阅逐条交给原生搜索。"""
+        """固定分流：已勾选只转存，未勾选只走 MoviePilot 原生下载。"""
         with self._route_lock:
             selected = set(self._selected_subscriptions)
             if sid:
@@ -980,12 +1000,10 @@ class GuangYaTransferAssistant(_PluginBase):
                     return SubscribeChain().search(sid=sid, state=state, manual=manual, progress_callback=progress_callback)
                 subscribe = self._find_subscription(int(sid))
                 if not subscribe:
-                    return SubscribeChain().search(sid=sid, state=state, manual=manual, progress_callback=progress_callback)
-                result = self._try_transfer_subscription(subscribe)
-                if result.get("handled"):
+                    logger.warning("【光鸭转存助手】【分流】已勾选订阅 #%s 不存在；固定转存路线不触发原生下载", sid)
                     return True
-                if self._fallback_native:
-                    return SubscribeChain().search(sid=sid, state=state, manual=manual, progress_callback=progress_callback)
+                result = self._try_transfer_subscription(subscribe)
+                logger.info("【光鸭转存助手】【分流】#%s %s 固定转存处理：%s", sid, getattr(subscribe, "name", ""), result.get("message") or "完成")
                 return True
 
             subscriptions = self._list_subscriptions(state or "N,R")
@@ -996,10 +1014,8 @@ class GuangYaTransferAssistant(_PluginBase):
                 callback = progress_callback if index == 0 else None
                 if subscribe_id in selected:
                     result = self._try_transfer_subscription(subscribe)
-                    if result.get("handled"):
-                        continue
-                    if not self._fallback_native:
-                        continue
+                    logger.info("【光鸭转存助手】【分流】#%s %s 固定转存处理：%s", subscribe_id, getattr(subscribe, "name", ""), result.get("message") or "完成")
+                    continue
                 SubscribeChain().search(sid=subscribe_id, state=None, manual=manual, progress_callback=callback)
             return True
 
@@ -1008,15 +1024,15 @@ class GuangYaTransferAssistant(_PluginBase):
         if state not in ("N", "R"):
             return False, f"订阅状态 {state or '-'} 非活跃"
         if bool(getattr(subscribe, "best_version", 0)):
-            return False, "洗版订阅保留 MoviePilot 原生质量优先级逻辑"
+            return False, "洗版订阅不支持固定转存；如需原生处理请取消勾选"
         mtype = str(getattr(subscribe, "type", "") or "").lower()
         if mtype and not any(token in mtype for token in ("tv", "movie", "电视剧", "电影")):
             return False, f"媒体类型 {getattr(subscribe, 'type', '')} 不适合网盘影视转存"
         if self._strict_subscription_rules:
             if getattr(subscribe, "filter_groups", None):
-                return False, "存在复杂过滤规则组，严格模式下交回原生下载"
+                return False, "存在复杂过滤规则组；如需原生处理请取消勾选"
             if str(getattr(subscribe, "filter", "") or "").strip():
-                return False, "存在复杂过滤规则，严格模式下交回原生下载"
+                return False, "存在复杂过滤规则；如需原生处理请取消勾选"
         return True, ""
 
     def _subscription_resource_allowed(self, subscribe: Any, entry: Dict[str, Any], probe: Dict[str, Any]) -> Tuple[bool, str]:
@@ -1042,7 +1058,7 @@ class GuangYaTransferAssistant(_PluginBase):
         allowed, guard_reason = self._subscription_static_guard(subscribe)
         if not allowed:
             logger.info("【光鸭转存助手】【规则】#%s %s 不接管：%s", sid, getattr(subscribe, "name", ""), guard_reason)
-            return {"success": False, "handled": False, "message": guard_reason}
+            return {"success": False, "handled": True, "message": guard_reason}
         self.refresh_channels(force=False)
         entries = list((self.get_data("channel_index") or {}).get("items") or [])
         matched_pairs = []
@@ -1056,9 +1072,9 @@ class GuangYaTransferAssistant(_PluginBase):
                 continue
             matched_pairs.append((item, reason))
         if not matched_pairs:
-            detail = "仅命中旧缓存，不能阻断原生下载" if stale_matches else "频道未匹配到光鸭分享"
-            logger.info("【光鸭转存助手】【匹配】#%s %s %s；%s", sid, getattr(subscribe, "name", ""), detail, "将由 MoviePilot 原订阅任务继续下载" if self._fallback_native else "原生下载回退已关闭")
-            return {"success": False, "handled": False, "message": detail}
+            detail = "仅命中旧缓存，等待频道恢复" if stale_matches else "频道暂未匹配到光鸭分享"
+            logger.info("【光鸭转存助手】【匹配】#%s %s %s；固定转存路线不触发原生下载", sid, getattr(subscribe, "name", ""), detail)
+            return {"success": False, "handled": True, "message": detail}
         logger.info("【光鸭转存助手】【匹配】#%s %s 命中 %s 个新鲜频道分享", sid, getattr(subscribe, "name", ""), len(matched_pairs))
 
         history = self.get_data("transfer_history") or {}
@@ -1189,7 +1205,7 @@ class GuangYaTransferAssistant(_PluginBase):
                     preview += f" 等 {len(unique_paths)} 个"
                 lines = [
                     f"媒体：{media_text}",
-                    "状态：部分转存完成，剩余将回原订阅处理" if partial else "状态：增量转存已确认完成",
+                    "状态：部分转存完成，剩余保持转存路线等待下轮" if partial else "状态：增量转存已确认完成",
                     f"匹配：{'、'.join(sorted(match_reasons)) or '-'}",
                     f"本次新增：{len(unique_paths)} 个文件",
                     f"累计去重：{len(assets)} 个文件",
@@ -1204,7 +1220,7 @@ class GuangYaTransferAssistant(_PluginBase):
                 self.post_message(mtype=NotificationType.Plugin, title="⚠️ 光鸭部分转存" if partial else "✅ 光鸭转存成功", text="\n".join(lines))
                 logger.info("【光鸭转存助手】【通知】已发送%s通知：#%s %s", "部分转存" if partial else "增量转存成功", sid, getattr(subscribe, "name", ""))
             if partial:
-                return {"success": False, "handled": False, "message": f"部分转存 {len(unique_paths)} 个文件，剩余回退原订阅", "new_count": len(unique_paths), "target_path": target_path}
+                return {"success": False, "handled": True, "message": f"部分转存 {len(unique_paths)} 个文件，剩余等待下轮转存", "new_count": len(unique_paths), "target_path": target_path}
             return {"success": True, "handled": True, "message": f"增量转存成功，本次新增 {len(unique_paths)} 个文件", "new_count": len(unique_paths), "target_path": target_path, "remaining": remaining_due_to_cap}
 
         if valid_route_match and (synchronized_match or not attempted_new):
@@ -1212,7 +1228,7 @@ class GuangYaTransferAssistant(_PluginBase):
             return {"success": True, "handled": True, "already": True, "message": "已同步，无新增资源"}
 
         final_message = "；".join(dict.fromkeys(errors))[:1200] or "匹配分享均不可用"
-        logger.warning("【光鸭转存助手】【回退】#%s %s 转存未完成：%s；%s", sid, getattr(subscribe, "name", ""), final_message, "将回退 MoviePilot 原生下载" if self._fallback_native else "原生下载回退已关闭")
+        logger.warning("【光鸭转存助手】【失败】#%s %s 转存未完成：%s；固定转存路线不触发原生下载", sid, getattr(subscribe, "name", ""), final_message)
         if self._notify and matched_pairs:
             notices = self.get_data("failure_notices") or {}
             notice_key = f"{sid}:{hashlib.sha256(final_message.encode('utf-8')).hexdigest()[:12]}"
@@ -1226,7 +1242,7 @@ class GuangYaTransferAssistant(_PluginBase):
                         text=(
                             f"媒体：{getattr(subscribe, 'name', '')} ({getattr(subscribe, 'year', '') or '-'})\n"
                             f"状态：转存未完成\n原因：{final_message}\n"
-                            + ("后续：将回退 MoviePilot 原生下载" if self._fallback_native else "后续：原生下载回退已关闭")
+                            + "后续：保持转存路线，等待频道刷新或下次重试"
                         ),
                     )
                     notices[notice_key] = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -1234,10 +1250,10 @@ class GuangYaTransferAssistant(_PluginBase):
                     logger.info("【光鸭转存助手】【通知】已发送转存失败通知：#%s %s（相同错误 6 小时内不重复推送）", sid, getattr(subscribe, "name", ""))
                 except Exception as err:
                     logger.warning("【光鸭转存助手】【通知】发送失败通知异常：%s", err)
-        return {"success": False, "handled": False, "message": final_message}
+        return {"success": False, "handled": True, "message": final_message}
 
     def _target_path(self, subscribe: Any) -> str:
-        base = "/" + _safe_relative_path(self._save_path) if _safe_relative_path(self._save_path) else "/"
+        base = _normalize_config_path(self._save_path, "/")
         if not self._create_media_folder:
             return base
         name = re.sub(r"[\\/:*?\"<>|]+", " ", str(getattr(subscribe, "name", "") or "")).strip()
@@ -1473,6 +1489,7 @@ class GuangYaTransferAssistant(_PluginBase):
         return dict(result)
 
     def _restore_items(self, probe: Dict[str, Any], save_path: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
+        save_path = _normalize_config_path(save_path, "/")
         client, api = self._get_guangya_runtime()
         if not client or not api:
             return {"success": False, "message": "请先安装、启用并登录光鸭云盘助手", "completed_items": []}
@@ -1485,7 +1502,7 @@ class GuangYaTransferAssistant(_PluginBase):
         task_ids: List[str] = []
         try:
             for relative_parent, group in groups.items():
-                base = "/" + str(save_path or "/").strip("/") if str(save_path or "/").strip("/") else "/"
+                base = _normalize_config_path(save_path, "/")
                 relative_parent = _safe_relative_path(relative_parent)
                 normalized = (base.rstrip("/") + ("/" + relative_parent if relative_parent else "")) or "/"
                 folder = api.get_folder(Path(normalized))
@@ -1545,7 +1562,7 @@ class GuangYaTransferAssistant(_PluginBase):
                 item = _cloud_item(value)
                 if item and item["is_dir"]:
                     row = {"title": "/" + item["name"], "value": "/" + item["name"], "file_id": item["id"]}
-                    result.append(row if raw else {"title": row["title"], "value": row["value"]})
+                    result.append(row if raw else row["value"])
             return result
         except Exception:
             return []
