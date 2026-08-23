@@ -1,0 +1,327 @@
+from pathlib import Path
+import json
+
+src = Path('plugins.v3/guangyatransferassistant/__init__.py')
+text = src.read_text(encoding='utf-8')
+
+
+def replace_once(old, new, label):
+    global text
+    if old not in text:
+        raise SystemExit(f'{label} anchor not found')
+    text = text.replace(old, new, 1)
+
+
+replace_once(
+    'from app.chain.subscribe import SubscribeChain, build_subscribe_meta\nfrom app.chain.media import MediaChain\n',
+    'from app.chain.subscribe import SubscribeChain, build_subscribe_meta\nfrom app.chain.media import MediaChain\nfrom app.chain.download import DownloadChain\n',
+    'DownloadChain import',
+)
+
+marker = '\ndef _entry_matches_subscription(\n'
+if marker not in text:
+    raise SystemExit('entry match marker not found')
+helper = r'''
+
+def _entry_process_key(entry: Dict[str, Any]) -> str:
+    """同一频道消息+同一分享只处理一次；新消息或新链接会生成新键。"""
+    share_key = _share_identity(str(entry.get("share_url") or ""))
+    if not share_key:
+        return ""
+    source = str(entry.get("source_url") or entry.get("source_label") or "").strip()
+    message_id = str(entry.get("message_id") or "").strip()
+    if message_id:
+        message_marker = f"msg:{message_id}"
+    else:
+        stable_text = re.sub(r"\s+", " ", str(entry.get("text") or "")).strip()
+        message_marker = "txt:" + hashlib.sha256(stable_text.encode("utf-8")).hexdigest()[:20]
+    return hashlib.sha256(f"{source}|{message_marker}|{share_key}".encode("utf-8")).hexdigest()
+'''
+text = text.replace(marker, helper + marker, 1)
+
+replace_once(
+    '            self.save_data("failure_notices", {})\n            self.save_data("completion_guard", {})\n            self._inspect_cache.clear()\n',
+    '            self.save_data("failure_notices", {})\n            self.save_data("completion_guard", {})\n            self.save_data("processed_entries", {})\n            self._inspect_cache.clear()\n',
+    'clear processed entries',
+)
+
+replace_once(
+    '        last = self.get_data("last_run") or {}\n        selected = set(self._selected_subscriptions)\n',
+    '        last = self.get_data("last_run") or {}\n        processed_entries = self.get_data("processed_entries") or {}\n        selected = set(self._selected_subscriptions)\n',
+    'page processed count',
+)
+replace_once(
+    '                "text": f"频道索引 {len(index.get(\'items\') or [])} 个（新鲜 {fresh_count} / 旧缓存 {stale_count}）· 已选择 {len(selected)} 个订阅 · 最近刷新 {index.get(\'time\') or \'-\'}",\n',
+    '                "text": f"频道索引 {len(index.get(\'items\') or [])} 个（当前抓取 {fresh_count} / 回退缓存 {stale_count}）· 已处理消息/链接 {len(processed_entries)} · 已选择 {len(selected)} 个订阅 · 最近刷新 {index.get(\'time\') or \'-\'}",\n',
+    'page cache wording',
+)
+
+replace_once(
+    '        self._selected_subscriptions = selected\n        self._clear_completion_guard(int(sid))\n        self._save_config()\n\n    def _save_config',
+    '        self._selected_subscriptions = selected\n        self._save_config()\n\n    def _save_config',
+    'cleanup undefined sid',
+)
+replace_once(
+    '        self._selected_subscriptions = selected\n        self._save_config()\n\n    def _get_guangya_runtime',
+    '        self._selected_subscriptions = selected\n        self._clear_completion_guard(int(sid))\n        self._save_config()\n\n    def _get_guangya_runtime',
+    'route removal completion guard cleanup',
+)
+
+install_marker = '    def _install_takeover(self) -> None:\n'
+if install_marker not in text:
+    raise SystemExit('install takeover marker not found')
+class_helpers = r'''    def _entry_processed(self, entry: Dict[str, Any]) -> bool:
+        key = _entry_process_key(entry)
+        return bool(key and (self.get_data("processed_entries") or {}).get(key))
+
+    def _mark_entry_processed(self, entry: Dict[str, Any], status: str, message: str = "") -> None:
+        key = _entry_process_key(entry)
+        if not key:
+            return
+        records = self.get_data("processed_entries") or {}
+        records[key] = {
+            "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status": str(status or "processed"),
+            "message": str(message or "")[:300],
+            "share_id": str(entry.get("share_id") or ""),
+            "message_id": str(entry.get("message_id") or ""),
+            "source": str(entry.get("source_label") or entry.get("source_url") or ""),
+        }
+        if len(records) > 5000:
+            ordered = sorted(records.items(), key=lambda pair: str((pair[1] or {}).get("time") or ""), reverse=True)[:5000]
+            records = dict(ordered)
+        self.save_data("processed_entries", records)
+
+    def _sync_media_library_progress(self, subscribe: Any) -> Dict[str, Any]:
+        """以 MoviePilot 媒体库为事实源补齐 note/lack_episode，避免重复转存已入库剧集。"""
+        sid = int(getattr(subscribe, "id", 0) or 0)
+        media_type = str(getattr(subscribe, "type", "") or "").lower()
+        season = getattr(subscribe, "season", None)
+        if not sid or ("tv" not in media_type and "电视剧" not in str(getattr(subscribe, "type", "") or "") and season in (None, 0)):
+            return {"success": True, "existing": [], "missing": []}
+        try:
+            season = int(season or 0)
+            start = max(1, int(getattr(subscribe, "start_episode", 0) or 1))
+            total = int(getattr(subscribe, "total_episode", 0) or 0)
+        except (TypeError, ValueError):
+            return {"success": False, "existing": [], "missing": []}
+        if season <= 0 or total < start:
+            return {"success": False, "existing": [], "missing": []}
+        target = set(range(start, total + 1))
+        try:
+            meta = build_subscribe_meta(subscribe)
+            mediainfo = MediaChain().recognize_media(
+                meta=meta,
+                mtype=meta.type,
+                media_source=getattr(subscribe, "media_source", None),
+                media_id=getattr(subscribe, "media_id", None),
+                episode_group=getattr(subscribe, "episode_group", None),
+                cache=False,
+            )
+            if not mediainfo:
+                return {"success": False, "existing": [], "missing": sorted(target)}
+            complete, no_exists = DownloadChain().get_no_exists_info(
+                meta=meta,
+                mediainfo=mediainfo,
+                totals={season: total},
+            )
+            library_existing = set()
+            if complete:
+                library_existing = set(target)
+            elif no_exists:
+                season_detail = None
+                for season_map in no_exists.values():
+                    if not isinstance(season_map, dict):
+                        continue
+                    season_detail = season_map.get(season)
+                    if season_detail is None:
+                        season_detail = season_map.get(str(season))
+                    if season_detail is not None:
+                        break
+                if season_detail is None:
+                    library_existing = set(target)
+                else:
+                    missing_values = getattr(season_detail, "episodes", None)
+                    if missing_values is None and isinstance(season_detail, dict):
+                        missing_values = season_detail.get("episodes")
+                    if missing_values:
+                        missing_set = {int(value) for value in missing_values if str(value).isdigit()}
+                        library_existing = target.difference(missing_set)
+                    else:
+                        library_existing = set()
+            current = set()
+            for value in (getattr(subscribe, "note", None) or []):
+                try:
+                    current.add(int(value))
+                except (TypeError, ValueError):
+                    continue
+            merged = current | library_existing
+            lack = len(target.difference(merged))
+            current_lack = int(getattr(subscribe, "lack_episode", lack) or 0)
+            if merged != current or current_lack != lack:
+                SubscribeOper().update(sid, {"note": sorted(merged), "lack_episode": lack})
+                setattr(subscribe, "note", sorted(merged))
+                setattr(subscribe, "lack_episode", lack)
+                logger.info(
+                    "【光鸭转存助手】【媒体库同步】#%s %s 已从媒体库确认 %s 集；订阅进度 %s/%s，剩余 %s",
+                    sid, getattr(subscribe, "name", ""), len(library_existing), len(target.intersection(merged)), len(target), lack,
+                )
+            return {"success": True, "existing": sorted(library_existing), "missing": sorted(target.difference(merged))}
+        except Exception as err:
+            logger.warning("【光鸭转存助手】【媒体库同步】#%s %s 同步失败：%s", sid, getattr(subscribe, "name", ""), err)
+            return {"success": False, "existing": [], "missing": sorted(target)}
+
+'''
+text = text.replace(install_marker, class_helpers + install_marker, 1)
+
+old_flow = '''        logger.info("【光鸭转存助手】【匹配】#%s %s 命中 %s 个新鲜频道分享", sid, getattr(subscribe, "name", ""), len(matched_pairs))
+
+        channel_state = self._channel_state_for_subscription(subscribe, [item for item, _ in matched_pairs])
+        self._sync_channel_episode_floor(subscribe, channel_state)
+        # 兼容旧版本已经 N/N、剩余0 但尚未完成的记录；连载保护在这里统一判断。
+        if self._finish_subscription_if_complete(subscribe, channel_state=channel_state):
+            return {"success": True, "handled": True, "completed": True, "message": "目标剧集已全部完成，订阅已移入历史"}
+
+        history = self.get_data("transfer_history") or {}
+'''
+new_flow = '''        logger.info("【光鸭转存助手】【匹配】#%s %s 命中 %s 个当前频道分享", sid, getattr(subscribe, "name", ""), len(matched_pairs))
+
+        channel_state = self._channel_state_for_subscription(subscribe, [item for item, _ in matched_pairs])
+        self._sync_channel_episode_floor(subscribe, channel_state)
+        self._sync_media_library_progress(subscribe)
+        # 兼容旧版本已经 N/N、剩余0 但尚未完成的记录；连载保护在这里统一判断。
+        if self._finish_subscription_if_complete(subscribe, channel_state=channel_state):
+            return {"success": True, "handled": True, "completed": True, "message": "目标剧集已全部完成，订阅已移入历史"}
+
+        action_pairs = []
+        processed_matches = 0
+        for entry, reason in matched_pairs:
+            if not force and self._entry_processed(entry):
+                processed_matches += 1
+                continue
+            action_pairs.append((entry, reason))
+        if not action_pairs:
+            done, total, lack = self._subscription_episode_progress(subscribe)
+            logger.info(
+                "【光鸭转存助手】【消息去重】#%s %s 当前没有新链接/新消息，跳过已处理 %s 条；进度 %s/%s，剩余 %s",
+                sid, getattr(subscribe, "name", ""), processed_matches, done, total, lack,
+            )
+            return {"success": True, "handled": True, "already": True, "message": f"没有新链接/新消息；已处理记录不重复测试，进度 {done}/{total}，剩余 {lack}" if total else "没有新链接/新消息；已处理记录不重复测试"}
+
+        history = self.get_data("transfer_history") or {}
+'''
+replace_once(old_flow, new_flow, 'try-transfer preflow')
+replace_once(
+    '        for entry, match_reason in matched_pairs[:20]:\n',
+    '        for entry, match_reason in action_pairs[:20]:\n',
+    'action pair loop',
+)
+
+old_rule = '''            if not resource_allowed:
+                logger.info("【光鸭转存助手】【规则】#%s %s share_id=%s 跳过：%s", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], resource_reason)
+                errors.append(resource_reason)
+                continue
+            match_reasons.add(match_reason)
+'''
+new_rule = '''            if not resource_allowed:
+                logger.info("【光鸭转存助手】【规则】#%s %s share_id=%s 跳过并记为已处理：%s", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], resource_reason)
+                self._mark_entry_processed(entry, "filtered", resource_reason)
+                synchronized_match = True
+                continue
+            match_reasons.add(match_reason)
+'''
+replace_once(old_rule, new_rule, 'resource rule handling')
+
+old_eligible = '''            if stats.get("eligible", 0) <= 0:
+                errors.append("分享内没有符合订阅范围的媒体/字幕文件")
+                logger.info("【光鸭转存助手】【规则】#%s %s share_id=%s 没有符合订阅范围的可转存文件", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0])
+                continue
+            valid_route_match = True
+'''
+new_eligible = '''            valid_route_match = True
+            if stats.get("eligible", 0) <= 0:
+                message = "分享内没有需要的新剧集；已入库/已完成/范围外内容不再重复测试"
+                self._mark_entry_processed(entry, "no_new_episode", message)
+                synchronized_match = True
+                logger.info("【光鸭转存助手】【消息去重】#%s %s share_id=%s %s", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], message)
+                continue
+'''
+replace_once(old_eligible, new_eligible, 'no eligible handling')
+
+replace_once(
+    '                synchronized_match = True\n                logger.info("【光鸭转存助手】【去重】#%s %s 从旧版成功记录建立文件级索引 %s 个，不重复转存", sid, getattr(subscribe, "name", ""), len(migrated))\n                continue\n',
+    '                synchronized_match = True\n                self._mark_entry_processed(entry, "legacy_synced", "旧版成功记录已建立文件级索引")\n                logger.info("【光鸭转存助手】【去重】#%s %s 从旧版成功记录建立文件级索引 %s 个，不重复转存", sid, getattr(subscribe, "name", ""), len(migrated))\n                continue\n',
+    'legacy processed mark',
+)
+replace_once(
+    '            if not planned:\n                synchronized_match = True\n                logger.info(\n',
+    '            if not planned:\n                synchronized_match = True\n                self._mark_entry_processed(entry, "synced", "库存或订阅进度已覆盖，无新增文件")\n                logger.info(\n',
+    'planned empty processed mark',
+)
+replace_once(
+    '            self.save_data("transfer_history", history)\n            if not restored.get("success"):\n                errors.append(str(restored.get("message") or "增量转存失败"))\n',
+    '            self.save_data("transfer_history", history)\n            if restored.get("success"):\n                self._mark_entry_processed(entry, "transferred", restored.get("message") or "增量转存完成")\n            else:\n                errors.append(str(restored.get("message") or "增量转存失败"))\n',
+    'successful entry processed mark',
+)
+replace_once(
+    '        if valid_route_match and (synchronized_match or not attempted_new):\n',
+    '        if valid_route_match and not errors and (synchronized_match or not attempted_new):\n',
+    'actual errors only failure gate',
+)
+
+src.write_text(text, encoding='utf-8')
+
+package_path = Path('package.v3.json')
+package = json.loads(package_path.read_text(encoding='utf-8'))
+item = package['GuangYaTransferAssistant']
+item['description'] = '光鸭订阅固定分流：媒体库进度同步、已处理消息/链接去重、缺集可视化、频道总集校正与连载保护。'
+item['history']['v1.3.0'] = '新增缺集与连载闭环：同步 MoviePilot 媒体库已有集到订阅 note/lack_episode，避免重复转存；同一频道消息+分享成功或确认无新剧集后永久跳过，只有新消息/新链接自动检查，手动立即检查可强制复查；无新增剧集不再作为失败推送；同时支持缺集显示/立即检查/人工切回普通下载、全N集/更新至N集目标校正与连载保护。'
+package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+plugin_path = Path('plugins.v3/guangyatransferassistant/plugin.json')
+plugin = json.loads(plugin_path.read_text(encoding='utf-8'))
+plugin['description'] = '固定转存订阅，支持媒体库已有集同步、消息/链接处理去重、缺集显示/手动检查、人工切回普通下载、总集校正与连载保护。'
+plugin_path.write_text(json.dumps(plugin, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+test_path = Path('tests/v3/guangyatransferassistant/test_plugin_contract.py')
+tests = test_path.read_text(encoding='utf-8')
+addition = r'''
+
+
+def test_entry_process_key_only_changes_for_new_message_or_link():
+    key = ns["_entry_process_key"]
+    base = {
+        "source_url": "https://tgm.li668.asia/regengguangya",
+        "message_id": "100",
+        "share_url": "https://www.guangyapan.com/s/abc123",
+        "text": "名称：藏锋 更新至8集",
+    }
+    assert key(base) == key(dict(base))
+    new_message = dict(base, message_id="101")
+    new_link = dict(base, share_url="https://www.guangyapan.com/s/xyz999")
+    assert key(base) != key(new_message)
+    assert key(base) != key(new_link)
+
+
+def test_processed_message_and_media_library_sync_contracts():
+    assert 'from app.chain.download import DownloadChain' in text
+    assert '_sync_media_library_progress' in text
+    assert 'DownloadChain().get_no_exists_info' in text
+    assert 'processed_entries' in text
+    assert '_entry_process_key' in text
+    flow = text.split('    def _try_transfer_subscription(', 1)[1].split('    def _target_path(', 1)[0]
+    assert 'if not force and self._entry_processed(entry):' in flow
+    assert '_mark_entry_processed(entry, "no_new_episode"' in flow
+    assert '_mark_entry_processed(entry, "transferred"' in flow
+    assert 'errors.append("分享内没有符合订阅范围的媒体/字幕文件")' not in flow
+    assert '没有新链接/新消息' in flow
+    assert '当前抓取' in text and '回退缓存' in text
+    cleanup = text.split('    def _cleanup_selected_ids(', 1)[1].split('    def _save_config(', 1)[0]
+    assert '_clear_completion_guard(int(sid))' not in cleanup
+    removal = text.split('    def _remove_selected_subscription(', 1)[1].split('    def _get_guangya_runtime(', 1)[0]
+    assert '_clear_completion_guard(int(sid))' in removal
+'''
+if 'test_entry_process_key_only_changes_for_new_message_or_link' not in tests:
+    tests += addition
+
+test_path.write_text(tests, encoding='utf-8')
