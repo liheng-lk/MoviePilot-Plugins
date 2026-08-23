@@ -94,8 +94,8 @@ def test_pagination_episode_and_path_safety():
 def test_version_and_safety_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.6.1" and local["version"] == "1.6.1"
-    assert 'plugin_version = "1.6.1"' in text
+    assert package["version"] == "1.6.2" and local["version"] == "1.6.2"
+    assert 'plugin_version = "1.6.2"' in text
     for token in (
         "隐藏按钮", "包装按钮", "_extract_pagination_urls", "tmdb_id", "TMDB精确",
         "strict_subscription_rules", "best_version", "filter_groups", "state not in (\"N\", \"R\")",
@@ -263,7 +263,7 @@ def test_v140_reliability_contracts():
         'data_schema_version = 5',
     ):
         assert token in text, token
-    assert 'plugin_version = "1.6.1"' in text
+    assert 'plugin_version = "1.6.2"' in text
     assert '本轮新增' in text and '保留索引' in text and '故障回退' in text
 
 
@@ -360,8 +360,8 @@ def test_visibility_timeout_remains_pending_until_manual_force():
 def test_v150_version_and_console_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.6.1" and local["version"] == "1.6.1"
-    assert 'plugin_version = "1.6.1"' in text
+    assert package["version"] == "1.6.2" and local["version"] == "1.6.2"
+    assert 'plugin_version = "1.6.2"' in text
     assert '_subscription_console_snapshot' in text
     assert '等待落盘确认' in text and '当前已齐 · 连载保护中' in text
     assert '复查待落盘' in text and '重置检查状态' in text
@@ -424,8 +424,8 @@ def test_failure_notice_fingerprint_ignores_dynamic_ids():
 def test_v160_operations_and_audit_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.6.1" and local["version"] == "1.6.1"
-    assert 'plugin_version = "1.6.1"' in text
+    assert package["version"] == "1.6.2" and local["version"] == "1.6.2"
+    assert 'plugin_version = "1.6.2"' in text
     assert '_task_audit_rows' in text and '转存任务审计' in text
     assert '忽略卡住任务' in text and '/cancel_pending' in text
     assert '旧消息不会自动重放' in text
@@ -503,8 +503,8 @@ def test_inflight_only_message_is_not_marked_permanently_processed():
 def test_v161_season_zero_library_sync_and_manual_gate_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.6.1" and local["version"] == "1.6.1"
-    assert 'plugin_version = "1.6.1"' in text
+    assert package["version"] == "1.6.2" and local["version"] == "1.6.2"
+    assert 'plugin_version = "1.6.2"' in text
 
     sync = text.split('    def _sync_media_library_progress(', 1)[1].split('    def _install_takeover(', 1)[0]
     assert 'raw_season = getattr(subscribe, "season", None)' in sync
@@ -538,3 +538,52 @@ def test_v161_mutating_plugin_apis_use_post():
         assert '"methods": ["POST"]' in fragment
     for endpoint in ('check_missing', 'release_native', 'recheck_pending', 'reset_state', 'cancel_pending'):
         assert f'"api": "plugin/GuangYaTransferAssistant/{endpoint}", "method": "post"' in text
+
+
+
+def test_v162_emoji_channel_title_parser_keeps_full_titles():
+    parser = ns['_entry_metadata']
+    law = (
+        '光鸭云盘影视热更频道 🎬 法律边缘 (2026) 已更新 🎭 类型： 电视剧 · 犯罪 / 剧情 '
+        '⭐ TMDB评分： 5.0 🖥 画质： 2160p 📺 质量： WEB-DL DDP Atmos H.265 '
+        '📼 集数： 全7集 📦 大小： 36.32GB 👤 分享： 热心网友'
+    )
+    meta = parser(law, '<div data-post="regengguangya/9001"></div>')
+    assert meta['display_title'] == '法律边缘'
+    assert meta['year_hint'] == 2026
+    assert meta['total_episode_hint'] == 7
+    assert meta['message_id'] == '9001'
+
+    nanoha = (
+        '光鸭云盘影视热更频道 🎬 魔法少女奈叶 EXCEEDS Gun Blaze Vengeance (2026) 已更新 '
+        '🎭 类型： 电视剧 ⭐ TMDB评分： 7.2 📼 集数： 更新至12集'
+    )
+    meta = parser(nanoha, '')
+    assert meta['display_title'] == '魔法少女奈叶 EXCEEDS Gun Blaze Vengeance'
+    assert meta['display_title'].endswith('Vengeance')
+    assert '已更新' not in meta['display_title']
+
+
+def test_v162_labelled_title_and_match_use_parsed_title_not_file_list_noise():
+    parser = ns['_entry_metadata']
+    meta = parser('剧名：长标题测试 The Complete Title (2026) 已更新 🎭 类型：电视剧', '')
+    assert meta['display_title'] == '长标题测试 The Complete Title'
+
+    entry = {
+        'display_title': '法律边缘',
+        'text': '🎬 法律边缘 (2026) 已更新 分享文件：完全不同的电影名.mkv',
+        'year_hint': 2026,
+        'tmdb_id': '',
+    }
+    assert ns['_entry_matches_subscription'](entry, '法律边缘', 2026, 1, '', '') is True
+    assert ns['_entry_matches_subscription'](entry, '完全不同的电影名', 2026, 1, '', '') is False
+
+
+def test_v162_version_contract():
+    package = json.loads((ROOT / 'package.v3.json').read_text(encoding='utf-8'))['GuangYaTransferAssistant']
+    local = json.loads((ROOT / 'plugins.v3' / 'guangyatransferassistant' / 'plugin.json').read_text(encoding='utf-8'))
+    assert package['version'] == '1.6.2' and local['version'] == '1.6.2'
+    assert 'plugin_version = "1.6.2"' in text
+    assert '_extract_channel_display_title' in text
+    assert 'parsed_title if parsed_title else text_value' in text
+    assert 'strip()[:420]' in text
