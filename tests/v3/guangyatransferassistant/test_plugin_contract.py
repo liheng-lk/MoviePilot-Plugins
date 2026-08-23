@@ -47,6 +47,12 @@ def test_hidden_visible_and_wrapped_links():
     assert "23-25" in items[0]["episode_hint"]
     assert "按钮" in items[0]["link_style"]
 
+    data_url = '''<div data-post="regengguangya/1001">名称：属性按钮测试 (2026)
+    <button data-url="https://www.guangyapan.com/s/dataURL123">光鸭云盘：查看资源</button></div>'''
+    items = ns["_extract_channel_entries"](data_url, "https://tgm.li668.asia/regengguangya", "影视热更")
+    assert len(items) == 1 and items[0]["share_id"] == "dataURL123"
+    assert items[0]["link_style"] in ("隐藏按钮", "链接属性")
+
     visible = '''<div data-post="yunpanguangya/101">名称：杀手妈咪 유부녀 킬러 (2026) [1080P] [更至8集]
     链接：www.guangyapan.com/s/plainXYZ</div>'''
     items = ns["_extract_channel_entries"](visible, "https://tgm.li668.asia/yunpanguangya", "资源分享")
