@@ -50,3 +50,5 @@ jobs:
           git add plugins.v3/guangyatransferassistant/__init__.py plugins.v3/guangyatransferassistant/plugin.json package.v3.json tests/v3/guangyatransferassistant/test_plugin_contract.py
           git commit -m "feat: harden GuangYa transfer routing and link parsing"
           git push origin HEAD:feat/guangya-transfer-v1.2.0-complete
+
+# synchronize PR after the workflow file exists
