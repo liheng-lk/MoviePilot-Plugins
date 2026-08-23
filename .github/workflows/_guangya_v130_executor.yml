@@ -35,6 +35,10 @@ jobs:
               'text = text.replace(form_anchor, form_insert + form_anchor, 1)',
               'text = text[:form_row_start] + form_insert + text[form_row_start:]',
           )
+          body = body.replace(
+              "replace_once(old_card, new_card, 'page subscription card')",
+              "card_start = text.index('            done, total, lack = self._subscription_episode_progress(sub)\\n'); card_end = text.index('        fresh_count =', card_start); text = text[:card_start] + new_card + text[card_end:]",
+          )
           exec(compile(body, '<guangya-v130-patch>', 'exec'), {})
       - name: Validate
         run: |
