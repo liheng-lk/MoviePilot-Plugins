@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
-  "description": "MoviePilot V3 光鸭云盘存储助手，支持扫码/短信登录、目录浏览、整理上传、上传进度监控、网络容错、下载、移动、复制、WebDAV 和 Emby 直连。",
-  "version": "3.0.0",
+  "description": "MoviePilot V3 光鸭云盘存储助手，新增按 MP 媒体库目录策略预览并整理网盘文件到另一目录，支持自动分类、移动/复制、冲突保护，并保留登录、浏览、上传、WebDAV 与 Emby 直连。",
+  "version": "3.1.0",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v3.1.0": "新增网盘整理：直接读取 MoviePilot 媒体库目录配置作为分类策略，按 MP 媒体识别结果、媒体类型/类别、类型/类别子目录规则生成光鸭云盘内整理预览；支持自动按优先级匹配或指定策略、移动/复制、覆盖策略保护、目录浏览、预览后二次确认执行、配套字幕跟随与整理历史。",
     "v3.0.0": "MoviePilot V3 专用首版：采用 V3 稳定 SDK、明确 API 响应模型、V3 Federation API 注入壳和可重复生命周期清理；保留双登录、存储扩展、整理上传、142 目录恢复、145/147 落盘确认、上传幂等、进度监控与 WebDAV。"
   }
 }
