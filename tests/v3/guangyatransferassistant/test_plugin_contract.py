@@ -94,8 +94,8 @@ def test_pagination_episode_and_path_safety():
 def test_version_and_safety_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.2.2" and local["version"] == "1.2.2"
-    assert 'plugin_version = "1.2.2"' in text
+    assert package["version"] == "1.3.0" and local["version"] == "1.3.0"
+    assert 'plugin_version = "1.3.0"' in text
     for token in (
         "隐藏按钮", "包装按钮", "_extract_pagination_urls", "tmdb_id", "TMDB精确",
         "strict_subscription_rules", "best_version", "filter_groups", "state not in (\"N\", \"R\")",
@@ -158,3 +158,96 @@ def test_completed_guangya_subscription_uses_moviepilot_completion_flow():
     assert '_remove_selected_subscription' in text
     assert '已通过 MoviePilot 官方流程移入订阅历史并从活动订阅移除' in text
     assert '目标剧集已全部完成，订阅已移入历史' in text
+
+
+
+def test_airing_and_missing_episode_contracts():
+    serial = ns["_entry_serial_state"]
+    current = serial({"text": "名称：测试剧 (2026) [更新至8集]", "episode_hint": "更新至8集"})
+    assert current["ongoing"] is True and current["complete"] is False
+    assert current["current_episode"] == 8 and current["explicit_total"] == 0
+    known = serial({"text": "集数：第23-25集 / 全36集", "episode_hint": "第23-25集", "total_episode_hint": 36})
+    assert known["current_episode"] == 25 and known["explicit_total"] == 36
+    finished = serial({"text": "全12集 已完结"})
+    assert finished["complete"] is True and finished["explicit_total"] == 12
+    assert 'api_check_missing' in text and 'api_release_native' in text
+    assert '立即检查缺集' in text and '切换普通下载' in text
+    assert 'completion_guard' in text and '连载保护' in text
+    assert '_sync_channel_episode_floor' in text
+    assert 'protect_ongoing' in text and 'ongoing_guard_days' in text
+
+
+
+def test_entry_process_key_only_changes_for_new_message_or_link():
+    key = ns["_entry_process_key"]
+    base = {
+        "source_url": "https://tgm.li668.asia/regengguangya",
+        "message_id": "100",
+        "share_url": "https://www.guangyapan.com/s/abc123",
+        "text": "名称：藏锋 更新至8集",
+    }
+    assert key(base) == key(dict(base))
+    new_message = dict(base, message_id="101")
+    new_link = dict(base, share_url="https://www.guangyapan.com/s/xyz999")
+    assert key(base) != key(new_message)
+    assert key(base) != key(new_link)
+
+
+def test_processed_message_and_media_library_sync_contracts():
+    assert 'from app.chain.download import DownloadChain' in text
+    assert '_sync_media_library_progress' in text
+    assert 'DownloadChain().get_no_exists_info' in text
+    assert 'processed_entries' in text
+    assert '_entry_process_key' in text
+    flow = text.split('    def _try_transfer_subscription(', 1)[1].split('    def _target_path(', 1)[0]
+    assert 'if not force and self._entry_processed(entry):' in flow
+    assert '_mark_entry_processed(entry, "no_new_episode"' in flow
+    assert '_mark_entry_processed(entry, "transferred"' in flow
+    assert 'errors.append("分享内没有符合订阅范围的媒体/字幕文件")' not in flow
+    assert '没有新链接/新消息' in flow
+    assert '当前抓取' in text and '回退缓存' in text
+    cleanup = text.split('    def _cleanup_selected_ids(', 1)[1].split('    def _save_config(', 1)[0]
+    assert '_clear_completion_guard(int(sid))' not in cleanup
+    removal = text.split('    def _remove_selected_subscription(', 1)[1].split('    def _get_guangya_runtime(', 1)[0]
+    assert '_clear_completion_guard(int(sid))' in removal
+
+
+
+def test_same_share_in_new_message_is_kept_as_new_entry():
+    page = '''<div data-post="regengguangya/300">名称：藏锋 (2026) 更新至8集
+    <a href="https://www.guangyapan.com/s/reused001">查看资源</a></div>
+    <div data-post="regengguangya/301">名称：藏锋 (2026) 更新至9集
+    <a href="https://www.guangyapan.com/s/reused001">查看资源</a></div>'''
+    items = ns["_extract_channel_entries"](page, "https://tgm.li668.asia/regengguangya", "影视热更")
+    assert len(items) == 2
+    assert {item["message_id"] for item in items} == {"300", "301"}
+    keys = {ns["_entry_process_key"](item) for item in items}
+    assert len(keys) == 2
+
+
+def test_media_library_sync_runs_even_before_channel_match():
+    flow = text.split('    def _try_transfer_subscription(', 1)[1].split('    def _target_path(', 1)[0]
+    sync_pos = flow.index('self._sync_media_library_progress(subscribe)')
+    no_match_pos = flow.index('if not matched_pairs:')
+    assert sync_pos < no_match_pos
+    assert '_entry_process_key(item) or _share_identity' in text
+    assert '当前抓取' in text and '回退缓存' in text
+
+
+
+def test_movie_completion_uses_confirmed_video_or_media_library_and_official_flow():
+    assert '_is_movie_subscription' in text
+    assert '_movie_transfer_confirmed' in text
+    helper = text.split('    def _movie_transfer_confirmed(', 1)[1].split('    def _finish_subscription_if_complete(', 1)[0]
+    assert 'transfer_inventory' in helper
+    assert '_is_video(path)' in helper
+    assert 'DownloadChain().get_no_exists_info' in helper
+    finish = text.split('    def _finish_subscription_if_complete(', 1)[1].split('    def _remove_selected_subscription(', 1)[0]
+    assert 'is_movie = self._is_movie_subscription(subscribe)' in finish
+    assert 'if not self._movie_transfer_confirmed(subscribe):' in finish
+    assert 'SubscribeChain().finish_subscribe_or_not' in finish
+    assert 'force=True' in finish
+    flow = text.split('    def _try_transfer_subscription(', 1)[1].split('    def _target_path(', 1)[0]
+    assert 'pre_channel_state = self._channel_state_for_subscription(subscribe, entries)' in flow
+    assert 'if self._finish_subscription_if_complete(subscribe, channel_state=pre_channel_state):' in flow
+    assert '订阅已完成并移入历史' in flow
