@@ -11,5 +11,18 @@
     "history": {
       "v3.0.0": "MoviePilot V3 专用首版：迁移至 plugins.v3/package.v3.json，采用 app.sdk 稳定接口及 media_source + media_id 统一媒体身份，保留多平台发现、过滤、无限候选和页面一键订阅。"
     }
+  },
+  "ShukGuangYaDisk": {
+    "name": "光鸭云盘助手",
+    "description": "MoviePilot V3 光鸭云盘存储助手，支持扫码/短信登录、目录浏览、整理上传、上传进度监控、网络容错、下载、移动、复制、WebDAV 和 Emby 直连。",
+    "labels": "存储,光鸭云盘,网盘,挂载,Emby,WebDAV",
+    "version": "3.0.0",
+    "icon": "Guangyadisk_A.png",
+    "author": "liheng-lk",
+    "level": 1,
+    "system_version": ">=3.0.0",
+    "history": {
+      "v3.0.0": "MoviePilot V3 专用首版：迁移至 plugins.v3/package.v3.json，采用稳定 SDK、明确 API 响应模型、V3 Federation API 注入壳和可重复生命周期清理；保留双登录、存储扩展、整理上传、142 目录恢复、145/147 落盘确认、上传幂等、进度监控与 WebDAV。"
+    }
   }
 }
