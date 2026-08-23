@@ -94,8 +94,8 @@ def test_pagination_episode_and_path_safety():
 def test_version_and_safety_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.6.0" and local["version"] == "1.6.0"
-    assert 'plugin_version = "1.6.0"' in text
+    assert package["version"] == "1.6.1" and local["version"] == "1.6.1"
+    assert 'plugin_version = "1.6.1"' in text
     for token in (
         "隐藏按钮", "包装按钮", "_extract_pagination_urls", "tmdb_id", "TMDB精确",
         "strict_subscription_rules", "best_version", "filter_groups", "state not in (\"N\", \"R\")",
@@ -263,7 +263,7 @@ def test_v140_reliability_contracts():
         'data_schema_version = 5',
     ):
         assert token in text, token
-    assert 'plugin_version = "1.6.0"' in text
+    assert 'plugin_version = "1.6.1"' in text
     assert '本轮新增' in text and '保留索引' in text and '故障回退' in text
 
 
@@ -360,8 +360,8 @@ def test_visibility_timeout_remains_pending_until_manual_force():
 def test_v150_version_and_console_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.6.0" and local["version"] == "1.6.0"
-    assert 'plugin_version = "1.6.0"' in text
+    assert package["version"] == "1.6.1" and local["version"] == "1.6.1"
+    assert 'plugin_version = "1.6.1"' in text
     assert '_subscription_console_snapshot' in text
     assert '等待落盘确认' in text and '当前已齐 · 连载保护中' in text
     assert '复查待落盘' in text and '重置检查状态' in text
@@ -424,8 +424,8 @@ def test_failure_notice_fingerprint_ignores_dynamic_ids():
 def test_v160_operations_and_audit_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.6.0" and local["version"] == "1.6.0"
-    assert 'plugin_version = "1.6.0"' in text
+    assert package["version"] == "1.6.1" and local["version"] == "1.6.1"
+    assert 'plugin_version = "1.6.1"' in text
     assert '_task_audit_rows' in text and '转存任务审计' in text
     assert '忽略卡住任务' in text and '/cancel_pending' in text
     assert '旧消息不会自动重放' in text
@@ -435,11 +435,13 @@ def test_v160_operations_and_audit_contracts():
 
 
 def test_manual_missing_check_refuses_pending_force_replay():
+    guard = text.split('    def _manual_transfer_guard(', 1)[1].split('    def get_api(', 1)[0]
+    assert '_pending_jobs_for_subscription(subscribe)' in guard
+    assert '请先使用‘复查待落盘’' in guard
     block = text.split('    def api_check_missing(', 1)[1].split('    def api_recheck_pending(', 1)[0]
-    guard_pos = block.index('_pending_jobs_for_subscription(subscribe)')
+    guard_pos = block.index('_manual_transfer_guard(subscribe)')
     force_pos = block.index('_try_transfer_subscription(subscribe, force=True)')
     assert guard_pos < force_pos
-    assert '请先使用‘复查待落盘’' in block
 
 
 def test_cancelled_old_job_never_replays_until_reset():
@@ -495,3 +497,44 @@ def test_inflight_only_message_is_not_marked_permanently_processed():
     inflight = block.split('if inflight_held:', 1)[1].split('self._mark_entry_processed', 1)[0]
     assert 'continue' in inflight
     assert '_mark_entry_processed' not in inflight
+
+
+
+def test_v161_season_zero_library_sync_and_manual_gate_contracts():
+    package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
+    local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
+    assert package["version"] == "1.6.1" and local["version"] == "1.6.1"
+    assert 'plugin_version = "1.6.1"' in text
+
+    sync = text.split('    def _sync_media_library_progress(', 1)[1].split('    def _install_takeover(', 1)[0]
+    assert 'raw_season = getattr(subscribe, "season", None)' in sync
+    assert 'is_tv =' in sync
+    assert 'season = int(raw_season)' in sync
+    assert 'if season < 0 or total < start:' in sync
+    assert 'if season <= 0' not in sync
+    assert 'totals={season: total}' in sync
+
+    guard = text.split('    def _manual_transfer_guard(', 1)[1].split('    def get_api(', 1)[0]
+    assert 'sid not in set(self._selected_subscriptions)' in guard
+    assert 'state not in ("N", "R")' in guard
+    assert '_pending_jobs_for_subscription(subscribe)' in guard
+    assert '复查待落盘' in guard
+
+    transfer = text.split('    def api_transfer(', 1)[1].split('    def api_folders(', 1)[0]
+    assert '_manual_transfer_guard(subscribe)' in transfer
+    assert transfer.index('_manual_transfer_guard(subscribe)') < transfer.index('_try_transfer_subscription(subscribe, force=True)')
+
+    missing = text.split('    def api_check_missing(', 1)[1].split('    def api_recheck_pending(', 1)[0]
+    assert '_manual_transfer_guard(subscribe)' in missing
+    assert missing.index('_manual_transfer_guard(subscribe)') < missing.index('_try_transfer_subscription(subscribe, force=True)')
+
+
+def test_v161_mutating_plugin_apis_use_post():
+    api = text.split('    def get_api(', 1)[1].split('    def api_refresh(', 1)[0]
+    assert '{"path": "/folders", "endpoint": self.api_folders, "methods": ["GET"]' in api
+    for endpoint in ('check_missing', 'release_native', 'recheck_pending', 'reset_state', 'cancel_pending', 'daily_summary'):
+        assert f'{{"path": "/{endpoint}"' in api
+        fragment = api.split(f'{{"path": "/{endpoint}"', 1)[1].split('}', 1)[0]
+        assert '"methods": ["POST"]' in fragment
+    for endpoint in ('check_missing', 'release_native', 'recheck_pending', 'reset_state', 'cancel_pending'):
+        assert f'"api": "plugin/GuangYaTransferAssistant/{endpoint}", "method": "post"' in text

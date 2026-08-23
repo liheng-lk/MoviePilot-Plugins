@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "固定转存订阅：任务审计、待落盘防误重放/人工忽略、每日摘要、Season 0 特别篇识别及完整可靠性闭环。",
-  "version": "1.6.0",
+  "description": "固定转存订阅：S00 媒体库同步、统一人工防重门禁、状态变更 POST 接口，并保留任务审计/在途预留/日报及完整可靠性闭环。",
+  "version": "1.6.1",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
