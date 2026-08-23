@@ -1,19 +1,31 @@
 """MoviePilot V3 自定义存储模块合同。
 
-V3 的 StorageChain 会优先通过插件 ``get_module()`` 调用 ``storage_manage``。
-如果插件没有实现该方法，请求会继续落到宿主 FileManager，而宿主只认识内置
-StorageBase，因此自定义存储会得到“Unsupported storage type”。本 mixin 把光鸭
-插件自己的存储能力显式接入 V3 的模块调度器。
+V3 的 StorageChain 会优先通过插件 ``get_module()`` 调用自定义模块。若插件没有
+接住自定义存储，请求会继续落到宿主 FileManager，而宿主只认识内置 StorageBase，
+最终得到“Unsupported storage type”。本 mixin 同时兼容 V3 新存储名与 V2 历史名，
+避免升级后已有整理任务继续引用 ``Shuk-光鸭云盘`` 时失效。
 """
 
 from __future__ import annotations
 
+from copy import copy as shallow_copy
+from functools import wraps
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
+
+
+def _register_storage_selection(func: Callable) -> Callable:
+    """在真实 MoviePilot 宿主中注册存储选择事件，独立单测时保持可导入。"""
+    try:
+        from app.core.event import eventmanager
+        from app.schemas.types import ChainEventType
+    except ImportError:
+        return func
+    return eventmanager.register(ChainEventType.StorageOperSelection)(func)
 
 
 class V3StorageContractMixin:
-    """为光鸭自定义存储补齐 MoviePilot V3 的模块合同。"""
+    """为光鸭自定义存储补齐 MoviePilot V3 合同及历史存储名兼容。"""
 
     @staticmethod
     def _action_name(action: Any) -> str:
@@ -33,6 +45,85 @@ class V3StorageContractMixin:
             return value
         return dict(value) if hasattr(value, "keys") else value
 
+    def _storage_names(self) -> set[str]:
+        """返回当前 V3 名称和仍可能存在于历史任务中的 V2 名称。"""
+        return {
+            name
+            for name in (
+                str(getattr(self, "_disk_name", "") or "").strip(),
+                str(getattr(self, "_legacy_disk_name", "") or "").strip(),
+            )
+            if name
+        }
+
+    def _matches_storage(self, storage: Any) -> bool:
+        return str(storage or "").strip() in self._storage_names()
+
+    def _normalize_storage(self, storage: Any) -> Any:
+        """历史名只用于识别；进入既有上传实现前统一转换为 V3 当前名。"""
+        return self._disk_name if self._matches_storage(storage) else storage
+
+    def _normalize_fileitem(self, fileitem: Any) -> Any:
+        """复制 FileItem 并把历史 storage 名转换为 V3 当前名，不修改调用方对象。"""
+        if fileitem is None:
+            return None
+        storage = getattr(fileitem, "storage", None)
+        if storage == self._disk_name or not self._matches_storage(storage):
+            return fileitem
+
+        model_copy = getattr(fileitem, "model_copy", None)
+        if callable(model_copy):
+            return model_copy(update={"storage": self._disk_name})
+
+        legacy_copy = getattr(fileitem, "copy", None)
+        if callable(legacy_copy):
+            try:
+                return legacy_copy(update={"storage": self._disk_name})
+            except TypeError:
+                pass
+
+        clone = shallow_copy(fileitem)
+        setattr(clone, "storage", self._disk_name)
+        return clone
+
+    def _wrap_fileitem_handler(self, handler: Callable) -> Callable:
+        @wraps(handler)
+        def wrapped(*args: Any, **kwargs: Any):
+            if args:
+                first = args[0]
+                storage = getattr(first, "storage", None)
+                if storage is not None:
+                    if not self._matches_storage(storage):
+                        return None
+                    args = (self._normalize_fileitem(first), *args[1:])
+            elif "fileitem" in kwargs:
+                storage = getattr(kwargs["fileitem"], "storage", None)
+                if storage is not None:
+                    if not self._matches_storage(storage):
+                        return None
+                    kwargs = dict(kwargs)
+                    kwargs["fileitem"] = self._normalize_fileitem(kwargs["fileitem"])
+            return handler(*args, **kwargs)
+
+        return wrapped
+
+    def _wrap_storage_handler(self, handler: Callable) -> Callable:
+        @wraps(handler)
+        def wrapped(*args: Any, **kwargs: Any):
+            if args:
+                storage = args[0]
+                if not self._matches_storage(storage):
+                    return None
+                args = (self._disk_name, *args[1:])
+            elif "storage" in kwargs:
+                if not self._matches_storage(kwargs["storage"]):
+                    return None
+                kwargs = dict(kwargs)
+                kwargs["storage"] = self._disk_name
+            return handler(*args, **kwargs)
+
+        return wrapped
+
     def _v3_storage_helper(self):
         """延迟导入稳定 SDK，便于脱离 MoviePilot 宿主做合同单测。"""
         from app.sdk.services import StorageHelper
@@ -40,15 +131,51 @@ class V3StorageContractMixin:
         return StorageHelper()
 
     def get_module(self) -> Dict[str, Any]:
-        """在原文件操作模块之上增加 V3 存储管理入口。"""
+        """补齐 V3 管理入口，并为旧存储名包一层兼容转换。"""
         modules = dict(super().get_module() or {})
+
+        for name in (
+            "list_files",
+            "any_files",
+            "download_file",
+            "upload_file",
+            "delete_file",
+            "rename_file",
+            "get_parent_item",
+            "create_folder",
+            "exists",
+            "get_item",
+        ):
+            handler = modules.get(name)
+            if callable(handler):
+                modules[name] = self._wrap_fileitem_handler(handler)
+
+        for name in (
+            "get_file_item",
+            "snapshot_storage",
+            "storage_usage",
+            "support_transtype",
+        ):
+            handler = modules.get(name)
+            if callable(handler):
+                modules[name] = self._wrap_storage_handler(handler)
+
         modules["storage_manage"] = self.storage_manage
         modules["get_folder"] = self.get_folder
         return modules
 
+    @_register_storage_selection
+    def storage_oper_selection(self, event: Any):
+        """新旧存储名都返回光鸭存储操作对象，兼容历史整理任务。"""
+        if not getattr(self, "_enabled", False):
+            return
+        event_data = getattr(event, "event_data", None)
+        if event_data and self._matches_storage(getattr(event_data, "storage", None)):
+            event_data.storage_oper = self._guangya_api
+
     def get_folder(self, storage: str, path: Path):
-        """适配 V3 ``StorageChain.get_folder(storage, path)`` 签名。"""
-        if storage != self._disk_name:
+        """适配 V3 ``StorageChain.get_folder(storage, path)``，兼容历史名称。"""
+        if not self._matches_storage(storage):
             return None
         if not self._guangya_api:
             return None
@@ -76,12 +203,8 @@ class V3StorageContractMixin:
         action: Any,
         **params: Any,
     ) -> Optional[Dict[str, Any]]:
-        """处理 MoviePilot V3 网盘存储统一管理动作。
-
-        对其它存储返回 ``None``，允许模块调度器继续交给宿主 FileManager；对光鸭
-        始终返回明确结果，从而阻止宿主把自定义存储误判为“不支持的存储类型”。
-        """
-        if storage != self._disk_name:
+        """处理 V3 网盘统一管理动作，并短路新旧光鸭存储名。"""
+        if not self._matches_storage(storage):
             return None
 
         action_name = self._action_name(action)
@@ -90,7 +213,7 @@ class V3StorageContractMixin:
             return {
                 "success": True,
                 "message": "",
-                "data": {"transtype": self.support_transtype(storage) or {}},
+                "data": {"transtype": self.support_transtype(self._disk_name) or {}},
             }
 
         if action_name == "usage":
@@ -101,7 +224,7 @@ class V3StorageContractMixin:
                     "data": {},
                 }
             try:
-                usage = self.storage_usage(storage)
+                usage = self.storage_usage(self._disk_name)
                 return {
                     "success": True,
                     "message": "",
