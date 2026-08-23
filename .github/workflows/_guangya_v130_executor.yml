@@ -69,7 +69,15 @@ jobs:
       - name: Validate
         run: |
           python -m py_compile plugins.v3/guangyatransferassistant/__init__.py
-          python -m pytest -q tests/v3/guangyatransferassistant/test_plugin_contract.py
+          python - <<'PY'
+          import runpy
+          ns = runpy.run_path('tests/v3/guangyatransferassistant/test_plugin_contract.py')
+          tests = [(name, fn) for name, fn in ns.items() if name.startswith('test_') and callable(fn)]
+          for name, fn in tests:
+              fn()
+              print(f'PASS {name}')
+          print(f'{len(tests)} GuangYa contract tests passed')
+          PY
           python -m json.tool package.v3.json >/dev/null
           python -m json.tool plugins.v3/guangyatransferassistant/plugin.json >/dev/null
       - name: Commit final branch files
