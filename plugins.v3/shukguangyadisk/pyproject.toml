@@ -2,7 +2,7 @@
 name = "moviepilot-plugin-shukguangyadisk"
 dynamic = ["version"]
 description = "光鸭云盘助手 MoviePilot V3 插件依赖"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
   "requests>=2.28.0",
   "oss2>=2.18.0",
