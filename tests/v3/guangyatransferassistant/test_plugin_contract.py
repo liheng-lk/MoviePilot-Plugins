@@ -308,3 +308,26 @@ def test_channel_refresh_uses_cursor_and_retains_index():
     assert 'max(page_ids) <= last_message_id' in refresh
     assert 'old["cached_index"] = True' in refresh
     assert 'self.save_data("channel_cursors", cursors)' in refresh
+
+
+
+def test_restart_recovery_reads_old_job_before_planned_overwrite():
+    flow = text.split('    def _try_transfer_subscription_inner(', 1)[1].split('    def _target_path(', 1)[0]
+    read_pos = flow.index('pending_job = self._get_job_state(job_key)')
+    planned_marker = 'job_key, "planned", subscribe_id=sid'
+    planned_pos = flow.index(planned_marker)
+    assert read_pos < planned_pos
+    assert 'pending_job.get("status") in ("submitted", "task_confirmed", "verifying")' in flow
+
+
+def test_file_cap_is_reported_as_partial_until_all_files_processed():
+    flow = text.split('    def _try_transfer_subscription_inner(', 1)[1].split('    def _target_path(', 1)[0]
+    assert 'partial = (bool(errors) or remaining_due_to_cap > 0) and not completed_subscription' in flow
+    assert 'if deferred_for_entry <= 0:' in flow
+    assert '本轮完成后仍有 %s 个文件待下轮，不标记消息完成' in flow
+
+
+def test_media_fact_progress_is_clipped_to_current_subscription_target():
+    block = text.split('    def _sync_media_facts_progress(', 1)[1].split('    def _processed_entry_key(', 1)[0]
+    assert 'episodes = episodes.intersection(target)' in block
+    assert 'merged = current | episodes' in block

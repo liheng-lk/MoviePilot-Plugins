@@ -566,7 +566,7 @@ class GuangYaTransferAssistant(_PluginBase):
     _route_lock = threading.RLock()
     _inspect_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
     _state_lock = threading.RLock()
-    _run_lock_minutes = 30
+    _run_lock_minutes = 15
     _data_schema_version = 4
 
     def init_plugin(self, config: dict = None) -> None:
@@ -1416,9 +1416,12 @@ class GuangYaTransferAssistant(_PluginBase):
         except (TypeError, ValueError):
             total = 0
             start = 1
-        payload: Dict[str, Any] = {"note": sorted(merged)}
         if total >= start:
             target = set(range(start, total + 1))
+            episodes = episodes.intersection(target)
+            merged = current | episodes
+        payload: Dict[str, Any] = {"note": sorted(merged)}
+        if total >= start:
             payload["lack_episode"] = len(target - merged)
         if merged != current or ("lack_episode" in payload and int(getattr(subscribe, "lack_episode", payload["lack_episode"]) or 0) != payload["lack_episode"]):
             SubscribeOper().update(sid, payload)
@@ -1731,7 +1734,7 @@ class GuangYaTransferAssistant(_PluginBase):
                 continue
             matched_pairs.append((item, reason))
         if not matched_pairs:
-            detail = "仅命中旧缓存，等待频道恢复" if stale_matches else "频道暂未匹配到光鸭分享"
+            detail = "仅命中故障回退索引，等待频道恢复" if stale_matches else "频道暂未匹配到光鸭分享"
             logger.info("【光鸭转存助手】【匹配】#%s %s %s；固定转存路线不触发原生下载", sid, getattr(subscribe, "name", ""), detail)
             return {"success": False, "handled": True, "message": detail}
         logger.info("【光鸭转存助手】【匹配】#%s %s 命中 %s 个当前频道分享", sid, getattr(subscribe, "name", ""), len(matched_pairs))
@@ -1846,18 +1849,13 @@ class GuangYaTransferAssistant(_PluginBase):
                 planned = planned[:self._max_files_per_run]
             job_key = self._job_key(subscribe, entry)
             job_paths = [str(item.get("effective_path") or item.get("relative_path") or item.get("name") or "") for item in planned]
-            self._set_job_state(
-                job_key, "planned", subscribe_id=sid, media=self._media_fact_prefix(subscribe),
-                share_id=share_key.split("|", 1)[0], message_id=str(entry.get("message_id") or ""),
-                paths=job_paths, target=target_path, fingerprint=fingerprint,
-            )
+            pending_job = self._get_job_state(job_key)
+            restored = None
             logger.info(
                 "【光鸭转存助手】【增量】#%s %s share_id=%s 叶子文件=%s，符合范围=%s，新增待转=%s，本轮=%s，库存=%s，剧集过滤=%s",
                 sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], probe.get("leaf_count") or len(probe.get("files") or []),
                 stats.get("eligible", 0), pending_count, len(planned), stats.get("inventory", 0) + stats.get("fact", 0), stats.get("episode", 0),
             )
-            pending_job = self._get_job_state(job_key)
-            restored = None
             if not force and pending_job.get("status") in ("submitted", "task_confirmed", "verifying") and set(pending_job.get("paths") or []) == set(job_paths):
                 updated = self._parse_datetime(pending_job.get("updated"))
                 age = (datetime.datetime.now() - updated).total_seconds() if updated else self._retry_minutes * 60 + 1
@@ -1875,6 +1873,11 @@ class GuangYaTransferAssistant(_PluginBase):
                     logger.info("【光鸭转存助手】【恢复】#%s %s share_id=%s 已有持久任务待确认，本轮不重复转存", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0])
                     continue
             if restored is None:
+                self._set_job_state(
+                    job_key, "planned", subscribe_id=sid, media=self._media_fact_prefix(subscribe),
+                    share_id=share_key.split("|", 1)[0], message_id=str(entry.get("message_id") or ""),
+                    paths=job_paths, target=target_path, fingerprint=fingerprint,
+                )
                 restored = self._restore_items(probe, target_path, planned, job_key=job_key)
             completed = list(restored.get("completed_items") or [])
             if completed:
@@ -1918,7 +1921,7 @@ class GuangYaTransferAssistant(_PluginBase):
                 unique_paths.append(rel)
         if unique_paths:
             completed_subscription = self._finish_subscription_if_complete(subscribe, channel_state=channel_state)
-            partial = bool(errors) and not completed_subscription
+            partial = (bool(errors) or remaining_due_to_cap > 0) and not completed_subscription
             logger.info("【光鸭转存助手】【转存】#%s %s %s：新增 %s 个文件，累计去重 %s 个，剩余待下轮 %s，目标=%s", sid, getattr(subscribe, "name", ""), "订阅完成" if completed_subscription else ("部分完成" if partial else "增量完成"), len(unique_paths), len(assets), remaining_due_to_cap, target_path)
             if self._notify:
                 season = getattr(subscribe, "season", None)
