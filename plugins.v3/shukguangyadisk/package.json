@@ -1,8 +1,8 @@
 {
   "name": "moviepilot-guangya-helper",
   "private": true,
-  "version": "1.0.0",
-  "description": "光鸭云盘助手 MoviePilot Vue 前端",
+  "version": "3.0.0",
+  "description": "光鸭云盘助手 MoviePilot V3 Vue 前端",
   "author": "liheng-lk",
   "repository": {
     "type": "git",
