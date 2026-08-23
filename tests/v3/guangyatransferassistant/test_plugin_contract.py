@@ -232,3 +232,22 @@ def test_media_library_sync_runs_even_before_channel_match():
     assert sync_pos < no_match_pos
     assert '_entry_process_key(item) or _share_identity' in text
     assert '当前抓取' in text and '回退缓存' in text
+
+
+
+def test_movie_completion_uses_confirmed_video_or_media_library_and_official_flow():
+    assert '_is_movie_subscription' in text
+    assert '_movie_transfer_confirmed' in text
+    helper = text.split('    def _movie_transfer_confirmed(', 1)[1].split('    def _finish_subscription_if_complete(', 1)[0]
+    assert 'transfer_inventory' in helper
+    assert '_is_video(path)' in helper
+    assert 'DownloadChain().get_no_exists_info' in helper
+    finish = text.split('    def _finish_subscription_if_complete(', 1)[1].split('    def _remove_selected_subscription(', 1)[0]
+    assert 'is_movie = self._is_movie_subscription(subscribe)' in finish
+    assert 'if not self._movie_transfer_confirmed(subscribe):' in finish
+    assert 'SubscribeChain().finish_subscribe_or_not' in finish
+    assert 'force=True' in finish
+    flow = text.split('    def _try_transfer_subscription(', 1)[1].split('    def _target_path(', 1)[0]
+    assert 'pre_channel_state = self._channel_state_for_subscription(subscribe, entries)' in flow
+    assert 'if self._finish_subscription_if_complete(subscribe, channel_state=pre_channel_state):' in flow
+    assert '订阅已完成并移入历史' in flow

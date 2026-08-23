@@ -1445,6 +1445,10 @@ class GuangYaTransferAssistant(_PluginBase):
         # 每轮先以媒体库为事实源同步当前目标范围，频道没有新链接时也能去掉已入库重复集。
         self._sync_media_library_progress(subscribe)
         entries = list((self.get_data("channel_index") or {}).get("items") or [])
+        pre_channel_state = self._channel_state_for_subscription(subscribe, entries)
+        if self._finish_subscription_if_complete(subscribe, channel_state=pre_channel_state):
+            media_kind = "电影" if self._is_movie_subscription(subscribe) else "剧集"
+            return {"success": True, "handled": True, "completed": True, "message": f"{media_kind}目标已完成，订阅已移入历史"}
         matched_pairs = []
         stale_matches = 0
         for item in entries:
@@ -1620,7 +1624,7 @@ class GuangYaTransferAssistant(_PluginBase):
                     preview += f" 等 {len(unique_paths)} 个"
                 lines = [
                     f"媒体：{media_text}",
-                    "状态：部分转存完成，剩余保持转存路线等待下轮" if partial else "状态：增量转存已确认完成",
+                    ("状态：电影/剧集目标已完成，订阅已移入历史" if completed_subscription else ("状态：部分转存完成，剩余保持转存路线等待下轮" if partial else "状态：增量转存已确认完成")),
                     f"匹配：{'、'.join(sorted(match_reasons)) or '-'}",
                     f"本次新增：{len(unique_paths)} 个文件",
                     f"累计去重：{len(assets)} 个文件",
@@ -1643,7 +1647,7 @@ class GuangYaTransferAssistant(_PluginBase):
                 logger.info("【光鸭转存助手】【通知】已发送%s通知：#%s %s", "部分转存" if partial else "增量转存成功", sid, getattr(subscribe, "name", ""))
             if partial:
                 return {"success": False, "handled": True, "message": f"部分转存 {len(unique_paths)} 个文件，剩余等待下轮转存", "new_count": len(unique_paths), "target_path": target_path}
-            return {"success": True, "handled": True, "message": f"增量转存成功，本次新增 {len(unique_paths)} 个文件", "new_count": len(unique_paths), "target_path": target_path, "remaining": remaining_due_to_cap}
+            return {"success": True, "handled": True, "completed": completed_subscription, "message": (f"转存成功，本次新增 {len(unique_paths)} 个文件；订阅已完成并移入历史" if completed_subscription else f"增量转存成功，本次新增 {len(unique_paths)} 个文件"), "new_count": len(unique_paths), "target_path": target_path, "remaining": remaining_due_to_cap}
 
         if valid_route_match and not errors and (synchronized_match or not attempted_new):
             if self._finish_subscription_if_complete(subscribe, channel_state=channel_state):
@@ -1828,26 +1832,74 @@ class GuangYaTransferAssistant(_PluginBase):
         except Exception as err:
             logger.warning("【光鸭转存助手】【进度】同步 MoviePilot 订阅进度失败：%s", err)
 
+    @staticmethod
+    def _is_movie_subscription(subscribe: Any) -> bool:
+        raw_type = str(getattr(subscribe, "type", "") or "")
+        mtype = raw_type.lower()
+        return "movie" in mtype or "电影" in raw_type
+
+    def _movie_transfer_confirmed(self, subscribe: Any) -> bool:
+        """电影只在媒体库已存在或已确认至少一个视频文件成功转存后允许完成。"""
+        sid = int(getattr(subscribe, "id", 0) or 0)
+        if not sid:
+            return False
+        inventory = self.get_data("transfer_inventory") or {}
+        assets = ((inventory.get(str(sid)) or {}).get("assets") or {})
+        for row in assets.values():
+            if not isinstance(row, dict):
+                continue
+            path = str(row.get("path") or "")
+            if path and _is_video(path):
+                return True
+        try:
+            meta = build_subscribe_meta(subscribe)
+            mediainfo = MediaChain().recognize_media(
+                meta=meta,
+                mtype=meta.type,
+                media_source=getattr(subscribe, "media_source", None),
+                media_id=getattr(subscribe, "media_id", None),
+                episode_group=getattr(subscribe, "episode_group", None),
+                cache=False,
+            )
+            if not mediainfo:
+                return False
+            exists, _ = DownloadChain().get_no_exists_info(meta=meta, mediainfo=mediainfo)
+            if exists:
+                logger.info("【光鸭转存助手】【媒体库同步】#%s %s 电影已存在于媒体库，允许完成订阅", sid, getattr(subscribe, "name", ""))
+                return True
+        except Exception as err:
+            logger.warning("【光鸭转存助手】【媒体库同步】#%s %s 检查电影媒体库状态失败：%s", sid, getattr(subscribe, "name", ""), err)
+        return False
+
     def _finish_subscription_if_complete(self, subscribe: Any, channel_state: Optional[Dict[str, Any]] = None) -> bool:
-        """目标集全部完成且通过连载保护后，调用 MoviePilot 官方完成流程。"""
-        if not self._sync_subscription_progress or bool(getattr(subscribe, "best_version", 0)):
+        """电影按确认转存/媒体库存在完成；剧集按目标集进度并通过连载保护后完成。"""
+        if bool(getattr(subscribe, "best_version", 0)):
             return False
         sid = int(getattr(subscribe, "id", 0) or 0)
         if not sid:
             return False
-        done, total, lack = self._subscription_episode_progress(subscribe)
-        if not total or lack > 0:
+        is_movie = self._is_movie_subscription(subscribe)
+        done = total = lack = 0
+        if is_movie:
+            if not self._movie_transfer_confirmed(subscribe):
+                return False
             self._clear_completion_guard(sid)
-            if total:
-                try:
-                    if int(getattr(subscribe, "lack_episode", lack) or 0) != lack:
-                        SubscribeOper().update(sid, {"lack_episode": lack})
-                        setattr(subscribe, "lack_episode", lack)
-                except Exception as err:
-                    logger.warning("【光鸭转存助手】【进度】更新剩余集数失败：%s", err)
-            return False
-        if not self._completion_guard_allows(subscribe, channel_state=channel_state):
-            return False
+        else:
+            if not self._sync_subscription_progress:
+                return False
+            done, total, lack = self._subscription_episode_progress(subscribe)
+            if not total or lack > 0:
+                self._clear_completion_guard(sid)
+                if total:
+                    try:
+                        if int(getattr(subscribe, "lack_episode", lack) or 0) != lack:
+                            SubscribeOper().update(sid, {"lack_episode": lack})
+                            setattr(subscribe, "lack_episode", lack)
+                    except Exception as err:
+                        logger.warning("【光鸭转存助手】【进度】更新剩余集数失败：%s", err)
+                return False
+            if not self._completion_guard_allows(subscribe, channel_state=channel_state):
+                return False
         latest = self._find_subscription(sid)
         if not latest:
             self._remove_selected_subscription(sid)
@@ -1863,7 +1915,8 @@ class GuangYaTransferAssistant(_PluginBase):
                 cache=False,
             )
             if not mediainfo:
-                logger.warning("【光鸭转存助手】【完成】#%s %s 已完成 %s/%s，但媒体识别失败，暂不移除订阅", sid, getattr(latest, "name", ""), done, total)
+                progress = "电影已确认转存" if is_movie else f"已完成 {done}/{total}"
+                logger.warning("【光鸭转存助手】【完成】#%s %s %s，但媒体识别失败，暂不移除订阅", sid, getattr(latest, "name", ""), progress)
                 return False
             SubscribeChain().finish_subscribe_or_not(
                 subscribe=latest,
@@ -1873,11 +1926,15 @@ class GuangYaTransferAssistant(_PluginBase):
                 force=True,
             )
             if self._find_subscription(sid):
-                logger.warning("【光鸭转存助手】【完成】#%s %s 已完成 %s/%s，但 MoviePilot 完成流程后订阅仍存在", sid, getattr(latest, "name", ""), done, total)
+                progress = "电影已确认转存" if is_movie else f"已完成 {done}/{total}"
+                logger.warning("【光鸭转存助手】【完成】#%s %s %s，但 MoviePilot 完成流程后订阅仍存在", sid, getattr(latest, "name", ""), progress)
                 return False
             self._clear_completion_guard(sid)
             self._remove_selected_subscription(sid)
-            logger.info("【光鸭转存助手】【完成】#%s %s 已完成 %s/%s，剩余 0；已通过 MoviePilot 官方流程移入订阅历史并从活动订阅移除", sid, getattr(latest, "name", ""), done, total)
+            if is_movie:
+                logger.info("【光鸭转存助手】【完成】#%s %s 电影已确认转存/媒体库存在；已通过 MoviePilot 官方流程移入订阅历史并从活动订阅移除", sid, getattr(latest, "name", ""))
+            else:
+                logger.info("【光鸭转存助手】【完成】#%s %s 已完成 %s/%s，剩余 0；已通过 MoviePilot 官方流程移入订阅历史并从活动订阅移除", sid, getattr(latest, "name", ""), done, total)
             return True
         except Exception:
             logger.exception("【光鸭转存助手】【完成】#%s %s 执行 MoviePilot 官方完成流程失败", sid, getattr(subscribe, "name", ""))
