@@ -94,8 +94,8 @@ def test_pagination_episode_and_path_safety():
 def test_version_and_safety_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.3.0" and local["version"] == "1.3.0"
-    assert 'plugin_version = "1.3.0"' in text
+    assert package["version"] == "1.4.0" and local["version"] == "1.4.0"
+    assert 'plugin_version = "1.4.0"' in text
     for token in (
         "隐藏按钮", "包装按钮", "_extract_pagination_urls", "tmdb_id", "TMDB精确",
         "strict_subscription_rules", "best_version", "filter_groups", "state not in (\"N\", \"R\")",
@@ -200,12 +200,12 @@ def test_processed_message_and_media_library_sync_contracts():
     assert 'processed_entries' in text
     assert '_entry_process_key' in text
     flow = text.split('    def _try_transfer_subscription(', 1)[1].split('    def _target_path(', 1)[0]
-    assert 'if not force and self._entry_processed(entry):' in flow
+    assert 'if not force and self._entry_processed(entry, subscribe):' in flow
     assert '_mark_entry_processed(entry, "no_new_episode"' in flow
     assert '_mark_entry_processed(entry, "transferred"' in flow
     assert 'errors.append("分享内没有符合订阅范围的媒体/字幕文件")' not in flow
     assert '没有新链接/新消息' in flow
-    assert '当前抓取' in text and '回退缓存' in text
+    assert '当前抓取' in text and '故障回退' in text
     cleanup = text.split('    def _cleanup_selected_ids(', 1)[1].split('    def _save_config(', 1)[0]
     assert '_clear_completion_guard(int(sid))' not in cleanup
     removal = text.split('    def _remove_selected_subscription(', 1)[1].split('    def _get_guangya_runtime(', 1)[0]
@@ -231,7 +231,7 @@ def test_media_library_sync_runs_even_before_channel_match():
     no_match_pos = flow.index('if not matched_pairs:')
     assert sync_pos < no_match_pos
     assert '_entry_process_key(item) or _share_identity' in text
-    assert '当前抓取' in text and '回退缓存' in text
+    assert '当前抓取' in text and '故障回退' in text
 
 
 
@@ -251,3 +251,106 @@ def test_movie_completion_uses_confirmed_video_or_media_library_and_official_flo
     assert 'pre_channel_state = self._channel_state_for_subscription(subscribe, entries)' in flow
     assert 'if self._finish_subscription_if_complete(subscribe, channel_state=pre_channel_state):' in flow
     assert '订阅已完成并移入历史' in flow
+
+
+
+def test_v140_reliability_contracts():
+    for token in (
+        'media_facts', '_media_fact_prefix', '_semantic_fact_exists',
+        'channel_cursors', 'last_message_id', 'reached_cursor',
+        'transfer_jobs', 'active_runs', '_acquire_subscription_run',
+        '_verify_restored_group', '【光鸭转存助手】【落盘确认】',
+        'data_schema_version = 4',
+    ):
+        assert token in text, token
+    assert 'plugin_version = "1.4.0"' in text
+    assert '本轮新增' in text and '保留索引' in text and '故障回退' in text
+
+
+def test_processed_entry_is_scoped_by_media_not_global_message():
+    block = text.split('    def _processed_entry_key(', 1)[1].split('    def _entry_processed(', 1)[0]
+    assert '_media_fact_prefix(subscribe)' in block
+    assert 'hashlib.sha256' in block
+    flow = text.split('    def _try_transfer_subscription_inner(', 1)[1].split('    def _target_path(', 1)[0]
+    assert 'self._entry_processed(entry, subscribe)' in flow
+    assert '_mark_entry_processed(entry, "transferred"' in flow
+
+
+def test_transfer_cap_does_not_mark_whole_message_processed():
+    flow = text.split('    def _try_transfer_subscription_inner(', 1)[1].split('    def _target_path(', 1)[0]
+    assert 'deferred_for_entry = max(0, pending_count - self._max_files_per_run)' in flow
+    assert 'if deferred_for_entry <= 0:' in flow
+    assert '不标记消息完成' in flow
+
+
+def test_restore_requires_post_task_visibility_verification():
+    restore = text.split('    def _restore_items(', 1)[1].split('    def _restore_share(', 1)[0]
+    assert '_wait_task_done' in restore
+    assert '_verify_restored_group' in restore
+    assert 'task_confirmed' in restore and 'verified' in restore
+    assert '目标文件可见性/大小已确认' in restore
+    verify = text.split('    def _verify_restored_group(', 1)[1].split('    def _verify_restored_items(', 1)[0]
+    assert '_iter_parent_items' in verify
+    assert 'remote_size not in (None, 0, size)' in verify
+
+
+def test_persistent_run_lock_wraps_all_transfer_calls():
+    wrapper = text.split('    def _try_transfer_subscription(', 1)[1].split('    def _try_transfer_subscription_inner(', 1)[0]
+    assert '_acquire_subscription_run' in wrapper
+    assert 'finally:' in wrapper and '_release_subscription_run' in wrapper
+    assert '已有同媒体转存任务执行中' in wrapper
+
+
+def test_channel_refresh_uses_cursor_and_retains_index():
+    refresh = text.split('    def refresh_channels(', 1)[1].split('    def _source_urls(', 1)[0]
+    assert 'channel_cursors' in refresh
+    assert 'last_message_id' in refresh
+    assert 'max(page_ids) <= last_message_id' in refresh
+    assert 'old["cached_index"] = True' in refresh
+    assert 'self.save_data("channel_cursors", cursors)' in refresh
+
+
+
+def test_restart_recovery_reads_old_job_before_planned_overwrite():
+    flow = text.split('    def _try_transfer_subscription_inner(', 1)[1].split('    def _target_path(', 1)[0]
+    read_pos = flow.index('pending_job = self._get_job_state(job_key)')
+    planned_marker = 'job_key, "planned", subscribe_id=sid'
+    planned_pos = flow.index(planned_marker)
+    assert read_pos < planned_pos
+    assert 'pending_job.get("status") in ("submitted", "task_confirmed", "verifying")' in flow
+
+
+def test_file_cap_is_reported_as_partial_until_all_files_processed():
+    flow = text.split('    def _try_transfer_subscription_inner(', 1)[1].split('    def _target_path(', 1)[0]
+    assert 'partial = (bool(errors) or remaining_due_to_cap > 0 or pending_verification) and not completed_subscription' in flow
+    assert 'if deferred_for_entry <= 0:' in flow
+    assert '本轮完成后仍有 %s 个文件待下轮，不标记消息完成' in flow
+
+
+def test_media_fact_progress_is_clipped_to_current_subscription_target():
+    block = text.split('    def _sync_media_facts_progress(', 1)[1].split('    def _processed_entry_key(', 1)[0]
+    assert 'episodes = episodes.intersection(target)' in block
+    assert 'merged = current | episodes' in block
+
+
+
+def test_pending_visibility_never_downgrades_to_failed_or_auto_replays():
+    flow = text.split('    def _try_transfer_subscription_inner(', 1)[1].split('    def _target_path(', 1)[0]
+    assert 'pending_verification = False' in flow
+    assert '已提交任务不会自动重复提交' in flow
+    assert 'if restored.get("pending_verification"):' in flow
+    pending_branch = flow.split('if restored.get("pending_verification"):', 1)[1].split('else:', 1)[0]
+    assert '_set_job_state(job_key, "verifying"' in pending_branch
+    assert '_set_job_state(job_key, "failed"' not in pending_branch
+    assert 'if pending_verification and not errors:' in flow
+    assert '不会重复提交' in flow
+
+
+def test_visibility_timeout_remains_pending_until_manual_force():
+    flow = text.split('    def _try_transfer_subscription_inner(', 1)[1].split('    def _target_path(', 1)[0]
+    recovery = flow.split('pending_job.get("status") in ("submitted", "task_confirmed", "verifying")', 1)[1].split('if restored is None:', 1)[0]
+    assert '落盘确认已超等待窗口，保持待确认以避免重复提交' in recovery
+    assert 'continue' in recovery
+    assert 'force' in flow
+    restore = text.split('    def _restore_items(', 1)[1].split('    def _restore_share(', 1)[0]
+    assert '"pending_verification": True' in restore
