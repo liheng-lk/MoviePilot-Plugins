@@ -16,56 +16,42 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Execute branch patch block
+      - name: Fix route guard cleanup
         shell: python
         run: |
           from pathlib import Path
-          import re
-          workflow = Path('.github/workflows/_build_guangya_v130.yml').read_text(encoding='utf-8')
-          matched = re.search(r'- name: Apply v1\.3\.0 patch\n\s+shell: python\n\s+run: \|\n(?P<body>.*?)(?=\n\s+- name: Python syntax)', workflow, re.S)
-          if not matched:
-              raise SystemExit('patch block not found')
-          raw_lines = matched.group('body').splitlines()
-          lines = []
-          in_multiline = False
-          for raw in raw_lines:
-              if in_multiline:
-                  line = raw
-                  lines.append(line)
-                  if "'''" in line:
-                      in_multiline = False
-                  continue
-              line = raw[10:] if raw.startswith('          ') else raw
-              lines.append(line)
-              if line.count("'''") % 2 == 1:
-                  in_multiline = True
-          body = '\n'.join(lines)
-          body = body.replace("api_insert = '''", "api_insert = r'''", 1)
-          body = body.replace(
-              "assert form_anchor in text, 'form anchor missing'",
-              "textarea_line = '{\"component\": \"VTextarea\", \"props\": {\"model\": \"channel_urls\", \"label\": \"资源频道地址（每行一个）\", \"rows\": 3}}'; assert textarea_line in text, 'channel textarea missing'; form_row_start = text.rfind('                {\"component\": \"VRow\", \"content\": [\\n', 0, text.index(textarea_line)); assert form_row_start >= 0, 'channel row start missing'",
-          )
-          body = body.replace(
-              'text = text.replace(form_anchor, form_insert + form_anchor, 1)',
-              'text = text[:form_row_start] + form_insert + text[form_row_start:]',
-          )
-          body = body.replace(
-              "replace_once(old_card, new_card, 'page subscription card')",
-              "card_start = text.index('            done, total, lack = self._subscription_episode_progress(sub)\\n'); card_end = text.index('        fresh_count =', card_start); text = text[:card_start] + new_card + text[card_end:]",
-          )
-          body = body.replace(
-              "replace_once(early, '', 'early completion')",
-              "early_start = text.find('        # 兼容旧版本已经转存完'); early_end = text.index('        self.refresh_channels(force=False)\\n', early_start) if early_start >= 0 else -1; assert early_start >= 0 and early_end > early_start, 'early completion boundaries missing'; text = text[:early_start] + text[early_end:]",
-          )
-          body = body.replace(
-              "assert notification_anchor in text, 'notification anchor missing'",
-              "notification_base = text.index('                lines = [', text.index('        if unique_paths:')); notification_start = text.index('                if remaining_due_to_cap:', notification_base); notification_end = text.index('                if task_ids:', notification_start)",
-          )
-          body = body.replace(
-              'text = text.replace(notification_anchor, notification_insert, 1)',
-              'text = text[:notification_start] + notification_insert + text[notification_end:]',
-          )
-          exec(compile(body, '<guangya-v130-patch>', 'exec'), {})
+          src = Path('plugins.v3/guangyatransferassistant/__init__.py')
+          text = src.read_text(encoding='utf-8')
+          wrong = '''        self._selected_subscriptions = selected
+        self._clear_completion_guard(int(sid))
+        self._save_config()
+
+    def _save_config'''
+          fixed = '''        self._selected_subscriptions = selected
+        self._save_config()
+
+    def _save_config'''
+          assert wrong in text, 'cleanup_selected_ids erroneous guard call not found'
+          text = text.replace(wrong, fixed, 1)
+          remove_old = '''        self._selected_subscriptions = selected
+        self._save_config()
+
+    def _get_guangya_runtime'''
+          remove_new = '''        self._selected_subscriptions = selected
+        self._clear_completion_guard(int(sid))
+        self._save_config()
+
+    def _get_guangya_runtime'''
+          assert remove_old in text, 'remove_selected_subscription block not found'
+          text = text.replace(remove_old, remove_new, 1)
+          src.write_text(text, encoding='utf-8')
+
+          test = Path('tests/v3/guangyatransferassistant/test_plugin_contract.py')
+          tt = test.read_text(encoding='utf-8')
+          addition = '''\n\ndef test_route_cleanup_does_not_reference_undefined_sid():\n    cleanup = text.split("    def _cleanup_selected_ids(", 1)[1].split("    def _save_config(", 1)[0]\n    assert "_clear_completion_guard(int(sid))" not in cleanup\n    remove = text.split("    def _remove_selected_subscription(", 1)[1].split("    def _get_guangya_runtime(", 1)[0]\n    assert "_clear_completion_guard(int(sid))" in remove\n'''
+          if 'test_route_cleanup_does_not_reference_undefined_sid' not in tt:
+              tt += addition
+              test.write_text(tt, encoding='utf-8')
       - name: Validate
         run: |
           python -m py_compile plugins.v3/guangyatransferassistant/__init__.py
@@ -84,7 +70,7 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git rm -f .github/workflows/_build_guangya_v130.yml .guangya-v130-trigger
-          git add package.v3.json plugins.v3/guangyatransferassistant/__init__.py plugins.v3/guangyatransferassistant/plugin.json tests/v3/guangyatransferassistant/test_plugin_contract.py
-          git commit -m 'feat: handle missing and airing GuangYa episodes'
+          git rm -f .guangya-v130-trigger
+          git add plugins.v3/guangyatransferassistant/__init__.py tests/v3/guangyatransferassistant/test_plugin_contract.py
+          git commit -m 'fix: keep GuangYa completion guard cleanup scoped to route removal'
           git push origin HEAD:feat/guangya-missing-episodes-airing-v1.3.0
