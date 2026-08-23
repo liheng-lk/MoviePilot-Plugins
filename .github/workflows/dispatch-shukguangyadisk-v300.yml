@@ -1,4 +1,5 @@
 name: Dispatch ShukGuangYaDisk 3.0.0 V3 adaptation
+# trigger: 2
 on:
   push:
     branches: [main]
@@ -28,7 +29,6 @@ jobs:
               shutil.rmtree(dst)
           shutil.copytree(src, dst)
 
-          # -------- Python SDK migration --------
           replacements = {
               'from app.log import logger': 'from app.sdk.logging import logger',
               'from app.core.event import Event, eventmanager': 'from app.sdk.events import Event, eventmanager',
@@ -73,7 +73,6 @@ jobs:
           )
           legacy.write_text(text, encoding='utf-8')
 
-          # -------- Vue V3 API client contract --------
           assets = dst / 'dist' / 'assets'
           page = assets / '__federation_expose_AssistantPage-dev.js'
           config = assets / '__federation_expose_AssistantConfig-dev.js'
@@ -116,7 +115,6 @@ jobs:
           remote_text = remote_text.replace("./__federation_expose_AssistantConfig-dev.js?v=1.1.1", "./__federation_expose_AssistantConfig-dev.js?v=3.0.0")
           remote.write_text(remote_text, encoding='utf-8')
 
-          # Frontend package metadata
           pkg_path = dst / 'package.json'
           if pkg_path.exists():
               pkg = json.loads(pkg_path.read_text(encoding='utf-8'))
@@ -124,7 +122,6 @@ jobs:
               pkg['description'] = '光鸭云盘助手 MoviePilot V3 Vue 前端'
               pkg_path.write_text(json.dumps(pkg, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
-          # Plugin-local metadata
           local_meta = dst / 'plugin.json'
           if local_meta.exists():
               meta = json.loads(local_meta.read_text(encoding='utf-8'))
@@ -133,7 +130,6 @@ jobs:
               meta['history'] = {'v3.0.0': 'MoviePilot V3 专用首版：迁移稳定 SDK、V3 生命周期与 Vue API 客户端合同，保留双登录、整理上传、上传容错、进度监控、WebDAV 与存储扩展能力。'}
               local_meta.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
-          # -------- Repository indexes --------
           p3 = root / 'package.v3.json'
           data3 = json.loads(p3.read_text(encoding='utf-8')) if p3.exists() else {}
           data3['ShukGuangYaDisk'] = {
@@ -149,7 +145,6 @@ jobs:
                   'v3.0.0': 'MoviePilot V3 专用首版：迁移至 plugins.v3/package.v3.json，使用 app.sdk 稳定接口，适配 V3 生命周期与 Vue API 客户端合同，保留双登录、存储扩展、整理上传、145/147 落盘确认、142 目录恢复、上传幂等、WebDAV 和进度监控。'
               },
           }
-          # keep deterministic order: existing then Shuk entry
           p3.write_text(json.dumps(data3, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
           for index_name in ['package.v2.json', 'plugin.json']:
@@ -158,7 +153,6 @@ jobs:
               data['ShukGuangYaDisk']['v3'] = False
               path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
-          # -------- V3 contract tests --------
           tests = root / 'tests' / 'v3' / 'shukguangyadisk'
           tests.mkdir(parents=True, exist_ok=True)
           (tests / 'test_plugin_contract.py').write_text(r'''from pathlib import Path
@@ -203,7 +197,6 @@ for name in ['__federation_expose_AssistantPage-dev.js','__federation_expose_Ass
     assert "fetch(`/api/v1/plugin/${PLUGIN_ID}" not in js
 assert 'MoviePilot V3 API client unavailable' in (assets / '__federation_expose_AssistantPage-dev.js').read_text(encoding='utf-8')
 
-# Keep upload stability fixes in V3 copy.
 stable = (V3 / 'guangya_api.py').read_text(encoding='utf-8')
 stable112 = (V3 / 'guangya_api_v112.py').read_text(encoding='utf-8')
 combined = stable + '\n' + stable112
@@ -212,7 +205,6 @@ assert '145' in combined and '147' in combined
 assert 'upload_progress_log' in combined
 ''', encoding='utf-8')
 
-          # Compile all V3 Python sources.
           forbidden = [
               'from app.log import logger',
               'from app.core.event import Event, eventmanager',
