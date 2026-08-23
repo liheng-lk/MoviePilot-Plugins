@@ -89,3 +89,10 @@ def test_incremental_failure_is_not_misclassified_and_is_rate_limited():
     assert 'failure_notices' in text
     assert '6 * 3600' in text
     assert '⚠️ 光鸭转存失败' in text
+
+
+def test_legacy_fingerprint_migration_contract():
+    text = SRC.read_text(encoding="utf-8")
+    assert 'legacy_fingerprint_rows' in text
+    assert 'legacy_fingerprint' in text
+    assert 'old.get("fingerprint") in {fingerprint' in text

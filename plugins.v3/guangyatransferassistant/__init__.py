@@ -609,7 +609,7 @@ class GuangYaTransferAssistant(_PluginBase):
 
             planned = self._plan_incremental_files(probe, assets)
             # 从 1.0.x 升级时，如果同一分享已经完整成功且内容未变，用当前文件清单补建增量索引，绝不重新转一遍。
-            if not assets and old.get("success") and fingerprint and old.get("fingerprint") == fingerprint:
+            if not assets and old.get("success") and old.get("fingerprint") in {fingerprint, str(probe.get("legacy_fingerprint") or "")}:
                 migrated = self._plan_incremental_files(probe, {})
                 self._remember_assets(assets, migrated, share_key, target_path)
                 inventory[sid_key] = {"assets": assets, "updated": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
@@ -804,6 +804,7 @@ class GuangYaTransferAssistant(_PluginBase):
         stack: List[Tuple[str, str]] = [("", "")]
         root_ids: List[str] = []
         fingerprint_rows: List[str] = []
+        legacy_fingerprint_rows: List[str] = []
         files: List[Dict[str, Any]] = []
         count = 0
         while stack and count < self._max_share_files:
@@ -828,6 +829,7 @@ class GuangYaTransferAssistant(_PluginBase):
                     count += 1
                     rel = "/".join(value for value in (parent_path.strip("/"), item["name"].strip("/")) if value)
                     fingerprint_rows.append(f"{item['id']}|{rel}|{item['size']}|{int(item['is_dir'])}")
+                    legacy_fingerprint_rows.append(f"{item['id']}|{item['name']}|{item['size']}|{int(item['is_dir'])}")
                     if item["is_dir"]:
                         stack.append((item["id"], rel))
                     else:
@@ -838,10 +840,11 @@ class GuangYaTransferAssistant(_PluginBase):
                     break
                 page += 1
         fingerprint = hashlib.sha256("\n".join(sorted(fingerprint_rows)).encode("utf-8")).hexdigest()
+        legacy_fingerprint = hashlib.sha256("\n".join(sorted(legacy_fingerprint_rows)).encode("utf-8")).hexdigest()
         result = {
             "success": True, "access_token": token,
             "root_ids": [value for value in root_ids if value],
-            "fingerprint": fingerprint, "file_count": count,
+            "fingerprint": fingerprint, "legacy_fingerprint": legacy_fingerprint, "file_count": count,
             "leaf_count": len(files), "files": files,
         }
         self._inspect_cache[_share_identity(share_url)] = (time.time(), result)
