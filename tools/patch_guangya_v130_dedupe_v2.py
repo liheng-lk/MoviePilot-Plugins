@@ -58,7 +58,7 @@ src.write_text(text, encoding='utf-8')
 
 test_path = Path('tests/v3/guangyatransferassistant/test_plugin_contract.py')
 tests = test_path.read_text(encoding='utf-8')
-addition = r'''
+addition = r"""
 
 
 def test_same_share_in_new_message_is_kept_as_new_entry():
@@ -80,7 +80,7 @@ def test_media_library_sync_runs_even_before_channel_match():
     assert sync_pos < no_match_pos
     assert '_entry_process_key(item) or _share_identity' in text
     assert '当前抓取' in text and '回退缓存' in text
-'''
+"""
 if 'test_same_share_in_new_message_is_kept_as_new_entry' not in tests:
     tests += addition
 
