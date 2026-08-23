@@ -107,6 +107,62 @@ def _html_to_text(fragment: str) -> str:
     return "\n".join(line for line in lines if line)
 
 
+_CHANNEL_META_BOUNDARY = re.compile(
+    r"(?=\s*(?:🎭|⭐|🖥|📺|📼|📦|👤|🔗|📝|类型\s*[：:]|TMDB(?:\s*ID)?\s*[：:#]|"
+    r"TMDB评分\s*[：:]|画质\s*[：:]|质量\s*[：:]|集数\s*[：:]|大小\s*[：:]|分享\s*[：:]|简介\s*[：:]|$))",
+    re.I,
+)
+
+
+def _clean_channel_display_title(value: Any) -> str:
+    """清理频道标题末尾年份/更新状态，但保留完整中英日韩标题。"""
+    title = html.unescape(str(value or "")).strip()
+    title = re.sub(r"^[\s🎬🎞🎥📺]+", "", title).strip()
+    title = re.sub(r"\s+", " ", title)
+    # 新热更模板常见：标题 (2026) 已更新 / 标题（2026）完结。
+    title = re.sub(
+        r"\s*[（(]\s*(?:19\d{2}|20\d{2})\s*[）)]\s*(?:已?更新|更新中|已?完结|完结|全集|全季)?\s*$",
+        "",
+        title,
+        flags=re.I,
+    ).strip()
+    title = re.sub(r"\s*(?:已?更新|更新中|已?完结|完结)\s*$", "", title, flags=re.I).strip()
+    return title[:300]
+
+
+def _extract_channel_display_title(text: Any) -> str:
+    """兼容“名称：xxx”和“🎬 xxx (2026) 已更新”两类频道标题模板。"""
+    raw = str(text or "")
+    # 传统字段格式。允许标题后同一行继续跟元数据 emoji。
+    labelled = re.search(r"(?im)(?:^|\n)\s*(?:名称|片名|剧名|标题)\s*[：:]\s*([^\n]{2,320})", raw)
+    if labelled:
+        candidate = _CHANNEL_META_BOUNDARY.split(labelled.group(1), maxsplit=1)[0]
+        cleaned = _clean_channel_display_title(candidate)
+        if cleaned:
+            return cleaned
+
+    # 新版影视热更频道：频道名可能与 🎬 标题处于同一文本行。
+    emoji = re.search(r"🎬\s*([^\n]{2,360})", raw)
+    if emoji:
+        candidate = _CHANNEL_META_BOUNDARY.split(emoji.group(1), maxsplit=1)[0]
+        cleaned = _clean_channel_display_title(candidate)
+        if cleaned:
+            return cleaned
+
+    # 保守兜底：只接受带年份、且不是明显元数据字段的独立行，避免把分享文件名误当标题。
+    for line in raw.splitlines():
+        line = re.sub(r"\s+", " ", line).strip()
+        if not line or re.match(r"^(?:类型|TMDB|画质|质量|集数|大小|分享|简介)\s*[：:]", line, re.I):
+            continue
+        if not re.search(r"[（(](?:19\d{2}|20\d{2})[）)]", line):
+            continue
+        candidate = _CHANNEL_META_BOUNDARY.split(line, maxsplit=1)[0]
+        cleaned = _clean_channel_display_title(candidate)
+        if cleaned and "光鸭云盘影视热更频道" not in cleaned:
+            return cleaned
+    return ""
+
+
 def _message_context_html(page_text: str, position: int) -> str:
     """优先按 Telegram data-post 消息边界取上下文，失败才回退固定窗口。"""
     decoded = str(page_text or "")
@@ -153,8 +209,7 @@ def _entry_metadata(context_text: str, context_html: str = "") -> Dict[str, Any]
     """提取频道消息中的标题、TMDB、集数提示和消息 ID。"""
     text = str(context_text or "")
     tmdb_match = TMDB_PATTERN.search(text)
-    name_match = re.search(r"(?im)(?:^|\n)\s*(?:名称|片名|剧名)\s*[：:]\s*([^\n]{2,180})", text)
-    display_title = name_match.group(1).strip() if name_match else ""
+    display_title = _extract_channel_display_title(text)
     episode_hint = ""
     for pattern in (
         r"第\s*\d{1,3}\s*[-~—至]\s*\d{1,3}\s*集",
@@ -167,7 +222,7 @@ def _entry_metadata(context_text: str, context_html: str = "") -> Dict[str, Any]
             episode_hint = matched.group(0)
             break
     total_match = TOTAL_EPISODE_PATTERN.search(text)
-    year_match = re.search(r"\b(19\d{2}|20\d{2})\b", display_title or text)
+    year_match = re.search(r"\b(19\d{2}|20\d{2})\b", text)
     post_match = re.search(r"(?i)\bdata-post\s*=\s*[\"'][^\"']+/(\d+)[\"']", context_html or "")
     return {
         "tmdb_id": tmdb_match.group(1) if tmdb_match else "",
@@ -319,7 +374,9 @@ def _entry_matches_subscription(
     if comparable_tmdb:
         return True
 
-    haystack = _normalize_media_text("\n".join(filter(None, [str(entry.get("display_title") or ""), text_value])))
+    parsed_title = str(entry.get("display_title") or "").strip()
+    # 已成功解析频道标题时，只用标题做标题匹配；避免字幕/文件列表中的其它片名造成误命中。
+    haystack = _normalize_media_text(parsed_title if parsed_title else text_value)
     if not haystack:
         return False
     raw_name = str(name or "").strip()
@@ -331,7 +388,8 @@ def _entry_matches_subscription(
     if not candidates or not any(value in haystack for value in candidates):
         return False
     if year:
-        years = {int(value) for value in re.findall(r"\b(19\d{2}|20\d{2})\b", str(entry.get("display_title") or "") or text_value)}
+        hinted_year = entry.get("year_hint")
+        years = {int(hinted_year)} if hinted_year else {int(value) for value in re.findall(r"\b(19\d{2}|20\d{2})\b", text_value)}
         if years and int(year) not in years:
             return False
     return True
@@ -628,7 +686,7 @@ class GuangYaTransferAssistant(_PluginBase):
     plugin_name = "光鸭转存助手"
     plugin_desc = "订阅固定分流：手动勾选的订阅只使用光鸭频道转存，未勾选订阅只使用 MoviePilot 原生下载。"
     plugin_icon = "Guangyadisk_A.png"
-    plugin_version = "1.6.1"
+    plugin_version = "1.6.2"
     plugin_author = "liheng-lk"
     plugin_label = "光鸭云盘,转存,订阅,Telegram,网盘,固定分流"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -1205,7 +1263,7 @@ class GuangYaTransferAssistant(_PluginBase):
                     matched.append(f"{getattr(sub, 'name', '')}#{int(getattr(sub, 'id', 0) or 0)}({reason})")
             display = str(entry.get("display_title") or "").strip() or str(entry.get("source_label") or "频道资源")
             snippet = re.sub(r"https?://\S+", "", str(entry.get("text") or ""))
-            snippet = re.sub(r"\s+", " ", snippet).strip()[:160]
+            snippet = re.sub(r"\s+", " ", snippet).strip()[:420]
             meta = [str(entry.get("link_style") or "未知链接")]
             if entry.get("tmdb_id"):
                 meta.append(f"TMDB {entry.get('tmdb_id')}")

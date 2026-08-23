@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "固定转存订阅：S00 媒体库同步、统一人工防重门禁、状态变更 POST 接口，并保留任务审计/在途预留/日报及完整可靠性闭环。",
-  "version": "1.6.1",
+  "description": "固定转存订阅：修复影视热更频道 🎬 标题解析、完整多语言标题匹配与资源详情截断，并保留 S00/防重/任务审计完整闭环。",
+  "version": "1.6.2",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
