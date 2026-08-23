@@ -1,9 +1,9 @@
-name: Temporary GuangYa v1.6.0 Executor
+name: Temporary GuangYa v1.6.0 Inflight Fix
 on:
   pull_request:
     branches: [main]
     paths:
-      - '.guangya-v160-trigger'
+      - '.guangya-v160-inflight-trigger'
 permissions:
   contents: write
 jobs:
@@ -16,10 +16,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Apply operations patch
-        run: |
-          python tools/patch_guangya_v160.py
-          python tools/fix_guangya_v160_tests.py
+      - name: Apply in-flight reservation safety
+        run: python tools/fix_guangya_v160_inflight.py
       - name: Validate generated plugin
         run: |
           python -m py_compile plugins.v3/guangyatransferassistant/__init__.py
@@ -38,7 +36,7 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git rm -f .guangya-v160-trigger tools/patch_guangya_v160.py tools/fix_guangya_v160_tests.py
-          git add package.v3.json plugins.v3/guangyatransferassistant/__init__.py plugins.v3/guangyatransferassistant/plugin.json tests/v3/guangyatransferassistant/test_plugin_contract.py
-          git commit -m 'feat: improve GuangYa operations and audit v1.6.0'
+          git rm -f .guangya-v160-inflight-trigger tools/fix_guangya_v160_inflight.py
+          git add plugins.v3/guangyatransferassistant/__init__.py tests/v3/guangyatransferassistant/test_plugin_contract.py
+          git commit -m 'fix: reserve in-flight GuangYa episodes across messages'
           git push origin HEAD:feat/guangya-operations-v1.6.0
