@@ -1,34 +1,39 @@
-"""光鸭云盘助手插件入口。
+"""光鸭云盘助手 MoviePilot V3 插件入口。
 
-认证逻辑沿用已验证实现；存储名称统一为“光鸭云盘助手”，并提供可选上传进度监控。
-同时在入口层统一 legacy 模块日志前缀，避免旧名称混杂。
+V3 版本保留已验证的光鸭认证、存储和上传实现，只在宿主边界使用 V3 稳定 SDK、
+明确 API 响应模型，并补齐可重复的生命周期清理。
 """
 
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.db.systemconfig_oper import SystemConfigOper
-from app.helper.storage import StorageHelper
-from app.log import logger
-from app.schemas.types import SystemConfigKey
+from app.sdk.logging import logger
+from app.sdk.services import StorageHelper
 
 from . import _plugin_legacy as _legacy_module
 from .guangya_api_v112 import GuangYaApi as _StableGuangYaApi
 from .guangya_client import GuangYaClient
+from .models import (
+    GuangYaActionResponse,
+    GuangYaBrowseResponse,
+    GuangYaConfigData,
+    GuangYaConfigSaveResponse,
+)
 
-# legacy 插件在 init_plugin() 运行时从模块全局读取 GuangYaApi。
-# 在不改动已验证上传实现的前提下，把实例化类替换为 v1.1.2 稳定性适配层。
+# legacy 主体在 init_plugin() 运行时从模块全局读取 GuangYaApi。
+# V3 继续替换为已经实机验证的 v1.1.2 稳定上传适配层，避免重写上传主链。
 _legacy_module.GuangYaApi = _StableGuangYaApi
 _LegacyPlugin = _legacy_module.ShukGuangYaDisk
 
 
 class ShukGuangYaDisk(_LegacyPlugin):
-    """光鸭云盘助手。"""
+    """光鸭云盘助手 MoviePilot V3 专用实现。"""
 
     plugin_name = "光鸭云盘助手"
-    plugin_desc = "MoviePilot 光鸭云盘存储助手，支持扫码/短信登录、目录浏览、整理上传、下载、移动、复制和 Emby 直连。"
-    plugin_version = "1.1.2"
+    plugin_desc = "MoviePilot V3 光鸭云盘存储助手，支持扫码/短信登录、目录浏览、整理上传、上传进度监控、下载、移动、复制、WebDAV 和 Emby 直连。"
+    plugin_version = "3.0.0"
     plugin_author = "liheng-lk"
+    plugin_label = "存储,光鸭云盘,网盘,挂载,Emby,WebDAV"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
 
     _disk_name = "光鸭云盘助手"
@@ -40,34 +45,21 @@ class ShukGuangYaDisk(_LegacyPlugin):
     _sms_captcha_token: str = ""
 
     def _migrate_storage_name(self) -> None:
-        """将旧存储名称迁移为当前插件名称，并清理重复项。"""
+        """V3 通过稳定 StorageHelper 确保当前存储已注册，不直接写宿主配置表。"""
         try:
-            storages = StorageHelper().get_storagies()
-            if not storages:
-                return
-            changed = False
-            new_exists = any(s.type == self._disk_name for s in storages)
-            migrated = []
-            for storage in storages:
-                if storage.type == self._legacy_disk_name:
-                    changed = True
-                    if new_exists:
-                        continue
-                    storage.type = self._disk_name
-                    storage.name = self._disk_name
-                    new_exists = True
-                elif storage.type == self._disk_name and storage.name != self._disk_name:
-                    storage.name = self._disk_name
-                    changed = True
-                migrated.append(storage)
-            if changed:
-                SystemConfigOper().set(
-                    SystemConfigKey.Storages,
-                    [item.model_dump() for item in migrated],
+            storage_helper = StorageHelper()
+            storages = storage_helper.get_storagies() or []
+            if not any(storage.type == self._disk_name for storage in storages):
+                storage_helper.add_storage(
+                    storage=self._disk_name,
+                    name=self._disk_name,
+                    conf={},
                 )
-                logger.info("【光鸭云盘助手】MoviePilot 存储名称已迁移为: %s", self._disk_name)
+                logger.info("【光鸭云盘助手】MoviePilot V3 已注册存储: %s", self._disk_name)
+            if any(storage.type == self._legacy_disk_name for storage in storages):
+                logger.info("【光鸭云盘助手】检测到历史存储名称 %s；V3 使用当前存储 %s，不直接修改宿主内部配置", self._legacy_disk_name, self._disk_name)
         except Exception as err:
-            logger.warning("【光鸭云盘助手】迁移存储名称失败: %s", err)
+            logger.warning("【光鸭云盘助手】V3 存储注册检查失败: %s", err)
 
     def init_plugin(self, config: dict = None) -> None:
         """初始化插件，并把上传日志开关同步到存储适配器。"""
@@ -103,9 +95,7 @@ class ShukGuangYaDisk(_LegacyPlugin):
         data["remote_status_available"] = True
         data["remote_status_message"] = ""
 
-        # legacy 配置读取会在用户信息/空间接口异常时将 logged_in 置 False。
-        # 对 DNS、超时等临时网络问题不应把有效 Token 误显示为掉登录；
-        # 只有 refresh_token 已明确判定失效时才保持未登录状态。
+        # 只有 refresh_token 已被明确判定无效时才展示掉登录；DNS/超时不清本地会话。
         if self._access_token and not data.get("logged_in"):
             refresh_invalid = bool(
                 self._client
@@ -149,8 +139,22 @@ class ShukGuangYaDisk(_LegacyPlugin):
             return {"success": False, "message": f"保存配置失败: {err}"}
 
     def get_api(self) -> List[Dict[str, Any]]:
-        """返回插件 API。"""
+        """返回 V3 插件 API，并为普通 JSON 端点声明明确响应模型。"""
         apis = list(super().get_api())
+
+        for api in apis:
+            path = str(api.get("path") or "")
+            methods = {str(method).upper() for method in (api.get("methods") or [])}
+            if path == "/config" and methods == {"GET"}:
+                api["response_model"] = GuangYaConfigData
+            elif path == "/config" and methods == {"POST"}:
+                api["response_model"] = GuangYaConfigSaveResponse
+            elif path in {"/login/qrcode", "/login/poll", "/login/logout"}:
+                api["response_model"] = GuangYaActionResponse
+            elif path == "/browse":
+                api["response_model"] = GuangYaBrowseResponse
+            # /stream 与 /webdav 是文件/标准协议原生响应，不能套 JSON response_model。
+
         apis.extend([
             {
                 "path": "/login/sms/send",
@@ -158,6 +162,7 @@ class ShukGuangYaDisk(_LegacyPlugin):
                 "auth": "bear",
                 "methods": ["POST"],
                 "summary": "发送光鸭云盘短信验证码",
+                "response_model": GuangYaActionResponse,
             },
             {
                 "path": "/login/sms/verify",
@@ -165,6 +170,7 @@ class ShukGuangYaDisk(_LegacyPlugin):
                 "auth": "bear",
                 "methods": ["POST"],
                 "summary": "校验短信验证码并完成光鸭云盘登录",
+                "response_model": GuangYaActionResponse,
             },
         ])
         return apis
@@ -295,6 +301,19 @@ class ShukGuangYaDisk(_LegacyPlugin):
             "has_access_token": bool(self._access_token),
             "has_refresh_token": bool(self._refresh_token),
         }
+
+    def stop_service(self) -> None:
+        """释放运行时客户端和临时登录状态；不修改用户持久化配置。"""
+        self._device_code = ""
+        self._user_code = ""
+        self._verification_uri = ""
+        self._qr_expires_at = 0
+        self._sms_verification_id = ""
+        self._sms_phone_number = ""
+        self._sms_captcha_token = ""
+        self._guangya_api = None
+        self._client = None
+        self._enabled = False
 
 
 __all__ = ["ShukGuangYaDisk"]
