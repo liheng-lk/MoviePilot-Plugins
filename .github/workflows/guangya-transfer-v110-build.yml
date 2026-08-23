@@ -1,6 +1,7 @@
 name: GuangYa Transfer v1.1.0 Build
 
 on:
+  pull_request:
   push:
     branches:
       - fix/guangya-transfer-auto-incremental-v1.1.0
