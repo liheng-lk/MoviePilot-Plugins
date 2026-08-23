@@ -1,0 +1,42 @@
+name: Temporary GuangYa v1.6.2 Title Parser Executor
+on:
+  push:
+    branches: [fix/guangya-title-parser-v1.6.2]
+    paths:
+      - '.guangya-v162-trigger'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/guangya-title-parser-v1.6.2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply title parser patch
+        run: python tools/patch_guangya_v162.py
+      - name: Validate generated plugin
+        run: |
+          python -m py_compile plugins.v3/guangyatransferassistant/__init__.py
+          python - <<'PY'
+          import runpy
+          ns = runpy.run_path('tests/v3/guangyatransferassistant/test_plugin_contract.py')
+          tests = [(name, fn) for name, fn in ns.items() if name.startswith('test_') and callable(fn)]
+          for name, fn in tests:
+              fn()
+              print(f'PASS {name}')
+          print(f'{len(tests)} GuangYa contract tests passed')
+          PY
+          python -m json.tool package.v3.json >/dev/null
+          python -m json.tool plugins.v3/guangyatransferassistant/plugin.json >/dev/null
+      - name: Commit formal files
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm -f .guangya-v162-trigger tools/patch_guangya_v162.py .github/workflows/_guangya_v162_executor.yml
+          git add package.v3.json plugins.v3/guangyatransferassistant/__init__.py plugins.v3/guangyatransferassistant/plugin.json tests/v3/guangyatransferassistant/test_plugin_contract.py
+          git commit -m 'fix: improve GuangYa channel title parsing v1.6.2'
+          git push origin HEAD:fix/guangya-title-parser-v1.6.2
