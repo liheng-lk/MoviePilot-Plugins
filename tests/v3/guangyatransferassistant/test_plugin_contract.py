@@ -94,8 +94,8 @@ def test_pagination_episode_and_path_safety():
 def test_version_and_safety_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.4.0" and local["version"] == "1.4.0"
-    assert 'plugin_version = "1.4.0"' in text
+    assert package["version"] == "1.5.0" and local["version"] == "1.5.0"
+    assert 'plugin_version = "1.5.0"' in text
     for token in (
         "隐藏按钮", "包装按钮", "_extract_pagination_urls", "tmdb_id", "TMDB精确",
         "strict_subscription_rules", "best_version", "filter_groups", "state not in (\"N\", \"R\")",
@@ -263,7 +263,7 @@ def test_v140_reliability_contracts():
         'data_schema_version = 4',
     ):
         assert token in text, token
-    assert 'plugin_version = "1.4.0"' in text
+    assert 'plugin_version = "1.5.0"' in text
     assert '本轮新增' in text and '保留索引' in text and '故障回退' in text
 
 
@@ -354,3 +354,67 @@ def test_visibility_timeout_remains_pending_until_manual_force():
     assert 'force' in flow
     restore = text.split('    def _restore_items(', 1)[1].split('    def _restore_share(', 1)[0]
     assert '"pending_verification": True' in restore
+
+
+
+def test_v150_version_and_console_contracts():
+    package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
+    local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
+    assert package["version"] == "1.5.0" and local["version"] == "1.5.0"
+    assert 'plugin_version = "1.5.0"' in text
+    assert '_subscription_console_snapshot' in text
+    assert '等待落盘确认' in text and '当前已齐 · 连载保护中' in text
+    assert '复查待落盘' in text and '重置检查状态' in text
+    assert '/recheck_pending' in text and '/reset_state' in text
+    assert '媒体事实' in text and '已处理消息' in text and '最近频道消息' in text
+
+
+def test_alias_matching_never_overrides_tmdb_conflict():
+    class Sub:
+        name = '中文主标题'
+        original_title = 'Library Sheep'
+        year = 2026
+        season = 1
+        media_source = 'themoviedb'
+        media_id = '12345'
+    sub = Sub()
+    alias_entry = {
+        'text': '名称：Library Sheep (2026) S01',
+        'display_title': 'Library Sheep (2026)',
+        'tmdb_id': '',
+    }
+    assert ns['_entry_match_reason'](alias_entry, sub) == (True, '别名匹配')
+    conflict = dict(alias_entry, tmdb_id='99999')
+    assert ns['_entry_match_reason'](conflict, sub) == (False, '')
+    assert 'SequenceMatcher' not in text and 'rapidfuzz' not in text
+
+
+def test_extended_episode_parser_contracts():
+    parser = ns['_episode_numbers']
+    assert parser('Show.S01.EP.08.2160p.mkv') == (1, [8])
+    assert parser('Show.1x09.WEB-DL.mkv') == (1, [9])
+    assert parser('Show.S01E10E11E12.mkv') == (1, [10, 11, 12])
+    assert parser('动画 第13-15话.mp4')[1] == [13, 14, 15]
+
+
+def test_single_subscription_reset_is_safe():
+    block = text.split('    def _reset_subscription_check_state(', 1)[1].split('    def get_page(', 1)[0]
+    assert 'submitted' in block and 'task_confirmed' in block and 'verifying' in block
+    assert '请先复查待落盘状态' in block
+    assert 'processed_entries' in block and 'failure_notices' in block
+    assert 'media_facts' not in block.replace('媒体事实/库存/进度均保留', '')
+    assert 'transfer_inventory' not in block
+    assert '媒体事实/库存/进度均保留' in block
+
+
+def test_pending_recheck_does_not_force_replay():
+    block = text.split('    def api_recheck_pending(', 1)[1].split('    def api_reset_state(', 1)[0]
+    assert '_try_transfer_subscription(subscribe, force=False)' in block
+    assert 'force=True' not in block
+
+
+def test_failure_notice_fingerprint_ignores_dynamic_ids():
+    fp = ns['_failure_notice_fingerprint']
+    left = fp('share_id=AbCdEf123 task_id=ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890 网络错误')
+    right = fp('share_id=Other999 task_id=ZZZZZZZZZZZZZZZZZZZZZZZZZZZZ 网络错误')
+    assert left == right

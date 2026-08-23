@@ -335,23 +335,78 @@ def _entry_matches_subscription(
     return True
 
 
+def _subscription_aliases(subscribe: Any) -> List[str]:
+    """收集 MoviePilot 订阅上可用的安全别名；只做规范化标题匹配，不做编辑距离模糊匹配。"""
+    values: List[str] = []
+    for field in (
+        "name", "title", "original_name", "original_title", "en_name", "cn_name",
+        "media_name", "aka", "aliases", "alias",
+    ):
+        raw = getattr(subscribe, field, None)
+        if raw in (None, ""):
+            continue
+        if isinstance(raw, dict):
+            candidates = list(raw.values())
+        elif isinstance(raw, (list, tuple, set)):
+            candidates = list(raw)
+        else:
+            candidates = [raw]
+        for candidate in candidates:
+            candidate = str(candidate or "").strip()
+            if not candidate:
+                continue
+            values.append(candidate)
+            # 仅拆明确的别名分隔符，避免把标题中的普通 / 误切。
+            if "|" in candidate or "／" in candidate:
+                values.extend(part.strip() for part in re.split(r"[|／]", candidate) if part.strip())
+    result: List[str] = []
+    seen = set()
+    for value in values:
+        normalized = _normalize_media_text(value)
+        if len(normalized) < 2 or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(value)
+    return result
+
+
 def _entry_match_reason(entry: Dict[str, Any], subscribe: Any) -> Tuple[bool, str]:
     source = str(getattr(subscribe, "media_source", "") or "").lower()
     media_id = str(getattr(subscribe, "media_id", "") or "")
     entry_tmdb = str(entry.get("tmdb_id") or "")
+    primary_name = getattr(subscribe, "name", "")
     matched = _entry_matches_subscription(
         entry,
-        getattr(subscribe, "name", ""),
+        primary_name,
         getattr(subscribe, "year", None),
         getattr(subscribe, "season", None),
         source,
         media_id,
     )
-    if not matched:
+    if matched:
+        if entry_tmdb and media_id and ("tmdb" in source or "themoviedb" in source) and entry_tmdb == media_id:
+            return True, "TMDB精确"
+        return True, "标题/年份/季匹配"
+
+    # 如果频道和订阅都有可比较 TMDB 且不一致，绝不允许别名绕过身份冲突。
+    if entry_tmdb and media_id and ("tmdb" in source or "themoviedb" in source):
         return False, ""
-    if entry_tmdb and media_id and ("tmdb" in source or "themoviedb" in source) and entry_tmdb == media_id:
-        return True, "TMDB精确"
-    return True, "标题/年份/季匹配"
+
+    primary_norm = _normalize_media_text(primary_name)
+    for alias in _subscription_aliases(subscribe):
+        alias_norm = _normalize_media_text(alias)
+        if alias_norm == primary_norm or len(alias_norm) < 3:
+            continue
+        if _entry_matches_subscription(
+            entry,
+            alias,
+            getattr(subscribe, "year", None),
+            getattr(subscribe, "season", None),
+            source,
+            media_id,
+        ):
+            return True, "别名匹配"
+    return False, ""
 
 
 def _safe_rule_match(pattern: Any, value: str) -> bool:
@@ -366,44 +421,56 @@ def _safe_rule_match(pattern: Any, value: str) -> bool:
 
 
 def _episode_numbers(path: Any) -> Tuple[Optional[int], List[int]]:
-    """从 S01E23、S01E23-E25、E23-E25、E23E24、中文第23-25集提取季和集。"""
+    """解析常见季集写法：S01E02、S01.EP.02、1x02、E02-E04、E02E03、第2-4集/话。"""
     value = str(path or "")
-    season = None
+    season: Optional[int] = None
     episodes = set()
 
-    # S01E23-E25 / S01E23E24 先处理，避免 E 前面是数字时被通用边界规则漏掉。
-    season_block = re.search(r"(?i)S(?:eason)?\s*0*(\d{1,2})\s*E(?:P)?\s*0*(\d{1,3})(?:\s*[-~—至]\s*E?(?:P)?\s*0*(\d{1,3}))?", value)
+    # S01E23-E25 / S01.EP.23 / Season 01 EP 23。
+    season_block = re.search(
+        r"(?i)S(?:eason)?[\s._-]*0*(\d{1,2})[\s._-]*E(?:P)?[\s._-]*0*(\d{1,4})"
+        r"(?:[\s._]*(?:-|~|—|至)[\s._]*E?(?:P)?[\s._-]*0*(\d{1,4}))?",
+        value,
+    )
     if season_block:
         season = int(season_block.group(1))
         start = int(season_block.group(2))
         end = int(season_block.group(3)) if season_block.group(3) else start
-        if end >= start and end - start <= 200:
+        if end >= start and end - start <= 300:
             episodes.update(range(start, end + 1))
-        # 同一个 season token 后续可能是 E23E24E25。
-        suffix = value[season_block.start():]
-        for ep in re.findall(r"(?i)E(?:P)?\s*0*(\d{1,3})", suffix):
-            episodes.add(int(ep))
     else:
-        season_match = re.search(r"(?i)(?:^|[^A-Za-z0-9])S(?:eason)?\s*0*(\d{1,2})(?=[^0-9]|$)", value)
+        season_match = re.search(r"(?i)(?:^|[^A-Za-z0-9])S(?:eason)?[\s._-]*0*(\d{1,2})(?=[^0-9]|$)", value)
         if season_match:
             season = int(season_match.group(1))
 
-    # 独立 E23 / E23-E25。
-    for matched in re.finditer(r"(?i)(?:^|[^A-Za-z0-9])E(?:P)?\s*0*(\d{1,3})(?:\s*[-~—至]\s*E?(?:P)?\s*0*(\d{1,3}))?", value):
-        start = int(matched.group(1))
-        end = int(matched.group(2)) if matched.group(2) else start
-        if end >= start and end - start <= 200:
-            episodes.update(range(start, end + 1))
+    # 1x02 / 01x002。
+    x_match = re.search(r"(?i)(?:^|[^0-9])0*(\d{1,2})x0*(\d{1,4})(?=[^0-9]|$)", value)
+    if x_match:
+        if season is None:
+            season = int(x_match.group(1))
+        episodes.add(int(x_match.group(2)))
 
-    # 中文 第23-25集 / 第23至25集。
-    for matched in re.finditer(r"第\s*(\d{1,3})(?:\s*[-~—至]\s*(\d{1,3}))?\s*集", value):
+    # E02 / EP02 / EP.02 / E02-E04。全局扫描还能覆盖 E01E02 连写。
+    range_pattern = re.compile(
+        r"(?i)(?:^|[^A-Za-z])E(?:P)?[\s._-]*0*(\d{1,4})"
+        r"(?:[\s._]*(?:-|~|—|至)[\s._]*E?(?:P)?[\s._-]*0*(\d{1,4}))?"
+    )
+    for matched in range_pattern.finditer(value):
         start = int(matched.group(1))
         end = int(matched.group(2)) if matched.group(2) else start
-        if end >= start and end - start <= 200:
+        if end >= start and end - start <= 300:
+            episodes.update(range(start, end + 1))
+    for ep in re.findall(r"(?i)E(?:P)?[\s._-]*0*(\d{1,4})", value):
+        episodes.add(int(ep))
+
+    # 中文 第23-25集 / 第23至25话。
+    for matched in re.finditer(r"第\s*(\d{1,4})(?:\s*[-~—至]\s*(\d{1,4}))?\s*[集话]", value):
+        start = int(matched.group(1))
+        end = int(matched.group(2)) if matched.group(2) else start
+        if end >= start and end - start <= 300:
             episodes.update(range(start, end + 1))
 
     return season, sorted(ep for ep in episodes if ep > 0)
-
 
 
 def _entry_serial_state(entry: Dict[str, Any]) -> Dict[str, Any]:
@@ -530,13 +597,23 @@ def _asset_identity(relative_path: str, size: Any = 0, digest: Any = "") -> str:
     return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
 
+def _failure_notice_fingerprint(message: Any) -> str:
+    """把动态 share/task/token 等噪声归一化，稳定识别同一类失败。"""
+    value = str(message or "").lower()
+    value = re.sub(r"share[_ -]?id\s*[=:：]\s*[a-z0-9_-]+", "share_id=*", value, flags=re.I)
+    value = re.sub(r"task[_ -]?id\s*[=:：]\s*[a-z0-9_-]+", "task_id=*", value, flags=re.I)
+    value = re.sub(r"\b[a-z0-9_-]{20,}\b", "*", value, flags=re.I)
+    value = re.sub(r"\s+", " ", value).strip()[:1000]
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
 class GuangYaTransferAssistant(_PluginBase):
     """对用户勾选的订阅固定走光鸭转存，未勾选固定走 MoviePilot 原生下载。"""
 
     plugin_name = "光鸭转存助手"
     plugin_desc = "订阅固定分流：手动勾选的订阅只使用光鸭频道转存，未勾选订阅只使用 MoviePilot 原生下载。"
     plugin_icon = "Guangyadisk_A.png"
-    plugin_version = "1.4.0"
+    plugin_version = "1.5.0"
     plugin_author = "liheng-lk"
     plugin_label = "光鸭云盘,转存,订阅,Telegram,网盘,固定分流"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -689,6 +766,123 @@ class GuangYaTransferAssistant(_PluginBase):
             "clear_inventory": False,
         }
 
+    def _subscription_console_snapshot(self, subscribe: Any, entries: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        """汇总一个固定转存订阅的运行状态，供详情页直接诊断。"""
+        sid = int(getattr(subscribe, "id", 0) or 0)
+        prefix = self._media_fact_prefix(subscribe)
+        state = str(getattr(subscribe, "state", "") or "")
+        done, total, lack = self._subscription_episode_progress(subscribe)
+        missing = self._subscription_missing_episodes(subscribe)
+        channel_state = self._channel_state_for_subscription(subscribe, entries or [])
+
+        jobs = [row for row in (self.get_data("transfer_jobs") or {}).values()
+                if isinstance(row, dict) and str(row.get("media") or "") == prefix]
+        jobs.sort(key=lambda row: str(row.get("updated") or ""), reverse=True)
+        pending_status = {"submitted", "task_confirmed", "verifying"}
+        pending_jobs = [row for row in jobs if str(row.get("status") or "") in pending_status]
+        failed_jobs = [row for row in jobs if str(row.get("status") or "") == "failed"]
+
+        processed_count = sum(
+            1 for row in (self.get_data("processed_entries") or {}).values()
+            if isinstance(row, dict) and str(row.get("media") or "") == prefix
+        )
+        facts = self.get_data("media_facts") or {}
+        fact_count = sum(1 for key in facts.keys() if str(key) == prefix or str(key).startswith(prefix + ":e"))
+
+        matched_entries = []
+        for entry in entries or []:
+            if entry.get("stale"):
+                continue
+            matched, _ = _entry_match_reason(entry, subscribe)
+            if matched:
+                matched_entries.append(entry)
+        numeric_ids = [int(item.get("message_id")) for item in matched_entries if str(item.get("message_id") or "").isdigit()]
+        last_message = str(max(numeric_ids)) if numeric_ids else "-"
+
+        latest_job = jobs[0] if jobs else {}
+        latest_status = str(latest_job.get("status") or "")
+        latest_event = str(latest_job.get("updated") or "-")
+        alert_type = "info"
+        label = "等待新消息"
+        if state not in ("N", "R"):
+            label = f"非活跃订阅（{state or '-'}）"
+            alert_type = "warning"
+        elif pending_jobs:
+            label = f"等待落盘确认（{len(pending_jobs)} 个任务）"
+            alert_type = "warning"
+        elif latest_status == "failed" and failed_jobs:
+            label = "最近转存失败，等待新消息/重试"
+            alert_type = "error"
+        elif total and lack > 0 and channel_state.get("ongoing"):
+            label = f"连载中 · 缺 {lack} 集"
+            alert_type = "info"
+        elif total and lack > 0:
+            label = f"缺集 · 剩余 {lack} 集"
+            alert_type = "warning"
+        elif total and lack == 0 and channel_state.get("ongoing") and not channel_state.get("complete"):
+            label = "当前已齐 · 连载保护中"
+            alert_type = "success"
+        elif total and lack == 0:
+            label = "目标已齐 · 等待完成确认"
+            alert_type = "success"
+        elif latest_status in ("synced", "verified"):
+            label = "已同步 · 等待新消息"
+            alert_type = "success"
+
+        return {
+            "label": label, "alert_type": alert_type,
+            "pending_jobs": len(pending_jobs), "failed_jobs": len(failed_jobs),
+            "processed_count": processed_count, "fact_count": fact_count,
+            "last_message": last_message, "latest_event": latest_event,
+            "done": done, "total": total, "lack": lack, "missing": missing,
+            "channel_state": channel_state,
+        }
+
+    def _reset_subscription_check_state(self, subscribe: Any) -> Dict[str, Any]:
+        """只重置消息检查/失败记录，保留媒体事实、文件库存和已完成集，避免重置导致重复转存。"""
+        sid = int(getattr(subscribe, "id", 0) or 0)
+        prefix = self._media_fact_prefix(subscribe)
+        jobs = self.get_data("transfer_jobs") or {}
+        pending = [key for key, row in jobs.items()
+                   if isinstance(row, dict) and str(row.get("media") or "") == prefix
+                   and str(row.get("status") or "") in {"submitted", "task_confirmed", "verifying"}]
+        if pending:
+            return {"success": False, "message": f"仍有 {len(pending)} 个待落盘确认任务，请先复查待落盘状态"}
+
+        processed = self.get_data("processed_entries") or {}
+        removed_processed = 0
+        for key in list(processed.keys()):
+            row = processed.get(key) or {}
+            if isinstance(row, dict) and str(row.get("media") or "") == prefix:
+                processed.pop(key, None)
+                removed_processed += 1
+        self.save_data("processed_entries", processed)
+
+        removed_jobs = 0
+        for key in list(jobs.keys()):
+            row = jobs.get(key) or {}
+            if isinstance(row, dict) and str(row.get("media") or "") == prefix and str(row.get("status") or "") in {"failed", "synced", "verified"}:
+                jobs.pop(key, None)
+                removed_jobs += 1
+        self.save_data("transfer_jobs", jobs)
+
+        notices = self.get_data("failure_notices") or {}
+        removed_notices = 0
+        for key in list(notices.keys()):
+            if str(key).startswith(f"{sid}:"):
+                notices.pop(key, None)
+                removed_notices += 1
+        self.save_data("failure_notices", notices)
+        self._inspect_cache.clear()
+        logger.warning(
+            "【光鸭转存助手】【状态重置】#%s %s 已重置检查记录：消息=%s，结束任务=%s，失败通知=%s；媒体事实/库存/进度均保留",
+            sid, getattr(subscribe, "name", ""), removed_processed, removed_jobs, removed_notices,
+        )
+        return {
+            "success": True,
+            "message": f"已重置检查状态：消息 {removed_processed} 条、结束任务 {removed_jobs} 条；媒体事实/库存/订阅进度已保留",
+        }
+
     def get_page(self) -> Optional[List[dict]]:
         index = self.get_data("channel_index") or {}
         history = self.get_data("transfer_history") or {}
@@ -714,6 +908,7 @@ class GuangYaTransferAssistant(_PluginBase):
                 shown = ",".join(f"E{value:02d}" for value in missing[:20])
                 missing_text = f" · 缺失 {shown}" + (f" 等{len(missing)}集" if len(missing) > 20 else "")
             channel_state = self._channel_state_for_subscription(sub, index.get("items") or [])
+            runtime = self._subscription_console_snapshot(sub, index.get("items") or [])
             serial_text = ""
             if channel_state.get("explicit_total"):
                 serial_text += f" · 频道总集 {channel_state.get('explicit_total')}"
@@ -727,6 +922,19 @@ class GuangYaTransferAssistant(_PluginBase):
                 "text": "立即检查缺集",
                 "events": {"click": {"api": "plugin/GuangYaTransferAssistant/check_missing", "method": "get", "params": {"subscribe_id": sid, "token": settings.API_TOKEN}}},
             }]
+            if runtime.get("pending_jobs"):
+                actions.append({
+                    "component": "VBtn",
+                    "props": {"size": "small", "variant": "outlined", "color": "warning", "prepend-icon": "mdi-file-sync-outline"},
+                    "text": "复查待落盘",
+                    "events": {"click": {"api": "plugin/GuangYaTransferAssistant/recheck_pending", "method": "get", "params": {"subscribe_id": sid, "token": settings.API_TOKEN}}},
+                })
+            actions.append({
+                "component": "VBtn",
+                "props": {"size": "small", "variant": "text", "prepend-icon": "mdi-restart"},
+                "text": "重置检查状态",
+                "events": {"click": {"api": "plugin/GuangYaTransferAssistant/reset_state", "method": "get", "params": {"subscribe_id": sid, "token": settings.API_TOKEN}}},
+            })
             if lack > 0:
                 actions.append({
                     "component": "VBtn",
@@ -739,7 +947,8 @@ class GuangYaTransferAssistant(_PluginBase):
                 "props": {"variant": "tonal", "class": "h-100"},
                 "content": [
                     {"component": "VCardTitle", "text": f"{sub.name} ({getattr(sub, 'year', '') or '-'})"},
-                    {"component": "VCardText", "text": f"订阅ID {sid} · 状态 {state}{progress_text}{missing_text}{serial_text} · 去重资源 {asset_count} 个 · {state_text}"},
+                    {"component": "VAlert", "props": {"type": runtime.get("alert_type") or "info", "variant": "tonal", "density": "compact", "class": "mx-4 mb-2", "text": runtime.get("label") or "等待新消息"}},
+                    {"component": "VCardText", "text": f"订阅ID {sid} · 状态 {state}{progress_text}{missing_text}{serial_text} · 媒体事实 {runtime.get('fact_count') or 0} · 已处理消息 {runtime.get('processed_count') or 0} · 待落盘 {runtime.get('pending_jobs') or 0} · 最近频道消息 {runtime.get('last_message') or '-'} · 去重资源 {asset_count} 个 · {state_text}"},
                     {"component": "VCardActions", "content": actions},
                 ],
             })
@@ -819,6 +1028,8 @@ class GuangYaTransferAssistant(_PluginBase):
             {"path": "/folders", "endpoint": self.api_folders, "methods": ["GET"], "summary": "读取光鸭根目录文件夹"},
             {"path": "/check_missing", "endpoint": self.api_check_missing, "methods": ["GET"], "summary": "立即刷新并检查指定转存订阅缺集"},
             {"path": "/release_native", "endpoint": self.api_release_native, "methods": ["GET"], "summary": "将指定转存订阅切换回 MoviePilot 普通下载"},
+            {"path": "/recheck_pending", "endpoint": self.api_recheck_pending, "methods": ["GET"], "summary": "只复查指定订阅的待落盘任务，不自动重复提交"},
+            {"path": "/reset_state", "endpoint": self.api_reset_state, "methods": ["GET"], "summary": "安全重置指定订阅的频道检查状态，保留媒体事实/库存/进度"},
         ]
 
     def api_refresh(self) -> Dict[str, Any]:
@@ -854,6 +1065,31 @@ class GuangYaTransferAssistant(_PluginBase):
         missing = self._subscription_missing_episodes(self._find_subscription(sid) or subscribe)
         result["missing_episodes"] = missing
         return result
+
+    def api_recheck_pending(self, subscribe_id: int = 0) -> Dict[str, Any]:
+        """复查已经提交但尚未落盘确认的任务；force=False 保证不会绕过 v1.4 的防重复提交保护。"""
+        sid = int(subscribe_id or 0)
+        subscribe = self._find_subscription(sid)
+        if not sid or not subscribe:
+            return {"success": False, "message": "订阅不存在"}
+        if sid not in set(self._selected_subscriptions):
+            return {"success": False, "message": "该订阅当前不是光鸭固定转存路线"}
+        self._inspect_cache.clear()
+        result = self._try_transfer_subscription(subscribe, force=False)
+        result["console"] = self._subscription_console_snapshot(
+            self._find_subscription(sid) or subscribe,
+            (self.get_data("channel_index") or {}).get("items") or [],
+        )
+        return result
+
+    def api_reset_state(self, subscribe_id: int = 0) -> Dict[str, Any]:
+        sid = int(subscribe_id or 0)
+        subscribe = self._find_subscription(sid)
+        if not sid or not subscribe:
+            return {"success": False, "message": "订阅不存在"}
+        if sid not in set(self._selected_subscriptions):
+            return {"success": False, "message": "该订阅当前不是光鸭固定转存路线"}
+        return self._reset_subscription_check_state(subscribe)
 
     def api_release_native(self, subscribe_id: int = 0) -> Dict[str, Any]:
         """由用户明确操作后解除固定转存，后续交还 MoviePilot 原生订阅搜索。"""
@@ -1993,7 +2229,7 @@ class GuangYaTransferAssistant(_PluginBase):
         logger.warning("【光鸭转存助手】【失败】#%s %s 转存未完成：%s；固定转存路线不触发原生下载", sid, getattr(subscribe, "name", ""), final_message)
         if self._notify and matched_pairs:
             notices = self.get_data("failure_notices") or {}
-            notice_key = f"{sid}:{hashlib.sha256(final_message.encode('utf-8')).hexdigest()[:12]}"
+            notice_key = f"{sid}:{_failure_notice_fingerprint(final_message)}"
             last_notice = self._parse_datetime(notices.get(notice_key))
             now = datetime.datetime.now()
             if not last_notice or (now - last_notice).total_seconds() >= 6 * 3600:
