@@ -1,13 +1,12 @@
 name: Temporary GuangYa v1.6.3 Executor
 on:
-  push:
-    branches: [fix/guangya-transfer-diagnostics-v1.6.3]
-    paths:
-      - '.guangya-v163-trigger'
+  pull_request:
+    branches: [main]
 permissions:
   contents: write
 jobs:
   apply:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
