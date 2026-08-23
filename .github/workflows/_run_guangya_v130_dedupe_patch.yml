@@ -40,3 +40,4 @@ jobs:
           git add plugins.v3/guangyatransferassistant/__init__.py tests/v3/guangyatransferassistant/test_plugin_contract.py
           git commit -m 'fix: preserve new messages that reuse GuangYa share links'
           git push origin HEAD:feat/guangya-missing-episodes-airing-v1.3.0
+# retrigger
