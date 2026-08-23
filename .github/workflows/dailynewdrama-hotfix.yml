@@ -1,17 +1,17 @@
 name: DailyNewDrama V3 hotfix
 
 on:
-  push:
+  pull_request:
     branches:
-      - fix/dailynewdrama-library-notify-complete
-    paths:
-      - .github/workflows/dailynewdrama-hotfix.yml
+      - main
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
 
 jobs:
   patch:
+    if: github.head_ref == 'fix/dailynewdrama-library-notify-complete' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +36,7 @@ jobs:
           text = text.replace(old, '    plugin_version = "3.0.1"')
 
           marker = '''    return f"{air_date.isoformat()} · 已开播{-days}天"\n\n\nclass DailyNewDrama(_PluginBase):'''
-          helper = '''    return f"{air_date.isoformat()} · 已开播{-days}天"\n\n\ndef _media_library_has_content(mediainfo: MediaInfo, complete: bool, no_exists: Dict[str, Any]) -> bool:\n    """只要媒体库中已有该剧任意一季或任意一集，就视为已入库。\n\n    MoviePilot 的 get_no_exists_info() 对电视剧只有在全部季集完整时 complete 才为 True；\n    部分入库会以缺失季集结构返回。这里根据缺失结构反推“媒体库是否已有任何内容”，\n    避免正在追更、缺集或只入库部分季的剧集继续出现在每日推荐中。\n    """\n    if complete:\n        return True\n    if not no_exists:\n        return False\n\n    seasons = getattr(mediainfo, "seasons", None) or {}\n    expected_seasons = {int(season) for season, episodes in seasons.items() if episodes}\n    if not expected_seasons:\n        return False\n\n    missing_seasons = set()\n    for season_map in no_exists.values():\n        if not isinstance(season_map, dict):\n            continue\n        for season, detail in season_map.items():\n            try:\n                missing_seasons.add(int(season))\n            except (TypeError, ValueError):\n                continue\n            missing_episodes = getattr(detail, "episodes", None)\n            if missing_episodes is None and isinstance(detail, dict):\n                missing_episodes = detail.get("episodes")\n            # 某季只缺部分集，说明该季已有至少一集。\n            if missing_episodes:\n                return True\n\n    # 某个已知季没有出现在缺失结构中，说明该季已经完整存在。\n    return bool(expected_seasons - missing_seasons)\n\n\nclass DailyNewDrama(_PluginBase):'''
+          helper = '''    return f"{air_date.isoformat()} · 已开播{-days}天"\n\n\ndef _media_library_has_content(mediainfo: MediaInfo, complete: bool, no_exists: Dict[str, Any]) -> bool:\n    """只要媒体库中已有该剧任意一季或任意一集，就视为已入库。\n\n    MoviePilot 的 get_no_exists_info() 对电视剧只有在全部季集完整时 complete 才为 True；\n    部分入库会以缺失季集结构返回。这里根据缺失结构反推“媒体库是否已有任何内容”，\n    避免正在追更、缺集或只入库部分季的剧集继续出现在每日推荐中。\n    """\n    if complete:\n        return True\n    if not no_exists:\n        return False\n\n    seasons = getattr(mediainfo, "seasons", None) or {}\n    expected_seasons = {int(season) for season, episodes in seasons.items() if episodes}\n    if not expected_seasons:\n        return False\n\n    missing_seasons = set()\n    for season_map in no_exists.values():\n        if not isinstance(season_map, dict):\n            continue\n        for season, detail in season_map.items():\n            try:\n                missing_seasons.add(int(season))\n            except (TypeError, ValueError):\n                continue\n            missing_episodes = getattr(detail, "episodes", None)\n            if missing_episodes is None and isinstance(detail, dict):\n                missing_episodes = detail.get("episodes")\n            if missing_episodes:\n                return True\n\n    return bool(expected_seasons - missing_seasons)\n\n\nclass DailyNewDrama(_PluginBase):'''
           assert marker in text
           text = text.replace(marker, helper, 1)
 
@@ -88,7 +88,7 @@ jobs:
           contract = contract_path.read_text(encoding='utf-8')
           contract = contract.replace('assert "plugin_version = \\"3.0.0\\"" in text', 'assert "plugin_version = \\"3.0.1\\"" in text')
           contract = contract.replace('assert idx["version"]=="3.0.0" and idx["system_version"]==">=3.0.0"', 'assert idx["version"]=="3.0.1" and idx["system_version"]==">=3.0.0"')
-          extra = '''\n# 3.0.1 regression contracts\nassert "def _media_library_has_content" in text\nassert "suppress_recent: bool = False" in text\nassert "chunk_size = 8" in text\nassert text.count("_media_library_has_content(mediainfo, exist_flag, no_exists)") == 2\nassert "完整候选列表" in text\n\n# Execute the pure library-presence helper without importing MoviePilot runtime.\nimport ast\ntree = ast.parse(text)\nhelper_node = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "_media_library_has_content")\nhelper_node.returns = None\nfor arg in helper_node.args.args:\n    arg.annotation = None\nmodule = ast.Module(body=[helper_node], type_ignores=[])\nast.fix_missing_locations(module)\nns = {}\nexec(compile(module, str(V3 / "__init__.py"), "exec"), ns)\nhelper = ns["_media_library_has_content"]\n\nclass _Media:\n    seasons = {1: [1, 2, 3], 2: [1, 2]}\n\nclass _Missing:\n    def __init__(self, episodes):\n        self.episodes = episodes\n\nassert helper(_Media(), True, {}) is True\nassert helper(_Media(), False, {"tmdb:1": {1: _Missing([]), 2: _Missing([])}}) is False\nassert helper(_Media(), False, {"tmdb:1": {1: _Missing([3]), 2: _Missing([])}}) is True\nassert helper(_Media(), False, {"tmdb:1": {2: _Missing([])}}) is True\n'''
+          extra = '''\n# 3.0.1 regression contracts\nassert "def _media_library_has_content" in text\nassert "suppress_recent: bool = False" in text\nassert "chunk_size = 8" in text\nassert text.count("_media_library_has_content(mediainfo, exist_flag, no_exists)") == 2\nassert "完整候选列表" in text\n\nimport ast\ntree = ast.parse(text)\nhelper_node = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "_media_library_has_content")\nhelper_node.returns = None\nfor arg in helper_node.args.args:\n    arg.annotation = None\nmodule = ast.Module(body=[helper_node], type_ignores=[])\nast.fix_missing_locations(module)\nns = {}\nexec(compile(module, str(V3 / "__init__.py"), "exec"), ns)\nhelper = ns["_media_library_has_content"]\n\nclass _Media:\n    seasons = {1: [1, 2, 3], 2: [1, 2]}\n\nclass _Missing:\n    def __init__(self, episodes):\n        self.episodes = episodes\n\nassert helper(_Media(), True, {}) is True\nassert helper(_Media(), False, {"tmdb:1": {1: _Missing([]), 2: _Missing([])}}) is False\nassert helper(_Media(), False, {"tmdb:1": {1: _Missing([3]), 2: _Missing([])}}) is True\nassert helper(_Media(), False, {"tmdb:1": {2: _Missing([])}}) is True\n'''
           if '# 3.0.1 regression contracts' not in contract:
               contract += extra
           contract_path.write_text(contract, encoding='utf-8')
