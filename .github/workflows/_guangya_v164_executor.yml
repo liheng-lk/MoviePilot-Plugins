@@ -17,7 +17,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Apply patch
-        run: python tools/patch_guangya_v164.py
+        run: |
+          python tools/patch_guangya_v164.py
+          python tools/fix_guangya_v164_tests.py
       - name: Validate focused plugin
         run: |
           python -m py_compile plugins.v3/guangyatransferassistant/__init__.py
