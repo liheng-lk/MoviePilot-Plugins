@@ -210,3 +210,25 @@ def test_processed_message_and_media_library_sync_contracts():
     assert '_clear_completion_guard(int(sid))' not in cleanup
     removal = text.split('    def _remove_selected_subscription(', 1)[1].split('    def _get_guangya_runtime(', 1)[0]
     assert '_clear_completion_guard(int(sid))' in removal
+
+
+
+def test_same_share_in_new_message_is_kept_as_new_entry():
+    page = '''<div data-post="regengguangya/300">名称：藏锋 (2026) 更新至8集
+    <a href="https://www.guangyapan.com/s/reused001">查看资源</a></div>
+    <div data-post="regengguangya/301">名称：藏锋 (2026) 更新至9集
+    <a href="https://www.guangyapan.com/s/reused001">查看资源</a></div>'''
+    items = ns["_extract_channel_entries"](page, "https://tgm.li668.asia/regengguangya", "影视热更")
+    assert len(items) == 2
+    assert {item["message_id"] for item in items} == {"300", "301"}
+    keys = {ns["_entry_process_key"](item) for item in items}
+    assert len(keys) == 2
+
+
+def test_media_library_sync_runs_even_before_channel_match():
+    flow = text.split('    def _try_transfer_subscription(', 1)[1].split('    def _target_path(', 1)[0]
+    sync_pos = flow.index('self._sync_media_library_progress(subscribe)')
+    no_match_pos = flow.index('if not matched_pairs:')
+    assert sync_pos < no_match_pos
+    assert '_entry_process_key(item) or _share_identity' in text
+    assert '当前抓取' in text and '回退缓存' in text

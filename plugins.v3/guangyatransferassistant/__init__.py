@@ -255,11 +255,12 @@ def _extract_channel_entries(page_text: str, source_url: str, source_label: str)
             "stale": False,
             **metadata,
         }
-        old = by_key.get(share_key)
+        entry_key = _entry_process_key(entry) or share_key
+        old = by_key.get(entry_key)
         score = len(entry["text"]) + (600 if entry.get("tmdb_id") else 0) + (300 if entry.get("display_title") else 0)
         old_score = len(str((old or {}).get("text") or "")) + (600 if (old or {}).get("tmdb_id") else 0) + (300 if (old or {}).get("display_title") else 0)
         if not old or score > old_score:
-            by_key[share_key] = entry
+            by_key[entry_key] = entry
     return list(by_key.values())
 
 
@@ -796,7 +797,7 @@ class GuangYaTransferAssistant(_PluginBase):
             "props": {"variant": "outlined", "class": "mt-4"},
             "content": [
                 {"component": "VCardTitle", "text": f"频道资源（{len(index.get('items') or [])}）"},
-                {"component": "VCardText", "text": "显示链接类型、TMDB/集数提示、缓存新鲜度及匹配原因；最多显示 150 条。"},
+                {"component": "VCardText", "text": "显示链接类型、TMDB/集数提示、当前抓取/回退缓存状态及匹配原因；同一链接出现在新消息中会作为新条目处理，最多显示 150 条。"},
                 {"component": "VList", "props": {"density": "compact"}, "content": resources or [{"component": "VListItem", "props": {"title": "暂无频道资源"}}]},
             ],
         })
@@ -935,7 +936,7 @@ class GuangYaTransferAssistant(_PluginBase):
                     button_count += len(re.findall(r"查看资源", page_html, re.I))
                     found = _extract_channel_entries(page_html, source_url, label)
                     for item in found:
-                        key = _share_identity(item.get("share_url") or "")
+                        key = _entry_process_key(item) or _share_identity(item.get("share_url") or "")
                         if not key or key in source_seen:
                             continue
                         source_seen.add(key)
@@ -958,11 +959,11 @@ class GuangYaTransferAssistant(_PluginBase):
                 all_entries.extend(source_entries)
                 # 某个历史页失败时保留该源以前未被新结果覆盖的条目，但标为 stale，不能阻断原生下载。
                 if page_errors:
-                    fresh_keys = {_share_identity(item.get("share_url") or "") for item in source_entries}
+                    fresh_keys = {_entry_process_key(item) or _share_identity(item.get("share_url") or "") for item in source_entries}
                     for old in previous_items:
                         if old.get("source_label") != label:
                             continue
-                        key = _share_identity(old.get("share_url") or "")
+                        key = _entry_process_key(old) or _share_identity(old.get("share_url") or "")
                         if key and key not in fresh_keys:
                             stale = dict(old)
                             stale["stale"] = True
@@ -991,12 +992,12 @@ class GuangYaTransferAssistant(_PluginBase):
                 if parse_suspect:
                     logger.warning("【光鸭转存助手】【频道】%s 检测到 %s 个查看资源按钮但未解析到光鸭 URL，已保留旧索引", label, unresolved)
 
-        # 新鲜条目优先，热更频道优先；同一分享跨频道只保留最佳条目。
+        # 当前抓取优先、热更频道优先；同一消息+同一分享只保留一条，新消息即使复用旧链接也保留。
         all_entries.sort(key=lambda item: (1 if item.get("stale") else 0, int(item.get("priority") or 0), -len(str(item.get("text") or ""))))
         entries: List[Dict[str, Any]] = []
         seen = set()
         for item in all_entries:
-            key = _share_identity(item.get("share_url") or "")
+            key = _entry_process_key(item) or _share_identity(item.get("share_url") or "")
             if not key or key in seen:
                 continue
             seen.add(key)
@@ -1017,7 +1018,7 @@ class GuangYaTransferAssistant(_PluginBase):
         })
         fresh_count = len([item for item in entries if not item.get("stale")])
         stale_count = len(entries) - fresh_count
-        logger.info("【光鸭转存助手】频道刷新完成，识别分享 %s 个（新鲜 %s / 旧缓存 %s），错误 %s 个", len(entries), fresh_count, stale_count, len(errors))
+        logger.info("【光鸭转存助手】频道刷新完成，识别消息/分享 %s 个（当前抓取 %s / 回退缓存 %s），错误 %s 个", len(entries), fresh_count, stale_count, len(errors))
         return entries
 
     def _source_urls(self) -> List[str]:
@@ -1441,6 +1442,8 @@ class GuangYaTransferAssistant(_PluginBase):
             logger.info("【光鸭转存助手】【规则】#%s %s 不接管：%s", sid, getattr(subscribe, "name", ""), guard_reason)
             return {"success": False, "handled": True, "message": guard_reason}
         self.refresh_channels(force=False)
+        # 每轮先以媒体库为事实源同步当前目标范围，频道没有新链接时也能去掉已入库重复集。
+        self._sync_media_library_progress(subscribe)
         entries = list((self.get_data("channel_index") or {}).get("items") or [])
         matched_pairs = []
         stale_matches = 0
@@ -1459,8 +1462,9 @@ class GuangYaTransferAssistant(_PluginBase):
         logger.info("【光鸭转存助手】【匹配】#%s %s 命中 %s 个当前频道分享", sid, getattr(subscribe, "name", ""), len(matched_pairs))
 
         channel_state = self._channel_state_for_subscription(subscribe, [item for item, _ in matched_pairs])
-        self._sync_channel_episode_floor(subscribe, channel_state)
-        self._sync_media_library_progress(subscribe)
+        if self._sync_channel_episode_floor(subscribe, channel_state):
+            # 频道把目标集数向上扩展后，再同步一次媒体库新扩展区间。
+            self._sync_media_library_progress(subscribe)
         # 兼容旧版本已经 N/N、剩余0 但尚未完成的记录；连载保护在这里统一判断。
         if self._finish_subscription_if_complete(subscribe, channel_state=channel_state):
             return {"success": True, "handled": True, "completed": True, "message": "目标剧集已全部完成，订阅已移入历史"}
