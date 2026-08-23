@@ -628,7 +628,7 @@ class GuangYaTransferAssistant(_PluginBase):
     plugin_name = "光鸭转存助手"
     plugin_desc = "订阅固定分流：手动勾选的订阅只使用光鸭频道转存，未勾选订阅只使用 MoviePilot 原生下载。"
     plugin_icon = "Guangyadisk_A.png"
-    plugin_version = "1.6.0"
+    plugin_version = "1.6.1"
     plugin_author = "liheng-lk"
     plugin_label = "光鸭云盘,转存,订阅,Telegram,网盘,固定分流"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -1102,33 +1102,33 @@ class GuangYaTransferAssistant(_PluginBase):
                 "component": "VBtn",
                 "props": {"size": "small", "variant": "outlined", "prepend-icon": "mdi-refresh"},
                 "text": "立即检查缺集",
-                "events": {"click": {"api": "plugin/GuangYaTransferAssistant/check_missing", "method": "get", "params": {"subscribe_id": sid, "token": settings.API_TOKEN}}},
+                "events": {"click": {"api": "plugin/GuangYaTransferAssistant/check_missing", "method": "post", "params": {"subscribe_id": sid, "token": settings.API_TOKEN}}},
             }]
             if runtime.get("pending_jobs"):
                 actions.append({
                     "component": "VBtn",
                     "props": {"size": "small", "variant": "outlined", "color": "warning", "prepend-icon": "mdi-file-sync-outline"},
                     "text": "复查待落盘",
-                    "events": {"click": {"api": "plugin/GuangYaTransferAssistant/recheck_pending", "method": "get", "params": {"subscribe_id": sid, "token": settings.API_TOKEN}}},
+                    "events": {"click": {"api": "plugin/GuangYaTransferAssistant/recheck_pending", "method": "post", "params": {"subscribe_id": sid, "token": settings.API_TOKEN}}},
                 })
                 actions.append({
                     "component": "VBtn",
                     "props": {"size": "small", "variant": "text", "color": "error", "prepend-icon": "mdi-cancel"},
                     "text": "忽略卡住任务",
-                    "events": {"click": {"api": "plugin/GuangYaTransferAssistant/cancel_pending", "method": "get", "params": {"subscribe_id": sid, "token": settings.API_TOKEN}}},
+                    "events": {"click": {"api": "plugin/GuangYaTransferAssistant/cancel_pending", "method": "post", "params": {"subscribe_id": sid, "token": settings.API_TOKEN}}},
                 })
             actions.append({
                 "component": "VBtn",
                 "props": {"size": "small", "variant": "text", "prepend-icon": "mdi-restart"},
                 "text": "重置检查状态",
-                "events": {"click": {"api": "plugin/GuangYaTransferAssistant/reset_state", "method": "get", "params": {"subscribe_id": sid, "token": settings.API_TOKEN}}},
+                "events": {"click": {"api": "plugin/GuangYaTransferAssistant/reset_state", "method": "post", "params": {"subscribe_id": sid, "token": settings.API_TOKEN}}},
             })
             if lack > 0:
                 actions.append({
                     "component": "VBtn",
                     "props": {"size": "small", "variant": "text", "color": "warning", "prepend-icon": "mdi-download"},
                     "text": "切换普通下载",
-                    "events": {"click": {"api": "plugin/GuangYaTransferAssistant/release_native", "method": "get", "params": {"subscribe_id": sid, "token": settings.API_TOKEN}}},
+                    "events": {"click": {"api": "plugin/GuangYaTransferAssistant/release_native", "method": "post", "params": {"subscribe_id": sid, "token": settings.API_TOKEN}}},
                 })
             rows.append({
                 "component": "VCard",
@@ -1232,17 +1232,35 @@ class GuangYaTransferAssistant(_PluginBase):
         })
         return contents
 
+    def _manual_transfer_guard(self, subscribe: Any) -> Optional[Dict[str, Any]]:
+        """所有会触发转存提交的人工入口共用同一门禁，避免绕过固定分流和待落盘保护。"""
+        sid = int(getattr(subscribe, "id", 0) or 0)
+        if not sid:
+            return {"success": False, "message": "订阅不存在"}
+        if sid not in set(self._selected_subscriptions):
+            return {"success": False, "message": "该订阅当前不是光鸭固定转存路线"}
+        state = str(getattr(subscribe, "state", "") or "")
+        if state not in ("N", "R"):
+            return {"success": False, "message": f"订阅当前状态 {state or '-'}，不允许人工触发转存"}
+        pending = self._pending_jobs_for_subscription(subscribe)
+        if pending:
+            return {
+                "success": False, "pending": True,
+                "message": f"仍有 {len(pending)} 个已提交任务等待落盘确认；请先使用‘复查待落盘’，不会强制重复提交",
+            }
+        return None
+
     def get_api(self) -> List[Dict[str, Any]]:
         return [
             {"path": "/refresh", "endpoint": self.api_refresh, "methods": ["POST"], "summary": "立即刷新频道索引"},
             {"path": "/transfer", "endpoint": self.api_transfer, "methods": ["POST"], "summary": "立即尝试一个订阅的光鸭转存"},
             {"path": "/folders", "endpoint": self.api_folders, "methods": ["GET"], "summary": "读取光鸭根目录文件夹"},
-            {"path": "/check_missing", "endpoint": self.api_check_missing, "methods": ["GET"], "summary": "立即刷新并检查指定转存订阅缺集"},
-            {"path": "/release_native", "endpoint": self.api_release_native, "methods": ["GET"], "summary": "将指定转存订阅切换回 MoviePilot 普通下载"},
-            {"path": "/recheck_pending", "endpoint": self.api_recheck_pending, "methods": ["GET"], "summary": "只复查指定订阅的待落盘任务，不自动重复提交"},
-            {"path": "/reset_state", "endpoint": self.api_reset_state, "methods": ["GET"], "summary": "安全重置指定订阅的频道检查状态，保留媒体事实/库存/进度"},
-            {"path": "/cancel_pending", "endpoint": self.api_cancel_pending, "methods": ["GET"], "summary": "人工忽略指定订阅待落盘任务，旧消息不自动重放"},
-            {"path": "/daily_summary", "endpoint": self.api_daily_summary, "methods": ["GET"], "summary": "立即发送一次光鸭转存摘要"},
+            {"path": "/check_missing", "endpoint": self.api_check_missing, "methods": ["POST"], "summary": "立即刷新并检查指定转存订阅缺集"},
+            {"path": "/release_native", "endpoint": self.api_release_native, "methods": ["POST"], "summary": "将指定转存订阅切换回 MoviePilot 普通下载"},
+            {"path": "/recheck_pending", "endpoint": self.api_recheck_pending, "methods": ["POST"], "summary": "只复查指定订阅的待落盘任务，不自动重复提交"},
+            {"path": "/reset_state", "endpoint": self.api_reset_state, "methods": ["POST"], "summary": "安全重置指定订阅的频道检查状态，保留媒体事实/库存/进度"},
+            {"path": "/cancel_pending", "endpoint": self.api_cancel_pending, "methods": ["POST"], "summary": "人工忽略指定订阅待落盘任务，旧消息不自动重放"},
+            {"path": "/daily_summary", "endpoint": self.api_daily_summary, "methods": ["POST"], "summary": "立即发送一次光鸭转存摘要"},
         ]
 
     def api_refresh(self) -> Dict[str, Any]:
@@ -1259,6 +1277,9 @@ class GuangYaTransferAssistant(_PluginBase):
         subscribe = self._find_subscription(sid)
         if not subscribe:
             return {"success": False, "message": "订阅不存在"}
+        guard = self._manual_transfer_guard(subscribe)
+        if guard:
+            return guard
         return self._try_transfer_subscription(subscribe, force=True)
 
     def api_folders(self) -> Dict[str, Any]:
@@ -1270,14 +1291,9 @@ class GuangYaTransferAssistant(_PluginBase):
         subscribe = self._find_subscription(sid)
         if not sid or not subscribe:
             return {"success": False, "message": "订阅不存在"}
-        if sid not in set(self._selected_subscriptions):
-            return {"success": False, "message": "该订阅当前不是光鸭固定转存路线"}
-        pending = self._pending_jobs_for_subscription(subscribe)
-        if pending:
-            return {
-                "success": False, "pending": True,
-                "message": f"仍有 {len(pending)} 个已提交任务等待落盘确认；请先使用‘复查待落盘’，不会强制重复提交",
-            }
+        guard = self._manual_transfer_guard(subscribe)
+        if guard:
+            return guard
         self.refresh_channels(force=True)
         self._inspect_cache.clear()
         result = self._try_transfer_subscription(subscribe, force=True)
@@ -1995,17 +2011,22 @@ class GuangYaTransferAssistant(_PluginBase):
     def _sync_media_library_progress(self, subscribe: Any) -> Dict[str, Any]:
         """以 MoviePilot 媒体库为事实源补齐 note/lack_episode，避免重复转存已入库剧集。"""
         sid = int(getattr(subscribe, "id", 0) or 0)
-        media_type = str(getattr(subscribe, "type", "") or "").lower()
-        season = getattr(subscribe, "season", None)
-        if not sid or ("tv" not in media_type and "电视剧" not in str(getattr(subscribe, "type", "") or "") and season in (None, 0)):
+        raw_type = str(getattr(subscribe, "type", "") or "")
+        media_type = raw_type.lower()
+        raw_season = getattr(subscribe, "season", None)
+        is_tv = "tv" in media_type or "电视剧" in raw_type or raw_season not in (None, "")
+        if not sid or not is_tv:
             return {"success": True, "existing": [], "missing": []}
+        if raw_season in (None, ""):
+            return {"success": False, "existing": [], "missing": []}
         try:
-            season = int(season or 0)
+            season = int(raw_season)
             start = max(1, int(getattr(subscribe, "start_episode", 0) or 1))
             total = int(getattr(subscribe, "total_episode", 0) or 0)
         except (TypeError, ValueError):
             return {"success": False, "existing": [], "missing": []}
-        if season <= 0 or total < start:
+        # Season 0 是 MoviePilot 合法的特别篇季；只有负季号或无有效目标集时拒绝同步。
+        if season < 0 or total < start:
             return {"success": False, "existing": [], "missing": []}
         target = set(range(start, total + 1))
         try:
