@@ -1,6 +1,6 @@
 {
   "name": "光鸭转存助手",
-  "description": "固定转存订阅，支持订阅快速搜索、剧集进度同步及完成后自动移入订阅历史。",
+  "description": "固定分流转存订阅，支持订阅快速搜索、剧集进度同步及完成后自动移入订阅历史。",
   "version": "1.2.2",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
