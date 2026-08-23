@@ -96,3 +96,13 @@ class GuangYaBrowseResponse(BaseModel):
     total_files: int = 0
     total_dirs: int = 0
     error: str = ""
+
+
+class GuangYaOrganizerResponse(BaseModel):
+    """网盘整理统一响应：data 内承载策略、目录、预览计划、执行结果或历史。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    success: bool
+    message: str = ""
+    data: Optional[Dict[str, Any]] = None
