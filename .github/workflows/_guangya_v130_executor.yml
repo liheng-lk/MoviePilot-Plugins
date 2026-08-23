@@ -1,0 +1,44 @@
+name: Temporary GuangYa v1.3.0 Executor
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.guangya-v130-trigger'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/guangya-missing-episodes-airing-v1.3.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Execute branch patch block
+        shell: python
+        run: |
+          from pathlib import Path
+          import re, textwrap
+          workflow = Path('.github/workflows/_build_guangya_v130.yml').read_text(encoding='utf-8')
+          matched = re.search(r'- name: Apply v1\.3\.0 patch\n\s+shell: python\n\s+run: \|\n(?P<body>.*?)(?=\n\s+- name: Python syntax)', workflow, re.S)
+          if not matched:
+              raise SystemExit('patch block not found')
+          lines = matched.group('body').splitlines()
+          body = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines)
+          exec(compile(body, '<guangya-v130-patch>', 'exec'), {})
+      - name: Validate
+        run: |
+          python -m py_compile plugins.v3/guangyatransferassistant/__init__.py
+          python -m pytest -q tests/v3/guangyatransferassistant/test_plugin_contract.py
+          python -m json.tool package.v3.json >/dev/null
+          python -m json.tool plugins.v3/guangyatransferassistant/plugin.json >/dev/null
+      - name: Commit final branch files
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm -f .github/workflows/_build_guangya_v130.yml .guangya-v130-trigger
+          git add package.v3.json plugins.v3/guangyatransferassistant/__init__.py plugins.v3/guangyatransferassistant/plugin.json tests/v3/guangyatransferassistant/test_plugin_contract.py
+          git commit -m 'feat: handle missing and airing GuangYa episodes'
+          git push origin HEAD:feat/guangya-missing-episodes-airing-v1.3.0
