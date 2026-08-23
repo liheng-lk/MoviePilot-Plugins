@@ -172,13 +172,19 @@ def _cloud_item(raw: dict) -> Optional[Dict[str, Any]]:
     }
 
 
+def _asset_identity(relative_path: str, size: Any = 0) -> str:
+    """按目标内相对路径+大小生成稳定资源键，跨分享链接也能去重。"""
+    normalized = re.sub(r"/+", "/", str(relative_path or "").replace("\\", "/").strip("/")).lower()
+    return hashlib.sha256(f"{normalized}|{int(size or 0)}".encode("utf-8")).hexdigest()
+
+
 class GuangYaTransferAssistant(_PluginBase):
     """对用户勾选的订阅优先尝试光鸭频道转存，未勾选保持 MoviePilot 原生路线。"""
 
     plugin_name = "光鸭转存助手"
     plugin_desc = "读取指定 Telegram 光鸭资源频道，对手动勾选的 MoviePilot 订阅优先匹配并转存光鸭分享；未勾选或转存失败时继续原生订阅下载。"
     plugin_icon = "Guangyadisk_A.png"
-    plugin_version = "1.0.1"
+    plugin_version = "1.1.0"
     plugin_author = "liheng-lk"
     plugin_label = "光鸭云盘,转存,订阅,Telegram,网盘,下载回退"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -193,6 +199,7 @@ class GuangYaTransferAssistant(_PluginBase):
     _create_media_folder = False
     _fallback_native = True
     _notify = True
+    _auto_transfer_on_refresh = True
     _refresh_minutes = 5
     _proxy = False
     _max_share_files = 5000
@@ -211,6 +218,7 @@ class GuangYaTransferAssistant(_PluginBase):
         self._create_media_folder = bool(config.get("create_media_folder", False))
         self._fallback_native = bool(config.get("fallback_native", True))
         self._notify = bool(config.get("notify", True))
+        self._auto_transfer_on_refresh = bool(config.get("auto_transfer_on_refresh", True))
         self._proxy = bool(config.get("proxy", False))
         self._refresh_minutes = self._to_int(config.get("refresh_minutes"), 5, 1, 120)
         self._max_share_files = self._to_int(config.get("max_share_files"), 5000, 100, 20000)
@@ -245,8 +253,9 @@ class GuangYaTransferAssistant(_PluginBase):
                     {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "proxy", "label": "频道读取使用代理"}}]},
                 ]},
                 {"component": "VRow", "content": [
-                    {"component": "VCol", "props": {"cols": 12, "md": 9}, "content": [{"component": "VSelect", "props": {"model": "selected_subscriptions", "label": "选择走光鸭优先的订阅", "items": subscriptions, "multiple": True, "chips": True, "clearable": True}}]},
-                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VTextField", "props": {"model": "refresh_minutes", "label": "频道刷新间隔(分钟)", "type": "number"}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 7}, "content": [{"component": "VSelect", "props": {"model": "selected_subscriptions", "label": "选择走光鸭优先的订阅", "items": subscriptions, "multiple": True, "chips": True, "clearable": True}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 2}, "content": [{"component": "VTextField", "props": {"model": "refresh_minutes", "label": "频道刷新间隔(分钟)", "type": "number"}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "auto_transfer_on_refresh", "label": "刷新后自动检查转存"}}]},
                 ]},
                 {"component": "VRow", "content": [
                     {"component": "VCol", "props": {"cols": 12, "md": 9}, "content": [{"component": "VCombobox", "props": {"model": "save_path", "label": "光鸭目标文件夹", "items": folders, "clearable": False, "hint": "可选择根目录下已有文件夹，也可直接输入完整路径", "persistent-hint": True}}]},
@@ -255,7 +264,7 @@ class GuangYaTransferAssistant(_PluginBase):
                 {"component": "VRow", "content": [
                     {"component": "VCol", "props": {"cols": 12}, "content": [{"component": "VTextarea", "props": {"model": "channel_urls", "label": "资源频道地址（每行一个）", "rows": 3}}]},
                 ]},
-                {"component": "VAlert", "props": {"type": "info", "variant": "tonal", "text": "未勾选的订阅完全不接管；勾选的订阅先查频道并尝试光鸭转存，频道无匹配或转存失败时按开关回退 MoviePilot 原生下载。登录态直接复用“光鸭云盘助手”。"}},
+                {"component": "VAlert", "props": {"type": "info", "variant": "tonal", "text": "未勾选订阅保持原路线；勾选订阅会在频道刷新后主动检查。转存按文件级增量去重：同一资源不会重复转存，热更只转存新增文件。登录态直接复用“光鸭云盘助手”。"}},
             ],
         }], {
             "enabled": self._enabled,
@@ -265,6 +274,7 @@ class GuangYaTransferAssistant(_PluginBase):
             "create_media_folder": self._create_media_folder,
             "fallback_native": self._fallback_native,
             "notify": self._notify,
+            "auto_transfer_on_refresh": self._auto_transfer_on_refresh,
             "refresh_minutes": self._refresh_minutes or 5,
             "proxy": self._proxy,
             "max_share_files": self._max_share_files or 5000,
@@ -273,22 +283,23 @@ class GuangYaTransferAssistant(_PluginBase):
     def get_page(self) -> Optional[List[dict]]:
         index = self.get_data("channel_index") or {}
         history = self.get_data("transfer_history") or {}
+        inventory = self.get_data("transfer_inventory") or {}
         last = self.get_data("last_run") or {}
         selected = set(self._selected_subscriptions)
+        selected_subs = [sub for sub in self._list_subscriptions("N,R,P") if int(getattr(sub, "id", 0) or 0) in selected]
         rows = []
-        for sub in self._list_subscriptions("N,R"):
-            if int(getattr(sub, "id", 0) or 0) not in selected:
-                continue
+        for sub in selected_subs:
             sid = int(sub.id)
             recent = [value for key, value in history.items() if str(key).startswith(f"{sid}:")]
             recent.sort(key=lambda value: str(value.get("time") or ""), reverse=True)
+            asset_count = len(((inventory.get(str(sid)) or {}).get("assets") or {}))
             state_text = (f"{recent[0].get('time') or '-'} · {recent[0].get('message') or '-'}" if recent else "等待频道匹配")
             rows.append({
                 "component": "VCard",
                 "props": {"variant": "tonal", "class": "h-100"},
                 "content": [
                     {"component": "VCardTitle", "text": f"{sub.name} ({getattr(sub, 'year', '') or '-'})"},
-                    {"component": "VCardText", "text": f"订阅ID {sid} · 光鸭优先 · {state_text}"},
+                    {"component": "VCardText", "text": f"订阅ID {sid} · 已记录去重资源 {asset_count} 个 · {state_text}"},
                 ],
             })
         contents: List[dict] = [{
@@ -301,6 +312,34 @@ class GuangYaTransferAssistant(_PluginBase):
         }]
         if rows:
             contents.append({"component": "div", "props": {"class": "grid gap-3 grid-info-card mt-3"}, "content": rows})
+
+        resources = []
+        for entry in list(index.get("items") or [])[:100]:
+            matched = [
+                f"{getattr(sub, 'name', '')}#{int(getattr(sub, 'id', 0) or 0)}"
+                for sub in selected_subs
+                if _entry_matches_subscription(entry, getattr(sub, "name", ""), getattr(sub, "year", None), getattr(sub, "season", None))
+            ]
+            snippet = re.sub(r"https?://\S+", "", str(entry.get("text") or ""))
+            snippet = re.sub(r"\s+", " ", snippet).strip()[:180]
+            share_id = str(entry.get("share_id") or "-")
+            status = "匹配：" + "、".join(matched) if matched else "未匹配已勾选订阅"
+            resources.append({
+                "component": "VListItem",
+                "props": {
+                    "title": f"{entry.get('source_label') or '频道资源'} · {share_id}",
+                    "subtitle": f"{status} · {snippet}",
+                },
+            })
+        contents.append({
+            "component": "VCard",
+            "props": {"variant": "outlined", "class": "mt-4"},
+            "content": [
+                {"component": "VCardTitle", "text": f"频道资源（{len(index.get('items') or [])}）"},
+                {"component": "VCardText", "text": "显示频道已识别资源及其与已勾选订阅的匹配结果；最多显示 100 条。"},
+                {"component": "VList", "props": {"density": "compact"}, "content": resources or [{"component": "VListItem", "props": {"title": "暂无频道资源"}}]},
+            ],
+        })
         return contents
 
     def get_api(self) -> List[Dict[str, Any]]:
@@ -312,7 +351,8 @@ class GuangYaTransferAssistant(_PluginBase):
 
     def api_refresh(self) -> Dict[str, Any]:
         items = self.refresh_channels(force=True)
-        return {"success": True, "count": len(items), "items": items}
+        routed = self._process_selected_subscriptions(trigger="手动刷新") if self._auto_transfer_on_refresh else []
+        return {"success": True, "count": len(items), "items": items, "routes": routed}
 
     def api_transfer(self, payload: dict) -> Dict[str, Any]:
         payload = payload or {}
@@ -329,7 +369,26 @@ class GuangYaTransferAssistant(_PluginBase):
 
     def _tick(self) -> None:
         self._install_takeover()
-        self.refresh_channels(force=True)
+        items = self.refresh_channels(force=True)
+        if self._auto_transfer_on_refresh and items:
+            self._process_selected_subscriptions(trigger="频道定时刷新")
+
+    def _process_selected_subscriptions(self, trigger: str = "后台检查") -> List[Dict[str, Any]]:
+        """频道刷新后主动检查已勾选订阅；这里只转存，不主动触发原生下载。"""
+        results: List[Dict[str, Any]] = []
+        with self._route_lock:
+            for sid in list(self._selected_subscriptions):
+                subscribe = self._find_subscription(int(sid))
+                if not subscribe:
+                    continue
+                try:
+                    result = self._try_transfer_subscription(subscribe)
+                    results.append({"subscribe_id": int(sid), **result})
+                    logger.info("【光鸭转存助手】【自动】%s #%s %s：%s", trigger, sid, getattr(subscribe, "name", ""), result.get("message") or "完成")
+                except Exception as err:
+                    logger.exception("【光鸭转存助手】【自动】%s #%s 执行异常", trigger, sid)
+                    results.append({"subscribe_id": int(sid), "success": False, "handled": False, "message": str(err)})
+        return results
 
     def refresh_channels(self, force: bool = False) -> List[Dict[str, Any]]:
         """抓取频道镜像并建立光鸭分享索引。"""
@@ -428,6 +487,7 @@ class GuangYaTransferAssistant(_PluginBase):
             "create_media_folder": self._create_media_folder,
             "fallback_native": self._fallback_native,
             "notify": self._notify,
+            "auto_transfer_on_refresh": self._auto_transfer_on_refresh,
             "refresh_minutes": self._refresh_minutes,
             "proxy": self._proxy,
             "max_share_files": self._max_share_files,
@@ -506,18 +566,30 @@ class GuangYaTransferAssistant(_PluginBase):
             return True
 
     def _try_transfer_subscription(self, subscribe: Any, force: bool = False) -> Dict[str, Any]:
-        """为一个订阅寻找频道分享；已转存的同一指纹继续视为已处理。"""
+        """匹配全部相关分享，只转存尚未记录的新文件；同一分享热更不会重转旧文件。"""
         sid = int(getattr(subscribe, "id", 0) or 0)
         self.refresh_channels(force=False)
         entries = list((self.get_data("channel_index") or {}).get("items") or [])
         matches = [item for item in entries if _entry_matches_subscription(item, getattr(subscribe, "name", ""), getattr(subscribe, "year", None), getattr(subscribe, "season", None))]
         if not matches:
-            logger.info("【光鸭转存助手】【匹配】#%s %s 未命中频道分享；%s", sid, getattr(subscribe, "name", ""), "将回退原生下载" if self._fallback_native else "原生下载回退已关闭")
+            logger.info("【光鸭转存助手】【匹配】#%s %s 未命中频道分享；%s", sid, getattr(subscribe, "name", ""), "将由 MoviePilot 原订阅任务继续下载" if self._fallback_native else "原生下载回退已关闭")
             return {"success": False, "handled": False, "message": "频道未匹配到光鸭分享"}
         logger.info("【光鸭转存助手】【匹配】#%s %s 命中 %s 个频道分享", sid, getattr(subscribe, "name", ""), len(matches))
-        errors = []
+
         history = self.get_data("transfer_history") or {}
-        for entry in matches[:8]:
+        inventory = self.get_data("transfer_inventory") or {}
+        sid_key = str(sid)
+        inv_row = inventory.get(sid_key) or {"assets": {}}
+        assets = inv_row.get("assets") or {}
+        errors: List[str] = []
+        transferred_assets: List[Dict[str, Any]] = []
+        task_ids: List[str] = []
+        sources = set()
+        valid_match = False
+        attempted_new = False
+        target_path = self._target_path(subscribe)
+
+        for entry in matches[:20]:
             share_url = entry.get("share_url") or ""
             share_key = _share_identity(share_url)
             if not share_key:
@@ -528,84 +600,117 @@ class GuangYaTransferAssistant(_PluginBase):
                 logger.warning("【光鸭转存助手】【匹配】分享读取失败 share_id=%s：%s", share_key.split("|", 1)[0], error)
                 errors.append(error)
                 continue
+            valid_match = True
+            source = str(entry.get("source_label") or "频道资源")
+            sources.add(source)
             fingerprint = str(probe.get("fingerprint") or "")
             history_key = f"{sid}:{share_key}"
             old = history.get(history_key) or {}
-            if not force and fingerprint and old.get("success") and old.get("fingerprint") == fingerprint:
-                return {"success": True, "handled": True, "already": True, "message": "频道资源已转存，等待后续热更"}
-            target_path = self._target_path(subscribe)
-            logger.info("【光鸭转存助手】【转存】准备转存 #%s %s：share_id=%s -> %s，扫描项目=%s，根项目=%s", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], target_path, probe.get("file_count") or 0, len(probe.get("root_ids") or []))
-            transferred = self._restore_share(share_url, target_path, probe=probe)
+
+            planned = self._plan_incremental_files(probe, assets)
+            # 从 1.0.x 升级时，如果同一分享已经完整成功且内容未变，用当前文件清单补建增量索引，绝不重新转一遍。
+            if not assets and old.get("success") and old.get("fingerprint") in {fingerprint, str(probe.get("legacy_fingerprint") or "")}:
+                migrated = self._plan_incremental_files(probe, {})
+                self._remember_assets(assets, migrated, share_key, target_path)
+                inventory[sid_key] = {"assets": assets, "updated": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+                self.save_data("transfer_inventory", inventory)
+                logger.info("【光鸭转存助手】【去重】#%s %s 从旧版成功记录建立文件级索引 %s 个，不重复转存", sid, getattr(subscribe, "name", ""), len(migrated))
+                continue
+
+            if not planned:
+                logger.info("【光鸭转存助手】【去重】#%s %s share_id=%s 无新增文件，已转存内容跳过", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0])
+                continue
+
+            attempted_new = True
+            logger.info("【光鸭转存助手】【增量】#%s %s share_id=%s 扫描文件=%s，新增待转=%s，已记录=%s", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], probe.get("leaf_count") or len(probe.get("files") or []), len(planned), len(assets))
+            restored = self._restore_items(probe, target_path, planned)
+            completed = list(restored.get("completed_items") or [])
+            if completed:
+                self._remember_assets(assets, completed, share_key, target_path)
+                inventory[sid_key] = {"assets": assets, "updated": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+                self.save_data("transfer_inventory", inventory)
+                transferred_assets.extend(completed)
+                task_ids.extend([value for value in (restored.get("task_ids") or []) if value])
             record = {
-                "success": bool(transferred.get("success")),
+                "success": bool(restored.get("success")),
                 "fingerprint": fingerprint,
                 "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "share_url": share_url,
-                "source": entry.get("source_label"),
+                "source": source,
                 "target_path": target_path,
-                "message": transferred.get("message") or "",
-                "task_id": transferred.get("task_id") or "",
-                "confirmed": bool(transferred.get("confirmed")),
-                "confirmation": transferred.get("confirmation") or "",
-                "root_count": transferred.get("root_count") or len(probe.get("root_ids") or []),
-                "file_count": transferred.get("file_count") or probe.get("file_count") or 0,
+                "message": restored.get("message") or "",
+                "task_id": ",".join(restored.get("task_ids") or []),
+                "confirmed": bool(restored.get("success")),
+                "confirmation": restored.get("confirmation") or "",
+                "file_count": probe.get("leaf_count") or len(probe.get("files") or []),
+                "new_count": len(completed),
             }
             history[history_key] = record
             self._trim_history(history)
             self.save_data("transfer_history", history)
-            if transferred.get("success"):
-                logger.info(
-                    "【光鸭转存助手】【转存】成功 #%s %s -> %s；task_id=%s；确认=%s；根项目=%s；扫描项目=%s",
-                    sid, getattr(subscribe, "name", ""), target_path,
-                    transferred.get("task_id") or "无",
-                    transferred.get("confirmation") or "接口返回成功",
-                    transferred.get("root_count") or len(probe.get("root_ids") or []),
-                    transferred.get("file_count") or probe.get("file_count") or 0,
-                )
-                if self._notify:
-                    season = getattr(subscribe, "season", None)
-                    media_text = f"{getattr(subscribe, 'name', '')} ({getattr(subscribe, 'year', '') or '-'})"
-                    if season not in (None, "", 0, "0"):
-                        media_text += f" S{int(season):02d}"
-                    lines = [
-                        f"媒体：{media_text}",
-                        "状态：已确认转存完成" if transferred.get("confirmed") else "状态：光鸭接口已返回成功",
-                        f"来源：{entry.get('source_label') or '-'}",
-                        f"目标：{target_path}",
-                        f"根项目：{transferred.get('root_count') or len(probe.get('root_ids') or [])} 个",
-                        f"扫描项目：{transferred.get('file_count') or probe.get('file_count') or 0} 个",
-                    ]
-                    if transferred.get("task_id"):
-                        lines.append(f"任务ID：{transferred.get('task_id')}")
-                    if transferred.get("confirmation"):
-                        lines.append(f"确认：{transferred.get('confirmation')}")
-                    self.post_message(mtype=NotificationType.Plugin, title="✅ 光鸭转存成功", text="\n".join(lines))
-                    logger.info("【光鸭转存助手】【通知】已发送转存成功通知：#%s %s", sid, getattr(subscribe, "name", ""))
-                return {
-                    "success": True, "handled": True, "message": "光鸭转存成功",
-                    "target_path": target_path, "share_url": share_url,
-                    "task_id": transferred.get("task_id") or "",
-                    "confirmed": bool(transferred.get("confirmed")),
-                }
-            error = str(transferred.get("message") or "转存失败")
-            logger.warning("【光鸭转存助手】【转存】失败 #%s %s share_id=%s：%s", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], error)
-            errors.append(error)
+            if not restored.get("success"):
+                errors.append(str(restored.get("message") or "增量转存失败"))
+
+        if transferred_assets:
+            unique_paths = []
+            seen_paths = set()
+            for item in transferred_assets:
+                rel = str(item.get("effective_path") or item.get("relative_path") or item.get("name") or "")
+                if rel and rel not in seen_paths:
+                    seen_paths.add(rel)
+                    unique_paths.append(rel)
+            logger.info("【光鸭转存助手】【转存】#%s %s 增量转存完成：新增 %s 个文件，累计去重记录 %s 个，目标=%s", sid, getattr(subscribe, "name", ""), len(unique_paths), len(assets), target_path)
+            if self._notify:
+                season = getattr(subscribe, "season", None)
+                media_text = f"{getattr(subscribe, 'name', '')} ({getattr(subscribe, 'year', '') or '-'})"
+                if season not in (None, "", 0, "0"):
+                    media_text += f" S{int(season):02d}"
+                preview = "、".join(unique_paths[:8])
+                if len(unique_paths) > 8:
+                    preview += f" 等 {len(unique_paths)} 个"
+                lines = [
+                    f"媒体：{media_text}",
+                    "状态：增量转存已确认完成",
+                    f"本次新增：{len(unique_paths)} 个文件",
+                    f"累计去重：{len(assets)} 个文件",
+                    f"来源：{'、'.join(sorted(sources))}",
+                    f"目标：{target_path}",
+                    f"新增内容：{preview or '-'}",
+                ]
+                if task_ids:
+                    lines.append(f"任务ID：{','.join(task_ids[:6])}")
+                self.post_message(mtype=NotificationType.Plugin, title="✅ 光鸭转存成功", text="\n".join(lines))
+                logger.info("【光鸭转存助手】【通知】已发送增量转存成功通知：#%s %s", sid, getattr(subscribe, "name", ""))
+            return {"success": True, "handled": True, "message": f"增量转存成功，本次新增 {len(unique_paths)} 个文件", "new_count": len(unique_paths), "target_path": target_path}
+
+        if valid_match and not attempted_new:
+            # 有可读匹配分享且没有新增，说明该订阅已经被光鸭路线满足，不能再触发原生下载造成重复。
+            logger.info("【光鸭转存助手】【去重】#%s %s 所有匹配分享均无新增，保持光鸭优先，不触发重复下载", sid, getattr(subscribe, "name", ""))
+            return {"success": True, "handled": True, "already": True, "message": "已同步，无新增资源"}
+
         final_message = "；".join(errors[:4]) or "匹配分享均不可用"
-        logger.warning("【光鸭转存助手】【回退】#%s %s 转存未成功：%s；%s", sid, getattr(subscribe, "name", ""), final_message, "将回退 MoviePilot 原生下载" if self._fallback_native else "原生下载回退已关闭")
+        logger.warning("【光鸭转存助手】【回退】#%s %s 增量转存未完成：%s；%s", sid, getattr(subscribe, "name", ""), final_message, "将回退 MoviePilot 原生下载" if self._fallback_native else "原生下载回退已关闭")
         if self._notify and matches:
-            try:
-                self.post_message(
-                    mtype=NotificationType.Plugin,
-                    title="⚠️ 光鸭转存失败",
-                    text=(
-                        f"媒体：{getattr(subscribe, 'name', '')} ({getattr(subscribe, 'year', '') or '-'})\n"
-                        f"状态：转存未完成\n原因：{final_message}\n"
-                        + ("后续：将回退 MoviePilot 原生下载" if self._fallback_native else "后续：原生下载回退已关闭")
-                    ),
-                )
-                logger.info("【光鸭转存助手】【通知】已发送转存失败通知：#%s %s", sid, getattr(subscribe, "name", ""))
-            except Exception as err:
-                logger.warning("【光鸭转存助手】【通知】发送失败通知异常：%s", err)
+            notices = self.get_data("failure_notices") or {}
+            notice_key = f"{sid}:{hashlib.sha256(final_message.encode('utf-8')).hexdigest()[:12]}"
+            last_notice = self._parse_datetime(notices.get(notice_key))
+            now = datetime.datetime.now()
+            if not last_notice or (now - last_notice).total_seconds() >= 6 * 3600:
+                try:
+                    self.post_message(
+                        mtype=NotificationType.Plugin,
+                        title="⚠️ 光鸭转存失败",
+                        text=(
+                            f"媒体：{getattr(subscribe, 'name', '')} ({getattr(subscribe, 'year', '') or '-'})\n"
+                            f"状态：增量转存未完成\n原因：{final_message}\n"
+                            + ("后续：将回退 MoviePilot 原生下载" if self._fallback_native else "后续：原生下载回退已关闭")
+                        ),
+                    )
+                    notices[notice_key] = now.strftime("%Y-%m-%d %H:%M:%S")
+                    self.save_data("failure_notices", notices)
+                    logger.info("【光鸭转存助手】【通知】已发送转存失败通知：#%s %s（相同错误 6 小时内不重复推送）", sid, getattr(subscribe, "name", ""))
+                except Exception as err:
+                    logger.warning("【光鸭转存助手】【通知】发送失败通知异常：%s", err)
         return {"success": False, "handled": False, "message": final_message}
 
     def _target_path(self, subscribe: Any) -> str:
@@ -616,6 +721,45 @@ class GuangYaTransferAssistant(_PluginBase):
         year = str(getattr(subscribe, "year", "") or "").strip()
         folder = f"{name} ({year})" if year else name
         return (base.rstrip("/") + "/" + folder).replace("//", "/")
+
+    def _plan_incremental_files(self, probe: Dict[str, Any], assets: Dict[str, Any]) -> List[Dict[str, Any]]:
+        files = [dict(item) for item in (probe.get("files") or []) if item.get("id")]
+        if not files:
+            return []
+        top_parts = {str(item.get("relative_path") or "").split("/", 1)[0] for item in files if "/" in str(item.get("relative_path") or "")}
+        strip_root = next(iter(top_parts)) if self._create_media_folder and len(top_parts) == 1 else ""
+        planned = []
+        for item in files:
+            rel = str(item.get("relative_path") or item.get("name") or "").strip("/")
+            effective = rel
+            if strip_root and rel.startswith(strip_root + "/"):
+                effective = rel[len(strip_root) + 1:]
+            parent = effective.rsplit("/", 1)[0] if "/" in effective else ""
+            asset_key = _asset_identity(effective, item.get("size") or 0)
+            if asset_key in assets:
+                continue
+            item["effective_path"] = effective
+            item["target_parent"] = parent
+            item["asset_key"] = asset_key
+            planned.append(item)
+        return planned
+
+    @staticmethod
+    def _remember_assets(assets: Dict[str, Any], items: List[Dict[str, Any]], share_key: str, target_path: str) -> None:
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for item in items:
+            key = str(item.get("asset_key") or _asset_identity(item.get("effective_path") or item.get("relative_path") or item.get("name") or "", item.get("size") or 0))
+            assets[key] = {
+                "path": item.get("effective_path") or item.get("relative_path") or item.get("name") or "",
+                "size": int(item.get("size") or 0),
+                "share_id": str(share_key or "").split("|", 1)[0],
+                "target": target_path,
+                "time": now,
+            }
+        if len(assets) > 20000:
+            ordered = sorted(assets.items(), key=lambda pair: str((pair[1] or {}).get("time") or ""), reverse=True)[:20000]
+            assets.clear()
+            assets.update(dict(ordered))
 
     def _get_guangya_runtime(self) -> Tuple[Any, Any]:
         manager = PluginManager()
@@ -657,12 +801,14 @@ class GuangYaTransferAssistant(_PluginBase):
         token, error = self._share_access(client, share_url)
         if not token:
             return {"success": False, "message": error}
-        stack = [""]
+        stack: List[Tuple[str, str]] = [("", "")]
         root_ids: List[str] = []
-        fingerprint_rows = []
+        fingerprint_rows: List[str] = []
+        legacy_fingerprint_rows: List[str] = []
+        files: List[Dict[str, Any]] = []
         count = 0
         while stack and count < self._max_share_files:
-            parent_id = stack.pop()
+            parent_id, parent_path = stack.pop()
             page = 1
             while count < self._max_share_files:
                 response = client._request(
@@ -681,72 +827,84 @@ class GuangYaTransferAssistant(_PluginBase):
                     if not item:
                         continue
                     count += 1
-                    fingerprint_rows.append(f"{item['id']}|{item['name']}|{item['size']}|{int(item['is_dir'])}")
+                    rel = "/".join(value for value in (parent_path.strip("/"), item["name"].strip("/")) if value)
+                    fingerprint_rows.append(f"{item['id']}|{rel}|{item['size']}|{int(item['is_dir'])}")
+                    legacy_fingerprint_rows.append(f"{item['id']}|{item['name']}|{item['size']}|{int(item['is_dir'])}")
                     if item["is_dir"]:
-                        stack.append(item["id"])
+                        stack.append((item["id"], rel))
+                    else:
+                        files.append({**item, "relative_path": rel, "parent_path": parent_path})
                     if count >= self._max_share_files:
                         break
                 if len(raw_items) < 100:
                     break
                 page += 1
         fingerprint = hashlib.sha256("\n".join(sorted(fingerprint_rows)).encode("utf-8")).hexdigest()
-        result = {"success": True, "access_token": token, "root_ids": [value for value in root_ids if value], "fingerprint": fingerprint, "file_count": count}
+        legacy_fingerprint = hashlib.sha256("\n".join(sorted(legacy_fingerprint_rows)).encode("utf-8")).hexdigest()
+        result = {
+            "success": True, "access_token": token,
+            "root_ids": [value for value in root_ids if value],
+            "fingerprint": fingerprint, "legacy_fingerprint": legacy_fingerprint, "file_count": count,
+            "leaf_count": len(files), "files": files,
+        }
         self._inspect_cache[_share_identity(share_url)] = (time.time(), result)
         return dict(result)
 
-    def _restore_share(self, share_url: str, save_path: str, probe: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _restore_items(self, probe: Dict[str, Any], save_path: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
         client, api = self._get_guangya_runtime()
         if not client or not api:
-            return {"success": False, "message": "请先安装、启用并登录光鸭云盘助手"}
+            return {"success": False, "message": "请先安装、启用并登录光鸭云盘助手", "completed_items": []}
+        if not items:
+            return {"success": True, "message": "无新增文件", "completed_items": [], "task_ids": []}
+        groups: Dict[str, List[Dict[str, Any]]] = {}
+        for item in items:
+            groups.setdefault(str(item.get("target_parent") or ""), []).append(item)
+        completed: List[Dict[str, Any]] = []
+        task_ids: List[str] = []
+        try:
+            for relative_parent, group in groups.items():
+                base = "/" + str(save_path or "/").strip("/") if str(save_path or "/").strip("/") else "/"
+                normalized = (base.rstrip("/") + ("/" + relative_parent.strip("/") if relative_parent else "")) or "/"
+                folder = api.get_folder(Path(normalized))
+                if not folder and normalized != "/":
+                    return {"success": False, "message": f"无法创建/定位目标目录 {normalized}", "completed_items": completed, "task_ids": task_ids}
+                parent_id = str(getattr(folder, "fileid", "") or "") if folder else ""
+                file_ids = [str(item.get("id") or "") for item in group if item.get("id")]
+                logger.info("【光鸭转存助手】【增量】提交目录 %s：新增文件 %s 个", normalized, len(file_ids))
+                response = client._request(
+                    method="POST",
+                    url=f"{client.API_BASE_URL}/nd.bizuserres.s/v1/restore_share",
+                    data={"accessToken": probe.get("access_token"), "fileIds": file_ids, "parentId": parent_id},
+                    need_auth=True,
+                )
+                if not self._is_success(response):
+                    return {"success": False, "message": str(response.get("msg") or response.get("error") or "光鸭增量转存失败"), "completed_items": completed, "task_ids": task_ids}
+                data = response.get("data") or {}
+                task_id = str(data.get("taskId") or data.get("task_id") or "") if isinstance(data, dict) else ""
+                if task_id:
+                    task_ids.append(task_id)
+                if task_id and hasattr(api, "_wait_task_done"):
+                    logger.info("【光鸭转存助手】【转存】等待增量任务完成：task_id=%s", task_id)
+                    done = api._wait_task_done(task_id, max_try=120, interval=1, allow_missing=True)
+                    if not done:
+                        return {"success": False, "message": f"增量转存任务 {task_id} 未确认完成", "completed_items": completed, "task_ids": task_ids}
+                completed.extend(group)
+            return {
+                "success": True, "message": f"增量转存完成，共新增 {len(completed)} 个文件",
+                "completed_items": completed, "task_ids": task_ids,
+                "confirmation": "所有增量转存任务已确认完成",
+            }
+        except Exception as err:
+            logger.exception("【光鸭转存助手】【转存】执行增量转存异常：target=%s", save_path)
+            return {"success": False, "message": f"光鸭增量转存异常: {err}", "completed_items": completed, "task_ids": task_ids}
+
+    def _restore_share(self, share_url: str, save_path: str, probe: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """兼容入口：仍使用文件级恢复，避免整份分享重复转存。"""
         probe = probe or self._inspect_share(share_url)
         if not probe.get("success"):
             return probe
-        root_ids = list(probe.get("root_ids") or [])
-        if not root_ids:
-            return {"success": False, "message": "分享根目录没有可转存内容"}
-        try:
-            normalized = "/" + str(save_path or "/").strip("/") if str(save_path or "/").strip("/") else "/"
-            folder = api.get_folder(Path(normalized))
-            if not folder and normalized != "/":
-                return {"success": False, "message": f"无法创建/定位目标目录 {normalized}"}
-            parent_id = str(getattr(folder, "fileid", "") or "") if folder else ""
-            response = client._request(
-                method="POST",
-                url=f"{client.API_BASE_URL}/nd.bizuserres.s/v1/restore_share",
-                data={"accessToken": probe.get("access_token"), "fileIds": root_ids, "parentId": parent_id},
-                need_auth=True,
-            )
-            if not self._is_success(response):
-                return {"success": False, "message": str(response.get("msg") or response.get("error") or "光鸭转存失败")}
-            data = response.get("data") or {}
-            task_id = str(data.get("taskId") or data.get("task_id") or "") if isinstance(data, dict) else ""
-            confirmed = False
-            if task_id and hasattr(api, "_wait_task_done"):
-                logger.info("【光鸭转存助手】【转存】等待光鸭任务完成：task_id=%s", task_id)
-                done = api._wait_task_done(task_id, max_try=120, interval=1, allow_missing=True)
-                if not done:
-                    logger.warning("【光鸭转存助手】【转存】任务未确认完成：task_id=%s", task_id)
-                    return {
-                        "success": False, "message": f"转存任务 {task_id} 未确认完成",
-                        "task_id": task_id, "confirmed": False,
-                        "root_count": len(root_ids), "file_count": probe.get("file_count") or 0,
-                    }
-                confirmed = True
-                confirmation = "光鸭异步任务已确认完成"
-                logger.info("【光鸭转存助手】【转存】任务已确认完成：task_id=%s", task_id)
-            else:
-                confirmed = True
-                confirmation = "光鸭接口同步返回成功（无异步任务ID）"
-                logger.info("【光鸭转存助手】【转存】接口同步返回成功，无异步 task_id")
-            return {
-                "success": True,
-                "message": f"已转存 {len(root_ids)} 个根目录项目到 {normalized}",
-                "task_id": task_id, "confirmed": confirmed, "confirmation": confirmation,
-                "root_count": len(root_ids), "file_count": probe.get("file_count") or 0,
-            }
-        except Exception as err:
-            logger.exception("【光鸭转存助手】【转存】执行转存发生异常：target=%s", save_path)
-            return {"success": False, "message": f"光鸭转存异常: {err}"}
+        items = self._plan_incremental_files(probe, {})
+        return self._restore_items(probe, save_path, items)
 
     def _root_folder_options(self, raw: bool = False) -> List[Any]:
         client, _ = self._get_guangya_runtime()

@@ -34,9 +34,9 @@ assert ns['_share_identity']('https://www.guangyapan.com/s/abc_DEF?code=9xY2')==
 
 package=json.loads((ROOT/'package.v3.json').read_text(encoding='utf-8'))['GuangYaTransferAssistant']
 local=json.loads((ROOT/'plugins.v3'/'guangyatransferassistant'/'plugin.json').read_text(encoding='utf-8'))
-assert package['version']=='1.0.1' and local['version']=='1.0.1'
+assert package['version']=='1.1.0' and local['version']=='1.1.0'
 assert package['system_version']=='>=3.0.0'
-assert 'plugin_version = "1.0.1"' in text
+assert 'plugin_version = "1.1.0"' in text
 assert 'subscribe_search' in text and 'new_subscribe_search' in text
 assert 'SubscribeChain().search' in text
 assert 'ShukGuangYaDisk' in text and 'get_plugin_attr' in text
@@ -63,6 +63,36 @@ def test_transfer_notification_and_logging_contract():
     assert '【光鸭转存助手】【转存】' in text
     assert '【光鸭转存助手】【回退】' in text
     assert '【光鸭转存助手】【通知】' in text
-    assert '光鸭异步任务已确认完成' in text
+    assert '所有增量转存任务已确认完成' in text
     assert 'confirmed' in text
-    assert 'task_id' in text
+    assert 'task_ids' in text
+
+
+def test_incremental_auto_transfer_contract():
+    text = SRC.read_text(encoding="utf-8")
+    assert 'auto_transfer_on_refresh' in text
+    assert '_process_selected_subscriptions' in text
+    assert 'transfer_inventory' in text
+    assert '_plan_incremental_files' in text
+    assert '_restore_items' in text
+    assert '无新增文件' in text
+    assert '热更只转存新增文件' in text or '同一分享热更不会重转旧文件' in text
+    assert '频道资源（' in text
+    assert '已记录去重资源' in text
+    assert '增量转存成功' in text
+
+
+def test_incremental_failure_is_not_misclassified_and_is_rate_limited():
+    text = SRC.read_text(encoding="utf-8")
+    assert 'attempted_new = False' in text
+    assert 'if valid_match and not attempted_new:' in text
+    assert 'failure_notices' in text
+    assert '6 * 3600' in text
+    assert '⚠️ 光鸭转存失败' in text
+
+
+def test_legacy_fingerprint_migration_contract():
+    text = SRC.read_text(encoding="utf-8")
+    assert 'legacy_fingerprint_rows' in text
+    assert 'legacy_fingerprint' in text
+    assert 'old.get("fingerprint") in {fingerprint' in text
