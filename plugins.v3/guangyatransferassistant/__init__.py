@@ -711,7 +711,7 @@ class GuangYaTransferAssistant(_PluginBase):
     plugin_name = "光鸭转存助手"
     plugin_desc = "订阅固定分流：手动勾选的订阅只使用光鸭频道转存，未勾选订阅只使用 MoviePilot 原生下载。"
     plugin_icon = "Guangyadisk_A.png"
-    plugin_version = "1.6.4"
+    plugin_version = "1.6.5"
     plugin_author = "liheng-lk"
     plugin_label = "光鸭云盘,转存,订阅,Telegram,网盘,固定分流"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -745,7 +745,8 @@ class GuangYaTransferAssistant(_PluginBase):
     _state_lock = threading.RLock()
     _run_lock_minutes = 15
     _data_schema_version = 6
-    _startup_pending = False
+    _runtime_generation = 0
+    _runtime_generation_lock = threading.Lock()
 
     def init_plugin(self, config: dict = None) -> None:
         """读取配置并安装订阅搜索分流。"""
@@ -791,7 +792,6 @@ class GuangYaTransferAssistant(_PluginBase):
         if path_migrated:
             self._plugin_log("INFO", "【光鸭转存助手】【路径】目标目录配置已规范化：%s -> %s", raw_save_path, self._save_path)
             self._save_config()
-        self._startup_pending = bool(self._enabled)
         cached_count = len(((self.get_data("channel_index") or {}).get("items") or []))
         self._plugin_log(
             "INFO",
@@ -801,6 +801,7 @@ class GuangYaTransferAssistant(_PluginBase):
         )
         if self._enabled:
             self._install_takeover()
+            self._start_runtime_worker()
 
     def get_state(self) -> bool:
         return self._enabled
@@ -833,23 +834,13 @@ class GuangYaTransferAssistant(_PluginBase):
     def get_service(self) -> List[Dict[str, Any]]:
         if not self._enabled:
             return []
-        services: List[Dict[str, Any]] = []
-        if self._startup_pending:
-            self._startup_pending = False
-            services.append({
-                "id": "GuangYaTransferAssistantStartup",
-                "name": "光鸭转存助手启动缓存检查",
-                "trigger": "date",
-                "func": self._startup_check,
-                "kwargs": {},
-            })
-        services.append({
+        services: List[Dict[str, Any]] = [{
             "id": "GuangYaTransferAssistantTick",
             "name": "光鸭转存助手频道增量刷新与路由守护",
             "trigger": "interval",
             "func": self._tick,
             "kwargs": {"minutes": self._refresh_minutes},
-        })
+        }]
         if self._daily_summary:
             try:
                 summary_trigger = CronTrigger.from_crontab(self._summary_cron)
@@ -1565,6 +1556,64 @@ class GuangYaTransferAssistant(_PluginBase):
                 self._plugin_log("WARNING", "【光鸭转存助手】【通知】发送人工切换通知失败：%s", err)
         return {"success": True, "message": "已切换为普通下载，后续由 MoviePilot 原生订阅任务处理缺集", "missing_episodes": missing}
 
+    def _start_runtime_worker(self) -> None:
+        """启动内置守护线程。宿主未重新注册 get_service 时仍能立即/周期执行；宿主定时器恢复后自动退居备用。"""
+        try:
+            old_stop = getattr(self, "_runtime_stop", None)
+            if old_stop is not None:
+                old_stop.set()
+        except Exception:
+            pass
+        with type(self)._runtime_generation_lock:
+            type(self)._runtime_generation += 1
+            generation = type(self)._runtime_generation
+        self._runtime_stop = threading.Event()
+        self._host_tick_heartbeat = 0.0
+        self._runtime_thread = threading.Thread(
+            target=self._runtime_worker_loop,
+            args=(generation,),
+            name="GuangYaTransferAssistantRuntime",
+            daemon=True,
+        )
+        self._runtime_thread.start()
+        self._plugin_log(
+            "INFO",
+            "【光鸭转存助手】【服务】内置运行时守护已启动；无需进入设置页再次保存，宿主服务未注册时自动接管",
+        )
+
+    def _runtime_worker_loop(self, generation: int) -> None:
+        """热升级兜底：init_plugin 已执行但 MoviePilot 尚未重建公共服务时，自行维持检查链。"""
+        stop = getattr(self, "_runtime_stop", None)
+        if stop is None:
+            return
+        if stop.wait(1.5):
+            return
+        if generation != type(self)._runtime_generation or not self._enabled:
+            return
+        try:
+            self._plugin_log("INFO", "【光鸭转存助手】【启动检查】内置守护开始首轮缓存检查")
+            self._startup_check()
+        except Exception as err:
+            self._plugin_log("EXCEPTION", "【光鸭转存助手】【启动检查】内置守护首轮执行异常：%s", err)
+
+        while self._enabled and generation == type(self)._runtime_generation:
+            interval = max(60, int(self._refresh_minutes or 5) * 60)
+            if stop.wait(interval):
+                return
+            if generation != type(self)._runtime_generation or not self._enabled:
+                return
+            heartbeat = float(getattr(self, "_host_tick_heartbeat", 0.0) or 0.0)
+            if heartbeat and (time.monotonic() - heartbeat) < interval * 1.5:
+                continue
+            try:
+                self._plugin_log(
+                    "WARNING",
+                    "【光鸭转存助手】【服务回退】未检测到宿主定时服务心跳，内置守护执行本轮检查；无需手动保存配置",
+                )
+                self._tick(host_service=False)
+            except Exception as err:
+                self._plugin_log("EXCEPTION", "【光鸭转存助手】【服务回退】内置守护执行异常：%s", err)
+
     def _startup_check(self) -> None:
         """启动后先消费本地索引，不等待首个 interval；随后再按游标做一次到期增量发现。"""
         cached = list(((self.get_data("channel_index") or {}).get("items") or []))
@@ -1579,7 +1628,10 @@ class GuangYaTransferAssistant(_PluginBase):
             self._inspect_cache.clear()
             self._process_selected_subscriptions(trigger="启动频道增量刷新", refresh_channel=False)
 
-    def _tick(self) -> None:
+    def _tick(self, host_service: bool = True) -> None:
+        if host_service:
+            self._host_tick_heartbeat = time.monotonic()
+            self._plugin_log("INFO", "【光鸭转存助手】【服务】宿主定时服务心跳已确认")
         self._install_takeover()
         items = self.refresh_channels(force=False)
         # 频道负责发现，缓存负责执行；Telegram 故障时已有分享仍可直接访问光鸭。
@@ -3402,5 +3454,16 @@ class GuangYaTransferAssistant(_PluginBase):
         return max(minimum, min(parsed, maximum))
 
     def stop_service(self) -> None:
+        try:
+            stop = getattr(self, "_runtime_stop", None)
+            if stop is not None:
+                stop.set()
+            with type(self)._runtime_generation_lock:
+                type(self)._runtime_generation += 1
+            thread = getattr(self, "_runtime_thread", None)
+            if thread and thread.is_alive() and thread is not threading.current_thread():
+                thread.join(timeout=1.0)
+        except Exception:
+            pass
         self._restore_takeover()
         self._inspect_cache.clear()

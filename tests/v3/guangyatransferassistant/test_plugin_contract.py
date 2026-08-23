@@ -94,8 +94,8 @@ def test_pagination_episode_and_path_safety():
 def test_version_and_safety_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.6.4" and local["version"] == "1.6.4"
-    assert 'plugin_version = "1.6.4"' in text
+    assert package["version"] == "1.6.5" and local["version"] == "1.6.5"
+    assert 'plugin_version = "1.6.5"' in text
     for token in (
         "隐藏按钮", "包装按钮", "_extract_pagination_urls", "tmdb_id", "TMDB精确",
         "strict_subscription_rules", "best_version", "filter_groups", "state not in (\"N\", \"R\")",
@@ -263,7 +263,7 @@ def test_v140_reliability_contracts():
         'data_schema_version = 6',
     ):
         assert token in text, token
-    assert 'plugin_version = "1.6.4"' in text
+    assert 'plugin_version = "1.6.5"' in text
     assert '本轮新增' in text and '保留索引' in text and '故障回退' in text
 
 
@@ -360,8 +360,8 @@ def test_visibility_timeout_remains_pending_until_manual_force():
 def test_v150_version_and_console_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.6.4" and local["version"] == "1.6.4"
-    assert 'plugin_version = "1.6.4"' in text
+    assert package["version"] == "1.6.5" and local["version"] == "1.6.5"
+    assert 'plugin_version = "1.6.5"' in text
     assert '_subscription_console_snapshot' in text
     assert '等待落盘确认' in text and '当前已齐 · 连载保护中' in text
     assert '复查待落盘' in text and '重置检查状态' in text
@@ -424,8 +424,8 @@ def test_failure_notice_fingerprint_ignores_dynamic_ids():
 def test_v160_operations_and_audit_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.6.4" and local["version"] == "1.6.4"
-    assert 'plugin_version = "1.6.4"' in text
+    assert package["version"] == "1.6.5" and local["version"] == "1.6.5"
+    assert 'plugin_version = "1.6.5"' in text
     assert '_task_audit_rows' in text and '转存任务审计' in text
     assert '忽略卡住任务' in text and '/cancel_pending' in text
     assert '旧消息不会自动重放' in text
@@ -503,8 +503,8 @@ def test_inflight_only_message_is_not_marked_permanently_processed():
 def test_v161_season_zero_library_sync_and_manual_gate_contracts():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.6.4" and local["version"] == "1.6.4"
-    assert 'plugin_version = "1.6.4"' in text
+    assert package["version"] == "1.6.5" and local["version"] == "1.6.5"
+    assert 'plugin_version = "1.6.5"' in text
 
     sync = text.split('    def _sync_media_library_progress(', 1)[1].split('    def _install_takeover(', 1)[0]
     assert 'raw_season = getattr(subscribe, "season", None)' in sync
@@ -582,8 +582,8 @@ def test_v162_labelled_title_and_match_use_parsed_title_not_file_list_noise():
 def test_v162_version_contract():
     package = json.loads((ROOT / 'package.v3.json').read_text(encoding='utf-8'))['GuangYaTransferAssistant']
     local = json.loads((ROOT / 'plugins.v3' / 'guangyatransferassistant' / 'plugin.json').read_text(encoding='utf-8'))
-    assert package['version'] == '1.6.4' and local['version'] == '1.6.4'
-    assert 'plugin_version = "1.6.4"' in text
+    assert package['version'] == '1.6.5' and local['version'] == '1.6.5'
+    assert 'plugin_version = "1.6.5"' in text
     assert '_extract_channel_display_title' in text
     assert 'parsed_title if parsed_title else text_value' in text
     assert 'strip()[:420]' in text
@@ -618,7 +618,7 @@ def test_v163_unparsed_files_are_not_permanently_consumed_and_logs_are_plugin_sc
 
 
 def test_v164_cache_first_execution_contracts():
-    assert 'plugin_version = "1.6.4"' in text
+    assert 'plugin_version = "1.6.5"' in text
     assert '_cached_matches_for_subscription' in text
     assert '_prepare_cache_first_manual_check' in text
     assert '【光鸭转存助手】【缓存命中】' in text
@@ -644,6 +644,24 @@ def test_v164_cache_first_execution_contracts():
     assert '仅命中故障回退索引，等待频道恢复' not in flow
 
     service = text.split('    def get_service(', 1)[1].split('    def get_form(', 1)[0]
-    assert 'GuangYaTransferAssistantStartup' in service
-    assert '"trigger": "date"' in service
+    assert 'GuangYaTransferAssistantTick' in service
     assert '_startup_check' in text
+
+
+def test_v165_hot_upgrade_runs_without_config_save():
+    assert 'plugin_version = "1.6.5"' in text
+    init = text.split('    def init_plugin(', 1)[1].split('    def get_state(', 1)[0]
+    assert '_start_runtime_worker()' in init
+    assert '无需进入设置页再次保存' in text
+    assert '_runtime_worker_loop' in text
+    assert '【光鸭转存助手】【服务回退】' in text
+    assert '_tick(host_service=False)' in text
+    tick = text.split('    def _tick(', 1)[1].split('    def _process_selected_subscriptions(', 1)[0]
+    assert 'host_service: bool = True' in text
+    assert '_host_tick_heartbeat = time.monotonic()' in tick
+    service = text.split('    def get_service(', 1)[1].split('    def get_form(', 1)[0]
+    assert 'GuangYaTransferAssistantStartup' not in service
+    assert 'GuangYaTransferAssistantTick' in service
+    stop = text.split('    def stop_service(', 1)[1]
+    assert '_runtime_stop' in stop and 'thread.join' in stop
+
