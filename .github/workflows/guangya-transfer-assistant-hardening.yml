@@ -1,0 +1,74 @@
+name: GuangYa Transfer Assistant Hardening
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.head_ref == 'feature/guangya-transfer-assistant-v1' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/guangya-transfer-assistant-v1
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Harden runtime behavior
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('plugins.v3/guangyatransferassistant/__init__.py')
+          text=p.read_text(encoding='utf-8')
+
+          old='''        entries: List[Dict[str, Any]] = []\n        errors = []\n        seen = set()\n        for source_url in self._source_urls():'''
+          new='''        entries: List[Dict[str, Any]] = []\n        errors = []\n        seen = set()\n        source_successes = 0\n        for source_url in self._source_urls():'''
+          assert old in text
+          text=text.replace(old,new,1)
+
+          old='''                found = _extract_channel_entries(\n                    response.text or "", source_url, label\n                )\n                for item in found:'''
+          new='''                source_successes += 1\n                found = _extract_channel_entries(\n                    response.text or "", source_url, label\n                )\n                for item in found:'''
+          assert old in text
+          text=text.replace(old,new,1)
+
+          old='''        entries.sort(key=lambda item: int(item.get("priority") or 0))\n        payload = {\n            "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),\n            "items": entries[:1000],\n            "errors": errors,\n        }'''
+          new='''        entries.sort(key=lambda item: int(item.get("priority") or 0))\n        if not entries and current.get("items") and (errors or source_successes == 0):\n            logger.warning("【光鸭转存助手】本轮频道抓取未得到有效分享，保留上次索引，避免临时网络异常误触发原生下载")\n            self.save_data(\n                "last_run",\n                {\n                    "success": False,\n                    "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),\n                    "count": len(current.get("items") or []),\n                    "errors": errors or ["频道返回空数据，已保留上次索引"],\n                    "stale_index": True,\n                },\n            )\n            return list(current.get("items") or [])\n        payload = {\n            "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),\n            "items": entries[:1000],\n            "errors": errors,\n        }'''
+          assert old in text
+          text=text.replace(old,new,1)
+
+          old='''        valid = {\n            int(getattr(item, "id", 0) or 0)\n            for item in self._list_subscriptions("N,R,P")\n        }\n        selected = [sid for sid in self._selected_subscriptions if sid in valid]'''
+          new='''        valid = {\n            int(getattr(item, "id", 0) or 0)\n            for item in self._list_subscriptions("N,R,P")\n        }\n        # 启动阶段数据库/订阅查询若暂时不可用，不得把用户已经勾选的路由配置清空。\n        if not valid:\n            return\n        selected = [sid for sid in self._selected_subscriptions if sid in valid]'''
+          assert old in text
+          text=text.replace(old,new,1)
+
+          old='''        if years and int(year) not in years:\n            return False'''
+          new='''        if len(years) == 1 and int(year) not in years:\n            return False'''
+          assert old in text
+          text=text.replace(old,new,1)
+
+          p.write_text(text,encoding='utf-8')
+
+          test=Path('tests/v3/guangyatransferassistant/test_plugin_contract.py')
+          t=test.read_text(encoding='utf-8')
+          if 'stale_index' not in t:
+              t += '''\nassert "stale_index" in text\nassert "if not valid:" in text\nassert "source_successes" in text\n'''
+          test.write_text(t,encoding='utf-8')
+          PY
+      - name: Validate
+        run: |
+          python -m compileall -q plugins.v3/guangyatransferassistant
+          python tests/v3/guangyatransferassistant/test_plugin_contract.py
+          python -m json.tool package.v3.json >/dev/null
+      - name: Commit hardening
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add plugins.v3/guangyatransferassistant/__init__.py tests/v3/guangyatransferassistant/test_plugin_contract.py
+          git commit -m "fix: harden GuangYa transfer routing against transient source failures"
+          git push origin HEAD:feature/guangya-transfer-assistant-v1
