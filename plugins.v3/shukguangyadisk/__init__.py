@@ -19,6 +19,7 @@ from .models import (
     GuangYaConfigData,
     GuangYaConfigSaveResponse,
 )
+from .organizer import GuangYaOrganizerMixin
 from .storage_contract import V3StorageContractMixin
 
 # legacy 主体在 init_plugin() 运行时从模块全局读取 GuangYaApi。
@@ -27,14 +28,14 @@ _legacy_module.GuangYaApi = _StableGuangYaApi
 _LegacyPlugin = _legacy_module.ShukGuangYaDisk
 
 
-class ShukGuangYaDisk(V3StorageContractMixin, _LegacyPlugin):
+class ShukGuangYaDisk(GuangYaOrganizerMixin, V3StorageContractMixin, _LegacyPlugin):
     """光鸭云盘助手 MoviePilot V3 专用实现。"""
 
     plugin_name = "光鸭云盘助手"
-    plugin_desc = "MoviePilot V3 光鸭云盘存储助手，支持扫码/短信登录、目录浏览、整理上传、上传进度监控、下载、移动、复制、WebDAV 和 Emby 直连。"
-    plugin_version = "3.0.0"
+    plugin_desc = "MoviePilot V3 光鸭云盘存储助手，新增按 MoviePilot 目录分类策略进行网盘内预览整理/移动/复制，并支持登录、浏览、上传、下载、WebDAV 和 Emby 直连。"
+    plugin_version = "3.1.0"
     plugin_author = "liheng-lk"
-    plugin_label = "存储,光鸭云盘,网盘,挂载,Emby,WebDAV"
+    plugin_label = "存储,光鸭云盘,网盘整理,分类,MoviePilot,挂载,Emby,WebDAV"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
 
     _disk_name = "光鸭云盘助手"
@@ -174,6 +175,7 @@ class ShukGuangYaDisk(V3StorageContractMixin, _LegacyPlugin):
                 "response_model": GuangYaActionResponse,
             },
         ])
+        apis.extend(self.get_organizer_api())
         return apis
 
     def _activate_storage_after_login(self) -> None:
@@ -312,6 +314,7 @@ class ShukGuangYaDisk(V3StorageContractMixin, _LegacyPlugin):
         self._sms_verification_id = ""
         self._sms_phone_number = ""
         self._sms_captcha_token = ""
+        self._organize_plans = {}
         self._guangya_api = None
         self._client = None
         self._enabled = False
