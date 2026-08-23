@@ -50,3 +50,5 @@ jobs:
           git add package.v3.json plugins.v3/guangyatransferassistant/__init__.py plugins.v3/guangyatransferassistant/plugin.json tests/v3/guangyatransferassistant/test_plugin_contract.py .github
           git commit -m "fix: make GuangYa routing deterministic and normalize target path"
           git push origin HEAD:fix/guangya-transfer-fixed-routing-v1.2.1
+
+# trigger: fixed-routing-v1.2.1
