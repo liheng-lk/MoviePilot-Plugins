@@ -73,9 +73,9 @@ exec(compile(routing_mod, str(ROUTING), "exec"), routing_ns)
 def test_versions_and_layered_legacy_contract():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.7.1"
-    assert local["version"] == "1.7.1"
-    assert 'plugin_version = "1.7.1"' in entry_text
+    assert package["version"] == "1.7.2"
+    assert local["version"] == "1.7.2"
+    assert 'plugin_version = "1.7.2"' in entry_text
     assert 'plugin_version = "1.7.0"' in routing_text
     assert 'plugin_version = "1.6.5"' in legacy_text
     assert "from .routing_v170 import GuangYaTransferAssistant as _RoutingV170Assistant" in entry_text
@@ -207,12 +207,10 @@ def test_release_native_does_not_reload_plugin_inside_http_action():
     assert "self._save_config()" in persist
 
 
-def test_page_actions_use_v3_apikey_instead_of_token():
-    normalize = routing_text.split("    def _normalize_page_api_auth(", 1)[1].split("    def get_form(", 1)[0]
-    assert 'params.pop("token", None)' in normalize
-    assert 'params.setdefault("apikey", settings.API_TOKEN)' in normalize
-    assert "plugin/GuangYaTransferAssistant/" in normalize
-    assert "页面 API 按官方约定使用 apikey" in routing_text
+def test_page_actions_use_v3_bearer_auth_without_api_secret_params():
+    assert "return force_bear_auth(super().get_api())" in entry_text
+    assert "strip_page_api_secrets(pages)" in entry_text
+    assert "from .page_auth_v172 import force_bear_auth, strip_page_api_secrets" in entry_text
 
 
 def test_route_status_and_health_are_visible():
