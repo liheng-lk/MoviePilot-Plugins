@@ -14,7 +14,7 @@ def test_runtime_finalizer_is_wired_first_and_syntax_valid():
     ast.parse(runtime_text)
     assert "from .runtime_v170 import GuangYaRuntimeFinalizerMixin" in entry_text
     assert "GuangYaRuntimeFinalizerMixin," in entry_text
-    assert 'build_id = "20260824-r7"' in runtime_text
+    assert 'build_id = "20260824-r8"' in runtime_text
 
 
 def test_scheduler_takeover_is_nonblocking_for_guangya_routes():
@@ -37,7 +37,7 @@ def test_old_hot_reload_instance_cannot_start_network_or_transfer_work():
     assert "if hasattr(self, \"_runtime_generation\") and not self._runtime_is_current():" in runtime_text
     assert "def _startup_check" in runtime_text and "not self._runtime_is_current()" in runtime_text
     assert "def _tick" in runtime_text
-    transfer = runtime_text.split("    def _try_transfer_subscription", 1)[1].split("    def _diagnose_subscription", 1)[0]
+    transfer = runtime_text.split("    def _try_transfer_subscription", 1)[1].split("    def _route_preflight", 1)[0]
     assert "if not self._runtime_is_current():" in transfer
     assert '"stale_instance": True' in transfer
 
@@ -66,12 +66,48 @@ def test_channel_recovery_timer_releases_slot_before_retry():
     assert 'trigger="频道故障自动恢复"' in block
 
 
-def test_diagnosis_uses_real_media_fact_key_for_jobs():
+def test_route_preflight_rejects_incompatible_existing_subscription():
+    preflight = runtime_text.split("    def _route_preflight", 1)[1].split("    def _handle_takeover_existing_command", 1)[0]
+    assert "self._subscription_static_guard(subscribe)" in preflight
+    assert 'str(reason or "").startswith("订阅状态 ")' in preflight
+    assert "路线可保存，恢复订阅后再执行光鸭检查" in preflight
+
+    command = runtime_text.split("    def _handle_takeover_existing_command", 1)[1].split("    def api_route_guangya", 1)[0]
+    assert "allowed, reason = self._route_preflight(subscribe)" in command
+    assert "⛔ 无法切到光鸭固定转存" in command
+    assert "已保持 MoviePilot 普通下载路线" in command
+
+    api = runtime_text.split("    def api_route_guangya", 1)[1].split("    def _handle_status_command", 1)[0]
+    assert "allowed, reason = self._route_preflight(subscribe)" in api
+    assert "不能切到光鸭固定转存" in api
+    assert "已保持 MoviePilot 普通下载路线" in api
+
+
+def test_status_command_reports_all_native_download_gates_and_channel_state():
+    status = runtime_text.split("    def _handle_status_command", 1)[1].split("    def _diagnose_subscription", 1)[0]
+    for token in (
+        'status_icon(\'runtime_owner\')',
+        'status_icon(\'search_guard\')',
+        'status_icon(\'match_guard\')',
+        'status_icon(\'download_guard\')',
+        "频道：{channel_text}",
+        "缓存降级",
+        "self.build_id",
+        "固定转存：",
+        "待落盘",
+        "失败",
+    ):
+        assert token in status, token
+
+
+def test_diagnosis_uses_real_media_fact_key_and_exposes_static_guard_reason():
     block = runtime_text.split("    def _diagnose_subscription", 1)[1]
     assert "prefix = self._media_fact_prefix(subscribe)" in block
     assert 'str(item.get("media") or "") == str(prefix)' in block
     assert 'pending_status = {"submitting", "submitted", "task_confirmed", "verifying"}' in block
     assert "正在等待光鸭落盘确认" in block
+    assert "allowed, reason = self._subscription_static_guard(subscribe)" in block
+    assert "固定转存规则阻止执行" in block
 
 
 def test_guard_health_is_attached_by_title_not_blind_first_card():
