@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "热升级即用：无需再次保存设置即可启动缓存检查与周期守护；宿主定时服务未重新注册时由内置守护自动接管，恢复后自动避免重复执行。",
-  "version": "1.6.5",
+  "description": "全入口硬分流与消息直订：光鸭路线订阅阻断 MoviePilot 原生下载搜索；支持 /gysub 直接创建并立即转存、/gystatus 状态诊断、/gynative 切回普通下载，并修复页面切换路线跳登录。",
+  "version": "1.7.0",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
