@@ -102,3 +102,13 @@ def test_v320_plans_final_renamed_paths_and_companions():
     assert '目标路径完全相同' in ORGANIZER
     assert '多个源文件映射到同一 MoviePilot 目标' in ORGANIZER
 
+
+
+def test_v320_language_suffix_sidecars_and_preflight():
+    assert 'suffix_tags' in ORGANIZER
+    assert 'companion_stem.startswith(video_stem)' in ORGANIZER
+    assert 'companion_conflict' in ORGANIZER
+    assert 'companion_errors' in ORGANIZER
+    assert '伴随文件无法生成 MoviePilot 最终命名' in ORGANIZER
+    assert '伴随文件目标已存在' in ORGANIZER
+
