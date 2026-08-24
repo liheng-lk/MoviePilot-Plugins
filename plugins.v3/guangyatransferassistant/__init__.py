@@ -5,6 +5,11 @@ routing_v170 保留全入口 search 硬分流与消息直订，experience_v170 �
 唯一实例所有权以及频道源故障缓存降级/自动恢复；runtime_v170 负责宿主调度器最终非阻塞
 分流、旧实例失效和诊断校正；本层再增加 MoviePilot RSS/缓存匹配链的最终下载断路器，
 确保固定转存订阅不仅“不搜索”，也绝不会从 SubscribeChain.match 路径落到本地下载器。
+
+MoviePilot V3 的事件绑定解析器按“声明处理器的类名”查找真实插件实例。experience/reliability
+属于 mixin，类名不是 GuangYaTransferAssistant，因此体验层消息 action 不能只依赖 mixin 上的
+装饰器；运行入口显式注册一个真实插件类的事件桥，保证 /gyroute、/gycheck、/gywhy、
+/gyselfcheck 在正式 MoviePilot 运行时可被正确投递。
 """
 
 from __future__ import annotations
@@ -15,6 +20,8 @@ import weakref
 from typing import Any, Optional
 
 from app.chain.subscribe import SubscribeChain
+from app.schemas.types import EventType
+from app.sdk.events import Event, eventmanager
 
 from .experience_v170 import GuangYaExperienceMixin
 from .reliability_v170 import GuangYaReliabilityMixin
@@ -31,6 +38,12 @@ class GuangYaTransferAssistant(
     """完整硬分流：搜索 + RSS + 下载门禁 + 体验 + 可靠性 + 最终运行编排。"""
 
     plugin_version = "1.7.0"
+    build_id = "20260825-r10"
+
+    @eventmanager.register(EventType.PluginAction)
+    def experience_action_event_handler(self, event: Event) -> None:
+        """把体验层消息 action 绑定到真实插件类，避免 mixin 事件处理器无法被 V3 resolver 解析。"""
+        return super().experience_action_event_handler(event)
 
     def _install_search_guard(self) -> None:
         super()._install_search_guard()
