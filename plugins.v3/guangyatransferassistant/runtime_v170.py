@@ -6,6 +6,8 @@
 - 旧热重载实例的 tick/刷新/新转存入口与内置守护线程全部失效；
 - scheduler takeover 跨热重载会追溯真实 MoviePilot 原回调，不形成“旧插件回调链”；
 - 修正频道自动恢复定时器自我占用导致“只重试一次”的边界；
+- 接管已有订阅前做兼容性预检，避免洗版/复杂规则订阅被切进一个必然不会执行的路线；
+- /gystatus 展示 search/RSS/最终下载三层门禁、运行实例和频道降级状态；
 - 诊断按媒体事实键读取 transfer_jobs，避免任务明明待落盘却显示 0。
 """
 
@@ -13,7 +15,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.chain.subscribe import SubscribeChain
 
@@ -21,15 +23,10 @@ from app.chain.subscribe import SubscribeChain
 class GuangYaRuntimeFinalizerMixin:
     """位于 GuangYaReliabilityMixin 之前的最终运行编排。"""
 
-    build_id = "20260824-r7"
+    build_id = "20260824-r8"
 
     def _schedule_channel_recovery(self, delay: float) -> None:
-        """可连续重试的恢复定时器。
-
-        旧实现的 timer 在 recover 回调内部仍处于 alive 状态；若本次恢复再次失败，
-        refresh_channels() 想安排下一轮时会被“已有 timer”判断挡住。这里在真正发起恢复前
-        先释放当前 timer 槽位，因此每次失败都能继续按指数退避安排下一轮。
-        """
+        """可连续重试的恢复定时器。"""
         self._ensure_reliability_state()
         delay = max(1.0, float(delay or 1.0))
         with self._reliability_lock:
@@ -199,11 +196,7 @@ class GuangYaRuntimeFinalizerMixin:
         manual: Optional[bool] = False,
         progress_callback=None,
     ):
-        """宿主 scheduler takeover 的最终固定分流。
-
-        固定转存订阅：只排后台光鸭检查并立即返回。
-        普通订阅：继续交给 MoviePilot SubscribeChain.search。
-        """
+        """宿主 scheduler takeover 的最终固定分流。"""
         if not self._runtime_is_current() or not self._enabled:
             return True
 
@@ -287,8 +280,100 @@ class GuangYaRuntimeFinalizerMixin:
             refresh_channel=refresh_channel,
         )
 
+    def _route_preflight(self, subscribe: Any) -> Tuple[bool, str]:
+        """接管已有订阅前检查是否存在固定转存无法表达的订阅语义。"""
+        allowed, reason = self._subscription_static_guard(subscribe)
+        if allowed:
+            return True, ""
+        # 暂停/待定允许先保存路线，恢复活跃后自动执行；其它不兼容项直接拒绝接管。
+        if str(reason or "").startswith("订阅状态 "):
+            return True, f"{reason}；路线可保存，恢复订阅后再执行光鸭检查"
+        return False, str(reason or "当前订阅不适合固定转存")
+
+    def _handle_takeover_existing_command(self, event_data: Dict[str, Any]) -> None:
+        subscribe = self._command_subscription_or_reply(event_data, selected_only=False)
+        if not subscribe:
+            return
+        sid = int(getattr(subscribe, "id", 0) or 0)
+        if self._is_guangya_route(subscribe):
+            return super()._handle_takeover_existing_command(event_data)
+        allowed, reason = self._route_preflight(subscribe)
+        if not allowed:
+            self._post_command(
+                event_data,
+                "⛔ 无法切到光鸭固定转存",
+                f"#{sid} {getattr(subscribe, 'name', '')}\n原因：{reason}\n已保持 MoviePilot 普通下载路线。",
+            )
+            self._plugin_log(
+                "WARNING",
+                "【光鸭转存助手】【路线预检】#%s %s 拒绝接管：%s",
+                sid,
+                getattr(subscribe, "name", ""),
+                reason,
+            )
+            return
+        return super()._handle_takeover_existing_command(event_data)
+
+    def api_route_guangya(self, subscribe_id: int = 0) -> Dict[str, Any]:
+        sid = int(subscribe_id or 0)
+        subscribe = self._find_subscription(sid)
+        if not sid or not subscribe:
+            return {"success": False, "message": "订阅不存在"}
+        if not self._is_guangya_route(subscribe):
+            allowed, reason = self._route_preflight(subscribe)
+            if not allowed:
+                return {
+                    "success": False,
+                    "message": f"不能切到光鸭固定转存：{reason}；已保持 MoviePilot 普通下载路线",
+                }
+        return super().api_route_guangya(subscribe_id=sid)
+
+    def _handle_status_command(self, event_data: Dict[str, Any]) -> None:
+        """状态命令显示真正的三层门禁、运行实例、频道状态和任务总览。"""
+        report = self._build_selfcheck()
+        checks = {str(item.get("key") or ""): item for item in (report.get("checks") or [])}
+        index = self.get_data("channel_index") or {}
+        health = self.get_data("route_health") or {}
+        outage = self._channel_outage_state()
+        jobs = [item for item in (self.get_data("transfer_jobs") or {}).values() if isinstance(item, dict)]
+        pending = sum(1 for item in jobs if str(item.get("status") or "") in {"submitting", "submitted", "task_confirmed", "verifying"})
+        failed = sum(1 for item in jobs if str(item.get("status") or "") == "failed")
+
+        def status_icon(key: str) -> str:
+            item = checks.get(key) or {}
+            return "✅" if item.get("ok") else "❌"
+
+        channel_text = "正常"
+        if str(outage.get("state") or "") == "degraded":
+            try:
+                wait = max(0, int(float(outage.get("retry_after") or 0) - time.time()))
+            except (TypeError, ValueError):
+                wait = 0
+            channel_text = f"缓存降级（连续失败 {int(outage.get('failures') or 0)} 次，约 {wait}s 后重试）"
+
+        selected_rows = []
+        selected_ids = set(self._selected_subscriptions)
+        for subscribe in self._list_subscriptions(None):
+            sid = int(getattr(subscribe, "id", 0) or 0)
+            if sid in selected_ids:
+                selected_rows.append(f"#{sid} {getattr(subscribe, 'name', '')}")
+
+        text = (
+            f"光鸭转存助手 v{getattr(self, 'plugin_version', '1.7.0')} · build {self.build_id}\n"
+            f"{status_icon('runtime_owner')} 当前运行实例 · {status_icon('search_guard')} Search硬分流 · "
+            f"{status_icon('match_guard')} RSS门禁 · {status_icon('download_guard')} 最终下载断路器\n"
+            f"频道：{channel_text} · 索引 {len(index.get('items') or [])} 条 · 最近刷新 {index.get('time') or '-'}\n"
+            f"固定转存：{len(selected_ids)} 个 · 待落盘 {pending} · 失败 {failed}\n"
+            f"最近处理：{health.get('last_route_result') or '-'}"
+        )
+        if selected_rows:
+            text += "\n\n当前路线：\n" + "\n".join(selected_rows[:12])
+            if len(selected_rows) > 12:
+                text += f"\n…另有 {len(selected_rows) - 12} 个"
+        self._post_command(event_data, "光鸭转存状态", text)
+
     def _diagnose_subscription(self, subscribe: Any) -> Dict[str, Any]:
-        """使用 legacy 真正的 media fact key 关联任务，修正待落盘/失败数显示。"""
+        """使用真实媒体事实键关联任务，并优先展示固定转存兼容性阻断原因。"""
         row = dict(super()._diagnose_subscription(subscribe))
         prefix = self._media_fact_prefix(subscribe)
         jobs = [
@@ -303,7 +388,15 @@ class GuangYaRuntimeFinalizerMixin:
         if pending:
             row["reason"] = f"已有 {len(pending)} 个转存任务已提交，正在等待光鸭落盘确认"
             row["severity"] = "info"
-        elif failed and not row.get("matches"):
+            return row
+
+        allowed, reason = self._subscription_static_guard(subscribe)
+        if not allowed and not str(reason or "").startswith("订阅状态 "):
+            row["reason"] = f"固定转存规则阻止执行：{reason}"
+            row["severity"] = "warning"
+            return row
+
+        if failed and not row.get("matches"):
             latest = sorted(failed, key=lambda item: str(item.get("updated") or ""))[-1]
             detail = str(latest.get("error") or latest.get("message") or "未知错误")[:180]
             row["reason"] = f"最近转存任务失败：{detail}"
