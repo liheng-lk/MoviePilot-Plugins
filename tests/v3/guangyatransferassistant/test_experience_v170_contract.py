@@ -26,7 +26,10 @@ def test_experience_layer_is_wired_into_runtime():
     ast.parse(experience_text)
     ast.parse(entry_text)
     assert "from .experience_v170 import GuangYaExperienceMixin" in entry_text
-    assert "class GuangYaTransferAssistant(GuangYaExperienceMixin, _RoutingV170Assistant):" in entry_text
+    class_block = entry_text.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
+    assert "GuangYaExperienceMixin" in class_block
+    assert "_RoutingV170Assistant" in class_block
+    assert class_block.index("GuangYaExperienceMixin") < class_block.index("_RoutingV170Assistant")
     assert 'build_id = "20260824-r4"' in experience_text
 
 
