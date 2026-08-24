@@ -1,0 +1,38 @@
+name: Temporary GuangYa v3.2 Sidecar Fix
+on:
+  push:
+    branches: [feat/guangya-full-organize-v3.2.0]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/guangya-full-organize-v3.2.0
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply sidecar fix
+        run: python tools/fix_guangya_v320_sidecars.py
+      - name: Validate focused organizer
+        run: |
+          python -m py_compile plugins.v3/shukguangyadisk/organizer_v320.py
+          python - <<'PY'
+          import runpy
+          ns = runpy.run_path('tests/v3/shukguangyadisk/test_organizer_contract.py')
+          tests = [(n, f) for n, f in ns.items() if n.startswith('test_') and callable(f)]
+          for name, fn in tests:
+              fn()
+          print(f'{len(tests)} organizer tests passed')
+          PY
+      - name: Commit formal fix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add plugins.v3/shukguangyadisk/organizer_v320.py tests/v3/shukguangyadisk/test_organizer_contract.py
+          git commit -m 'fix: harden GuangYa companion file reorganization'
+          git push origin HEAD:feat/guangya-full-organize-v3.2.0
