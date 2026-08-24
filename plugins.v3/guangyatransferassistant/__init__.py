@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import time
 import weakref
 from typing import Any, Optional
 
@@ -38,12 +39,32 @@ class GuangYaTransferAssistant(
     """完整硬分流：搜索 + RSS + 下载门禁 + 体验 + 可靠性 + 最终运行编排。"""
 
     plugin_version = "1.7.0"
-    build_id = "20260825-r10"
+    build_id = "20260825-r11"
 
     @eventmanager.register(EventType.PluginAction)
     def experience_action_event_handler(self, event: Event) -> None:
         """把体验层消息 action 绑定到真实插件类，避免 mixin 事件处理器无法被 V3 resolver 解析。"""
         return super().experience_action_event_handler(event)
+
+    def _schedule_pending_route_recovery(self, token: str) -> None:
+        """进程重启后重新挂起未确认的路线写盘，不把旧进程的 scheduled 标记当成活定时器。"""
+        token = str(token or "")
+        if not token:
+            return
+        # 同一运行实例只挂一次。持久化 marker 只能说明“上一个进程曾计划过”，不能证明
+        # 当前进程仍有对应 Timer；否则进程在 60 秒窗口内崩溃重启会留下永远等不到的假 scheduled。
+        if str(getattr(self, "_route_recovery_runtime_token", "") or "") == token:
+            return
+        marker = dict(self.get_data("route_recovery_marker") or {})
+        if (
+            str(marker.get("token") or "") == token
+            and str(marker.get("state") or "") == "scheduled"
+        ):
+            marker["state"] = "interrupted"
+            marker["interrupted_at"] = time.time()
+            self.save_data("route_recovery_marker", marker)
+        self._route_recovery_runtime_token = token
+        return super()._schedule_pending_route_recovery(token)
 
     def _install_search_guard(self) -> None:
         super()._install_search_guard()
