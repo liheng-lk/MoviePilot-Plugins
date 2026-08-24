@@ -13,7 +13,10 @@ def test_reliability_layer_is_wired_and_syntax_valid():
     ast.parse(entry_text)
     ast.parse(reliability_text)
     assert "from .reliability_v170 import GuangYaReliabilityMixin" in entry_text
-    assert "GuangYaReliabilityMixin, GuangYaExperienceMixin" in entry_text
+    class_block = entry_text.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
+    assert "GuangYaReliabilityMixin" in class_block
+    assert "GuangYaExperienceMixin" in class_block
+    assert class_block.index("GuangYaReliabilityMixin") < class_block.index("GuangYaExperienceMixin")
     assert 'build_id = "20260824-r5"' in reliability_text
 
 
