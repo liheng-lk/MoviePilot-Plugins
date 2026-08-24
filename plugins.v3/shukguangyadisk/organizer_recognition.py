@@ -28,9 +28,9 @@ from .organizer import GuangYaOrganizerMixin as _BaseOrganizerMixin
 class GuangYaOrganizerMixin(_BaseOrganizerMixin):
     """在原自动监控上补充“父目录剧名 + 数字集号”的最小识别提示。"""
 
-    # 仅接受 1~3 位数字开头，并要求后面是分隔符/技术标签，避免把普通标题数字吞掉。
+    # 仅接受 1~3 位数字开头；后面只能为空，或以常见分隔符/技术标签起始。
     _episode_prefix_re = re.compile(
-        r"^\s*(?P<episode>\d{1,3})(?P<tail>(?:\s|~|[-_.]|\[|【|\().*)$"
+        r"^\s*(?P<episode>\d{1,3})(?P<tail>(?:(?:\s|~|[-_.]|\[|【|\().*)?)$"
     )
     _season_dir_re = re.compile(
         r"^(?:(?:s|season)\s*0*(?P<latin>\d{1,2})|第?\s*0*(?P<cn>\d{1,2})\s*季)$",
@@ -51,6 +51,19 @@ class GuangYaOrganizerMixin(_BaseOrganizerMixin):
         "downloads",
         "光鸭媒体库",
     }
+    # 仅从原文件名补回资源技术信息，绝不把文件名里的“22/2026”等标题或年份
+    # 覆盖到父目录剧名提示中。
+    _technical_meta_fields = (
+        "resource_type",
+        "resource_effect",
+        "resource_pix",
+        "resource_team",
+        "web_source",
+        "video_encode",
+        "video_bit",
+        "audio_encode",
+        "fps",
+    )
 
     @classmethod
     def _episode_parent_context(cls, event_path: Path) -> Optional[Tuple[str, int, int]]:
@@ -105,14 +118,13 @@ class GuangYaOrganizerMixin(_BaseOrganizerMixin):
             return None
         title, season, episode = context
 
-        # 用 MP 自己的 MetaInfo 解析剧名与技术标签，不在插件中实现媒体识别规则。
+        # 用 MoviePilot 自己的 MetaInfo 解析剧名和 S/E，不另写媒体识别器。
         meta = MetaInfo(f"{title} S{season:02d}E{episode:02d}")
         file_meta = MetaInfo(event_path.name)
-        try:
-            meta.merge(file_meta)
-        except Exception:
-            # merge 只是为了保留 4K/HEVC/AAC 等资源标签；失败不影响剧名和集号提示。
-            pass
+        for field in cls._technical_meta_fields:
+            value = getattr(file_meta, field, None)
+            if value is not None:
+                setattr(meta, field, value)
 
         meta.type = MediaType.TV
         meta.begin_season = season
