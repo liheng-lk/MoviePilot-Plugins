@@ -14,7 +14,7 @@ def test_runtime_finalizer_is_wired_first_and_syntax_valid():
     ast.parse(runtime_text)
     assert "from .runtime_v170 import GuangYaRuntimeFinalizerMixin" in entry_text
     assert "GuangYaRuntimeFinalizerMixin," in entry_text
-    assert 'build_id = "20260824-r8"' in runtime_text
+    assert 'build_id = "20260824-r9"' in runtime_text
 
 
 def test_scheduler_takeover_is_nonblocking_for_guangya_routes():
@@ -37,7 +37,7 @@ def test_old_hot_reload_instance_cannot_start_network_or_transfer_work():
     assert "if hasattr(self, \"_runtime_generation\") and not self._runtime_is_current():" in runtime_text
     assert "def _startup_check" in runtime_text and "not self._runtime_is_current()" in runtime_text
     assert "def _tick" in runtime_text
-    transfer = runtime_text.split("    def _try_transfer_subscription", 1)[1].split("    def _route_preflight", 1)[0]
+    transfer = runtime_text.split("    def _try_transfer_subscription", 1)[1].split("    def _remove_selected_subscription", 1)[0]
     assert "if not self._runtime_is_current():" in transfer
     assert '"stale_instance": True' in transfer
 
