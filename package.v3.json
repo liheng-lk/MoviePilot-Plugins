@@ -15,9 +15,9 @@
   },
   "ShukGuangYaDisk": {
     "name": "光鸭云盘助手",
-    "description": "MoviePilot V3 光鸭云盘存储助手，新增按 MP 媒体库目录策略预览并整理网盘文件到另一目录，支持自动分类、移动/复制、冲突保护，并保留登录、浏览、上传、WebDAV 与 Emby 直连。",
+    "description": "完整网盘重新整理：复用 MoviePilot 当前媒体识别、目录分类、类型/类别子目录和智能重命名模板，把光鸭云盘中的媒体重新命名并重建电影/电视剧/季目录结构后移动或复制到目标目录。",
     "labels": "存储,光鸭云盘,网盘整理,分类,MoviePilot,挂载,Emby,WebDAV",
-    "version": "3.1.0",
+    "version": "3.2.0",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
