@@ -1,0 +1,48 @@
+name: Temporary GuangYa v3.2.0 Executor
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/guangya-full-organize-v3.2.0
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply full organizer patch
+        run: |
+          python tools/fix_guangya_full_organizer_v320.py
+          python tools/patch_guangya_full_organizer_v320.py
+      - name: Validate focused plugin
+        run: |
+          python -m py_compile plugins.v3/shukguangyadisk/__init__.py plugins.v3/shukguangyadisk/organizer.py plugins.v3/shukguangyadisk/organizer_v320.py plugins.v3/shukguangyadisk/guangya_api_legacy.py
+          python - <<'PY'
+          import runpy
+          ns = runpy.run_path('tests/v3/shukguangyadisk/test_organizer_contract.py')
+          tests = [(n, f) for n, f in ns.items() if n.startswith('test_') and callable(f)]
+          for name, fn in tests:
+              fn()
+          print(f'{len(tests)} GuangYa organizer contract tests passed')
+          PY
+          python -m json.tool package.v3.json >/dev/null
+          python -m json.tool plugins.v3/shukguangyadisk/plugin.json >/dev/null
+      - name: Commit formal changes
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add package.v3.json \
+            plugins.v3/shukguangyadisk/__init__.py \
+            plugins.v3/shukguangyadisk/plugin.json \
+            plugins.v3/shukguangyadisk/organizer_v320.py \
+            plugins.v3/shukguangyadisk/dist/assets/remoteEntry.js \
+            plugins.v3/shukguangyadisk/dist/assets/__federation_expose_AssistantPage-v320.js \
+            tests/v3/shukguangyadisk/test_organizer_contract.py
+          git commit -m 'feat: complete GuangYa cloud reorganization v3.2.0'
+          git push origin HEAD:feat/guangya-full-organize-v3.2.0
