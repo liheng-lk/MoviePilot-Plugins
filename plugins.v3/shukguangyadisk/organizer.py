@@ -1,36 +1,53 @@
-"""光鸭云盘内文件整理：复用 MoviePilot V3 目录分类策略，云盘内执行移动/复制。"""
+"""光鸭云盘自动整理监控。
+
+职责边界：本模块只负责“发现监控目录中的新增/变化文件”。媒体识别、分类策略、
+目标目录、重命名、整理方式、覆盖、刮削、历史去重和失败重试全部交给 MoviePilot
+原生 TransferDispatcher / TransferChain。插件不维护第二套分类或命名规则。
+"""
 
 from __future__ import annotations
 
 import datetime
 import hashlib
+import threading
 import time
-import uuid
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Optional, Tuple
 
+from apscheduler.triggers.interval import IntervalTrigger
+
 from app.application.directory import DirectoryHelper
-from app.chain.media import MediaChain
-from app.domain.metainfo import MetaInfoPath
+from app.monitor.dispatcher import TransferDispatcher
 from app.sdk.logging import logger
 
 from .models import GuangYaOrganizerResponse
 
 
-_VIDEO_EXTENSIONS = {
-    ".mkv", ".mp4", ".ts", ".m2ts", ".mts", ".avi", ".mov", ".wmv",
-    ".flv", ".webm", ".iso", ".rmvb", ".m4v", ".mpg", ".mpeg", ".vob",
-}
-_SIDECAR_EXTENSIONS = {".srt", ".ass", ".ssa", ".vtt", ".sub", ".sup", ".smi", ".idx"}
-
-
 class GuangYaOrganizerMixin:
-    """V3 光鸭网盘整理能力。源/目标都在光鸭盘，分类规则来自 MoviePilot DirectoryHelper。"""
+    """光鸭远程目录轮询监控 + MoviePilot 原生整理链适配。"""
 
-    _organize_plan_ttl = 15 * 60
-    _organize_max_items = 300
-    _organize_probe_nodes = 160
-    _organize_probe_depth = 4
+    _monitor_config_key = "organize_monitor_config"
+    _monitor_state_key = "organize_monitor_state"
+    _monitor_history_key = "organize_monitor_history"
+    _monitor_status_key = "organize_monitor_status"
+
+    _monitor_heartbeat = 30
+    _monitor_default_interval = 60
+    _monitor_default_stability = 30
+    _monitor_default_batch_size = 100
+    _monitor_inventory_cap = 5000
+    _monitor_history_limit = 100
+
+    _organize_monitor_initialized: bool = False
+    _organize_monitor_enabled: bool = False
+    _organize_monitor_path: str = "/"
+    _organize_monitor_interval: int = _monitor_default_interval
+    _organize_monitor_stability: int = _monitor_default_stability
+    _organize_monitor_batch_size: int = _monitor_default_batch_size
+    _organize_monitor_recursive: bool = True
+    _organize_monitor_last_tick: float = 0.0
+    _organize_dispatcher: Optional[TransferDispatcher] = None
+    _organize_scan_lock: Optional[threading.Lock] = None
 
     @staticmethod
     def _organize_normalize_path(value: Any) -> str:
@@ -41,99 +58,373 @@ class GuangYaOrganizerMixin:
             raw = "/" + raw
         path = PurePosixPath(raw)
         if ".." in path.parts:
-            raise ValueError("目录不能包含 ..")
+            raise ValueError("监控目录不能包含 ..")
         normalized = "/" + "/".join(part for part in path.parts if part != "/")
         return normalized.rstrip("/") or "/"
 
     @staticmethod
-    def _policy_value(value: Any) -> str:
-        enum_value = getattr(value, "value", value)
-        return str(enum_value or "").strip()
-
-    @classmethod
-    def _policy_identifier(cls, index: int, policy: Any) -> str:
-        raw = "|".join([
-            str(index),
-            cls._policy_value(getattr(policy, "name", "")),
-            str(getattr(policy, "priority", 0) or 0),
-            cls._policy_value(getattr(policy, "library_path", "")),
-            cls._policy_value(getattr(policy, "media_type", "")),
-            cls._policy_value(getattr(policy, "media_category", "")),
-        ])
-        return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
-
-    def _mp_organize_policies(self) -> List[Dict[str, Any]]:
-        """读取 MoviePilot 当前媒体库目录配置，不在插件里复制一套分类规则。"""
-        result: List[Dict[str, Any]] = []
+    def _bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:
         try:
-            dirs = DirectoryHelper().get_library_dirs() or []
-        except Exception as err:
-            logger.warning("【光鸭云盘助手】【网盘整理】读取 MoviePilot 目录配置失败: %s", err)
-            return result
-        for index, item in enumerate(dirs):
-            transfer_type = self._policy_value(getattr(item, "transfer_type", "")) or "move"
-            result.append({
-                "id": self._policy_identifier(index, item),
-                "index": index,
-                "name": self._policy_value(getattr(item, "name", "")) or f"目录策略 {index + 1}",
-                "priority": int(getattr(item, "priority", 0) or 0),
-                "storage": self._policy_value(getattr(item, "storage", "")),
-                "download_path": self._policy_value(getattr(item, "download_path", "")),
-                "library_path": self._policy_value(getattr(item, "library_path", "")),
-                "library_storage": self._policy_value(getattr(item, "library_storage", "")),
-                "media_type": self._policy_value(getattr(item, "media_type", "")),
-                "media_category": self._policy_value(getattr(item, "media_category", "")),
-                "transfer_type": transfer_type,
-                "overwrite_mode": self._policy_value(getattr(item, "overwrite_mode", "")) or "never",
-                "renaming": bool(getattr(item, "renaming", False)),
-                "scraping": bool(getattr(item, "scraping", False)),
-                "notify": bool(getattr(item, "notify", True)),
-                "library_type_folder": bool(getattr(item, "library_type_folder", False)),
-                "library_category_folder": bool(getattr(item, "library_category_folder", False)),
-                "download_type_folder": bool(getattr(item, "download_type_folder", False)),
-                "download_category_folder": bool(getattr(item, "download_category_folder", False)),
-            })
-        return sorted(result, key=lambda row: (row["priority"], row["index"]))
+            value = int(value)
+        except (TypeError, ValueError):
+            value = default
+        return max(minimum, min(value, maximum))
 
-    def _get_organize_policy(self, policy_id: str) -> Optional[Dict[str, Any]]:
-        for policy in self._mp_organize_policies():
-            if policy["id"] == str(policy_id or ""):
-                return policy
-        return None
+    def _default_monitor_config(self) -> Dict[str, Any]:
+        return {
+            "enabled": False,
+            "path": "/",
+            "interval": self._monitor_default_interval,
+            "stability": self._monitor_default_stability,
+            "batch_size": self._monitor_default_batch_size,
+            "recursive": True,
+        }
+
+    def _load_monitor_config(self) -> Dict[str, Any]:
+        config = self._default_monitor_config()
+        saved = self.get_data(self._monitor_config_key) or {}
+        if isinstance(saved, dict):
+            config.update(saved)
+        config["enabled"] = bool(config.get("enabled"))
+        config["path"] = self._organize_normalize_path(config.get("path") or "/")
+        config["interval"] = self._bounded_int(config.get("interval"), 60, 30, 3600)
+        config["stability"] = self._bounded_int(config.get("stability"), 30, 0, 3600)
+        config["batch_size"] = self._bounded_int(config.get("batch_size"), 100, 1, 500)
+        config["recursive"] = bool(config.get("recursive", True))
+        return config
+
+    def init_organizer_monitor(self, force: bool = False) -> None:
+        """从插件后端持久化数据恢复设置，而不是依赖浏览器 localStorage。"""
+        if self._organize_monitor_initialized and not force:
+            return
+        config = self._load_monitor_config()
+        self._organize_monitor_enabled = config["enabled"]
+        self._organize_monitor_path = config["path"]
+        self._organize_monitor_interval = config["interval"]
+        self._organize_monitor_stability = config["stability"]
+        self._organize_monitor_batch_size = config["batch_size"]
+        self._organize_monitor_recursive = config["recursive"]
+        self._organize_monitor_last_tick = 0.0
+        self._organize_dispatcher = None
+        self._organize_scan_lock = self._organize_scan_lock or threading.Lock()
+        self._organize_monitor_initialized = True
+        logger.info(
+            "【光鸭云盘助手】【自动整理】恢复设置: enabled=%s path=%s interval=%ss stability=%ss batch=%s recursive=%s",
+            self._organize_monitor_enabled,
+            self._organize_monitor_path,
+            self._organize_monitor_interval,
+            self._organize_monitor_stability,
+            self._organize_monitor_batch_size,
+            self._organize_monitor_recursive,
+        )
+
+    def get_service(self) -> List[Dict[str, Any]]:
+        """始终注册轻量心跳；保存启停设置后无需重启插件即可生效。"""
+        self.init_organizer_monitor()
+        base_getter = getattr(super(), "get_service", None)
+        services = list(base_getter() or []) if callable(base_getter) else []
+        services.append({
+            "id": "ShukGuangYaDiskAutoMonitor",
+            "name": "光鸭云盘自动整理监控",
+            "trigger": IntervalTrigger(seconds=self._monitor_heartbeat),
+            "func": self.organize_monitor_tick,
+            "kwargs": {},
+        })
+        return services
+
+    def _monitor_config_payload(self) -> Dict[str, Any]:
+        self.init_organizer_monitor()
+        return {
+            "enabled": self._organize_monitor_enabled,
+            "path": self._organize_monitor_path,
+            "interval": self._organize_monitor_interval,
+            "stability": self._organize_monitor_stability,
+            "batch_size": self._organize_monitor_batch_size,
+            "recursive": self._organize_monitor_recursive,
+        }
+
+    def _get_organize_dispatcher(self) -> TransferDispatcher:
+        if self._organize_dispatcher is None:
+            self._organize_dispatcher = TransferDispatcher()
+        return self._organize_dispatcher
 
     @staticmethod
-    def _policy_matches_media(policy: Dict[str, Any], media_type: str, category: str) -> bool:
-        wanted_type = str(policy.get("media_type") or "").strip()
-        wanted_category = str(policy.get("media_category") or "").strip()
-        if wanted_type and wanted_type != media_type:
-            return False
-        if wanted_category and wanted_category != category:
-            return False
-        return True
+    def _fingerprint(item: Any) -> str:
+        raw = "|".join([
+            str(getattr(item, "fileid", "") or ""),
+            str(getattr(item, "size", 0) or 0),
+            str(getattr(item, "modify_time", 0) or 0),
+        ])
+        return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
-    def _auto_policy_for_media(self, media_type: str, category: str) -> Optional[Dict[str, Any]]:
-        for policy in self._mp_organize_policies():
-            if self._policy_matches_media(policy, media_type, category):
-                return policy
-        return None
+    def _scan_cloud_files(self, root_path: str) -> Tuple[List[Any], bool]:
+        """只枚举文件，不在插件内识别媒体或计算分类目录。"""
+        if not self._guangya_api:
+            raise RuntimeError("光鸭云盘尚未登录或存储未初始化")
+        root = self._guangya_api.get_item(Path(root_path))
+        if not root or root.type != "dir":
+            raise RuntimeError(f"监控目录不存在: {root_path}")
 
-    def api_organize_policies(self) -> Dict[str, Any]:
-        policies = self._mp_organize_policies()
+        files: List[Any] = []
+        queue: List[Any] = [root]
+        visited = 0
+        truncated = False
+        while queue:
+            current = queue.pop(0)
+            for child in self._guangya_api.list(current) or []:
+                visited += 1
+                if visited > self._monitor_inventory_cap:
+                    truncated = True
+                    queue.clear()
+                    break
+                if str(getattr(child, "name", "") or "").startswith("."):
+                    continue
+                if child.type == "dir":
+                    if self._organize_monitor_recursive:
+                        queue.append(child)
+                elif child.type == "file":
+                    files.append(child)
+        return files, truncated
+
+    def _append_monitor_history(self, row: Dict[str, Any]) -> None:
+        history = list(self.get_data(self._monitor_history_key) or [])
+        history.append(row)
+        self.save_data(self._monitor_history_key, history[-self._monitor_history_limit:])
+
+    def _save_monitor_status(self, **kwargs: Any) -> Dict[str, Any]:
+        status = dict(self.get_data(self._monitor_status_key) or {})
+        status.update(kwargs)
+        self.save_data(self._monitor_status_key, status)
+        return status
+
+    def _dispatch_to_moviepilot(self, item: Any) -> bool:
+        """唯一整理入口：MoviePilot 原生 TransferDispatcher。"""
+        return bool(self._get_organize_dispatcher().handle_file(
+            storage=self._disk_name,
+            event_path=Path(str(item.path or "")),
+            file_size=int(getattr(item, "size", 0) or 0),
+            file_modify_time=float(getattr(item, "modify_time", 0) or 0),
+            fileid=str(getattr(item, "fileid", "") or "") or None,
+        ))
+
+    def run_organize_monitor_scan(self, manual: bool = False) -> Dict[str, Any]:
+        self.init_organizer_monitor()
+        if not manual and not self._organize_monitor_enabled:
+            return {"success": True, "message": "自动整理监控未启用", "data": {"disabled": True}}
+        if not self._enabled or not self._guangya_api:
+            return {"success": False, "message": "光鸭云盘未启用或未登录"}
+        if self._organize_monitor_path == "/":
+            return {"success": False, "message": "请先选择具体监控目录，禁止直接监控根目录"}
+
+        lock = self._organize_scan_lock or threading.Lock()
+        self._organize_scan_lock = lock
+        if not lock.acquire(blocking=False):
+            return {"success": False, "message": "已有自动整理扫描正在运行，请稍后再试"}
+
+        started = time.time()
+        now_text = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            dispatcher = self._get_organize_dispatcher()
+            try:
+                dispatcher.retry_pending()
+            except Exception as err:
+                logger.debug("【光鸭云盘助手】【自动整理】MP 待重试检查失败: %s", err)
+
+            files, truncated = self._scan_cloud_files(self._organize_monitor_path)
+            state = dict(self.get_data(self._monitor_state_key) or {})
+            seen: Dict[str, str] = dict(state.get("seen") or {})
+            pending: Dict[str, Dict[str, Any]] = dict(state.get("pending") or {})
+            inventory_paths = set()
+            changed: List[Tuple[Any, str, str]] = []
+
+            for item in files:
+                path = self._organize_normalize_path(getattr(item, "path", ""))
+                inventory_paths.add(path)
+                fp = self._fingerprint(item)
+                if seen.get(path) == fp:
+                    pending.pop(path, None)
+                    continue
+                changed.append((item, path, fp))
+
+            if not truncated:
+                seen = {path: fp for path, fp in seen.items() if path in inventory_paths}
+                pending = {path: row for path, row in pending.items() if path in inventory_paths}
+
+            now = time.time()
+            waiting = 0
+            ready: List[Tuple[Any, str, str]] = []
+            for item, path, fp in changed:
+                previous = pending.get(path) or {}
+                if previous.get("fingerprint") != fp:
+                    pending[path] = {"fingerprint": fp, "first_seen": now}
+                    previous = pending[path]
+                if now - float(previous.get("first_seen") or now) < self._organize_monitor_stability:
+                    waiting += 1
+                    continue
+                ready.append((item, path, fp))
+
+            ready.sort(key=lambda row: float(getattr(row[0], "modify_time", 0) or 0))
+            ready = ready[:self._organize_monitor_batch_size]
+
+            submitted = gated = failed = 0
+            errors: List[str] = []
+            for item, path, fp in ready:
+                try:
+                    accepted = self._dispatch_to_moviepilot(item)
+                    if accepted:
+                        submitted += 1
+                        result, message = "submitted", "已提交 MoviePilot 原生整理链"
+                    else:
+                        gated += 1
+                        result, message = "gated", "MoviePilot 原生历史/去重/扩展名门控未入队"
+                    # accepted=False 也属于 MP 已给出的确定门控结果；插件不二次发明判定规则。
+                    seen[path] = fp
+                    pending.pop(path, None)
+                    self._append_monitor_history({
+                        "time": now_text,
+                        "path": path,
+                        "name": str(getattr(item, "name", "") or Path(path).name),
+                        "size": int(getattr(item, "size", 0) or 0),
+                        "result": result,
+                        "message": message,
+                    })
+                except Exception as err:
+                    failed += 1
+                    errors.append(f"{path}: {err}")
+                    logger.error("【光鸭云盘助手】【自动整理】提交 MP 整理链失败: %s - %s", path, err)
+
+            self.save_data(self._monitor_state_key, {
+                "seen": seen,
+                "pending": pending,
+                "monitor_path": self._organize_monitor_path,
+                "updated_at": now_text,
+            })
+            status = self._save_monitor_status(
+                running=self._organize_monitor_enabled,
+                last_scan=now_text,
+                monitor_path=self._organize_monitor_path,
+                inventory=len(files),
+                changed=len(changed),
+                waiting=waiting,
+                submitted=submitted,
+                gated=gated,
+                failed=failed,
+                truncated=truncated,
+                duration_ms=int((time.time() - started) * 1000),
+                errors=errors[:10],
+            )
+            message = (
+                f"扫描完成：文件 {len(files)}，变化 {len(changed)}，提交 MP {submitted}，"
+                f"MP 门控 {gated}，等待稳定 {waiting}，失败 {failed}"
+            )
+            logger.info("【光鸭云盘助手】【自动整理】%s", message)
+            return {"success": failed == 0, "message": message, "data": status}
+        except Exception as err:
+            logger.exception("【光鸭云盘助手】【自动整理】扫描失败: %s", err)
+            status = self._save_monitor_status(
+                running=self._organize_monitor_enabled,
+                last_scan=now_text,
+                monitor_path=self._organize_monitor_path,
+                failed=1,
+                errors=[str(err)],
+            )
+            return {"success": False, "message": f"自动整理扫描失败: {err}", "data": status}
+        finally:
+            lock.release()
+
+    def organize_monitor_tick(self) -> None:
+        """30 秒心跳；真正扫描周期由用户设置控制。"""
+        self.init_organizer_monitor()
+        if not self._organize_monitor_enabled:
+            return
+        now = time.monotonic()
+        if self._organize_monitor_last_tick and now - self._organize_monitor_last_tick < self._organize_monitor_interval:
+            return
+        self._organize_monitor_last_tick = now
+        self.run_organize_monitor_scan(manual=False)
+
+    def _moviepilot_directory_summary(self) -> Dict[str, Any]:
+        try:
+            dirs = DirectoryHelper().get_dirs() or []
+            enabled = [item for item in dirs if getattr(item, "monitor_type", None)]
+            return {
+                "directory_count": len(dirs),
+                "organize_enabled_count": len(enabled),
+                "message": "分类、命名、目标目录、整理方式、覆盖与刮削均使用 MoviePilot 当前内置目录配置",
+            }
+        except Exception as err:
+            return {"directory_count": 0, "organize_enabled_count": 0, "message": f"读取 MoviePilot 目录配置失败: {err}"}
+
+    def api_organize_monitor_config(self) -> Dict[str, Any]:
+        return {"success": True, "data": {"config": self._monitor_config_payload(), "mp": self._moviepilot_directory_summary()}}
+
+    def api_organize_monitor_save(self, payload: dict) -> Dict[str, Any]:
+        self.init_organizer_monitor()
+        payload = payload or {}
+        try:
+            old_path = self._organize_monitor_path
+            path = self._organize_normalize_path(payload.get("path", old_path))
+            enabled = bool(payload.get("enabled", self._organize_monitor_enabled))
+            if enabled and path == "/":
+                return {"success": False, "message": "启用自动整理前必须选择具体监控目录"}
+            if self._guangya_api and path != "/":
+                folder = self._guangya_api.get_item(Path(path))
+                if not folder or folder.type != "dir":
+                    return {"success": False, "message": f"监控目录不存在: {path}"}
+
+            config = {
+                "enabled": enabled,
+                "path": path,
+                "interval": self._bounded_int(payload.get("interval", self._organize_monitor_interval), 60, 30, 3600),
+                "stability": self._bounded_int(payload.get("stability", self._organize_monitor_stability), 30, 0, 3600),
+                "batch_size": self._bounded_int(payload.get("batch_size", self._organize_monitor_batch_size), 100, 1, 500),
+                "recursive": bool(payload.get("recursive", self._organize_monitor_recursive)),
+            }
+            self.save_data(self._monitor_config_key, config)
+            self._organize_monitor_enabled = config["enabled"]
+            self._organize_monitor_path = config["path"]
+            self._organize_monitor_interval = config["interval"]
+            self._organize_monitor_stability = config["stability"]
+            self._organize_monitor_batch_size = config["batch_size"]
+            self._organize_monitor_recursive = config["recursive"]
+            self._organize_monitor_last_tick = 0.0
+            if old_path != path:
+                self.save_data(self._monitor_state_key, {})
+            self._save_monitor_status(running=enabled, monitor_path=path)
+            return {
+                "success": True,
+                "message": "自动整理设置已保存，监控状态立即生效",
+                "data": {"config": config, "mp": self._moviepilot_directory_summary()},
+            }
+        except Exception as err:
+            return {"success": False, "message": f"保存自动整理设置失败: {err}"}
+
+    def api_organize_monitor_scan(self, payload: dict = None) -> Dict[str, Any]:
+        return self.run_organize_monitor_scan(manual=True)
+
+    def api_organize_monitor_status(self) -> Dict[str, Any]:
+        self.init_organizer_monitor()
+        status = dict(self.get_data(self._monitor_status_key) or {})
+        status.setdefault("running", self._organize_monitor_enabled)
+        status.setdefault("monitor_path", self._organize_monitor_path)
+        history = list(self.get_data(self._monitor_history_key) or [])[-20:][::-1]
         return {
             "success": True,
-            "message": f"读取到 {len(policies)} 条 MoviePilot 媒体库目录策略",
             "data": {
-                "policies": policies,
-                "auto": {
-                    "id": "auto",
-                    "name": "自动按 MoviePilot 优先级匹配",
-                    "description": "按媒体类型/媒体类别匹配 MoviePilot 当前目录配置，优先级越小越先使用",
-                },
+                "config": self._monitor_config_payload(),
+                "status": status,
+                "history": history,
+                "mp": self._moviepilot_directory_summary(),
             },
         }
 
+    def api_organize_policies(self) -> Dict[str, Any]:
+        """兼容 v3.1.0 旧入口；不再让插件选择/复制 MP 分类策略。"""
+        summary = self._moviepilot_directory_summary()
+        return {"success": True, "message": summary["message"], "data": {"policies": [], "managed_by": "MoviePilot", "summary": summary}}
+
     def api_organize_folders(self, payload: dict) -> Dict[str, Any]:
-        """只返回当前层目录，供前端安全选择源/目标目录。"""
+        """只浏览目录供选择“监控目录”。"""
         if not self._guangya_api:
             return {"success": False, "message": "光鸭云盘尚未登录或存储未初始化"}
         try:
@@ -154,388 +445,15 @@ class GuangYaOrganizerMixin:
             parent = "/" if path == "/" else self._organize_normalize_path(str(PurePosixPath(path).parent))
             return {"success": True, "data": {"path": path, "parent": parent, "folders": rows}}
         except Exception as err:
-            logger.warning("【光鸭云盘助手】【网盘整理】浏览目录失败: %s", err)
             return {"success": False, "message": f"浏览目录失败: {err}"}
 
-    @staticmethod
-    def _item_extension(item: Any) -> str:
-        ext = str(getattr(item, "extension", "") or "").strip().lower()
-        if ext and not ext.startswith("."):
-            ext = "." + ext
-        return ext or Path(str(getattr(item, "name", "") or "")).suffix.lower()
-
-    def _find_representative_media(self, item: Any) -> Tuple[Optional[Any], int]:
-        """目录只探测有限节点，找到一个代表视频即可识别；不下载媒体文件。"""
-        if getattr(item, "type", "") == "file":
-            return (item, 1) if self._item_extension(item) in _VIDEO_EXTENSIONS else (None, 1)
-        queue: List[Tuple[Any, int]] = [(item, 0)]
-        visited = 0
-        while queue and visited < self._organize_probe_nodes:
-            current, depth = queue.pop(0)
-            if depth >= self._organize_probe_depth:
-                continue
-            try:
-                children = self._guangya_api.list(current) or []
-            except Exception:
-                continue
-            for child in children:
-                visited += 1
-                if child.type == "file" and self._item_extension(child) in _VIDEO_EXTENSIONS:
-                    return child, visited
-                if child.type == "dir" and depth + 1 < self._organize_probe_depth:
-                    queue.append((child, depth + 1))
-                if visited >= self._organize_probe_nodes:
-                    break
-        return None, visited
-
-    @staticmethod
-    def _media_payload(media: Any) -> Dict[str, Any]:
-        mtype = getattr(getattr(media, "type", None), "value", getattr(media, "type", ""))
-        return {
-            "title": str(getattr(media, "title", "") or getattr(media, "original_title", "") or ""),
-            "year": getattr(media, "year", None),
-            "type": str(mtype or ""),
-            "category": str(getattr(media, "category", "") or ""),
-            "media_source": str(getattr(getattr(media, "media_source", None), "value", getattr(media, "media_source", "")) or ""),
-            "media_id": str(getattr(media, "media_id", "") or getattr(media, "tmdb_id", "") or ""),
-            "season": getattr(media, "season", None),
-        }
-
-    def _recognize_cloud_item(self, item: Any) -> Tuple[Optional[Dict[str, Any]], str]:
-        representative, probed = self._find_representative_media(item)
-        if not representative:
-            return None, f"未在前 {probed} 个节点中找到可识别视频"
-        try:
-            meta = MetaInfoPath(Path(str(representative.path or representative.name or "")))
-            media = MediaChain().recognize_by_meta(meta, obtain_images=False)
-            if not media:
-                return None, f"MoviePilot 未识别: {representative.name}"
-            return self._media_payload(media), ""
-        except Exception as err:
-            return None, f"MoviePilot 识别异常: {err}"
-
-    @staticmethod
-    def _sanitize_folder_name(value: Any) -> str:
-        text = str(value or "").strip().replace("/", "／").replace("\\", "＼")
-        return text[:120]
-
-    def _build_target_parent(self, target_root: str, policy: Dict[str, Any], media: Dict[str, Any]) -> str:
-        parts = [self._organize_normalize_path(target_root)]
-        if policy.get("library_type_folder"):
-            type_name = self._sanitize_folder_name(media.get("type"))
-            if type_name:
-                parts.append(type_name)
-        if policy.get("library_category_folder"):
-            category = self._sanitize_folder_name(media.get("category"))
-            if category:
-                parts.append(category)
-        current = parts[0]
-        for part in parts[1:]:
-            current = self._organize_normalize_path(current.rstrip("/") + "/" + part)
-        return current
-
-    def _existing_target(self, target_parent: str, name: str) -> Optional[Any]:
-        try:
-            parent = self._guangya_api.get_item(Path(target_parent))
-            if not parent or parent.type != "dir":
-                return None
-            for item in self._guangya_api.list(parent) or []:
-                if item.name == name:
-                    return item
-        except Exception:
-            return None
-        return None
-
-    @staticmethod
-    def _conflict_decision(source: Any, existing: Any, overwrite_mode: str) -> Tuple[str, str]:
-        if not existing:
-            return "ready", ""
-        mode = str(overwrite_mode or "never").lower()
-        if mode == "never":
-            return "skip", "目标已存在，MP 覆盖策略=never"
-        if mode == "size":
-            src_size = int(getattr(source, "size", 0) or 0)
-            dst_size = int(getattr(existing, "size", 0) or 0)
-            if src_size and dst_size and src_size == dst_size:
-                return "skip", "目标已存在且大小一致"
-            return "overwrite", "目标已存在且大小不同，需要允许覆盖"
-        if mode == "latest":
-            src_time = int(getattr(source, "modify_time", 0) or 0)
-            dst_time = int(getattr(existing, "modify_time", 0) or 0)
-            if src_time and dst_time and src_time <= dst_time:
-                return "skip", "目标文件更新时间不旧于源文件"
-            return "overwrite", "源文件较新，需要允许覆盖"
-        return "overwrite", f"目标已存在，MP 覆盖策略={mode or 'always'}，需要允许覆盖"
-
-    def _resolve_operation(self, requested: str, policy: Dict[str, Any]) -> Tuple[str, str]:
-        requested = str(requested or "policy").lower()
-        if requested in {"move", "copy"}:
-            return requested, "用户指定"
-        configured = str(policy.get("transfer_type") or "move").lower()
-        if configured in {"move", "copy"}:
-            return configured, "MoviePilot目录配置"
-        return "move", f"MP整理方式 {configured or '-'} 不支持网盘内操作，安全回退为移动"
-
-    @staticmethod
-    def _same_stem_sidecars(items: List[Any], video: Any) -> List[Any]:
-        stem = Path(str(video.name or "")).stem
-        result = []
-        for item in items:
-            if item.type != "file" or item is video:
-                continue
-            if Path(str(item.name or "")).stem == stem and Path(str(item.name or "")).suffix.lower() in _SIDECAR_EXTENSIONS:
-                result.append(item)
-        return result
-
-    def _validate_organize_roots(self, source: str, target: str) -> Tuple[str, str]:
-        source = self._organize_normalize_path(source)
-        target = self._organize_normalize_path(target)
-        if source == "/":
-            raise ValueError("首版网盘整理不允许直接整理根目录，请选择一个具体源文件夹")
-        if source == target:
-            raise ValueError("源目录和目标目录不能相同")
-        source_prefix = source.rstrip("/") + "/"
-        if target.startswith(source_prefix):
-            raise ValueError("目标目录不能位于源目录内部，避免循环整理")
-        return source, target
-
-    def _build_organize_plan(self, payload: dict, store: bool = True) -> Dict[str, Any]:
-        if not self._guangya_api:
-            return {"success": False, "message": "光鸭云盘尚未登录或存储未初始化"}
-        payload = payload or {}
-        try:
-            source_path, target_path = self._validate_organize_roots(payload.get("source_path"), payload.get("target_path"))
-        except Exception as err:
-            return {"success": False, "message": str(err)}
-        policy_id = str(payload.get("policy_id") or "auto")
-        requested_operation = str(payload.get("operation") or "policy")
-        allow_overwrite = bool(payload.get("allow_overwrite", False))
-        try:
-            max_items = int(payload.get("max_items") or self._organize_max_items)
-        except (TypeError, ValueError):
-            max_items = self._organize_max_items
-        max_items = max(1, min(max_items, self._organize_max_items))
-
-        source_folder = self._guangya_api.get_item(Path(source_path))
-        if not source_folder or source_folder.type != "dir":
-            return {"success": False, "message": f"源目录不存在: {source_path}"}
-        target_existing = self._guangya_api.get_item(Path(target_path))
-        if target_existing and target_existing.type != "dir":
-            return {"success": False, "message": f"目标路径不是文件夹: {target_path}"}
-
-        explicit_policy = None if policy_id == "auto" else self._get_organize_policy(policy_id)
-        if policy_id != "auto" and not explicit_policy:
-            return {"success": False, "message": "所选 MoviePilot 目录策略已不存在，请刷新策略列表"}
-
-        top_items = list(self._guangya_api.list(source_folder) or [])[:max_items]
-        rows: List[Dict[str, Any]] = []
-        summary = {"total": len(top_items), "ready": 0, "unrecognized": 0, "skipped": 0, "conflict": 0, "non_media": 0}
-        for item in top_items:
-            if str(item.name or "").startswith("."):
-                summary["non_media"] += 1
-                continue
-            if item.type == "file" and self._item_extension(item) not in _VIDEO_EXTENSIONS:
-                summary["non_media"] += 1
-                continue
-            media, recognize_error = self._recognize_cloud_item(item)
-            base = {
-                "source_path": self._organize_normalize_path(item.path),
-                "source_fileid": str(item.fileid or ""),
-                "source_name": str(item.name or ""),
-                "source_type": str(item.type or ""),
-                "size": int(item.size or 0),
-                "media": media,
-                "policy": None,
-                "target_parent": "",
-                "target_path": "",
-                "operation": "",
-                "operation_source": "",
-                "overwrite_mode": "",
-                "status": "",
-                "reason": "",
-                "companions": [],
-            }
-            if not media:
-                base.update(status="unrecognized", reason=recognize_error)
-                summary["unrecognized"] += 1
-                rows.append(base)
-                continue
-
-            policy = explicit_policy or self._auto_policy_for_media(media["type"], media["category"])
-            if not policy:
-                base.update(status="skipped", reason="没有匹配媒体类型/类别的 MoviePilot 媒体库目录策略")
-                summary["skipped"] += 1
-                rows.append(base)
-                continue
-            if explicit_policy and not self._policy_matches_media(policy, media["type"], media["category"]):
-                base.update(policy=policy, status="skipped", reason="媒体类型/类别不符合所选 MoviePilot 目录策略")
-                summary["skipped"] += 1
-                rows.append(base)
-                continue
-
-            operation, operation_source = self._resolve_operation(requested_operation, policy)
-            target_parent = self._build_target_parent(target_path, policy, media)
-            target_full = self._organize_normalize_path(target_parent.rstrip("/") + "/" + str(item.name or ""))
-            existing = self._existing_target(target_parent, str(item.name or ""))
-            decision, reason = self._conflict_decision(item, existing, policy.get("overwrite_mode"))
-            companions = self._same_stem_sidecars(top_items, item) if item.type == "file" else []
-
-            status = "ready"
-            if decision == "skip":
-                status = "skipped"
-                summary["skipped"] += 1
-            elif decision == "overwrite" and not allow_overwrite:
-                status = "conflict"
-                summary["conflict"] += 1
-            else:
-                summary["ready"] += 1
-            base.update(
-                policy=policy,
-                target_parent=target_parent,
-                target_path=target_full,
-                operation=operation,
-                operation_source=operation_source,
-                overwrite_mode=policy.get("overwrite_mode") or "never",
-                status=status,
-                reason=reason,
-                companions=[{
-                    "source_path": self._organize_normalize_path(companion.path),
-                    "source_fileid": str(companion.fileid or ""),
-                    "source_name": str(companion.name or ""),
-                } for companion in companions],
-            )
-            rows.append(base)
-
-        plan_id = uuid.uuid4().hex
-        plan = {
-            "plan_id": plan_id,
-            "created_at": time.time(),
-            "source_path": source_path,
-            "target_path": target_path,
-            "policy_id": policy_id,
-            "operation": requested_operation,
-            "allow_overwrite": allow_overwrite,
-            "items": rows,
-            "summary": summary,
-            "safe_note": "v3.1.0 仅按 MP 媒体类型/类别目录策略移动或复制，保持光鸭原文件/目录名称；智能重命名将在后续版本单独接入。",
-        }
-        if store:
-            self._organize_store_plan(plan)
-        return {"success": True, "message": f"预览完成：可执行 {summary['ready']} 项", "data": plan}
-
-    def _organize_store_plan(self, plan: Dict[str, Any]) -> None:
-        now = time.time()
-        plans = getattr(self, "_organize_plans", None)
-        if not isinstance(plans, dict):
-            plans = {}
-        plans = {
-            key: value for key, value in plans.items()
-            if now - float((value or {}).get("created_at") or 0) <= self._organize_plan_ttl
-        }
-        plans[str(plan.get("plan_id"))] = plan
-        self._organize_plans = plans
-
-    def api_organize_preview(self, payload: dict) -> Dict[str, Any]:
-        logger.info("【光鸭云盘助手】【网盘整理】开始生成整理预览")
-        return self._build_organize_plan(payload, store=True)
-
-    def _execute_one_organize_item(self, row: Dict[str, Any], allow_overwrite: bool) -> Tuple[bool, str]:
-        source = self._guangya_api.get_item(Path(str(row.get("source_path") or "")))
-        if not source:
-            return False, "源项目已不存在"
-        if str(row.get("source_fileid") or "") and str(source.fileid or "") != str(row.get("source_fileid")):
-            return False, "源项目 fileId 已变化，请重新预览"
-        target_parent = self._organize_normalize_path(row.get("target_parent"))
-        target_folder = self._guangya_api.get_folder(Path(target_parent))
-        if not target_folder:
-            return False, f"无法创建目标目录 {target_parent}"
-        existing = self._existing_target(target_parent, str(source.name or ""))
-        if existing:
-            if not allow_overwrite:
-                return False, "目标已存在且未允许覆盖"
-            if not self._guangya_api.delete(existing):
-                return False, "删除目标冲突项目失败"
-        operation = str(row.get("operation") or "move")
-        method = self._guangya_api.copy if operation == "copy" else self._guangya_api.move
-        if not method(source, Path(target_parent), str(source.name or "")):
-            return False, f"{operation} 失败"
-        for companion_info in row.get("companions") or []:
-            companion = self._guangya_api.get_item(Path(str(companion_info.get("source_path") or "")))
-            if not companion:
-                continue
-            companion_existing = self._existing_target(target_parent, str(companion.name or ""))
-            if companion_existing:
-                if allow_overwrite:
-                    if not self._guangya_api.delete(companion_existing):
-                        return False, f"字幕冲突删除失败: {companion.name}"
-                else:
-                    continue
-            if not method(companion, Path(target_parent), str(companion.name or "")):
-                return False, f"配套字幕整理失败: {companion.name}"
-        return True, ""
-
-    def api_organize_execute(self, payload: dict) -> Dict[str, Any]:
-        payload = payload or {}
-        if not bool(payload.get("confirm")):
-            return {"success": False, "message": "请先确认执行整理计划"}
-        plan_id = str(payload.get("plan_id") or "")
-        plans = getattr(self, "_organize_plans", {}) or {}
-        plan = plans.get(plan_id)
-        if not plan:
-            return {"success": False, "message": "整理计划不存在或已失效，请重新预览"}
-        if time.time() - float(plan.get("created_at") or 0) > self._organize_plan_ttl:
-            plans.pop(plan_id, None)
-            return {"success": False, "message": "整理计划已超过 15 分钟，请重新预览"}
-        allow_overwrite = bool(plan.get("allow_overwrite"))
-        result_rows = []
-        success_count = 0
-        failed_count = 0
-        for row in plan.get("items") or []:
-            if row.get("status") != "ready":
-                continue
-            ok, error = self._execute_one_organize_item(row, allow_overwrite=allow_overwrite)
-            result_rows.append({
-                "source_path": row.get("source_path"),
-                "target_path": row.get("target_path"),
-                "operation": row.get("operation"),
-                "success": ok,
-                "message": error or "完成",
-            })
-            if ok:
-                success_count += 1
-            else:
-                failed_count += 1
-        plans.pop(plan_id, None)
-        self._organize_plans = plans
-        history = list(self.get_data("organize_history") or [])
-        history.append({
-            "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "source_path": plan.get("source_path"),
-            "target_path": plan.get("target_path"),
-            "success": success_count,
-            "failed": failed_count,
-            "results": result_rows[:100],
-        })
-        self.save_data("organize_history", history[-100:])
-        logger.info(
-            "【光鸭云盘助手】【网盘整理】执行完成：成功=%s 失败=%s 源=%s 目标=%s",
-            success_count, failed_count, plan.get("source_path"), plan.get("target_path"),
-        )
-        return {
-            "success": failed_count == 0,
-            "message": f"整理完成：成功 {success_count}，失败 {failed_count}",
-            "data": {"success_count": success_count, "failed_count": failed_count, "results": result_rows},
-        }
-
-    def api_organize_history(self) -> Dict[str, Any]:
-        return {"success": True, "data": {"history": list(self.get_data("organize_history") or [])[-100:][::-1]}}
-
     def get_organizer_api(self) -> List[Dict[str, Any]]:
-        """V3 JSON API；写操作均使用 POST，执行必须由 preview 产生的 plan_id 二次确认。"""
+        self.init_organizer_monitor()
         return [
-            {"path": "/organize/policies", "endpoint": self.api_organize_policies, "auth": "bear", "methods": ["GET"], "summary": "读取 MoviePilot 目录分类策略", "response_model": GuangYaOrganizerResponse},
-            {"path": "/organize/folders", "endpoint": self.api_organize_folders, "auth": "bear", "methods": ["POST"], "summary": "浏览光鸭目录供网盘整理选择", "response_model": GuangYaOrganizerResponse},
-            {"path": "/organize/preview", "endpoint": self.api_organize_preview, "auth": "bear", "methods": ["POST"], "summary": "按 MoviePilot 分类策略预览光鸭网盘整理计划", "response_model": GuangYaOrganizerResponse},
-            {"path": "/organize/execute", "endpoint": self.api_organize_execute, "auth": "bear", "methods": ["POST"], "summary": "确认并执行光鸭网盘整理计划", "response_model": GuangYaOrganizerResponse},
-            {"path": "/organize/history", "endpoint": self.api_organize_history, "auth": "bear", "methods": ["GET"], "summary": "读取最近网盘整理历史", "response_model": GuangYaOrganizerResponse},
+            {"path": "/organize/policies", "endpoint": self.api_organize_policies, "auth": "bear", "methods": ["GET"], "summary": "查看 MoviePilot 内置整理状态", "response_model": GuangYaOrganizerResponse},
+            {"path": "/organize/folders", "endpoint": self.api_organize_folders, "auth": "bear", "methods": ["POST"], "summary": "浏览光鸭监控目录", "response_model": GuangYaOrganizerResponse},
+            {"path": "/organize/monitor/config", "endpoint": self.api_organize_monitor_config, "auth": "bear", "methods": ["GET"], "summary": "读取自动整理监控设置", "response_model": GuangYaOrganizerResponse},
+            {"path": "/organize/monitor/config", "endpoint": self.api_organize_monitor_save, "auth": "bear", "methods": ["POST"], "summary": "保存自动整理监控设置", "response_model": GuangYaOrganizerResponse},
+            {"path": "/organize/monitor/scan", "endpoint": self.api_organize_monitor_scan, "auth": "bear", "methods": ["POST"], "summary": "立即扫描并交给 MoviePilot 整理", "response_model": GuangYaOrganizerResponse},
+            {"path": "/organize/monitor/status", "endpoint": self.api_organize_monitor_status, "auth": "bear", "methods": ["GET"], "summary": "自动整理状态与最近记录", "response_model": GuangYaOrganizerResponse},
         ]

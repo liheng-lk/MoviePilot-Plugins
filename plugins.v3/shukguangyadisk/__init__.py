@@ -32,10 +32,10 @@ class ShukGuangYaDisk(GuangYaOrganizerMixin, V3StorageContractMixin, _LegacyPlug
     """光鸭云盘助手 MoviePilot V3 专用实现。"""
 
     plugin_name = "光鸭云盘助手"
-    plugin_desc = "MoviePilot V3 光鸭云盘存储助手，新增按 MoviePilot 目录分类策略进行网盘内预览整理/移动/复制，并支持登录、浏览、上传、下载、WebDAV 和 Emby 直连。"
-    plugin_version = "3.1.0"
+    plugin_desc = "MoviePilot V3 光鸭云盘存储助手：监控指定光鸭目录，发现新增或变化文件后直接交给 MoviePilot 内置整理链完成识别、分类、重命名与入库。"
+    plugin_version = "3.2.0"
     plugin_author = "liheng-lk"
-    plugin_label = "存储,光鸭云盘,网盘整理,分类,MoviePilot,挂载,Emby,WebDAV"
+    plugin_label = "存储,光鸭云盘,自动整理,目录监控,MoviePilot,挂载,Emby,WebDAV"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
 
     _disk_name = "光鸭云盘助手"
@@ -112,7 +112,7 @@ class ShukGuangYaDisk(GuangYaOrganizerMixin, V3StorageContractMixin, _LegacyPlug
         return data
 
     def _save_config(self, config_payload: dict) -> Dict[str, Any]:
-        """保存配置，包括上传进度监控开关。"""
+        """保存账号与存储配置。自动整理设置由独立后端持久化接口保存。"""
         try:
             config_payload = config_payload or {}
             sort_type_value = config_payload.get("sort_type")
@@ -314,7 +314,8 @@ class ShukGuangYaDisk(GuangYaOrganizerMixin, V3StorageContractMixin, _LegacyPlug
         self._sms_verification_id = ""
         self._sms_phone_number = ""
         self._sms_captcha_token = ""
-        self._organize_plans = {}
+        self._organize_dispatcher = None
+        self._organize_monitor_initialized = False
         self._guangya_api = None
         self._client = None
         self._enabled = False
