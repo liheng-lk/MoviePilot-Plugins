@@ -1,4 +1,4 @@
-"""光鸭转存助手 v1.7.1 运行入口。
+"""光鸭转存助手 v1.7.2 运行入口。
 
 routing_v170 保留全入口 search 硬分流与消息直订，experience_v170 增加非阻塞后台检查、
 消息管理、自检、原因诊断和路线崩溃恢复；reliability_v170 负责高频并发合并、热重载
@@ -27,6 +27,7 @@ from app.sdk.events import Event, eventmanager
 from . import legacy as _legacy_module
 from .episode_compat_v171 import collapse_unparsed_failure_notice, install_episode_filename_compat
 from .experience_v170 import GuangYaExperienceMixin
+from .page_auth_v172 import force_bear_auth, strip_page_api_secrets
 from .reliability_v170 import GuangYaReliabilityMixin
 from .runtime_v170 import GuangYaRuntimeFinalizerMixin
 from .routing_v170 import GuangYaTransferAssistant as _RoutingV170Assistant
@@ -44,8 +45,17 @@ class GuangYaTransferAssistant(
 ):
     """完整硬分流：搜索 + RSS + 下载门禁 + 体验 + 可靠性 + 最终运行编排。"""
 
-    plugin_version = "1.7.1"
-    build_id = "20260825-r13"
+    plugin_version = "1.7.2"
+    build_id = "20260825-r14"
+
+    def get_api(self):
+        """状态页/API 统一使用 MoviePilot V3 当前登录会话的 Bearer 鉴权。"""
+        return force_bear_auth(super().get_api())
+
+    @staticmethod
+    def _normalize_page_api_auth(node: Any) -> None:
+        """状态页按钮只传业务参数，不再向前端暴露或依赖 API_TOKEN。"""
+        strip_page_api_secrets(node)
 
     def post_message(self, *args, **kwargs):
         """发送前合并同一通知里的重复“无法解析集号”诊断，避免同批文件重复告警。"""
@@ -224,6 +234,8 @@ class GuangYaTransferAssistant(
 
     def get_page(self):
         pages = super().get_page() or []
+        # 最终再做一次页面动作清洗，覆盖 legacy/routing/mixin 任何层生成的按钮。
+        strip_page_api_secrets(pages)
         match_guard, download_guard = self._native_guard_status()
 
         health_card = None
