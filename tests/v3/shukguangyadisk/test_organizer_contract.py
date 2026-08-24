@@ -9,117 +9,158 @@ PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
 INIT = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 ORGANIZER = (PLUGIN / "organizer.py").read_text(encoding="utf-8")
 RECOGNITION = (PLUGIN / "organizer_recognition.py").read_text(encoding="utf-8")
+RUNTIME = (PLUGIN / "organizer_runtime.py").read_text(encoding="utf-8")
+STATE = (PLUGIN / "organizer_state.py").read_text(encoding="utf-8")
+HISTORY = (PLUGIN / "organizer_history.py").read_text(encoding="utf-8")
 MODELS = (PLUGIN / "models.py").read_text(encoding="utf-8")
 REMOTE = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf-8")
-PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v320.js").read_text(encoding="utf-8")
+PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v330.js").read_text(encoding="utf-8")
 
 
-def test_v322_version_and_federation_entry():
+def test_v330_version_and_federation_entry():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "3.2.2"
-    assert local["version"] == "3.2.2"
-    assert 'plugin_version = "3.2.2"' in INIT
-    assert "__federation_expose_AssistantPage-v320.js?v=3.2.2" in REMOTE
+    assert package["version"] == "3.3.0"
+    assert local["version"] == "3.3.0"
+    assert 'plugin_version = "3.3.0"' in INIT
+    assert "__federation_expose_AssistantPage-v330.js?v=3.3.0" in REMOTE
     assert "自动整理监控" in PAGE
-    assert "v3.2.2" in package["history"]
+    assert "v3.3.0" in package["history"]
 
 
-def test_auto_monitor_delegates_organization_to_moviepilot_native_chain():
+def test_architecture_separates_monitor_state_history_recognition_and_runtime():
+    assert "from .organizer_state import OrganizerStateStore" in ORGANIZER
+    assert "from .organizer_history import inspect_moviepilot_history" in ORGANIZER
+    assert "from .organizer_runtime import bind_organizer_runtime" in RECOGNITION
+    assert "class OrganizerStateStore" in STATE
+    assert "def inspect_moviepilot_history" in HISTORY
+    assert "def bind_organizer_runtime" in RUNTIME
+    assert "eventmanager.register" not in RECOGNITION
+    assert "DirectoryHelper" not in STATE
+    assert "TransferChain" not in STATE
+    assert "TransferDispatcher" not in STATE
+
+
+def test_auto_monitor_delegates_business_rules_to_moviepilot():
     assert "from app.monitor.dispatcher import TransferDispatcher" in ORGANIZER
     assert "TransferDispatcher()" in ORGANIZER
     assert ".handle_file(" in ORGANIZER
     assert "DirectoryHelper().get_dirs()" in ORGANIZER
-    assert "TransferChain" in ORGANIZER  # documented responsibility boundary
-    assert "插件不维护第二套分类或命名规则" in ORGANIZER
-
-    # v3.2+ must not rebuild the old custom planner / target naming path.
+    assert "插件不维护第二套媒体库规则" in ORGANIZER
     for legacy_symbol in (
         "_build_organize_plan",
         "_build_target_parent",
         "_auto_policy_for_media",
         "_resolve_operation",
         "_conflict_decision",
-        "MediaChain().recognize_by_meta",
         "self._guangya_api.move",
         "self._guangya_api.copy",
     ):
         assert legacy_symbol not in ORGANIZER
 
 
-def test_v322_registers_real_v3_storage_and_terminal_result_bridges():
-    assert "from app.runtime.events import Event, eventmanager" in RECOGNITION
-    assert "ChainEventType.StorageOperSelection" in RECOGNITION
-    assert "EventType.TransferComplete" in RECOGNITION
-    assert "EventType.TransferFailed" in RECOGNITION
-    assert "_guangya_storage_selection_bridge" in RECOGNITION
-    assert "plugin.storage_oper_selection(event)" in RECOGNITION
-    assert "organizer_transfer_complete" in RECOGNITION
-    assert "organizer_transfer_failed" in RECOGNITION
+def test_runtime_bridge_covers_storage_video_subtitle_and_audio_terminal_events():
+    for token in (
+        "ChainEventType.StorageOperSelection",
+        "EventType.TransferComplete",
+        "EventType.TransferFailed",
+        "EventType.SubtitleTransferComplete",
+        "EventType.SubtitleTransferFailed",
+        "EventType.AudioTransferComplete",
+        "EventType.AudioTransferFailed",
+        "organizer_transfer_complete",
+        "organizer_transfer_failed",
+    ):
+        assert token in RUNTIME, token
+    assert "weakref.ref(plugin)" in RUNTIME
+    assert "active_organizer_plugin() is plugin" in RUNTIME
 
 
-def test_numeric_episode_uses_parent_title_as_moviepilot_recognition_hint():
-    assert "from .organizer_recognition import GuangYaOrganizerMixin" in INIT
-    assert "from app.chain.transfer import TransferChain" in RECOGNITION
-    assert "from app.domain.metainfo import MetaInfo" in RECOGNITION
-    assert "_episode_parent_context" in RECOGNITION
+def test_state_machine_only_marks_terminal_success_completed():
+    for token in ('"completed"', '"stabilizing"', '"inflight"', '"retry"', '"blocked"'):
+        assert token in STATE
+    assert "mark_submitting" in STATE
+    assert "mark_completed" in STATE
+    assert "mark_failed" in STATE
+    assert "mark_blocked" in STATE
+    assert "clear_blocked" in STATE
+    assert "inflight_lease_seconds" in STATE
+    assert "retry_delay" in STATE
+    assert "blocked_recheck_seconds" in STATE
+    assert "v3.3.0-reconfirm-v32-seen" in STATE
+    migration = STATE.split("def migrate_from_v322", 1)[1]
+    assert '"completed": {}' in migration
+    assert 'normalized["retry"][path]' in migration
+
+
+def test_moviepilot_history_gate_is_reused_instead_of_reimplemented():
+    for token in (
+        "HistoryGateAction",
+        "resolve_history",
+        "evaluate_history_gate",
+        "describe_history_gate",
+        "HistoryGateAction.SKIP",
+        "HistoryGateAction.SKIP_RETRY_EXHAUSTED",
+    ):
+        assert token in HISTORY, token
+    assert '"decision": "completed"' in HISTORY
+    assert '"decision": "blocked"' in HISTORY
+    assert '"decision": "unknown"' in HISTORY
+    assert "inspect_moviepilot_history(" in ORGANIZER
+
+
+def test_scan_marks_inflight_before_dispatch_and_waits_for_terminal_receipt():
+    preflight = ORGANIZER.index("preflight = self._preflight_history(item, path)")
+    mark = ORGANIZER.index("state.mark_submitting(")
+    dispatch = ORGANIZER.index("accepted = self._dispatch_to_moviepilot(item)")
+    assert preflight < mark < dispatch
+    assert 'result="queued"' in ORGANIZER
+    assert "等待最终回执" in ORGANIZER
+    assert "state.mark_deferred" in ORGANIZER
+    assert "state.mark_ignored" in ORGANIZER
+    assert "state.mark_blocked" in ORGANIZER
+    assert "state_schema=OrganizerStateStore.schema_version" in ORGANIZER
+
+
+def test_terminal_receipt_is_scoped_to_current_monitor_path():
+    assert "not self._is_monitored_path(raw_path)" in RECOGNITION
+    assert "self._state().mark_completed" in RECOGNITION
+    assert "self._state().mark_failed" in RECOGNITION
+    assert "MP最终结果" in RECOGNITION
+
+
+def test_explicit_episode_recognition_prefers_clean_localized_release_title():
+    for token in (
+        "_title_before_match",
+        "_release_parent_title",
+        "_preferred_episode_title",
+        "_release_cut_re",
+        "_sxe_re",
+        "_x_episode_re",
+        "_cn_episode_re",
+        "_episode_only_re",
+    ):
+        assert token in RECOGNITION, token
+    assert "父目录有本地化中文标题时优先使用中文标题" in RECOGNITION
+    assert "判定优先级：明确季集 > MP目录配置 > Season/剧集目录 > TV/Movie根目录" in RECOGNITION
+    assert "configured_type or (MediaType.TV if series_folder else root_type)" in RECOGNITION
     assert 'MetaInfo(f"{title} S{season:02d}E{episode:02d}")' in RECOGNITION
     assert "mtype=media_type" in RECOGNITION
-    assert "父目录 + 数字集号" in RECOGNITION
+    assert "meta.year = file_meta.year" in RECOGNITION
+    # 当前 MoviePilot do_transfer 返回 (是否接受, 消息)，插件只用第一项判断是否入队。
+    assert "result = TransferChain().do_transfer(" in RECOGNITION
+    assert "return bool(result[0])" in RECOGNITION
 
-    # 识别桥只提供 meta/type hint，不接管 MoviePilot 的目录/移动/命名策略。
-    for forbidden in (
-        "target_directory=",
-        "library_path=",
-        "_build_target_parent",
-        "self._guangya_api.move",
-        "self._guangya_api.copy",
-    ):
-        assert forbidden not in RECOGNITION
 
-    # 误识别保护：裸数字只允许显式季目录，普通文字标题尾巴不接管，纯数字电影父目录不接管。
+def test_numeric_episode_retains_false_positive_guards():
+    assert "_episode_parent_context" in RECOGNITION
     assert "if not tail and not season_dir" in RECOGNITION
     assert "if tail_residue" in RECOGNITION
     assert "semantic_parent" in RECOGNITION
     assert "_generic_title_dirs" in RECOGNITION
 
 
-def test_v322_recognizes_tv_from_filename_and_directory_context():
-    # 用户现场样本 Contenders.S01E43 必须由明确 S/E 证据强制走 TV，而不是当电影。
-    for token in (
-        "_sxe_re",
-        "_x_episode_re",
-        "_cn_episode_re",
-        "_episode_only_re",
-        "_series_folder_re",
-        "_tv_root_dirs",
-        "_movie_root_dirs",
-        "_configured_media_type",
-        "DirectoryHelper().get_dirs()",
-        "MediaType.TV",
-        "MediaType.MOVIE",
-        "目录结构/MP目录配置=电视剧",
-    ):
-        assert token in RECOGNITION, token
-    assert "S0*(?P<season>" in RECOGNITION
-    assert "S01E43" in json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))["history"]["v3.2.2"]
-
-
-def test_v322_reopens_old_submitted_state_and_retries_terminal_failures():
-    assert 'organize_monitor_v322_reopen_seen' in RECOGNITION
-    assert 'state["seen"] = {}' in RECOGNITION
-    assert 'state["pending"] = {}' in RECOGNITION
-    assert "v3.2.2 重新开放" in RECOGNITION
-    # MP 最终失败必须撤销 seen；否则下一轮扫描永远不会再处理这个文件。
-    assert "seen.pop(path, None)" in RECOGNITION
-    assert "已重新开放自动重试" in RECOGNITION
-    # 最终成功则持久化真实指纹，不把单纯队列接收当最终完成。
-    assert "seen[path] = self._fingerprint(fileitem)" in RECOGNITION
-    assert 'result = "completed"' in RECOGNITION
-    assert 'result = "failed"' in RECOGNITION
-
-
-def test_auto_monitor_has_persistent_settings_and_scheduler():
+def test_monitor_uses_persistent_settings_scheduler_and_bounded_inventory():
     for key in (
         "organize_monitor_config",
         "organize_monitor_state",
@@ -127,45 +168,24 @@ def test_auto_monitor_has_persistent_settings_and_scheduler():
         "organize_monitor_status",
     ):
         assert key in ORGANIZER
-    assert "self.save_data(self._monitor_config_key, config)" in ORGANIZER
-    assert "self.get_data(self._monitor_config_key)" in ORGANIZER
     assert "IntervalTrigger(seconds=self._monitor_heartbeat)" in ORGANIZER
-    assert '"enabled"' in ORGANIZER
-    assert '"path"' in ORGANIZER
-    assert '"interval"' in ORGANIZER
-    assert '"stability"' in ORGANIZER
-    assert '"batch_size"' in ORGANIZER
-    assert '"recursive"' in ORGANIZER
+    assert "deque([root])" in ORGANIZER
+    assert "_monitor_inventory_cap" in ORGANIZER
+    assert "truncated" in ORGANIZER
+    assert "reconcile_inventory" in ORGANIZER
 
 
 def test_monitor_only_accepts_concrete_cloud_folder_and_waits_for_stability():
     assert 'self._organize_monitor_path == "/"' in ORGANIZER
     assert "禁止直接监控根目录" in ORGANIZER
     assert "监控目录不存在" in ORGANIZER
-    assert "first_seen" in ORGANIZER
-    assert "_organize_monitor_stability" in ORGANIZER
+    assert "stability_seconds=self._organize_monitor_stability" in ORGANIZER
     assert "_fingerprint" in ORGANIZER
     assert "fileid" in ORGANIZER
     assert "modify_time" in ORGANIZER
 
 
-def test_ui_focuses_on_monitoring_not_custom_classification():
-    assert "监控目录" in PAGE
-    assert "启用自动监控整理" in PAGE
-    assert "保存设置" in PAGE
-    assert "立即扫描" in PAGE
-    assert "扫描间隔" in PAGE
-    assert "文件稳定等待" in PAGE
-    assert "MoviePilot 内置" in PAGE
-    assert "目标根目录" not in PAGE
-    assert "目录策略" not in PAGE
-    assert "强制移动" not in PAGE
-    assert "强制复制" not in PAGE
-    assert "允许按 MP 覆盖策略" not in PAGE
-    assert "预览整理计划" not in PAGE
-
-
-def test_auto_monitor_v3_json_endpoints_have_response_model():
+def test_backend_exposes_status_selfcheck_and_manual_unblock():
     assert "class GuangYaOrganizerResponse" in MODELS
     block = ORGANIZER.split("def get_organizer_api", 1)[1]
     for endpoint in (
@@ -174,7 +194,36 @@ def test_auto_monitor_v3_json_endpoints_have_response_model():
         "/organize/monitor/config",
         "/organize/monitor/scan",
         "/organize/monitor/status",
+        "/organize/monitor/selfcheck",
+        "/organize/monitor/unblock",
     ):
         assert endpoint in block
-    assert block.count('"response_model": GuangYaOrganizerResponse') == 6
+    assert block.count('"response_model": GuangYaOrganizerResponse') == 8
+    assert "_organizer_selfcheck" in ORGANIZER
+    assert "runtime_bridge" in ORGANIZER
+    assert "clear_blocked" in ORGANIZER
     assert "apis.extend(self.get_organizer_api())" in INIT
+
+
+def test_ui_is_a_state_console_not_a_second_organizer():
+    for token in (
+        "监控目录",
+        "启用自动监控整理",
+        "保存设置",
+        "立即扫描",
+        "运行自检",
+        "重新检查 MP 门控",
+        "整理中",
+        "重试等待",
+        "最近自动整理流水",
+        "MoviePilot 内置",
+    ):
+        assert token in PAGE, token
+    for forbidden in (
+        "目标根目录",
+        "目录策略",
+        "强制移动",
+        "强制复制",
+        "预览整理计划",
+    ):
+        assert forbidden not in PAGE

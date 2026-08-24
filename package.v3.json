@@ -15,31 +15,33 @@
   },
   "ShukGuangYaDisk": {
     "name": "光鸭云盘助手",
-    "description": "MoviePilot V3 光鸭云盘存储助手：监控指定光鸭目录，结合文件名和目录结构判断电影/电视剧，补齐光鸭自定义存储到 MoviePilot 原生整理链的运行时桥，并跟踪最终入库成功/失败；保留登录、浏览、上传、WebDAV 与 Emby 直连。",
+    "description": "MoviePilot V3 光鸭云盘存储助手：以持久状态机管理远程目录发现、MP 历史预检、剧集上下文修正和最终整理回执；分类、命名、目标目录、覆盖与刮削继续完全交给 MoviePilot 原生整理链。",
     "labels": "存储,光鸭云盘,自动整理,目录监控,MoviePilot,挂载,Emby,WebDAV",
-    "version": "3.2.2",
+    "version": "3.3.0",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v3.3.0": "专业化重构自动整理架构：拆分扫描编排、持久状态机、MoviePilot 历史预检、媒体识别上下文和运行时事件桥；新增 stabilizing/inflight/retry/blocked/completed/ignored 六态模型，只有 MP 最终成功事件或有效成功历史才能标记完成，异常和未接收入队均可恢复重试；复用 MoviePilot 自身 history gate，失败预算耗尽进入可诊断门控并支持定时/手动重新检查；完善热重载生命周期、自检与状态控制台。识别侧修复发布目录污染标题，针对“【站点】偏爱靠近你[短剧][全31集].../Close.to.You.S01E27...”优先提取干净本地化标题并保留年份、季集提示，避免整段发布名进入 TMDB 识别。",
       "v3.2.2": "修复自动整理只显示“已提交 MP”但后台不真正整理的问题：为当前 MoviePilot V3 补齐 StorageOperSelection 运行时桥，确保整理链能够取得光鸭源存储操作对象；新增 MP 最终 TransferComplete/TransferFailed 回执，失败会重新开放源文件自动重试，不再把“进入队列”误当成整理完成。识别侧扩展为文件名 + 父目录 + Season/Sxx + TV/电影根目录 + MoviePilot 目录配置的高置信度联合判断，S01E43、1x43、第N集/话、Season 目录等明确按电视剧进入 MP，避免剧集被识别成电影。升级后一次性重新开放 v3.2.1 已标记 seen 的文件，已成功项仍由 MoviePilot 整理历史去重，旧版提交后失败项会重新尝试。",
       "v3.2.1": "修复数字集号弱文件名识别：当文件名类似 22~[4K][HEVC.AAC]、23~[...] 时，使用父目录剧名 + 数字集号作为 MoviePilot 原生识别提示；分类、目标目录、重命名、整理方式、覆盖、刮削和历史仍全部由 MoviePilot 原生整理链负责。",
       "v3.2.0": "重构网盘整理为自动目录监控：只配置光鸭监控目录、扫描周期、稳定等待与批次上限；新增设置持久化、立即扫描、运行状态和监控记录。插件不再自建分类/目标目录/移动复制/覆盖规则，新增或变化文件统一送入 MoviePilot 原生 TransferDispatcher/TransferChain，由 MP 当前目录配置负责媒体识别、分类、重命名、目标路径、整理方式、覆盖、刮削、历史去重与失败重试。",
       "v3.1.0": "新增网盘整理：直接读取 MoviePilot 媒体库目录配置作为分类策略，按 MP 媒体识别结果、媒体类型/类别、类型/类别子目录规则生成光鸭云盘内整理预览；支持自动按优先级匹配或指定策略、移动/复制、覆盖策略保护、目录浏览、预览后二次确认执行、配套字幕跟随与整理历史。",
-      "v3.0.0": "MoviePilot V3 专用首版：迁移至 plugins.v3/package.v3.json，采用稳定 SDK、明确 API 响应模型、V3 Federation API 注入壳和可重复生命周期清理；保留双登录、存储扩展、整理上传、142 目录恢复、145/147 落盘确认、上传幂等、进度监控与 WebDAV。"
+      "v3.0.0": "MoviePilot V3 专用首版：采用 V3 稳定 SDK、明确 API 响应模型、V3 Federation API 注入壳和可重复生命周期清理；保留双登录、存储扩展、整理上传、142 目录恢复、145/147 落盘确认、上传幂等、进度监控与 WebDAV。"
     }
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "全入口固定分流与消息直订：阻断光鸭路线的 MoviePilot 原生搜索/RSS/最终下载，支持 /gysub、/gyroute、/gycheck、/gywhy、/gystatus、/gynative、/gyselfcheck；后台非阻塞合并检查，频道故障自动缓存降级与恢复，并修复页面操作跳登录。",
+    "description": "全入口固定分流与消息直订：阻断光鸭路线的 MoviePilot 原生搜索/RSS/最终下载，支持 /gysub、/gyroute、/gycheck、/gywhy、/gystatus、/gynative、/gyselfcheck；后台非阻塞合并检查，频道故障自动缓存降级与恢复，并修复状态页全部按钮跳登录。",
     "labels": "光鸭云盘,转存,订阅,Telegram,网盘,缺集,追更,固定分流,消息命令,硬分流",
-    "version": "1.7.1",
+    "version": "1.7.2",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v1.7.2": "修复转存状态页所有可点击操作会被重定向到 MoviePilot 登录页的问题：插件页面 API 统一按 MoviePilot V3 当前规范声明 auth=bear，按钮不再向 params 注入 token/apikey，而由宿主前端使用当前登录会话发送 Bearer 凭据；覆盖立即检查缺集、复查待落盘、忽略卡住任务、重置检查状态、切回普通下载、清空插件日志等全部状态页操作。",
       "v1.7.1": "修复光鸭分享中 01~4K.mp4、08～2160p.mkv、22~[4K][HEVC.AAC].mkv 等“集号~画质”弱命名无法解析集号的问题；仅在原有严格解析失败时启用兼容规则，并避免把 01~04.mp4 这类纯数字范围误判为单集。失败通知同时增加同类“无法解析集号”诊断合并，避免同一批分享重复显示 14 个/13 个无法解析。",
       "v1.7.0": "固定分流与消息直订重构：对 SubscribeChain.search、SubscribeChain.match 和最终订阅下载提交建立三层门禁，固定转存订阅不会再进入 MoviePilot 本地下载；/gysub 可直接创建并加入光鸭路线，新增 /gyroute、/gycheck、/gywhy、/gystatus、/gynative、/gyselfcheck 完成已有订阅接管、后台检查、原因诊断、状态查看、切回普通下载和自检。接管已有订阅前增加兼容性预检，洗版/复杂过滤规则等无法安全表达的订阅保持 MoviePilot 原路线；暂停/待定订阅可先保存光鸭路线，恢复后再执行。原生搜索和宿主 scheduler 分流均只负责硬分流并立即返回，频道刷新/分享检查/转存统一进入后台合并队列；修复高频触发重复检查、热重载旧实例/旧守护线程残留及 scheduler 旧插件回调链问题。频道源异常时保留本地索引并指数退避连续自动恢复，不静默回退本地下载；路线切换和订阅完成后的路线清理均采用运行态立即生效 + 延迟持久化 + 异常重启恢复。页面 API 统一改用 V3 apikey，修复切换普通下载、重置检查状态等操作跳登录；详情页增加实际运行版本、自检、路由健康、RSS/最终下载门禁和“为什么还没转存”诊断；/gystatus 展示当前运行实例、三层门禁、频道降级、待落盘与失败任务。",
       "v1.6.4": "Cache-First：立即检查/立即转存优先使用本地频道索引，只有缓存未命中才访问 Telegram；定时任务取消 force 全量刷新并按游标增量发现；故障回退索引中的已知光鸭链接允许继续转存；插件启动后立即执行一次缓存检查；人工检查、门禁、缓存命中/未命中、频道增量和缓存回退均写入插件日志。",

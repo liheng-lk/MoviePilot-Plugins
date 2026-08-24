@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
-  "description": "MoviePilot V3 光鸭云盘存储助手：监控指定光鸭目录，结合文件名和目录结构判断电影/电视剧，补齐光鸭自定义存储到 MoviePilot 原生整理链的运行时桥，并跟踪最终入库成功/失败；保留登录、浏览、上传、WebDAV 与 Emby 直连。",
-  "version": "3.2.2",
+  "description": "MoviePilot V3 光鸭云盘存储助手：以持久状态机管理远程目录发现、MP 历史预检、剧集上下文修正和最终整理回执；分类、命名、目标目录、覆盖与刮削继续完全交给 MoviePilot 原生整理链。",
+  "version": "3.3.0",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v3.3.0": "专业化重构自动整理架构：拆分扫描编排、持久状态机、MoviePilot 历史预检、媒体识别上下文和运行时事件桥；新增 stabilizing/inflight/retry/blocked/completed/ignored 六态模型，只有 MP 最终成功事件或有效成功历史才能标记完成，异常和未接收入队均可恢复重试；复用 MoviePilot 自身 history gate，失败预算耗尽进入可诊断门控并支持定时/手动重新检查；完善热重载生命周期、自检与状态控制台。识别侧修复发布目录污染标题，针对“【站点】偏爱靠近你[短剧][全31集].../Close.to.You.S01E27...”优先提取干净本地化标题并保留年份、季集提示，避免整段发布名进入 TMDB 识别。",
     "v3.2.2": "修复自动整理只显示“已提交 MP”但后台不真正整理的问题：为当前 MoviePilot V3 补齐 StorageOperSelection 运行时桥，确保整理链能够取得光鸭源存储操作对象；新增 MP 最终 TransferComplete/TransferFailed 回执，失败会重新开放源文件自动重试，不再把“进入队列”误当成整理完成。识别侧扩展为文件名 + 父目录 + Season/Sxx + TV/电影根目录 + MoviePilot 目录配置的高置信度联合判断，S01E43、1x43、第N集/话、Season 目录等明确按电视剧进入 MP，避免剧集被识别成电影。升级后一次性重新开放 v3.2.1 已标记 seen 的文件，已成功项仍由 MoviePilot 整理历史去重，旧版提交后失败项会重新尝试。",
     "v3.2.1": "修复数字集号弱文件名识别：当文件名类似 22~[4K][HEVC.AAC]、23~[...] 时，使用父目录剧名 + 数字集号作为 MoviePilot 原生识别提示；分类、目标目录、重命名、整理方式、覆盖、刮削和历史仍全部由 MoviePilot 原生整理链负责。",
     "v3.2.0": "重构网盘整理为自动目录监控：只配置光鸭监控目录、扫描周期、稳定等待与批次上限；新增设置持久化、立即扫描、运行状态和监控记录。插件不再自建分类/目标目录/移动复制/覆盖规则，新增或变化文件统一送入 MoviePilot 原生 TransferDispatcher/TransferChain，由 MP 当前目录配置负责媒体识别、分类、重命名、目标路径、整理方式、覆盖、刮削、历史去重与失败重试。",
