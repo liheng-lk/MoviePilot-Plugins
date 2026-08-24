@@ -1,8 +1,9 @@
 """光鸭转存助手 v1.7.0 运行入口。
 
-routing_v170 保留全入口 search 硬分流、消息直订和页面体验；本层再增加 MoviePilot
-RSS/缓存匹配链的最终下载断路器，确保固定转存订阅不仅“不搜索”，也绝不会从
-SubscribeChain.match 路径落到本地下载器。
+routing_v170 保留全入口 search 硬分流与消息直订，experience_v170 增加非阻塞后台检查、
+消息管理、自检、原因诊断和路线崩溃恢复；本层再增加 MoviePilot RSS/缓存匹配链的
+最终下载断路器，确保固定转存订阅不仅“不搜索”，也绝不会从 SubscribeChain.match
+路径落到本地下载器。
 """
 
 from __future__ import annotations
@@ -14,11 +15,12 @@ from typing import Any, Optional
 
 from app.chain.subscribe import SubscribeChain
 
+from .experience_v170 import GuangYaExperienceMixin
 from .routing_v170 import GuangYaTransferAssistant as _RoutingV170Assistant
 
 
-class GuangYaTransferAssistant(_RoutingV170Assistant):
-    """完整硬分流：搜索入口 + RSS 匹配入口 + 下载提交最终门禁。"""
+class GuangYaTransferAssistant(GuangYaExperienceMixin, _RoutingV170Assistant):
+    """完整硬分流：搜索入口 + RSS 匹配入口 + 下载提交最终门禁 + 体验增强。"""
 
     plugin_version = "1.7.0"
 
