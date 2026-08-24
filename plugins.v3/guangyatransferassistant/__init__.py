@@ -24,10 +24,16 @@ from app.chain.subscribe import SubscribeChain
 from app.schemas.types import EventType
 from app.sdk.events import Event, eventmanager
 
+from . import legacy as _legacy_module
+from .episode_compat_v171 import collapse_unparsed_failure_notice, install_episode_filename_compat
 from .experience_v170 import GuangYaExperienceMixin
 from .reliability_v170 import GuangYaReliabilityMixin
 from .runtime_v170 import GuangYaRuntimeFinalizerMixin
 from .routing_v170 import GuangYaTransferAssistant as _RoutingV170Assistant
+
+
+# legacy.py 保留成熟转存状态机；这里以热重载安全方式补充新出现的云盘弱命名格式。
+install_episode_filename_compat(_legacy_module)
 
 
 class GuangYaTransferAssistant(
@@ -39,7 +45,13 @@ class GuangYaTransferAssistant(
     """完整硬分流：搜索 + RSS + 下载门禁 + 体验 + 可靠性 + 最终运行编排。"""
 
     plugin_version = "1.7.0"
-    build_id = "20260825-r11"
+    build_id = "20260825-r12"
+
+    def post_message(self, *args, **kwargs):
+        """发送前合并同一通知里的重复“无法解析集号”诊断，避免同批文件重复告警。"""
+        if str(kwargs.get("title") or "") == "⚠️ 光鸭转存失败" and kwargs.get("text"):
+            kwargs["text"] = collapse_unparsed_failure_notice(kwargs.get("text"))
+        return super().post_message(*args, **kwargs)
 
     @eventmanager.register(EventType.PluginAction)
     def experience_action_event_handler(self, event: Event) -> None:
