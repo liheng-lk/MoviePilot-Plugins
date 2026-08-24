@@ -4,9 +4,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 ENTRY = ROOT / "plugins.v3" / "guangyatransferassistant" / "__init__.py"
 RUNTIME = ROOT / "plugins.v3" / "guangyatransferassistant" / "runtime_v170.py"
+ROUTING = ROOT / "plugins.v3" / "guangyatransferassistant" / "routing_v170.py"
 
 entry_text = ENTRY.read_text(encoding="utf-8")
 runtime_text = RUNTIME.read_text(encoding="utf-8")
+routing_text = ROUTING.read_text(encoding="utf-8")
 
 
 def test_runtime_finalizer_is_wired_first_and_syntax_valid():
@@ -108,6 +110,14 @@ def test_diagnosis_uses_real_media_fact_key_and_exposes_static_guard_reason():
     assert "正在等待光鸭落盘确认" in block
     assert "allowed, reason = self._subscription_static_guard(subscribe)" in block
     assert "固定转存规则阻止执行" in block
+
+
+def test_route_removal_still_uses_delayed_persistence_not_inline_reload():
+    finalizer = runtime_text.split("    def _remove_selected_subscription", 1)[1].split("    def _route_preflight", 1)[0]
+    assert "super()._remove_selected_subscription(sid)" in finalizer
+    routing = routing_text.split("    def _remove_selected_subscription", 1)[1].split("    def _spawn_route_prime", 1)[0]
+    assert "_queue_route_config_persist()" in routing
+    assert "_save_config()" not in routing
 
 
 def test_guard_health_is_attached_by_title_not_blind_first_card():
