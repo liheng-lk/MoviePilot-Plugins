@@ -56,3 +56,12 @@ def test_diagnosis_uses_real_media_fact_key_for_jobs():
     assert 'str(item.get("media") or "") == str(prefix)' in block
     assert 'pending_status = {"submitting", "submitted", "task_confirmed", "verifying"}' in block
     assert "正在等待光鸭落盘确认" in block
+
+
+def test_guard_health_is_attached_by_title_not_blind_first_card():
+    page = entry_text.split("    def get_page", 1)[1]
+    assert 'str(props.get("title") or "") == "固定分流路由健康"' in page
+    assert "health_card = page" in page
+    assert "health_card[\"props\"] = props" in page
+    # reliability 在频道故障时会把降级提示插到最前面，因此不能把门禁状态固定写到 pages[0]。
+    assert "pages[0][\"props\"] = props" not in page
