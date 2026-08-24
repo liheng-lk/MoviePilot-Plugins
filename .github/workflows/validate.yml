@@ -23,6 +23,7 @@ jobs:
         run: |
           python tests/v3/dailynewdrama/test_plugin_contract.py
           python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          python tests/v3/guangyatransferassistant/run_contract_tests.py
       - name: V3 dependency manifests
         run: |
           test -z "$(find plugins.v3 -type f -name 'requirements.txt' -print)"
