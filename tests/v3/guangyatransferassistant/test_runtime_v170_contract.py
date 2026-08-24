@@ -14,7 +14,7 @@ def test_runtime_finalizer_is_wired_first_and_syntax_valid():
     ast.parse(runtime_text)
     assert "from .runtime_v170 import GuangYaRuntimeFinalizerMixin" in entry_text
     assert "GuangYaRuntimeFinalizerMixin," in entry_text
-    assert 'build_id = "20260824-r6"' in runtime_text
+    assert 'build_id = "20260824-r7"' in runtime_text
 
 
 def test_scheduler_takeover_is_nonblocking_for_guangya_routes():
@@ -42,8 +42,24 @@ def test_old_hot_reload_instance_cannot_start_network_or_transfer_work():
     assert '"stale_instance": True' in transfer
 
 
+def test_runtime_worker_exits_when_stable_owner_changes():
+    block = runtime_text.split("    def _runtime_worker_loop", 1)[1].split("    def _startup_check", 1)[0]
+    assert "while self._enabled and self._runtime_is_current():" in block
+    assert "if not self._runtime_is_current() or not self._enabled:" in block
+    assert "generation == type(self)._runtime_generation" not in block
+
+
+def test_takeover_chain_is_unwrapped_to_real_moviepilot_callback():
+    unwrap = runtime_text.split("    def _unwrap_takeover_original", 1)[1].split("    def _install_takeover", 1)[0]
+    install = runtime_text.split("    def _install_takeover", 1)[1].split("    def refresh_channels", 1)[0]
+    assert 'mapping = getattr(owner, "_takeover_originals", None)' in unwrap
+    assert "candidate = mapping.get(job_id)" in unwrap
+    assert "self._takeover_originals[job_id] = unwrapped" in install
+    assert "追溯到 MoviePilot 原调度函数" in install
+
+
 def test_channel_recovery_timer_releases_slot_before_retry():
-    block = runtime_text.split("    def _schedule_channel_recovery", 1)[1].split("    def refresh_channels", 1)[0]
+    block = runtime_text.split("    def _schedule_channel_recovery", 1)[1].split("    def _unwrap_takeover_original", 1)[0]
     assert "if self._channel_recovery_timer is timer:" in block
     assert "self._channel_recovery_timer = None" in block
     assert block.index("self._channel_recovery_timer = None") < block.index("self._queue_async_route_check")
@@ -63,5 +79,4 @@ def test_guard_health_is_attached_by_title_not_blind_first_card():
     assert 'str(props.get("title") or "") == "固定分流路由健康"' in page
     assert "health_card = page" in page
     assert "health_card[\"props\"] = props" in page
-    # reliability 在频道故障时会把降级提示插到最前面，因此不能把门禁状态固定写到 pages[0]。
     assert "pages[0][\"props\"] = props" not in page
