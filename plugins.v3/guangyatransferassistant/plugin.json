@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "全入口固定分流与消息直订：阻断光鸭路线的 MoviePilot 原生搜索/RSS/最终下载，支持 /gysub、/gyroute、/gycheck、/gywhy、/gystatus、/gynative、/gyselfcheck；后台非阻塞合并检查、接管预检、频道故障缓存降级与自动恢复，并修复页面操作跳登录。",
-  "version": "1.7.1",
+  "description": "全入口固定分流与消息直订：阻断光鸭路线的 MoviePilot 原生搜索/RSS/最终下载，支持 /gysub、/gyroute、/gycheck、/gywhy、/gystatus、/gynative、/gyselfcheck；后台非阻塞合并检查、接管预检、频道故障缓存降级与自动恢复，并修复状态页按钮跳登录。",
+  "version": "1.7.2",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
