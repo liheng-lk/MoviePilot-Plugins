@@ -1,4 +1,4 @@
-"""光鸭转存助手 v1.7.0 运行入口。
+"""光鸭转存助手 v1.7.1 运行入口。
 
 routing_v170 保留全入口 search 硬分流与消息直订，experience_v170 增加非阻塞后台检查、
 消息管理、自检、原因诊断和路线崩溃恢复；reliability_v170 负责高频并发合并、热重载
@@ -44,8 +44,8 @@ class GuangYaTransferAssistant(
 ):
     """完整硬分流：搜索 + RSS + 下载门禁 + 体验 + 可靠性 + 最终运行编排。"""
 
-    plugin_version = "1.7.0"
-    build_id = "20260825-r12"
+    plugin_version = "1.7.1"
+    build_id = "20260825-r13"
 
     def post_message(self, *args, **kwargs):
         """发送前合并同一通知里的重复“无法解析集号”诊断，避免同批文件重复告警。"""
