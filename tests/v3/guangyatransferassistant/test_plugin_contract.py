@@ -9,13 +9,16 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import parse_qs, urlencode, unquote, urljoin, urlsplit, urlunsplit
 
 ROOT = Path(__file__).resolve().parents[3]
-WRAPPER = ROOT / "plugins.v3" / "guangyatransferassistant" / "__init__.py"
+ENTRY = ROOT / "plugins.v3" / "guangyatransferassistant" / "__init__.py"
+ROUTING = ROOT / "plugins.v3" / "guangyatransferassistant" / "routing_v170.py"
 LEGACY = ROOT / "plugins.v3" / "guangyatransferassistant" / "legacy.py"
-wrapper_text = WRAPPER.read_text(encoding="utf-8")
+entry_text = ENTRY.read_text(encoding="utf-8")
+routing_text = ROUTING.read_text(encoding="utf-8")
 legacy_text = LEGACY.read_text(encoding="utf-8")
 
-# 两个模块都必须首先通过 Python 语法解析。
-ast.parse(wrapper_text)
+# 三层都必须首先通过 Python 语法解析。
+ast.parse(entry_text)
+ast.parse(routing_text)
 legacy_tree = ast.parse(legacy_text)
 
 # 继续对 v1.6.5 的纯函数做真实回归，不依赖 MoviePilot 运行时。
@@ -46,10 +49,10 @@ class _MediaTypeStub:
     TV = "tv"
 
 
-# 执行 v1.7 wrapper 的参数解析纯函数。
-wrapper_tree = ast.parse(wrapper_text)
-wrapper_nodes = []
-for node in wrapper_tree.body:
+# 执行 routing_v170 的参数解析纯函数。
+routing_tree = ast.parse(routing_text)
+routing_nodes = []
+for node in routing_tree.body:
     if isinstance(node, ast.ClassDef):
         break
     if isinstance(node, (ast.Assign, ast.AnnAssign, ast.FunctionDef)):
@@ -57,24 +60,26 @@ for node in wrapper_tree.body:
             node.returns = None
             for arg in node.args.args:
                 arg.annotation = None
-        wrapper_nodes.append(node)
-wrapper_mod = ast.Module(body=wrapper_nodes, type_ignores=[])
-ast.fix_missing_locations(wrapper_mod)
-wrapper_ns = {
+        routing_nodes.append(node)
+routing_mod = ast.Module(body=routing_nodes, type_ignores=[])
+ast.fix_missing_locations(routing_mod)
+routing_ns = {
     "Any": Any, "Dict": Dict, "List": List, "Optional": Optional, "Tuple": Tuple,
     "MediaType": _MediaTypeStub, "re": re, "shlex": shlex,
 }
-exec(compile(wrapper_mod, str(WRAPPER), "exec"), wrapper_ns)
+exec(compile(routing_mod, str(ROUTING), "exec"), routing_ns)
 
 
-def test_versions_and_split_legacy_contract():
+def test_versions_and_layered_legacy_contract():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
     assert package["version"] == "1.7.0"
     assert local["version"] == "1.7.0"
-    assert 'plugin_version = "1.7.0"' in wrapper_text
+    assert 'plugin_version = "1.7.0"' in entry_text
+    assert 'plugin_version = "1.7.0"' in routing_text
     assert 'plugin_version = "1.6.5"' in legacy_text
-    assert "from .legacy import GuangYaTransferAssistant as _LegacyGuangYaTransferAssistant" in wrapper_text
+    assert "from .routing_v170 import GuangYaTransferAssistant as _RoutingV170Assistant" in entry_text
+    assert "from .legacy import GuangYaTransferAssistant as _LegacyGuangYaTransferAssistant" in routing_text
 
 
 def test_legacy_channel_hidden_visible_and_exact_tmdb_matching():
@@ -118,7 +123,7 @@ def test_legacy_transfer_state_machine_is_preserved():
 
 
 def test_direct_command_parser():
-    parse = wrapper_ns["_parse_direct_subscribe_args"]
+    parse = routing_ns["_parse_direct_subscribe_args"]
     parsed = parse('"沙丘" 2021 movie')
     assert parsed["title"] == "沙丘"
     assert parsed["year"] == "2021"
@@ -130,7 +135,7 @@ def test_direct_command_parser():
     assert parsed["tmdb_id"] == "438631" and parsed["title"] == ""
 
 
-def test_all_entry_hard_routing_contract():
+def test_search_all_entry_hard_routing_contract():
     for token in (
         "SubscribeChain.search = guarded_search",
         "_guangya_route_guard",
@@ -143,19 +148,36 @@ def test_all_entry_hard_routing_contract():
         "全入口硬分流",
         "不会进入原生下载搜索",
     ):
-        assert token in wrapper_text, token
-    guard = wrapper_text.split("    def _guard_subscribe_search(", 1)[1].split("    @staticmethod\n    def _now_text", 1)[0]
+        assert token in routing_text, token
+    guard = routing_text.split("    def _guard_subscribe_search(", 1)[1].split("    @staticmethod\n    def _now_text", 1)[0]
     assert "route_subs" in guard and "native_ids" in guard
     assert "_guard_one_subscription" in guard
     assert "_call_original_search" in guard
 
 
+def test_rss_match_guard_and_final_download_circuit_breaker():
+    for token in (
+        "SubscribeChain.match = guarded_match",
+        "_guangya_match_guard",
+        "RSS硬分流",
+        "_SubscribeChain__download_best_version_with_full_pack_first",
+        "_guangya_download_guard",
+        "下载断路器",
+        "return [], no_exists or {}",
+        "固定转存路线只允许光鸭转存",
+    ):
+        assert token in entry_text, token
+    # RSS 全为光鸭路线时整轮跳过；混合路线即使继续匹配，最终下载提交仍会被单订阅门禁阻断。
+    assert "all(plugin._is_guangya_route(item) for item in active)" in entry_text
+    assert "subscribe is not None and plugin._is_guangya_route(subscribe)" in entry_text
+
+
 def test_new_route_immediately_forces_channel_refresh():
-    assert "_spawn_route_prime" in wrapper_text
-    assert 'trigger="新加入转存路线"' in wrapper_text
-    assert "refresh_channels(force=True)" in wrapper_text
-    assert "_cached_matches_for_subscription(subscribe)" in wrapper_text
-    assert "【立即检查】" in wrapper_text
+    assert "_spawn_route_prime" in routing_text
+    assert 'trigger="新加入转存路线"' in routing_text
+    assert "refresh_channels(force=True)" in routing_text
+    assert "_cached_matches_for_subscription(subscribe)" in routing_text
+    assert "【立即检查】" in routing_text
 
 
 def test_message_direct_subscription_and_management_commands():
@@ -171,40 +193,41 @@ def test_message_direct_subscription_and_management_commands():
         "_provisional_routes",
         "_spawn_command_transfer",
     ):
-        assert token in wrapper_text, token
-    assert "只走光鸭转存，MoviePilot 原生下载搜索已阻断" in wrapper_text
+        assert token in routing_text, token
+    assert "只走光鸭转存，MoviePilot 原生下载搜索已阻断" in routing_text
 
 
 def test_release_native_does_not_reload_plugin_inside_http_action():
-    removal = wrapper_text.split("    def _remove_selected_subscription(", 1)[1].split("    def _spawn_route_prime(", 1)[0]
+    removal = routing_text.split("    def _remove_selected_subscription(", 1)[1].split("    def _spawn_route_prime(", 1)[0]
     assert "_queue_route_config_persist()" in removal
     assert "_save_config()" not in removal
-    persist = wrapper_text.split("    def _queue_route_config_persist(", 1)[1].split("    def _add_selected_subscription(", 1)[0]
+    persist = routing_text.split("    def _queue_route_config_persist(", 1)[1].split("    def _add_selected_subscription(", 1)[0]
     assert "threading.Timer" in persist
     assert "route_membership_pending" in persist
     assert "self._save_config()" in persist
 
 
 def test_page_actions_use_v3_apikey_instead_of_token():
-    normalize = wrapper_text.split("    def _normalize_page_api_auth(", 1)[1].split("    def get_form(", 1)[0]
+    normalize = routing_text.split("    def _normalize_page_api_auth(", 1)[1].split("    def get_form(", 1)[0]
     assert 'params.pop("token", None)' in normalize
     assert 'params.setdefault("apikey", settings.API_TOKEN)' in normalize
     assert "plugin/GuangYaTransferAssistant/" in normalize
-    assert "页面 API 按官方约定使用 apikey" in wrapper_text
+    assert "页面 API 按官方约定使用 apikey" in routing_text
 
 
 def test_route_status_and_health_are_visible():
-    assert "固定分流路由健康" in wrapper_text
-    assert "route_health" in wrapper_text
-    assert "last_guarded_at" in wrapper_text
-    assert "待落盘" in wrapper_text
-    assert "最近结果" in wrapper_text
+    assert "固定分流路由健康" in routing_text
+    assert "route_health" in routing_text
+    assert "last_guarded_at" in routing_text
+    assert "待落盘" in routing_text
+    assert "最近结果" in routing_text
+    assert "RSS匹配门禁" in entry_text
+    assert "最终下载断路器" in entry_text
 
 
-def test_no_silent_native_fallback_for_selected_route():
-    one = wrapper_text.split("        if sid:", 1)[1].split("        if sids is not None:", 1)[0]
+def test_no_silent_native_fallback_for_selected_search_route():
+    one = routing_text.split("        if sid:", 1)[1].split("        if sids is not None:", 1)[0]
     assert "self._is_guangya_route(subscribe)" in one
     assert "self._guard_one_subscription" in one
-    # selected 分支必须直接 return，不能继续调用 original。
     selected_branch = one.split("if subscribe and self._is_guangya_route(subscribe):", 1)[1]
     assert "return None" in selected_branch
