@@ -8,18 +8,19 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
 INIT = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 ORGANIZER = (PLUGIN / "organizer.py").read_text(encoding="utf-8")
+RECOGNITION = (PLUGIN / "organizer_recognition.py").read_text(encoding="utf-8")
 MODELS = (PLUGIN / "models.py").read_text(encoding="utf-8")
 REMOTE = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf-8")
 PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v320.js").read_text(encoding="utf-8")
 
 
-def test_v320_version_and_federation_entry():
+def test_v321_version_and_federation_entry():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "3.2.0"
-    assert local["version"] == "3.2.0"
-    assert 'plugin_version = "3.2.0"' in INIT
-    assert "__federation_expose_AssistantPage-v320.js?v=3.2.0" in REMOTE
+    assert package["version"] == "3.2.1"
+    assert local["version"] == "3.2.1"
+    assert 'plugin_version = "3.2.1"' in INIT
+    assert "__federation_expose_AssistantPage-v320.js?v=3.2.1" in REMOTE
     assert "自动整理监控" in PAGE
 
 
@@ -31,7 +32,7 @@ def test_auto_monitor_delegates_organization_to_moviepilot_native_chain():
     assert "TransferChain" in ORGANIZER  # documented responsibility boundary
     assert "插件不维护第二套分类或命名规则" in ORGANIZER
 
-    # v3.2 must not rebuild the old custom planner / target naming path.
+    # v3.2+ must not rebuild the old custom planner / target naming path.
     for legacy_symbol in (
         "_build_organize_plan",
         "_build_target_parent",
@@ -43,6 +44,35 @@ def test_auto_monitor_delegates_organization_to_moviepilot_native_chain():
         "self._guangya_api.copy",
     ):
         assert legacy_symbol not in ORGANIZER
+
+
+def test_numeric_episode_uses_parent_title_as_moviepilot_recognition_hint():
+    assert "from .organizer_recognition import GuangYaOrganizerMixin" in INIT
+    assert "from app.chain.transfer import TransferChain" in RECOGNITION
+    assert "from app.domain.metainfo import MetaInfo" in RECOGNITION
+    assert "_episode_parent_context" in RECOGNITION
+    assert "22~[4K][HEVC.AAC][2026.08.19].mp4" in RECOGNITION
+    assert 'MetaInfo(f"{title} S{season:02d}E{episode:02d}")' in RECOGNITION
+    assert "meta=meta" in RECOGNITION
+    assert "mtype=MediaType.TV" in RECOGNITION
+    assert "super()._dispatch_to_moviepilot(item)" in RECOGNITION
+    assert "弱文件名使用父目录剧名" in RECOGNITION
+
+    # 识别桥只提供 meta hint，不接管 MoviePilot 的目录/移动/命名策略。
+    for forbidden in (
+        "target_directory=",
+        "library_path",
+        "_build_target_parent",
+        "self._guangya_api.move",
+        "self._guangya_api.copy",
+    ):
+        assert forbidden not in RECOGNITION
+
+    # 误识别保护：裸数字只允许显式季目录，普通文字标题尾巴不接管，纯数字电影父目录不接管。
+    assert "if not tail and not season_dir" in RECOGNITION
+    assert "if tail_residue" in RECOGNITION
+    assert "semantic_parent" in RECOGNITION
+    assert "_generic_title_dirs" in RECOGNITION
 
 
 def test_auto_monitor_has_persistent_settings_and_scheduler():
