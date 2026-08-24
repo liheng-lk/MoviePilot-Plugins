@@ -22,9 +22,9 @@ def test_all_page_actions_share_one_v3_auth_normalizer():
         assert f"plugin/GuangYaTransferAssistant/{endpoint}" in legacy
 
     normalize = routing.split("    def _normalize_page_api_auth(", 1)[1].split("    def get_form(", 1)[0]
+    assert 'str(click.get("api") or "").startswith("plugin/GuangYaTransferAssistant/")' in normalize
     assert 'params.pop("token", None)' in normalize
     assert 'params.setdefault("apikey", settings.API_TOKEN)' in normalize
-    assert 'api.startswith("plugin/GuangYaTransferAssistant/")' in normalize
     assert "elif isinstance(node, list):" in normalize
 
 
