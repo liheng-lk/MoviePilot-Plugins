@@ -19,7 +19,7 @@ from .models import (
     GuangYaConfigData,
     GuangYaConfigSaveResponse,
 )
-from .organizer import GuangYaOrganizerMixin
+from .organizer_recognition import GuangYaOrganizerMixin
 from .storage_contract import V3StorageContractMixin
 
 # legacy 主体在 init_plugin() 运行时从模块全局读取 GuangYaApi。
@@ -33,7 +33,7 @@ class ShukGuangYaDisk(GuangYaOrganizerMixin, V3StorageContractMixin, _LegacyPlug
 
     plugin_name = "光鸭云盘助手"
     plugin_desc = "MoviePilot V3 光鸭云盘存储助手：监控指定光鸭目录，发现新增或变化文件后直接交给 MoviePilot 内置整理链完成识别、分类、重命名与入库。"
-    plugin_version = "3.2.0"
+    plugin_version = "3.2.1"
     plugin_author = "liheng-lk"
     plugin_label = "存储,光鸭云盘,自动整理,目录监控,MoviePilot,挂载,Emby,WebDAV"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
