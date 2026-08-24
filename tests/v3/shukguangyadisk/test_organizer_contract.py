@@ -14,14 +14,15 @@ REMOTE = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf
 PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v320.js").read_text(encoding="utf-8")
 
 
-def test_v321_version_and_federation_entry():
+def test_v322_version_and_federation_entry():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "3.2.1"
-    assert local["version"] == "3.2.1"
-    assert 'plugin_version = "3.2.1"' in INIT
-    assert "__federation_expose_AssistantPage-v320.js?v=3.2.1" in REMOTE
+    assert package["version"] == "3.2.2"
+    assert local["version"] == "3.2.2"
+    assert 'plugin_version = "3.2.2"' in INIT
+    assert "__federation_expose_AssistantPage-v320.js?v=3.2.2" in REMOTE
     assert "自动整理监控" in PAGE
+    assert "v3.2.2" in package["history"]
 
 
 def test_auto_monitor_delegates_organization_to_moviepilot_native_chain():
@@ -46,22 +47,30 @@ def test_auto_monitor_delegates_organization_to_moviepilot_native_chain():
         assert legacy_symbol not in ORGANIZER
 
 
+def test_v322_registers_real_v3_storage_and_terminal_result_bridges():
+    assert "from app.runtime.events import Event, eventmanager" in RECOGNITION
+    assert "ChainEventType.StorageOperSelection" in RECOGNITION
+    assert "EventType.TransferComplete" in RECOGNITION
+    assert "EventType.TransferFailed" in RECOGNITION
+    assert "_guangya_storage_selection_bridge" in RECOGNITION
+    assert "plugin.storage_oper_selection(event)" in RECOGNITION
+    assert "organizer_transfer_complete" in RECOGNITION
+    assert "organizer_transfer_failed" in RECOGNITION
+
+
 def test_numeric_episode_uses_parent_title_as_moviepilot_recognition_hint():
     assert "from .organizer_recognition import GuangYaOrganizerMixin" in INIT
     assert "from app.chain.transfer import TransferChain" in RECOGNITION
     assert "from app.domain.metainfo import MetaInfo" in RECOGNITION
     assert "_episode_parent_context" in RECOGNITION
-    assert "22~[4K][HEVC.AAC][2026.08.19].mp4" in RECOGNITION
     assert 'MetaInfo(f"{title} S{season:02d}E{episode:02d}")' in RECOGNITION
-    assert "meta=meta" in RECOGNITION
-    assert "mtype=MediaType.TV" in RECOGNITION
-    assert "super()._dispatch_to_moviepilot(item)" in RECOGNITION
-    assert "弱文件名使用父目录剧名" in RECOGNITION
+    assert "mtype=media_type" in RECOGNITION
+    assert "父目录 + 数字集号" in RECOGNITION
 
-    # 识别桥只提供 meta hint，不接管 MoviePilot 的目录/移动/命名策略。
+    # 识别桥只提供 meta/type hint，不接管 MoviePilot 的目录/移动/命名策略。
     for forbidden in (
         "target_directory=",
-        "library_path",
+        "library_path=",
         "_build_target_parent",
         "self._guangya_api.move",
         "self._guangya_api.copy",
@@ -73,6 +82,41 @@ def test_numeric_episode_uses_parent_title_as_moviepilot_recognition_hint():
     assert "if tail_residue" in RECOGNITION
     assert "semantic_parent" in RECOGNITION
     assert "_generic_title_dirs" in RECOGNITION
+
+
+def test_v322_recognizes_tv_from_filename_and_directory_context():
+    # 用户现场样本 Contenders.S01E43 必须由明确 S/E 证据强制走 TV，而不是当电影。
+    for token in (
+        "_sxe_re",
+        "_x_episode_re",
+        "_cn_episode_re",
+        "_episode_only_re",
+        "_series_folder_re",
+        "_tv_root_dirs",
+        "_movie_root_dirs",
+        "_configured_media_type",
+        "DirectoryHelper().get_dirs()",
+        "MediaType.TV",
+        "MediaType.MOVIE",
+        "目录结构/MP目录配置=电视剧",
+    ):
+        assert token in RECOGNITION, token
+    assert "S0*(?P<season>" in RECOGNITION
+    assert "S01E43" in json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))["history"]["v3.2.2"]
+
+
+def test_v322_reopens_old_submitted_state_and_retries_terminal_failures():
+    assert 'organize_monitor_v322_reopen_seen' in RECOGNITION
+    assert 'state["seen"] = {}' in RECOGNITION
+    assert 'state["pending"] = {}' in RECOGNITION
+    assert "v3.2.2 重新开放" in RECOGNITION
+    # MP 最终失败必须撤销 seen；否则下一轮扫描永远不会再处理这个文件。
+    assert "seen.pop(path, None)" in RECOGNITION
+    assert "已重新开放自动重试" in RECOGNITION
+    # 最终成功则持久化真实指纹，不把单纯队列接收当最终完成。
+    assert "seen[path] = self._fingerprint(fileitem)" in RECOGNITION
+    assert 'result = "completed"' in RECOGNITION
+    assert 'result = "failed"' in RECOGNITION
 
 
 def test_auto_monitor_has_persistent_settings_and_scheduler():

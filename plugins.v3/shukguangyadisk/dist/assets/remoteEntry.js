@@ -1,5 +1,5 @@
 const moduleMap = {
-  './Page': () => import('./__federation_expose_AssistantPage-v320.js?v=3.2.1').then((mod) => () => mod.default),
+  './Page': () => import('./__federation_expose_AssistantPage-v320.js?v=3.2.2').then((mod) => () => mod.default),
   './Config': () => import('./__federation_expose_AssistantConfig-v300.js?v=3.0.0').then((mod) => () => mod.default),
 };
 
