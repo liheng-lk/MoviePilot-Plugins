@@ -40,10 +40,20 @@ def test_experience_plugin_actions_have_real_plugin_class_event_bridge():
     assert "from app.sdk.events import Event, eventmanager" in entry_text
     assert "from app.schemas.types import EventType" in entry_text
     assert "@eventmanager.register(EventType.PluginAction)" in entry_text
-    bridge = _method_text(entry_text, "experience_action_event_handler", "_install_search_guard")
+    bridge = _method_text(entry_text, "experience_action_event_handler", "_schedule_pending_route_recovery")
     assert "return super().experience_action_event_handler(event)" in bridge
     assert "mixin" in bridge
-    assert 'build_id = "20260825-r10"' in entry_text
+    assert 'build_id = "20260825-r11"' in entry_text
+
+
+def test_process_restart_reschedules_pending_route_recovery():
+    recovery = _method_text(entry_text, "_schedule_pending_route_recovery", "_install_search_guard")
+    assert 'getattr(self, "_route_recovery_runtime_token", "")' in recovery
+    assert 'str(marker.get("state") or "") == "scheduled"' in recovery
+    assert 'marker["state"] = "interrupted"' in recovery
+    assert 'marker["interrupted_at"] = time.time()' in recovery
+    assert 'self._route_recovery_runtime_token = token' in recovery
+    assert "super()._schedule_pending_route_recovery(token)" in recovery
 
 
 def test_native_search_guard_is_non_blocking():
