@@ -3,7 +3,8 @@
 把 legacy/routing/experience/reliability 已有能力统一收口到一个运行语义：
 - 宿主 scheduler takeover 与 SubscribeChain.search 一样只做硬分流，绝不在搜索线程同步跑网盘转存；
 - 所有周期批量检查统一进入可靠后台合并队列；
-- 旧热重载实例的 tick/刷新/新转存入口全部失效；
+- 旧热重载实例的 tick/刷新/新转存入口与内置守护线程全部失效；
+- scheduler takeover 跨热重载会追溯真实 MoviePilot 原回调，不形成“旧插件回调链”；
 - 修正频道自动恢复定时器自我占用导致“只重试一次”的边界；
 - 诊断按媒体事实键读取 transfer_jobs，避免任务明明待落盘却显示 0。
 """
@@ -20,7 +21,7 @@ from app.chain.subscribe import SubscribeChain
 class GuangYaRuntimeFinalizerMixin:
     """位于 GuangYaReliabilityMixin 之前的最终运行编排。"""
 
-    build_id = "20260824-r6"
+    build_id = "20260824-r7"
 
     def _schedule_channel_recovery(self, delay: float) -> None:
         """可连续重试的恢复定时器。
@@ -39,7 +40,6 @@ class GuangYaRuntimeFinalizerMixin:
             timer = None
 
             def recover() -> None:
-                # 先释放槽位，保证本轮若再次失败可以立即注册下一轮恢复 timer。
                 with self._reliability_lock:
                     if self._channel_recovery_timer is timer:
                         self._channel_recovery_timer = None
@@ -64,11 +64,82 @@ class GuangYaRuntimeFinalizerMixin:
             self._channel_recovery_timer = timer
             timer.start()
 
+    def _unwrap_takeover_original(self, job_id: str, func: Any) -> Any:
+        """沿旧插件实例的 _takeover_originals 追溯真正 MoviePilot 原调度函数。"""
+        current = func
+        seen = set()
+        for _ in range(8):
+            marker = id(current)
+            if marker in seen:
+                break
+            seen.add(marker)
+            owner = getattr(current, "__self__", None)
+            if owner is None or owner is self:
+                break
+            mapping = getattr(owner, "_takeover_originals", None)
+            if not isinstance(mapping, dict):
+                break
+            candidate = mapping.get(job_id)
+            if candidate is None or candidate is current:
+                break
+            current = candidate
+        return current
+
+    def _install_takeover(self) -> None:
+        """安装 scheduler takeover，并修正热重载产生的旧实例回调链。"""
+        if not self._runtime_is_current() or not self._enabled:
+            return
+        super()._install_takeover()
+        originals = dict(getattr(self, "_takeover_originals", {}) or {})
+        for job_id, original in originals.items():
+            unwrapped = self._unwrap_takeover_original(job_id, original)
+            if unwrapped is original:
+                continue
+            self._takeover_originals[job_id] = unwrapped
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【热重载】%s 已从旧插件回调链追溯到 MoviePilot 原调度函数",
+                job_id,
+            )
+
     def refresh_channels(self, force: bool = False):
         """旧热重载实例不再触碰频道索引或外部网络。"""
         if hasattr(self, "_runtime_generation") and not self._runtime_is_current():
             return self._cached_channel_items()
         return super().refresh_channels(force=force)
+
+    def _runtime_worker_loop(self, generation: int) -> None:
+        """内置守护使用稳定 runtime owner，而不是仅依赖热重载后会重建的 Python class generation。"""
+        stop = getattr(self, "_runtime_stop", None)
+        if stop is None:
+            return
+        if stop.wait(1.5):
+            return
+        if not self._runtime_is_current() or not self._enabled:
+            return
+        try:
+            self._plugin_log("INFO", "【光鸭转存助手】【启动检查】内置守护开始首轮缓存检查")
+            self._startup_check()
+        except Exception as err:
+            self._plugin_log("EXCEPTION", "【光鸭转存助手】【启动检查】内置守护首轮执行异常：%s", err)
+
+        while self._enabled and self._runtime_is_current():
+            interval = max(60, int(self._refresh_minutes or 5) * 60)
+            if stop.wait(interval):
+                return
+            if not self._runtime_is_current() or not self._enabled:
+                return
+            heartbeat = float(getattr(self, "_host_tick_heartbeat", 0.0) or 0.0)
+            if heartbeat and (time.monotonic() - heartbeat) < interval * 1.5:
+                continue
+            try:
+                self._plugin_log(
+                    "WARNING",
+                    "【光鸭转存助手】【服务回退】未检测到宿主定时服务心跳，内置守护执行本轮检查；无需手动保存配置",
+                )
+                self._tick(host_service=False)
+            except Exception as err:
+                self._plugin_log("EXCEPTION", "【光鸭转存助手】【服务回退】内置守护执行异常：%s", err)
 
     def _startup_check(self) -> None:
         if not self._runtime_is_current() or not self._enabled:
@@ -185,7 +256,6 @@ class GuangYaRuntimeFinalizerMixin:
                 len(route_ids),
             )
 
-        # 普通订阅保持 MoviePilot 原行为。search 全入口 guard 会再次确认它们不属于光鸭路线。
         for index, native_sid in enumerate(native_ids):
             SubscribeChain().search(
                 sid=native_sid,
