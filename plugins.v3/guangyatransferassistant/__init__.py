@@ -179,8 +179,20 @@ class GuangYaTransferAssistant(
     def get_page(self):
         pages = super().get_page() or []
         match_guard, download_guard = self._native_guard_status()
-        if pages and isinstance(pages[0], dict):
-            props = pages[0].get("props") or {}
+
+        health_card = None
+        for page in pages:
+            if not isinstance(page, dict):
+                continue
+            props = page.get("props") or {}
+            if str(props.get("title") or "") == "固定分流路由健康":
+                health_card = page
+                break
+        if health_card is None and pages and isinstance(pages[0], dict):
+            health_card = pages[0]
+
+        if health_card is not None:
+            props = health_card.get("props") or {}
             old_text = str(props.get("text") or "")
             props["text"] = (
                 f"{old_text} · RSS匹配门禁：{'已接管' if match_guard else '未接管'}"
@@ -188,7 +200,7 @@ class GuangYaTransferAssistant(
             )
             if not (match_guard and download_guard):
                 props["type"] = "warning"
-            pages[0]["props"] = props
+            health_card["props"] = props
         return pages
 
 
