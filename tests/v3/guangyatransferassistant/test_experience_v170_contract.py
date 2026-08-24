@@ -33,6 +33,19 @@ def test_experience_layer_is_wired_into_runtime():
     assert 'build_id = "20260824-r4"' in experience_text
 
 
+def test_experience_plugin_actions_have_real_plugin_class_event_bridge():
+    # MoviePilot V3 通过“声明处理器的类名”解析运行插件实例。mixin 的类名并不是
+    # GuangYaTransferAssistant，因此 /gyroute /gycheck /gywhy /gyselfcheck 必须在
+    # 真正的入口插件类上额外注册一个 EventType.PluginAction 桥。
+    assert "from app.sdk.events import Event, eventmanager" in entry_text
+    assert "from app.schemas.types import EventType" in entry_text
+    assert "@eventmanager.register(EventType.PluginAction)" in entry_text
+    bridge = _method_text(entry_text, "experience_action_event_handler", "_install_search_guard")
+    assert "return super().experience_action_event_handler(event)" in bridge
+    assert "mixin" in bridge
+    assert 'build_id = "20260825-r10"' in entry_text
+
+
 def test_native_search_guard_is_non_blocking():
     guard = _method_text(experience_text, "_guard_one_subscription", "_queue_async_route_check")
     assert "_queue_async_route_check" in guard
