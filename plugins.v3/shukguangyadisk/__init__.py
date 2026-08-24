@@ -32,8 +32,8 @@ class ShukGuangYaDisk(GuangYaOrganizerMixin, V3StorageContractMixin, _LegacyPlug
     """光鸭云盘助手 MoviePilot V3 专用实现。"""
 
     plugin_name = "光鸭云盘助手"
-    plugin_desc = "MoviePilot V3 光鸭云盘存储助手：监控指定光鸭目录，发现新增或变化文件后直接交给 MoviePilot 内置整理链完成识别、分类、重命名与入库。"
-    plugin_version = "3.2.1"
+    plugin_desc = "MoviePilot V3 光鸭云盘存储助手：监控指定光鸭目录，结合文件名与目录结构识别电影/电视剧，并交给 MoviePilot 内置整理链完成分类、重命名与入库。"
+    plugin_version = "3.2.2"
     plugin_author = "liheng-lk"
     plugin_label = "存储,光鸭云盘,自动整理,目录监控,MoviePilot,挂载,Emby,WebDAV"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
