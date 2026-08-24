@@ -32,8 +32,8 @@ class ShukGuangYaDisk(GuangYaOrganizerMixin, V3StorageContractMixin, _LegacyPlug
     """光鸭云盘助手 MoviePilot V3 专用实现。"""
 
     plugin_name = "光鸭云盘助手"
-    plugin_desc = "MoviePilot V3 光鸭云盘存储助手：监控指定光鸭目录，结合文件名与目录结构识别电影/电视剧，并交给 MoviePilot 内置整理链完成分类、重命名与入库。"
-    plugin_version = "3.2.2"
+    plugin_desc = "MoviePilot V3 光鸭云盘存储助手：远程目录发现、持久状态机、剧集上下文修正与最终整理回执全部收口到清晰流水线，分类、命名、目标目录、覆盖和刮削仍由 MoviePilot 原生整理链负责。"
+    plugin_version = "3.3.0"
     plugin_author = "liheng-lk"
     plugin_label = "存储,光鸭云盘,自动整理,目录监控,MoviePilot,挂载,Emby,WebDAV"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -314,7 +314,13 @@ class ShukGuangYaDisk(GuangYaOrganizerMixin, V3StorageContractMixin, _LegacyPlug
         self._sms_verification_id = ""
         self._sms_phone_number = ""
         self._sms_captcha_token = ""
+        if self._organize_dispatcher:
+            try:
+                self._organize_dispatcher.clear_pending()
+            except Exception as err:
+                logger.debug("【光鸭云盘助手】【自动整理】清理 MP dispatcher pending 失败: %s", err)
         self._organize_dispatcher = None
+        self._organize_state_store = None
         self._organize_monitor_initialized = False
         self._guangya_api = None
         self._client = None
