@@ -8,6 +8,7 @@
 - 修正频道自动恢复定时器自我占用导致“只重试一次”的边界；
 - 接管已有订阅前做兼容性预检，避免洗版/复杂规则订阅被切进一个必然不会执行的路线；
 - /gystatus 展示 search/RSS/最终下载三层门禁、运行实例和频道降级状态；
+- 完成订阅自动清理固定路线时沿用延迟持久化，避免完成回调中热重载；
 - 诊断按媒体事实键读取 transfer_jobs，避免任务明明待落盘却显示 0。
 """
 
@@ -23,7 +24,7 @@ from app.chain.subscribe import SubscribeChain
 class GuangYaRuntimeFinalizerMixin:
     """位于 GuangYaReliabilityMixin 之前的最终运行编排。"""
 
-    build_id = "20260824-r8"
+    build_id = "20260824-r9"
 
     def _schedule_channel_recovery(self, delay: float) -> None:
         """可连续重试的恢复定时器。"""
@@ -280,12 +281,15 @@ class GuangYaRuntimeFinalizerMixin:
             refresh_channel=refresh_channel,
         )
 
+    def _remove_selected_subscription(self, sid: int) -> None:
+        """所有路线移除（人工切回/订阅完成自动清理）都走安全的延迟配置持久化。"""
+        return super()._remove_selected_subscription(sid)
+
     def _route_preflight(self, subscribe: Any) -> Tuple[bool, str]:
         """接管已有订阅前检查是否存在固定转存无法表达的订阅语义。"""
         allowed, reason = self._subscription_static_guard(subscribe)
         if allowed:
             return True, ""
-        # 暂停/待定允许先保存路线，恢复活跃后自动执行；其它不兼容项直接拒绝接管。
         if str(reason or "").startswith("订阅状态 "):
             return True, f"{reason}；路线可保存，恢复订阅后再执行光鸭检查"
         return False, str(reason or "当前订阅不适合固定转存")
