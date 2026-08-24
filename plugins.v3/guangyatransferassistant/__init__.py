@@ -2,9 +2,9 @@
 
 routing_v170 保留全入口 search 硬分流与消息直订，experience_v170 增加非阻塞后台检查、
 消息管理、自检、原因诊断和路线崩溃恢复；reliability_v170 负责高频并发合并、热重载
-唯一实例所有权以及频道源故障缓存降级/自动恢复；本层再增加 MoviePilot RSS/缓存匹配链
-的最终下载断路器，确保固定转存订阅不仅“不搜索”，也绝不会从 SubscribeChain.match
-路径落到本地下载器。
+唯一实例所有权以及频道源故障缓存降级/自动恢复；runtime_v170 负责宿主调度器最终非阻塞
+分流、旧实例失效和诊断校正；本层再增加 MoviePilot RSS/缓存匹配链的最终下载断路器，
+确保固定转存订阅不仅“不搜索”，也绝不会从 SubscribeChain.match 路径落到本地下载器。
 """
 
 from __future__ import annotations
@@ -18,11 +18,17 @@ from app.chain.subscribe import SubscribeChain
 
 from .experience_v170 import GuangYaExperienceMixin
 from .reliability_v170 import GuangYaReliabilityMixin
+from .runtime_v170 import GuangYaRuntimeFinalizerMixin
 from .routing_v170 import GuangYaTransferAssistant as _RoutingV170Assistant
 
 
-class GuangYaTransferAssistant(GuangYaReliabilityMixin, GuangYaExperienceMixin, _RoutingV170Assistant):
-    """完整硬分流：搜索 + RSS + 下载门禁 + 体验层 + 上线可靠性层。"""
+class GuangYaTransferAssistant(
+    GuangYaRuntimeFinalizerMixin,
+    GuangYaReliabilityMixin,
+    GuangYaExperienceMixin,
+    _RoutingV170Assistant,
+):
+    """完整硬分流：搜索 + RSS + 下载门禁 + 体验 + 可靠性 + 最终运行编排。"""
 
     plugin_version = "1.7.0"
 
@@ -121,8 +127,6 @@ class GuangYaTransferAssistant(GuangYaReliabilityMixin, GuangYaExperienceMixin, 
                     last_download_blocked_name=str(getattr(subscribe, "name", "") or ""),
                     download_guard=True,
                 )
-                # 保留 no_exists 原状告诉 MP “仍有未完成内容”，但 downloads 为空，
-                # 因此不会完成订阅、不会写入下载器，也不会静默回退。
                 return [], no_exists or {}
 
             return original(chain_self, *args, **kwargs)
@@ -162,7 +166,6 @@ class GuangYaTransferAssistant(GuangYaReliabilityMixin, GuangYaExperienceMixin, 
         self._record_route_health(download_guard=False)
 
     def _restore_search_guard(self) -> None:
-        # 先摘除依赖本插件实例的 RSS/下载门禁，再恢复 search。
         self._restore_match_guard()
         self._restore_download_circuit_breaker()
         super()._restore_search_guard()
