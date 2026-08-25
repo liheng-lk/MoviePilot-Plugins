@@ -22,6 +22,7 @@ from .models import (
 from .organizer_folder_history import GuangYaFolderHistoryMixin
 from .organizer_worker_guard import GuangYaWorkerGuardMixin
 from .organizer_queue_recovery import GuangYaQueueRecoveryMixin
+from .organizer_candidate_filter import GuangYaCandidateFilterMixin
 from .organizer_folder_stream import GuangYaFolderStreamMixin
 from .organizer_recognition import GuangYaOrganizerMixin
 from .storage_contract import V3StorageContractMixin
@@ -36,6 +37,7 @@ class ShukGuangYaDisk(
     GuangYaFolderHistoryMixin,
     GuangYaWorkerGuardMixin,
     GuangYaQueueRecoveryMixin,
+    GuangYaCandidateFilterMixin,
     GuangYaFolderStreamMixin,
     GuangYaOrganizerMixin,
     V3StorageContractMixin,
