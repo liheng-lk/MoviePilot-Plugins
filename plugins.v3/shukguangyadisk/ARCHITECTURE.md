@@ -51,6 +51,7 @@
 8. `batch_size` 只表示一次扫描最多处理多少新增候选，绝不能再等同于 MoviePilot 队列容量。
 9. 光鸭未终态任务必须受 `max_inflight` 单独限制；默认 1，配置范围 1～8。
 10. 插件不得调用 MoviePilot 私有 worker 停止/重启、不得清空 MoviePilot 全局整理队列。
+11. 已被 MoviePilot 接收但长期没有终态回执的任务不得由插件自行重放；未知状态优先停提交并要求确认，避免在 MP 全局队列中制造重复任务。
 
 ## 子目录流式调度
 
@@ -72,7 +73,7 @@ MoviePilot V3 的 `TransferChain` 是全局共享队列，下载器整理、手�
 - 读取宿主公开 `TRANSFER_THREADS` 设置；当 worker >= 2 时，实际光鸭并发自动钳制到 `min(配置上限, worker-1)`，至少为其它 MoviePilot 整理保留一个 worker 的容量。
 - 当 MoviePilot 只有 1 个整理 worker 时，真正的 worker 级隔离客观上不可能实现；插件仍只允许 1 个未终态任务，并在状态/自检中标记 `isolation_limited`。若需要远程光鸭整理与其它整理真正并行，应把 MoviePilot `TRANSFER_THREADS` 配置为至少 2。
 - 最老光鸭 `inflight` 超过 `stall_timeout`（默认 900 秒）未收到最终回执时，插件进入只读式熔断：停止新增光鸭任务，但不停止、不重启、不清空 MoviePilot worker/queue。
-- `inflight` 自动恢复租约延长到 6 小时，避免“任务其实仍在 MoviePilot 全局队列中，但插件 30 分钟后又重复提交”的二次排队。
+- 为避免“任务其实仍在 MoviePilot 全局队列中，但插件超时后又重复提交”，自动整理层把 `inflight` 的自动恢复租约设为极长保护值；正常恢复依赖 MoviePilot 最终事件或历史事实，长时间未知状态要求人工检查，而不是自动重放。
 
 ## 媒体识别优先级
 
@@ -122,7 +123,7 @@ MoviePilot V3 的 `TransferChain` 是全局共享队列，下载器整理、手�
 - MP 没接收入队：进入 `retry`，避免永久 seen。
 - MP 最终失败：进入 `retry`，并记录最终错误。
 - MP 失败预算耗尽：进入 `blocked`，10 分钟自动重新预检；UI 可手动立即解除后重查。
-- 最终事件长时间丢失：15 分钟进入提交熔断，停止新增光鸭任务；6 小时租约后才允许状态机自动恢复，降低重复排队概率。
+- 最终事件长时间丢失：15 分钟进入提交熔断，停止新增光鸭任务；不自动清空、不自动重启、不自动重放未知任务，先检查 MoviePilot 整理历史和实际队列状态。
 - 插件停用/热重载：释放插件自己的 dispatcher pending 与运行时对象，不触碰 MoviePilot 全局 TransferChain worker。
 
 ## 发布门槛
