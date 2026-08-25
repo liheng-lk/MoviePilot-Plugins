@@ -20,15 +20,15 @@ PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v330.js"
 ACCOUNT_PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-dev.js").read_text(encoding="utf-8")
 
 
-def test_v346_version_and_federation_entry():
+def test_v347_version_and_federation_entry():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "3.4.6"
-    assert local["version"] == "3.4.6"
-    assert 'plugin_version = "3.4.6"' in INIT
-    assert "__federation_expose_AssistantPage-v330.js?v=3.4.6" in REMOTE
-    assert "v3.4.6" in package["history"]
-    assert "完整目录" in package["history"]["v3.4.6"]
+    assert package["version"] == "3.4.7"
+    assert local["version"] == "3.4.7"
+    assert 'plugin_version = "3.4.7"' in INIT
+    assert "__federation_expose_AssistantPage-v330.js?v=3.4.7" in REMOTE
+    assert "v3.4.7" in package["history"]
+    assert "DNS/网络" in package["history"]["v3.4.7"]
 
 
 def test_builtin_pages_have_no_internal_version_badge():
@@ -37,7 +37,7 @@ def test_builtin_pages_have_no_internal_version_badge():
     assert "gya-badge" not in PAGE
     assert "gy-version" not in ACCOUNT_PAGE
     assert "v2.2.15" not in ACCOUNT_PAGE
-    for version in ("v3.4.3", "v3.4.4", "v3.4.5", "v3.4.6"):
+    for version in ("v3.4.3", "v3.4.4", "v3.4.5", "v3.4.6", "v3.4.7"):
         assert f"'{version}'" not in PAGE
 
 
