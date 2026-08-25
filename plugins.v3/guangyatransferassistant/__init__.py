@@ -1,4 +1,4 @@
-"""光鸭转存助手 v1.7.2 运行入口。
+"""光鸭转存助手 v1.7.3 运行入口。
 
 routing_v170 保留全入口 search 硬分流与消息直订，experience_v170 增加非阻塞后台检查、
 消息管理、自检、原因诊断和路线崩溃恢复；reliability_v170 负责高频并发合并、热重载
@@ -45,11 +45,11 @@ class GuangYaTransferAssistant(
 ):
     """完整硬分流：搜索 + RSS + 下载门禁 + 体验 + 可靠性 + 最终运行编排。"""
 
-    plugin_version = "1.7.2"
-    build_id = "20260825-r14"
+    plugin_version = "1.7.3"
+    build_id = "20260825-r15"
 
     def get_api(self):
-        """状态页/API 统一使用 MoviePilot V3 当前登录会话的 Bearer 鉴权。"""
+        """统一 Bearer 鉴权，并为状态页按钮安装非阻塞/标准响应适配。"""
         return force_bear_auth(super().get_api())
 
     @staticmethod
