@@ -13,6 +13,7 @@ v3.4.7 增加 DNS/连接故障熔断、日志降噪和扫描状态保护。
 v3.4.9 增加整理前零损失预览校验和逐文件终态确认，阻止同名覆盖导致集数进入回收站。
 v3.4.10 增加执行前源目录复核，已搬空/无视频目录不再进入 MoviePilot 识别。
 v3.4.11 增加整组样本推荐与多形态集号兼容层，适配 01 4K、EP01、第01集等弱命名。
+v3.4.12 使用 MoviePilot 当前 category.yaml 重新核验分类，消除缓存/外部识别源残留分类。
 """
 
 from __future__ import annotations
@@ -130,6 +131,7 @@ from .organizer_loss_guard_v349 import install_loss_guard_v349
 from .organizer_empty_folder_guard_v3410 import install_empty_folder_guard_v3410
 from .organizer_episode_name_adapter_v3411 import install_episode_name_adapter_v3411
 from .organizer_episode_sample_bridge_v3411 import install_episode_sample_bridge_v3411
+from .organizer_category_consistency_v3412 import install_category_consistency_v3412
 
 install_folder_batch_v342()
 install_legacy_queue_cleanup_v343()
@@ -139,6 +141,7 @@ install_loss_guard_v349()
 install_empty_folder_guard_v3410()
 install_episode_name_adapter_v3411()
 install_episode_sample_bridge_v3411()
+install_category_consistency_v3412()
 
 
 __all__ = ["GuangYaCandidateFilterMixin"]
