@@ -4,13 +4,16 @@ V3 的 StorageChain 会优先通过插件 ``get_module()`` 调用自定义模块
 接住自定义存储，请求会继续落到宿主 FileManager，而宿主只认识内置 StorageBase，
 最终得到“Unsupported storage type”。本 mixin 同时兼容 V3 新存储名与 V2 历史名，
 避免升级后已有整理任务继续引用 ``Shuk-光鸭云盘`` 时失效。
+
+这里也是宿主存储契约的唯一兼容边界：MoviePilot 新增参数时优先在本层适配，
+不继续修改 legacy 主体，避免存储协议与业务实现相互污染。
 """
 
 from __future__ import annotations
 
 from copy import copy as shallow_copy
 from functools import wraps
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Dict, Optional
 
 
@@ -123,6 +126,99 @@ class V3StorageContractMixin:
             return handler(*args, **kwargs)
 
         return wrapped
+
+    def snapshot_storage(
+        self,
+        storage: str,
+        path: Path,
+        last_snapshot_time: float = None,
+        max_depth: int = 5,
+        previous_snapshot: Optional[Dict[str, Dict]] = None,
+    ) -> Optional[Dict[str, Dict]]:
+        """实现 MoviePilot V3 当前完整快照契约。
+
+        MoviePilot 现在会把 ``previous_snapshot`` 作为关键字参数传给自定义存储。
+        v3.3.0 仍继承 legacy 四参数实现，因此会在宿主调用阶段直接抛出 TypeError。
+
+        本实现与 MoviePilot ``StorageBase.snapshot`` 语义对齐：
+        - 从上一轮完整快照起步，保留未重新遍历的增量目录；
+        - 根目录每轮至少列举一次，用于清理已经移动/删除的直接子项；
+        - 子目录仍可按 modify_time 跳过，降低远端 API 压力；
+        - 文件记录包含 size/modify_time/fileid/type，供宿主正确比较变化。
+        """
+        if not self._matches_storage(storage):
+            return None
+        if not getattr(self, "_guangya_api", None):
+            return {}
+
+        root_path = PurePosixPath(Path(path).as_posix())
+        files_info: Dict[str, Dict] = {}
+        for file_path, file_info in (previous_snapshot or {}).items():
+            try:
+                if PurePosixPath(str(file_path)).is_relative_to(root_path):
+                    files_info[str(file_path)] = dict(file_info or {})
+            except (TypeError, ValueError):
+                continue
+
+        def remove_deleted_children(directory_item: Any, sub_files: list[Any]) -> None:
+            directory_path = PurePosixPath(str(getattr(directory_item, "path", "") or "/"))
+            child_paths = {
+                PurePosixPath(str(getattr(sub_file, "path", "") or ""))
+                for sub_file in sub_files
+                if getattr(sub_file, "path", None)
+            }
+            for old_file_path in list(files_info):
+                try:
+                    relative_path = PurePosixPath(old_file_path).relative_to(directory_path)
+                except ValueError:
+                    continue
+                if not relative_path.parts:
+                    continue
+                direct_child = directory_path / relative_path.parts[0]
+                if direct_child not in child_paths:
+                    files_info.pop(old_file_path, None)
+
+        def snapshot_item(fileitem: Any, current_depth: int = 0) -> None:
+            try:
+                if getattr(fileitem, "type", None) == "dir":
+                    if current_depth >= max_depth:
+                        return
+                    if (
+                        current_depth > 0
+                        and bool(getattr(self, "snapshot_check_folder_modtime", True))
+                        and last_snapshot_time
+                        and getattr(fileitem, "modify_time", None)
+                        and fileitem.modify_time <= last_snapshot_time
+                    ):
+                        return
+
+                    sub_files = self._guangya_api.list(fileitem)
+                    if sub_files is None:
+                        return
+                    sub_files = list(sub_files)
+                    remove_deleted_children(fileitem, sub_files)
+                    for sub_file in sub_files:
+                        snapshot_item(sub_file, current_depth + 1)
+                    return
+
+                file_path = str(getattr(fileitem, "path", "") or "")
+                if not file_path:
+                    return
+                files_info[file_path] = {
+                    "size": int(getattr(fileitem, "size", 0) or 0),
+                    "modify_time": getattr(fileitem, "modify_time", 0) or 0,
+                    "fileid": getattr(fileitem, "fileid", None),
+                    "type": getattr(fileitem, "type", "file") or "file",
+                }
+            except Exception:
+                # 快照单项异常不应摧毁整轮快照；宿主下一轮仍会继续对账。
+                return
+
+        root_item = self._guangya_api.get_item(Path(path))
+        if not root_item:
+            return {}
+        snapshot_item(root_item)
+        return files_info
 
     def _v3_storage_helper(self):
         """延迟导入稳定 SDK，便于脱离 MoviePilot 宿主做合同单测。"""
