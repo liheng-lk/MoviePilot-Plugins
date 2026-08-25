@@ -8,6 +8,8 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
 INIT = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 ORGANIZER = (PLUGIN / "organizer.py").read_text(encoding="utf-8")
+FOLDER_STREAM = (PLUGIN / "organizer_folder_stream.py").read_text(encoding="utf-8")
+FOLDER_HISTORY = (PLUGIN / "organizer_folder_history.py").read_text(encoding="utf-8")
 RECOGNITION = (PLUGIN / "organizer_recognition.py").read_text(encoding="utf-8")
 RUNTIME = (PLUGIN / "organizer_runtime.py").read_text(encoding="utf-8")
 STATE = (PLUGIN / "organizer_state.py").read_text(encoding="utf-8")
@@ -40,6 +42,31 @@ def test_architecture_separates_monitor_state_history_recognition_and_runtime():
     assert "DirectoryHelper" not in STATE
     assert "TransferChain" not in STATE
     assert "TransferDispatcher" not in STATE
+
+
+def test_folder_stream_and_history_layers_are_explicitly_composed():
+    assert "from .organizer_folder_stream import GuangYaFolderStreamMixin" in INIT
+    assert "from .organizer_folder_history import GuangYaFolderHistoryMixin" in INIT
+    class_block = INIT.split("class ShukGuangYaDisk(", 1)[1].split("):", 1)[0]
+    assert class_block.index("GuangYaFolderHistoryMixin") < class_block.index("GuangYaFolderStreamMixin")
+    assert "_organize_scan_mode = \"folder_stream\"" in FOLDER_STREAM
+    assert "group_path" in FOLDER_STREAM
+    assert "batch_id" in FOLDER_STREAM
+    assert "folder_batch" in FOLDER_STREAM
+
+
+def test_grouped_history_retains_folder_context_without_changing_moviepilot_rules():
+    assert "class GuangYaFolderHistoryMixin" in FOLDER_HISTORY
+    assert "_monitor_history_limit = 1000" in FOLDER_HISTORY
+    assert "folder_history" in FOLDER_HISTORY
+    assert "history_retained" in FOLDER_HISTORY
+    assert "_seen_paths" in FOLDER_HISTORY
+    assert '"completed": "completed"' in FOLDER_HISTORY
+    assert '"queued": "inflight"' in FOLDER_HISTORY
+    assert '"failed": "retry"' in FOLDER_HISTORY
+    assert "api_organize_monitor_status" in FOLDER_HISTORY
+    for forbidden in ("TransferChain", "DirectoryHelper", "MediaType", "TMDB"):
+        assert forbidden not in FOLDER_HISTORY
 
 
 def test_auto_monitor_delegates_business_rules_to_moviepilot():
@@ -228,8 +255,13 @@ def test_ui_is_a_state_console_not_a_second_organizer():
         "重新检查 MP 门控",
         "整理中",
         "重试等待",
-        "最近自动整理流水",
+        "按子目录整理历史",
         "MoviePilot 内置",
+        "folderHistory",
+        "toggleGroup",
+        "groups_scanned",
+        "queue_slots",
+        "v3.4.0 preview",
     ):
         assert token in PAGE, token
     for forbidden in (
