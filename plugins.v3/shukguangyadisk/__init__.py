@@ -27,8 +27,6 @@ from .organizer_folder_stream import GuangYaFolderStreamMixin
 from .organizer_recognition import GuangYaOrganizerMixin
 from .storage_contract import V3StorageContractMixin
 
-# legacy 主体在 init_plugin() 运行时从模块全局读取 GuangYaApi。
-# V3 继续替换为已经实机验证的 v1.1.2 稳定上传适配层，避免重写上传主链。
 _legacy_module.GuangYaApi = _StableGuangYaApi
 _LegacyPlugin = _legacy_module.ShukGuangYaDisk
 
@@ -47,7 +45,7 @@ class ShukGuangYaDisk(
 
     plugin_name = "光鸭云盘助手"
     plugin_desc = "MoviePilot V3 光鸭云盘存储助手：自动整理按资源文件夹建立私有任务，常规目录由 MoviePilot 一次规划整包内容，任务完成前不会被保存/扫描动作拆成新的逐文件批次。"
-    plugin_version = "3.4.2"
+    plugin_version = "3.4.3"
     plugin_author = "liheng-lk"
     plugin_label = "存储,光鸭云盘,自动整理,目录监控,MoviePilot,挂载,Emby,WebDAV"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -111,7 +109,6 @@ class ShukGuangYaDisk(
         data["remote_status_available"] = True
         data["remote_status_message"] = ""
 
-        # 只有 refresh_token 已被明确判定无效时才展示掉登录；DNS/超时不清本地会话。
         if self._access_token and not data.get("logged_in"):
             refresh_invalid = bool(
                 self._client
@@ -169,7 +166,6 @@ class ShukGuangYaDisk(
                 api["response_model"] = GuangYaActionResponse
             elif path == "/browse":
                 api["response_model"] = GuangYaBrowseResponse
-            # /stream 与 /webdav 是文件/标准协议原生响应，不能套 JSON response_model。
 
         apis.extend([
             {
