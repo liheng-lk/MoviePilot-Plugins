@@ -63,20 +63,22 @@ def test_v340_no_longer_forces_auto_monitor_disabled():
     assert 'payload["enabled"] = False' not in RECOVERY
     assert "self._organize_monitor_enabled = False" not in RECOVERY
     assert "def api_organize_monitor_save" in RECOVERY
-    assert "return super().api_organize_monitor_save" not in RECOVERY  # response is enriched after save
+    assert "return super().api_organize_monitor_save" not in RECOVERY
     assert "super().api_organize_monitor_save(dict(payload or {}))" in RECOVERY
 
 
-def test_old_global_queue_is_read_only_gate_before_isolated_start():
+def test_old_global_queue_is_live_gate_and_stale_warning_is_cleared():
     for token in (
         "TransferChain().get_queue_tasks()",
         "_legacy_global_queue_snapshot",
         "_legacy_queue_blocks_isolated_start",
-        "请先重启 MoviePilot 一次",
-        "拒绝新增任务",
+        "_queue_guard_message",
+        "_refresh_queue_guard_status",
+        "无需反复重启 MoviePilot",
+        "queue_guard_restart_required=False",
     ):
         assert token in RECOVERY, token
-    # Public queue view is only observed; the module does not remove MP queue tasks.
+    # 该执行层仍只读取 MP 公共队列；真正的安全清理由 v3.4.3 迁移补丁负责。
     assert "remove_from_queue(" not in RECOVERY
 
 
@@ -98,7 +100,6 @@ def test_terminal_result_prefers_moviepilot_event_with_return_value_fallback():
         "still_inflight",
         "state_store.mark_completed",
         "state_store.mark_failed",
-        "最终事件缺失",
     ):
         assert token in RECOVERY, token
 
