@@ -24,7 +24,7 @@ async function postApi(props, path, body = {}) {
 const css = `
 .gya{width:100%;color:rgb(var(--v-theme-on-surface));font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}.gya *{box-sizing:border-box}
 .gya-tabs{display:flex;gap:7px;padding:10px 14px;border:1px solid rgba(var(--v-theme-on-surface),.08);border-radius:12px;margin-bottom:10px;background:rgb(var(--v-theme-surface))}.gya-tab{height:34px;padding:0 14px;border-radius:9px;border:1px solid rgba(var(--v-theme-on-surface),.1);background:transparent;color:inherit;cursor:pointer;font-size:12px}.gya-tab.active{background:rgb(var(--v-theme-primary));border-color:transparent;color:rgb(var(--v-theme-on-primary));font-weight:700}
-.gya-shell{background:rgb(var(--v-theme-surface));border:1px solid rgba(var(--v-theme-on-surface),.08);border-radius:14px;overflow:hidden}.gya-head{padding:16px 18px;border-bottom:1px solid rgba(var(--v-theme-on-surface),.07);display:flex;justify-content:space-between;align-items:center;gap:12px}.gya-title{font-size:17px;font-weight:760}.gya-sub{font-size:10.5px;opacity:.58;margin-top:3px;line-height:1.6}.gya-badge{font-size:10px;padding:4px 8px;border-radius:999px;background:rgba(var(--v-theme-primary),.1);color:rgb(var(--v-theme-primary))}
+.gya-shell{background:rgb(var(--v-theme-surface));border:1px solid rgba(var(--v-theme-on-surface),.08);border-radius:14px;overflow:hidden}.gya-head{padding:16px 18px;border-bottom:1px solid rgba(var(--v-theme-on-surface),.07);display:flex;justify-content:space-between;align-items:center;gap:12px}.gya-title{font-size:17px;font-weight:760}.gya-sub{font-size:10.5px;opacity:.58;margin-top:3px;line-height:1.6}
 .gya-body{padding:14px 18px 18px;display:grid;gap:12px}.gya-card{border:1px solid rgba(var(--v-theme-on-surface),.075);border-radius:11px;padding:13px;background:rgba(var(--v-theme-on-surface),.008)}.gya-card-title{font-size:13px;font-weight:740;margin-bottom:3px}.gya-card-sub{font-size:10px;opacity:.55;margin-bottom:10px;line-height:1.55}.gya-grid{display:grid;grid-template-columns:1.6fr .8fr .8fr;gap:10px}.gya-field label{display:block;font-size:10px;opacity:.55;margin-bottom:4px}.gya-input{width:100%;height:38px;border:1px solid rgba(var(--v-theme-on-surface),.13);border-radius:8px;padding:0 10px;background:rgb(var(--v-theme-surface));color:inherit;font-size:11.5px}.gya-path{display:grid;grid-template-columns:1fr auto;gap:7px}.gya-btn{height:36px;padding:0 13px;border-radius:8px;border:1px solid rgba(var(--v-theme-on-surface),.13);background:transparent;color:inherit;cursor:pointer;font-size:11px}.gya-btn.primary{background:rgb(var(--v-theme-primary));color:rgb(var(--v-theme-on-primary));border-color:transparent}.gya-btn.warn{border-color:rgba(245,158,11,.45);color:#f59e0b}.gya-btn:disabled{opacity:.4;cursor:not-allowed}.gya-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.gya-check{display:flex;gap:7px;align-items:center;font-size:10.5px;opacity:.78}.gya-switch{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:650}
 .gya-note{padding:10px;border-radius:8px;background:rgba(var(--v-theme-primary),.055);font-size:10.5px;line-height:1.65}.gya-note b{color:rgb(var(--v-theme-primary))}.gya-msg{padding:9px 10px;border-radius:8px;font-size:10.5px;background:rgba(16,185,129,.08);color:#10b981;white-space:pre-wrap}.gya-msg.error{background:rgba(239,68,68,.08);color:#ef4444}.gya-msg.warn{background:rgba(245,158,11,.08);color:#f59e0b}
 .gya-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}.gya-stat{padding:9px;border:1px solid rgba(var(--v-theme-on-surface),.07);border-radius:8px}.gya-stat span{display:block;font-size:9px;opacity:.48}.gya-stat b{font-size:15px}.gya-statusline{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:10px;opacity:.7;margin-top:8px}.gya-dot{width:8px;height:8px;border-radius:50%;background:#9ca3af}.gya-dot.on{background:#10b981}.gya-dot.warn{background:#f59e0b}.gya-dot.err{background:#ef4444}
@@ -39,7 +39,7 @@ const RESULT_TEXT = {
 };
 
 export default defineComponent({
-  name: 'GuangyaCloudAssistantV343',
+  name: 'GuangyaCloudAssistant',
   props: { initialConfig: {type:Object, default:()=>({})}, api: {type:Object, default:null} },
   emits: ['close','switch'],
   setup(props,{emit}) {
@@ -79,8 +79,7 @@ export default defineComponent({
 
     const organizer=()=>h('div',{class:'gya-shell'},[
       h('div',{class:'gya-head'},[
-        h('div',[h('div',{class:'gya-title'},'自动整理监控'),h('div',{class:'gya-sub'},'发现文件 → 稳定等待 → MP 历史预检 → 类型上下文 → MoviePilot 原生整理 → 最终回执。插件不自建第二套分类和命名规则。')]),
-        h('span',{class:'gya-badge'},'v3.4.3')
+        h('div',[h('div',{class:'gya-title'},'自动整理监控'),h('div',{class:'gya-sub'},'发现文件 → 稳定等待 → MP 历史预检 → 类型上下文 → MoviePilot 原生整理 → 最终回执。插件不自建第二套分类和命名规则。')])
       ]),
       h('div',{class:'gya-body'},[
         h('div',{class:'gya-card'},[
