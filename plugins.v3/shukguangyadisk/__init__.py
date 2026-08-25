@@ -19,6 +19,7 @@ from .models import (
     GuangYaConfigData,
     GuangYaConfigSaveResponse,
 )
+from .organizer_folder_history import GuangYaFolderHistoryMixin
 from .organizer_folder_stream import GuangYaFolderStreamMixin
 from .organizer_recognition import GuangYaOrganizerMixin
 from .storage_contract import V3StorageContractMixin
@@ -30,6 +31,7 @@ _LegacyPlugin = _legacy_module.ShukGuangYaDisk
 
 
 class ShukGuangYaDisk(
+    GuangYaFolderHistoryMixin,
     GuangYaFolderStreamMixin,
     GuangYaOrganizerMixin,
     V3StorageContractMixin,
