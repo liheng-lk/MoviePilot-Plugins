@@ -17,26 +17,28 @@ STORAGE = (PLUGIN / "storage_contract.py").read_text(encoding="utf-8")
 MODELS = (PLUGIN / "models.py").read_text(encoding="utf-8")
 REMOTE = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf-8")
 PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v330.js").read_text(encoding="utf-8")
+ACCOUNT_PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-dev.js").read_text(encoding="utf-8")
 
 
-def test_v344_version_and_federation_entry():
+def test_v345_version_and_federation_entry():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "3.4.4"
-    assert local["version"] == "3.4.4"
-    assert 'plugin_version = "3.4.4"' in INIT
-    assert "__federation_expose_AssistantPage-v330.js?v=3.4.4" in REMOTE
-    assert "v3.4.4" in package["history"]
-    assert "安全识别提示" in package["history"]["v3.4.4"]
+    assert package["version"] == "3.4.5"
+    assert local["version"] == "3.4.5"
+    assert 'plugin_version = "3.4.5"' in INIT
+    assert "__federation_expose_AssistantPage-v330.js?v=3.4.5" in REMOTE
+    assert "v3.4.5" in package["history"]
+    assert "旧 Worker" in package["history"]["v3.4.5"]
 
 
-def test_builtin_organizer_page_has_no_internal_version_badge():
+def test_builtin_pages_have_no_internal_version_badge():
     assert "自动整理监控" in PAGE
     assert "MoviePilot 内置" in PAGE
     assert "gya-badge" not in PAGE
-    assert "'v3.4.3'" not in PAGE
-    assert "'v3.4.4'" not in PAGE
-    assert "GuangyaCloudAssistantV343" not in PAGE
+    assert "gy-version" not in ACCOUNT_PAGE
+    assert "v2.2.15" not in ACCOUNT_PAGE
+    for version in ("v3.4.3", "v3.4.4", "v3.4.5"):
+        assert f"'{version}'" not in PAGE
 
 
 def test_architecture_separates_state_history_recognition_and_runtime():
