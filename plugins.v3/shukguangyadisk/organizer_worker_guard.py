@@ -15,7 +15,7 @@ import queue
 import threading
 import time
 import weakref
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from app.runtime.config import global_vars
 from app.sdk.logging import logger
@@ -46,6 +46,7 @@ class GuangYaWorkerGuardMixin:
     _isolated_recovery_done: bool = False
     _isolated_recovered_count: int = 0
     _isolated_owner_conflict: bool = False
+    _isolated_deferred_shutdown: bool = False
 
     def _claim_isolated_runtime(self) -> bool:
         with _runtime_lock():
@@ -134,11 +135,34 @@ class GuangYaWorkerGuardMixin:
             return False
         return super()._dispatch_to_moviepilot(item)
 
+    def _finish_deferred_shutdown_from_worker(self) -> None:
+        """长同步任务自然结束后再释放账号/存储对象，避免整理中途被置空。"""
+        if not self._isolated_deferred_shutdown:
+            return
+        self._isolated_deferred_shutdown = False
+        try:
+            # 从 QueueRecovery 层继续执行插件原有 teardown。该层会再次调用
+            # self._stop_isolated_worker()；当前线程已到最后收尾阶段，返回 False 也不会
+            # 阻止其继续调用下游 stop_service()。
+            super(GuangYaWorkerGuardMixin, self).stop_service()
+        except Exception as err:  # noqa: BLE001 - shutdown must be best-effort
+            logger.warning("【光鸭云盘助手】【独立worker】延迟释放插件运行态失败: %s", err)
+
     def _isolated_worker_loop(self) -> None:
-        """无论正常退出还是异常退出，都释放进程级 owner。"""
+        """无论正常退出还是异常退出，都完成延迟 teardown 并释放进程级 owner。"""
         try:
             return super()._isolated_worker_loop()
         finally:
+            self._finish_deferred_shutdown_from_worker()
+            lock = self._isolated_runtime_lock()
+            with lock:
+                worker = self._isolated_worker
+                if worker is threading.current_thread():
+                    self._isolated_worker = None
+                    self._isolated_stop = None
+                    self._isolated_queue = None
+                    self._isolated_pending_keys = set()
+                    self._isolated_running_path = ""
             self._release_isolated_runtime()
 
     def _stop_isolated_worker(self, timeout: float = 5.0) -> bool:
@@ -176,6 +200,17 @@ class GuangYaWorkerGuardMixin:
         self._release_isolated_runtime()
         return True
 
+    def stop_service(self) -> None:
+        """同步任务超过停止预算时延迟 teardown，避免把正在使用的存储对象提前释放。"""
+        if self._stop_isolated_worker():
+            return super().stop_service()
+        self._isolated_deferred_shutdown = True
+        logger.warning(
+            "【光鸭云盘助手】【独立worker】插件停止已进入延迟收尾；"
+            "当前文件完成后自动释放旧实例，新实例在此之前不会启动第二个 worker"
+        )
+        return None
+
     def _isolated_queue_snapshot(self) -> Dict[str, Any]:
         snapshot = dict(super()._isolated_queue_snapshot())
         owner = _runtime_owner()
@@ -187,6 +222,7 @@ class GuangYaWorkerGuardMixin:
                 and getattr(owner, "_isolated_worker", None)
                 and owner._isolated_worker.is_alive()
             ),
+            "deferred_shutdown": bool(self._isolated_deferred_shutdown),
         })
         return snapshot
 
