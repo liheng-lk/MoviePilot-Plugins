@@ -6,7 +6,7 @@
 
 自动整理固定流水线：
 
-`远程目录发现 → 文件稳定等待 → MP 历史预检 → 媒体上下文提示 → MP 原生整理 → 最终事件回执 → 状态落盘`
+`远程目录发现 → 文件稳定等待 → MP 历史预检 → 媒体上下文提示 → 受控提交 → MP 原生整理 → 最终事件回执 → 状态落盘`
 
 任何新增功能都必须先判断属于哪一层；禁止把分类、目标目录、重命名、覆盖、刮削等 MoviePilot 已有能力重新实现到插件中。
 
@@ -16,10 +16,14 @@
 - `_plugin_legacy.py`：旧版已验证能力兼容层。新功能不得继续堆入此文件。
 - `storage_contract.py`：MoviePilot V3 存储协议边界。
 - `guangya_client.py` / `guangya_api*.py`：光鸭远端协议与存储操作。
-- `organizer.py`：自动整理编排器。负责扫描、稳定等待、批次限流、状态展示、自检 API。
+- `organizer.py`：基础自动整理编排器。负责设置、稳定等待、状态展示、自检 API。
+- `organizer_folder_stream.py`：按监控根直接子目录完整扫描并流式提交；完整全树扫描结束后才允许 inventory reconciliation。
+- `organizer_folder_history.py`：只把文件级流水聚合为目录批次视图，不参与实际整理。
+- `organizer_backpressure.py`：光鸭任务对 MoviePilot 全局整理队列的唯一背压边界；限制未终态任务、维护目录优先队列、心跳补槽和卡顿熔断。
+- `organizer_dispatch.py`：自动整理到 MoviePilot 的唯一实际提交边界；无上下文时走 `TransferDispatcher`，有高置信度上下文时在此调用 `TransferChain.do_transfer`。
 - `organizer_state.py`：纯持久状态机，不依赖 MoviePilot 业务对象。
 - `organizer_history.py`：MoviePilot 整理历史只读预检适配，只复用宿主 history gate。
-- `organizer_recognition.py`：只构造高置信度媒体类型/标题/季集提示；不决定目标路径。
+- `organizer_recognition.py`：只构造高置信度媒体类型/标题/季集提示；不决定目标路径，也不承担背压策略。
 - `organizer_runtime.py`：MoviePilot 事件总线桥，负责 StorageOperSelection 与最终 Transfer 事件。
 - `models.py`：API 响应模型。
 - `dist/`：Federation UI。UI 只展示和操作后端状态，不持有业务状态。
@@ -44,6 +48,31 @@
 5. 文件指纹变化必须自动重新开放处理。
 6. 扫描达到 inventory cap 时不能清理未出现在本轮结果中的状态。
 7. 最终事件只允许更新当前监控根下的文件，避免手动整理污染自动监控状态。
+8. `batch_size` 只表示一次扫描最多处理多少新增候选，绝不能再等同于 MoviePilot 队列容量。
+9. 光鸭未终态任务必须受 `max_inflight` 单独限制；默认 1，配置范围 1～8。
+10. 插件不得调用 MoviePilot 私有 worker 停止/重启、不得清空 MoviePilot 全局整理队列。
+
+## 子目录流式调度
+
+调度单位是“监控根的直接子目录”，但 MoviePilot 仍然收到文件级任务：
+
+`完整扫描目录 A → A 内 ready 文件受背压连续提交 → 目录 B → ...`
+
+当一个目录因 MP 槽位不足未提交完时，它进入持久 `pending_groups`。30 秒心跳只重扫这个待补槽目录，不为每释放一个槽位重新扫描整个媒体树；当前目录消化后再轮到后续目录。
+
+只有完整全树扫描正常结束后才执行 inventory reconciliation。DNS、远端 API、inventory cap 等导致的部分扫描绝不能把未扫描目录误判成删除。
+
+## MoviePilot 队列隔离
+
+MoviePilot V3 的 `TransferChain` 是全局共享队列，下载器整理、手工整理和插件整理共享同一组 worker。因此插件不能用“每轮提交 100 个”来模拟自己的独立队列。
+
+规则固定为：
+
+- 默认 `max_inflight = 1`，防止光鸭一次灌入大量全局待整理任务。
+- 读取宿主公开 `TRANSFER_THREADS` 设置；当 worker >= 2 时，实际光鸭并发自动钳制到 `min(配置上限, worker-1)`，至少为其它 MoviePilot 整理保留一个 worker 的容量。
+- 当 MoviePilot 只有 1 个整理 worker 时，真正的 worker 级隔离客观上不可能实现；插件仍只允许 1 个未终态任务，并在状态/自检中标记 `isolation_limited`。若需要远程光鸭整理与其它整理真正并行，应把 MoviePilot `TRANSFER_THREADS` 配置为至少 2。
+- 最老光鸭 `inflight` 超过 `stall_timeout`（默认 900 秒）未收到最终回执时，插件进入只读式熔断：停止新增光鸭任务，但不停止、不重启、不清空 MoviePilot worker/queue。
+- `inflight` 自动恢复租约延长到 6 小时，避免“任务其实仍在 MoviePilot 全局队列中，但插件 30 分钟后又重复提交”的二次排队。
 
 ## 媒体识别优先级
 
@@ -59,7 +88,7 @@
 
 例如：
 
-`【高清剧集网发布 www.BPHDTV.com】偏爱靠近你[短剧][全31集][国语配音+中文字幕].Close.to.You.S01.2025.../Close.to.You.S01E27...mkv`
+`【高清剧集网发布 www.BPHDTV.com】偏爱靠近你[短剧][全31集].../Close.to.You.S01E27...mkv`
 
 应生成 `电视剧 / 偏爱靠近你 / S01E27 / 2025` 的识别上下文，而不是把整段发布目录当成标题。
 
@@ -68,10 +97,11 @@
 插件允许调用：
 
 - `TransferDispatcher`：普通原生整理入口与候选扩展判断。
-- `TransferChain.do_transfer`：需要显式类型/meta 提示时的稳定整理入口。
+- `TransferChain.do_transfer`：只允许由 `organizer_dispatch.py` 在需要显式类型/meta 提示时调用。
 - `app.application.history`：复用 MP 自身历史查重语义。
 - `DirectoryHelper`：只读取用户已配置的目录/媒体类型。
 - `StorageOperSelection`：向 MP 提供光鸭源存储 operator。
+- `app.runtime.settings.get_runtime_setting`：只读宿主整理 worker 数量，用于背压计算。
 
 插件不得自行实现：
 
@@ -81,7 +111,9 @@
 - move/copy/hardlink 等整理策略；
 - overwrite 决策；
 - 刮削；
-- 第二套整理历史。
+- 第二套整理历史；
+- MoviePilot worker 生命周期控制；
+- MoviePilot 全局队列清理。
 
 ## 故障策略
 
@@ -90,8 +122,8 @@
 - MP 没接收入队：进入 `retry`，避免永久 seen。
 - MP 最终失败：进入 `retry`，并记录最终错误。
 - MP 失败预算耗尽：进入 `blocked`，10 分钟自动重新预检；UI 可手动立即解除后重查。
-- 最终事件丢失/进程崩溃：`inflight` 30 分钟租约到期后自动恢复。
-- 插件停用/热重载：释放 dispatcher pending 与运行时对象，新实例通过弱引用桥接管事件。
+- 最终事件长时间丢失：15 分钟进入提交熔断，停止新增光鸭任务；6 小时租约后才允许状态机自动恢复，降低重复排队概率。
+- 插件停用/热重载：释放插件自己的 dispatcher pending 与运行时对象，不触碰 MoviePilot 全局 TransferChain worker。
 
 ## 发布门槛
 
@@ -100,8 +132,9 @@
 1. Python 语法检查；
 2. V3 插件契约测试；
 3. `OrganizerStateStore` 行为单测；
-4. Federation 入口/版本一致性检查；
-5. JSON 索引检查；
-6. 现场 smoke test：一部电影 + 一部 `SxxExx` 剧集 + 已整理历史文件 + 故意失败文件。
+4. 队列隔离/背压契约测试；
+5. Federation 入口/版本一致性检查；
+6. JSON 索引检查；
+7. 现场 smoke test：一部电影 + 一部 `SxxExx` 剧集 + 已整理历史文件 + 故意失败文件 + 至少一个普通 MoviePilot 整理任务并行验证。
 
 CI 通过只代表代码与契约满足发布门槛，不等于真实光鸭账号和真实 MoviePilot 配置的端到端验证。
