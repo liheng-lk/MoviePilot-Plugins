@@ -35,8 +35,9 @@ def test_recovery_reads_moviepilot_native_queue_and_reuses_official_cancel_seman
 
 def test_recovery_never_mutates_moviepilot_private_worker_or_queue_internals():
     forbidden = (
-        "._queue",
-        "self._threads",
+        "._queue.put(",
+        "TransferChain()._queue",
+        "TransferChain()._transfer_threads",
         "_worker_stop_event",
         "close_workers(",
         "on_config_changed(",
