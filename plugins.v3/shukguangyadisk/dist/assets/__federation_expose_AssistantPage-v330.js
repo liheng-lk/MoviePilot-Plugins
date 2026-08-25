@@ -39,7 +39,7 @@ const RESULT_TEXT = {
 };
 
 export default defineComponent({
-  name: 'GuangyaCloudAssistantV330',
+  name: 'GuangyaCloudAssistantV343',
   props: { initialConfig: {type:Object, default:()=>({})}, api: {type:Object, default:null} },
   emits: ['close','switch'],
   setup(props,{emit}) {
@@ -53,8 +53,9 @@ export default defineComponent({
     const statusDot=computed(()=>status.value?.failed>0?'err':blocked.value>0?'warn':running.value?'on':'');
     function setMsg(text,kind='ok'){message.value=text||'';messageKind.value=kind;}
     function applyConfig(c={}){enabled.value=Boolean(c.enabled);monitorPath.value=c.path||'/';interval.value=Number(c.interval||60);stability.value=Number(c.stability??30);batchSize.value=Number(c.batch_size||100);recursive.value=c.recursive!==false;}
+    function isLegacyQueueError(text=''){return text.includes('MoviePilot 全局整理队列仍有旧光鸭任务')||text.includes('请先重启 MoviePilot')||text.includes('旧版光鸭任务仍在 MoviePilot 全局后台队列');}
     async function loadConfig(){try{const r=await getApi(props,'/organize/monitor/config');if(!r?.success)throw new Error(r?.message||'读取失败');applyConfig(r?.data?.config||{});mp.value=r?.data?.mp||{};}catch(e){setMsg(e?.message||'读取自动整理设置失败','error');}}
-    async function loadStatus(silent=true){try{const r=await getApi(props,'/organize/monitor/status');if(!r?.success)throw new Error(r?.message||'读取失败');status.value=r?.data?.status||{};history.value=r?.data?.history||[];mp.value=r?.data?.mp||mp.value;if(!silent&&r?.message)setMsg(r.message);}catch(e){if(!silent)setMsg(e?.message||'读取运行状态失败','error');}}
+    async function loadStatus(silent=true){try{const r=await getApi(props,'/organize/monitor/status');if(!r?.success)throw new Error(r?.message||'读取失败');status.value=r?.data?.status||{};history.value=r?.data?.history||[];mp.value=r?.data?.mp||mp.value;if(!status.value?.queue_guard_active&&messageKind.value==='error'&&isLegacyQueueError(message.value))setMsg('');if(!silent)setMsg(status.value?.queue_guard_message||r?.message||'状态已刷新',status.value?.queue_guard_active?'warn':'ok');}catch(e){if(!silent)setMsg(e?.message||'读取运行状态失败','error');}}
     async function save(){busy.value=true;setMsg('');try{const r=await postApi(props,'/organize/monitor/config',{enabled:enabled.value,path:monitorPath.value,interval:Number(interval.value||60),stability:Number(stability.value||0),batch_size:Number(batchSize.value||100),recursive:recursive.value});if(!r?.success)throw new Error(r?.message||'保存失败');applyConfig(r?.data?.config||{});mp.value=r?.data?.mp||mp.value;setMsg(r?.message||'设置已保存');await loadStatus(true);}catch(e){setMsg(e?.message||'保存自动整理设置失败','error');}finally{busy.value=false;}}
     async function scan(){busy.value=true;setMsg('');try{const r=await postApi(props,'/organize/monitor/scan',{});setMsg(r?.message||'扫描完成',r?.success?'ok':'error');await loadStatus(true);}catch(e){setMsg(e?.message||'立即扫描失败','error');}finally{busy.value=false;}}
     async function selfcheck(){busy.value=true;try{const r=await getApi(props,'/organize/monitor/selfcheck');if(!r?.success)throw new Error(r?.message||'自检失败');const d=r?.data||{};const c=d.checks||{};const lines=[`自动整理自检：${d.healthy?'正常':'存在异常'}`,`运行时桥：${c.runtime_bridge?'正常':'异常'}｜存储：${c.storage_ready?'正常':'未就绪'}｜监控目录：${c.monitor_path_exists?'正常':'异常'}`,`状态：完成 ${c.state_completed||0}｜整理中 ${c.state_inflight||0}｜重试 ${c.state_retry_wait||0}｜门控 ${c.state_blocked||0}`];setMsg(lines.join('\n'),d.healthy?'ok':'warn');}catch(e){setMsg(e?.message||'自检失败','error');}finally{busy.value=false;}}
@@ -79,7 +80,7 @@ export default defineComponent({
     const organizer=()=>h('div',{class:'gya-shell'},[
       h('div',{class:'gya-head'},[
         h('div',[h('div',{class:'gya-title'},'自动整理监控'),h('div',{class:'gya-sub'},'发现文件 → 稳定等待 → MP 历史预检 → 类型上下文 → MoviePilot 原生整理 → 最终回执。插件不自建第二套分类和命名规则。')]),
-        h('span',{class:'gya-badge'},'v3.3.0')
+        h('span',{class:'gya-badge'},'v3.4.3')
       ]),
       h('div',{class:'gya-body'},[
         h('div',{class:'gya-card'},[

@@ -18,17 +18,17 @@ REMOTE = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf
 PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v330.js").read_text(encoding="utf-8")
 
 
-def test_v342_version_and_federation_entry():
+def test_v343_version_and_federation_entry():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "3.4.2"
-    assert local["version"] == "3.4.2"
-    assert 'plugin_version = "3.4.2"' in INIT
-    assert "__federation_expose_AssistantPage-v330.js?v=3.4.2" in REMOTE
+    assert package["version"] == "3.4.3"
+    assert local["version"] == "3.4.3"
+    assert 'plugin_version = "3.4.3"' in INIT
+    assert "__federation_expose_AssistantPage-v330.js?v=3.4.3" in REMOTE
     assert "自动整理监控" in PAGE
+    assert "v3.4.3" in package["history"]
+    assert "僵尸任务" in package["history"]["v3.4.3"]
     assert "v3.4.2" in package["history"]
-    assert "folder task" in package["history"]["v3.4.2"]
-    assert "background=False" in package["history"]["v3.4.2"]
 
 
 def test_architecture_separates_monitor_state_history_recognition_and_runtime():

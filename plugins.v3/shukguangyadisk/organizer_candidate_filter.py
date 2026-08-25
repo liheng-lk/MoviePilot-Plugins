@@ -4,14 +4,9 @@
 MoviePilot 全局后台整理队列，而 v3.4 明确禁止走这条路径。本模块只读取 MoviePilot
 公开运行设置中的媒体/字幕/音频扩展名与临时文件扩展名，用于扫描阶段过滤候选。
 
-v3.4.1 同时修复一个现场调度缺陷：完整扫描把一批候选放入插件私有队列后，旧逻辑
-仍只按用户配置的 ``interval``（例如 1800 秒）再次扫描。当前批次消化完后，即使还有
-``capacity_wait`` 或正在等待稳定的文件，也会看起来“整理一次就停止”。这里仅在插件
-私有队列接近耗尽且上轮明确存在待续工作时触发快速补充；正常无积压时仍严格使用用户
-配置的扫描周期，因此不会把光鸭 API 变成持续高频全量轮询。
-
-v3.4.2 进一步把“目录分组”升级为真正执行语义：监控根直接子目录作为一个私有任务，
-常规命名目录由 MoviePilot 一次规划整个目录；弱命名仍在同一个文件夹任务内部兼容执行。
+v3.4.1 修复私有队列完成一批后可能等待完整扫描周期才继续的问题。
+v3.4.2 把资源目录升级为真正的“一个文件夹一个整理任务”。
+v3.4.3 清理重启后仍残留的旧光鸭全局 waiting 任务，并自动切换到私有 worker。
 """
 
 from __future__ import annotations
@@ -62,8 +57,6 @@ class GuangYaCandidateFilterMixin:
 
     _organize_candidate_filter: _MoviePilotCandidateFilter | None = None
 
-    # 心跳本身不访问远端；只有正常 interval 到期或满足 fast-refill 条件时才实际扫描。
-    # 10 秒低水位检查可以避免 1800 秒配置下一个私有批次结束后长时间空转。
     _monitor_heartbeat = 10
     _isolated_refill_low_watermark = 8
     _isolated_refill_min_gap = 8.0
@@ -75,12 +68,6 @@ class GuangYaCandidateFilterMixin:
         return self._organize_candidate_filter
 
     def _fast_refill_needed(self) -> Tuple[bool, str]:
-        """判断是否需要在正常扫描周期之前补充插件私有队列。
-
-        只依据插件自己的状态与上轮扫描账本，不读取/修改 MoviePilot 全局整理队列。
-        ``capacity_wait`` 表示上轮因单轮预算/私有在途上限尚未提交完；``waiting`` 表示
-        文件仍在稳定性窗口。两者都需要短周期复查，否则大扫描间隔会让流水线断档。
-        """
         if not getattr(self, "_organize_monitor_enabled", False):
             return False, "disabled"
 
@@ -106,11 +93,6 @@ class GuangYaCandidateFilterMixin:
         return False, "no_backlog"
 
     def organize_monitor_tick(self) -> None:
-        """正常发现按 interval；私有队列快耗尽时允许提前补充下一批。
-
-        这是“补充扫描”，仍调用同一套 folder-stream 状态机与历史门控，不存在第二套
-        整理逻辑。每次快速补充也会更新 last_tick，因为它本身已经完成了一次完整发现。
-        """
         self.init_organizer_monitor()
         if not self._organize_monitor_enabled:
             return
@@ -134,12 +116,11 @@ class GuangYaCandidateFilterMixin:
         return super().organize_monitor_tick()
 
 
-# 在 CandidateFilter 模块加载时安装 v3.4.2 文件夹任务补丁。该模块在 QueueRecovery 之后、
-# FolderStream/Organizer 最终类装配之前加载，因此可以安全替换对应 mixin 的执行边界；
-# 安装函数自身具备幂等保护，MoviePilot 热重载不会重复包裹。
 from .organizer_folder_batch_v342 import install_folder_batch_v342
+from .organizer_legacy_queue_cleanup_v343 import install_legacy_queue_cleanup_v343
 
 install_folder_batch_v342()
+install_legacy_queue_cleanup_v343()
 
 
 __all__ = ["GuangYaCandidateFilterMixin"]
