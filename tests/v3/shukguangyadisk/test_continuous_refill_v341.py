@@ -31,13 +31,15 @@ def test_fast_refill_only_runs_when_private_queue_is_low():
 
 
 def test_refill_does_not_touch_moviepilot_global_background_queue():
+    # 文档字符串允许解释历史 TransferDispatcher 风险；这里只禁止真实依赖/调用。
     for forbidden in (
-        "TransferDispatcher",
-        "TransferChain",
-        "get_queue_tasks",
-        "remove_from_queue",
-        "put_to_queue",
-        "_queue",
+        "from app.monitor.dispatcher import",
+        "from app.chain.transfer import",
+        ".handle_file(",
+        "TransferChain()",
+        "get_queue_tasks(",
+        "remove_from_queue(",
+        "put_to_queue(",
     ):
         assert forbidden not in FILTER, forbidden
     assert '"background": False' in RECOVERY
