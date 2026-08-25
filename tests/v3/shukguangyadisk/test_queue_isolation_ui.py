@@ -7,11 +7,13 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
 REMOTE = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf-8")
 PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v340.js").read_text(encoding="utf-8")
+RECOVERY_PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v341.js").read_text(encoding="utf-8")
 
 
-def test_preview_remote_entry_loads_queue_isolation_console():
-    assert "__federation_expose_AssistantPage-v340.js?v=3.4.0-preview2" in REMOTE
-    assert "GuangyaCloudAssistantV340" in PAGE
+def test_preview_remote_entry_loads_queue_recovery_console():
+    assert "__federation_expose_AssistantPage-v341.js?v=3.4.0-preview3" in REMOTE
+    assert "GuangyaCloudAssistantV341" in RECOVERY_PAGE
+    assert "__federation_expose_AssistantPage-v340.js?v=3.4.0-preview3" in RECOVERY_PAGE
 
 
 def test_ui_separates_scan_batch_and_moviepilot_occupancy():
@@ -50,6 +52,25 @@ def test_ui_surfaces_stall_breaker_and_real_dispatch_status():
         "旧队列超额",
     ):
         assert token in PAGE, token
+
+
+def test_ui_can_recover_moviepilot_native_guangya_backlog_without_touching_other_tasks():
+    for token in (
+        "MoviePilot 原生整理队列中的光鸭积压",
+        "MP 总队列",
+        "光鸭",
+        "等待",
+        "运行",
+        "清理旧光鸭排队",
+        "终止卡住的光鸭任务",
+        "/organize/monitor/recover-queue",
+        "confirm:true",
+        "monitor_only:true",
+        "include_running:includeRunning",
+        "不碰运行中任务和其它 MoviePilot 整理",
+        "等待约 2 分钟",
+    ):
+        assert token in RECOVERY_PAGE, token
 
 
 def test_ui_keeps_folder_group_history_and_moviepilot_business_boundary():
