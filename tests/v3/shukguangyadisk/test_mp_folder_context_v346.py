@@ -46,7 +46,8 @@ def test_monitor_root_is_not_recursively_submitted_as_one_directory():
     assert "return previous_execute(self, item)" in CONTEXT
 
 
-def test_v344_safe_recognition_is_no_longer_installed_and_v346_is_last_patch():
+def test_v344_safe_recognition_stays_removed_and_v346_context_remains_installed():
     assert "install_safe_recognition_v344" not in FILTER
     assert "install_mp_folder_context_v346" in FILTER
     assert "install_mp_folder_context_v346()" in FILTER
+    assert "install_network_resilience_v347" in FILTER
