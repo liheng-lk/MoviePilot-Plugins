@@ -64,7 +64,7 @@ def test_patch_is_installed_before_final_plugin_mro_is_assembled():
     assert "install_folder_batch_v342()" in FILTER
 
 
-def test_version_is_342():
-    assert 'plugin_version = "3.4.2"' in ENTRY
-    assert '"version": "3.4.2"' in MANIFEST
+def test_folder_batch_feature_remains_enabled_in_343():
+    assert 'plugin_version = "3.4.3"' in ENTRY
+    assert '"version": "3.4.3"' in MANIFEST
     assert '"v3.4.2"' in MANIFEST
