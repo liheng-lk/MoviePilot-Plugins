@@ -74,13 +74,13 @@ def test_auto_scan_marks_incomplete_inventory_truncated_on_network_failure():
     assert "GuangYaFolderStreamMixin.run_organize_monitor_scan = run_scan" in NETWORK
 
 
-def test_v347_manifest_and_cache_version_are_consistent():
+def test_v347_network_history_remains_in_current_release():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "3.4.7"
-    assert local["version"] == "3.4.7"
-    assert 'plugin_version = "3.4.7"' in ENTRY
-    assert "__federation_expose_AssistantPage-v330.js?v=3.4.7" in REMOTE
+    assert package["version"] == "3.4.8"
+    assert local["version"] == "3.4.8"
+    assert 'plugin_version = "3.4.8"' in ENTRY
+    assert "__federation_expose_AssistantPage-v330.js?v=3.4.8" in REMOTE
     assert package["history"]["v3.4.7"] == "降低光鸭 DNS/网络异常日志噪音，增加自动退避和扫描保护，网络恢复后自动继续。"
 
 

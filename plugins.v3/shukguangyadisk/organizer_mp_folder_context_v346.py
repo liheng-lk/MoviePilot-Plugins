@@ -1,14 +1,13 @@
-"""v3.4.6：把完整资源目录交给 MoviePilot 做目录级识别与整包整理。
+"""v3.4.6+：把完整资源目录交给 MoviePilot 做目录级识别与整包整理。
 
-旧的 v3.4.4 安全识别会先从中文父目录提取标题，再单独调用 MediaChain 识别；虽然识别器
-仍来自 MoviePilot，但这会把插件放在“先猜标题”的位置。v3.4.6 改成直接使用 MoviePilot
-公开的 ``MediaChain.recognize_by_path`` 对真实资源目录路径做识别，然后把同一个目录
-``FileItem(type='dir')`` 交给 ``TransferChain.do_transfer``。MoviePilot 自己递归扫描目录、
-逐文件解析季集、决定分类/目标目录/命名/覆盖/刮削。
+资源目录始终先走 MoviePilot 的路径识别，再把同一个 ``FileItem(type='dir')`` 交给
+``TransferChain.do_transfer``。MoviePilot 自己递归扫描目录、逐文件解析季集、决定分类、
+目标目录、命名、覆盖与刮削；插件不写死标题、TMDB ID 或媒体 ID。
 
-对于 22~[4K] 等弱集号目录，不再由插件自己拼剧集 MetaInfo；只调用 MoviePilot 自带的
-``TransferChain.recommend_episode_format`` 推荐集数定位模板，再由同一个目录批次执行。
-监控根目录散放文件仍不能把整个监控根递归提交给 MoviePilot，因此保留既有单文件兼容路径。
+对于 ``剧集名称/01.mp4``、``22~[4K].mkv`` 等文件名本身缺少剧名/季集语义的目录，
+先调用 MoviePilot 自带的 ``recommend_episode_format``。只有 MoviePilot 自己确认存在集数
+定位模板时，才把“电视剧”作为结构类型约束重新交给 MoviePilot 识别目录标题，避免
+把纯数字集号误识别成电影。监控根散放文件仍不能把整个监控根递归提交。
 """
 
 from __future__ import annotations
@@ -18,6 +17,7 @@ from typing import Any, Optional, Tuple
 from app.chain.media import MediaChain
 from app.chain.transfer import TransferChain
 from app.schemas.transfer import EpisodeFormat
+from app.schemas.types import MediaType
 from app.schemas.workflow import FileItem
 from app.sdk.logging import logger
 
@@ -52,8 +52,10 @@ def _moviepilot_directory_context(path: str) -> Tuple[Any, Optional[str]]:
         context = MediaChain().recognize_by_path(path, obtain_images=True)
     except Exception as err:  # noqa: BLE001 - MoviePilot compatibility boundary
         return None, f"MoviePilot 目录路径识别异常：{err}"
-    if not context or not getattr(context, "media_info", None):
-        return None, "MoviePilot 未从资源目录识别到媒体信息"
+    if not context:
+        return None, "MoviePilot 未从资源目录生成识别上下文"
+    if not getattr(context, "media_info", None):
+        return context, "MoviePilot 未从资源目录识别到媒体信息"
     return context, None
 
 
@@ -61,7 +63,7 @@ def _moviepilot_episode_format(
     transfer_chain: TransferChain,
     directory_item: FileItem,
 ) -> Tuple[Optional[EpisodeFormat], Optional[str]]:
-    """弱集号目录仅使用 MoviePilot 自带推荐器，不在插件里维护正则规则。"""
+    """仅使用 MoviePilot 自带推荐器判断是否存在集数结构。"""
     try:
         state, message, data = transfer_chain.recommend_episode_format(
             fileitem=directory_item,
@@ -77,6 +79,37 @@ def _moviepilot_episode_format(
     return EpisodeFormat(format=episode_format), None
 
 
+def _is_tv_media(media: Any) -> bool:
+    media_type = getattr(media, "type", None)
+    if media_type == MediaType.TV:
+        return True
+    value = getattr(media_type, "value", media_type)
+    return str(value or "").casefold() in {
+        str(getattr(MediaType.TV, "value", MediaType.TV)).casefold(),
+        "tv",
+        "电视剧",
+    }
+
+
+def _moviepilot_tv_context_from_directory_meta(meta: Any) -> Tuple[Any, Optional[str]]:
+    """集数结构已由 MP 确认时，用同一份 MP 目录 meta 约束为电视剧重新识别。"""
+    if not meta:
+        return None, "MoviePilot 目录上下文缺少 meta_info"
+    try:
+        media = MediaChain().recognize_by_meta(
+            metainfo=meta,
+            mtype=MediaType.TV,
+            obtain_images=True,
+        )
+    except Exception as err:  # noqa: BLE001
+        return None, f"MoviePilot 电视剧约束识别异常：{err}"
+    if not media:
+        return None, "MoviePilot 未在电视剧类型下识别到该目录"
+    if not _is_tv_media(media):
+        return None, "MoviePilot 电视剧约束识别结果类型仍不是电视剧"
+    return media, None
+
+
 def _normalize_result(result: Any) -> Tuple[bool, str]:
     if isinstance(result, tuple):
         success = bool(result[0])
@@ -90,7 +123,7 @@ def _normalize_result(result: Any) -> Tuple[bool, str]:
 
 
 def install_mp_folder_context_v346() -> None:
-    """最后覆盖文件夹执行边界，热更新时也可绕过旧 v3.4.4 安全识别 wrapper。"""
+    """最后覆盖文件夹执行边界，确保完整目录始终由 MoviePilot 接管。"""
     if getattr(GuangYaQueueRecoveryMixin, "_guangya_mp_folder_context_v346", False):
         return
 
@@ -111,6 +144,44 @@ def install_mp_folder_context_v346() -> None:
         media = getattr(context, "media_info", None) if context else None
         meta = getattr(context, "meta_info", None) if context else None
 
+        # 对所有资源目录都让 MoviePilot 自己判断是否需要集数定位模板，而不是插件按文件名猜。
+        epformat, episode_error = _moviepilot_episode_format(
+            transfer_chain=transfer_chain,
+            directory_item=directory_item,
+        )
+        if epformat:
+            logger.info(
+                "【光鸭云盘助手】【MP目录上下文】MoviePilot 检测到剧集集数模板: %s -> %s",
+                item.path,
+                epformat.format,
+            )
+            # 路径识别可能因为 01.mp4 这类文件缺少 SxxExx 而先命中电影。
+            # 只有 MP 自己给出 episode_format 后，才使用 MP 的同一目录 meta 约束 TV 重识别。
+            if not _is_tv_media(media):
+                tv_media, tv_error = _moviepilot_tv_context_from_directory_meta(meta)
+                if tv_media:
+                    logger.info(
+                        "【光鸭云盘助手】【MP目录上下文】集数结构已确认，MoviePilot 按电视剧重新识别: %s -> %s",
+                        item.path,
+                        getattr(tv_media, "title_year", None) or getattr(tv_media, "title", ""),
+                    )
+                    media = tv_media
+                    recognize_error = None
+                else:
+                    # 已确认是集数结构时绝不能继续沿用电影结果，否则会造成错误入库。
+                    logger.warning(
+                        "【光鸭云盘助手】【MP目录上下文】已检测到集数结构，但电视剧识别未确认，暂缓整理: %s - %s",
+                        item.path,
+                        tv_error or "未知原因",
+                    )
+                    return False, str(tv_error or "MoviePilot 已检测到集数结构，但电视剧识别未确认")
+        elif episode_error:
+            logger.debug(
+                "【光鸭云盘助手】【MP目录上下文】MoviePilot 未检测到额外集数模板，使用原生解析: %s - %s",
+                item.path,
+                episode_error,
+            )
+
         if media:
             logger.info(
                 "【光鸭云盘助手】【MP目录上下文】MoviePilot 目录识别: %s -> %s；分类=%s；"
@@ -120,45 +191,25 @@ def install_mp_folder_context_v346() -> None:
                 getattr(media, "category", None) or "由 MoviePilot 整理阶段决定",
             )
         else:
-            # 不再由插件回退到中文标题提取或英文文件名猜测；没有目录识别结果时仍把真实目录
-            # 交给 MoviePilot 原生整理链，让宿主按自己的文件级识别规则决定最终结果。
             logger.warning(
                 "【光鸭云盘助手】【MP目录上下文】%s；不做插件硬识别，直接交给 MoviePilot 原生目录整理: %s",
                 recognize_error or "MoviePilot 目录识别无结果",
                 item.path,
             )
 
-        epformat = None
-        if not item.directory_mode:
-            epformat, episode_error = _moviepilot_episode_format(
-                transfer_chain=transfer_chain,
-                directory_item=directory_item,
-            )
-            if epformat:
-                logger.info(
-                    "【光鸭云盘助手】【MP目录上下文】弱集号目录使用 MoviePilot 推荐集数模板: %s -> %s",
-                    item.path,
-                    epformat.format,
-                )
-            elif episode_error:
-                logger.info(
-                    "【光鸭云盘助手】【MP目录上下文】MoviePilot 未给出集数模板，继续使用原生解析: %s - %s",
-                    item.path,
-                    episode_error,
-                )
-
         kwargs = {
             "fileitem": directory_item,
             "background": False,
             "manual": False,
         }
-        # 只传 MoviePilot 自己从完整目录路径识别出的媒体信息；不传目录 meta，避免整季文件
-        # 共享同一集号。逐文件季集仍由 TransferChain 对目录扫描结果自行解析。
+        # mediainfo 只接受 MoviePilot 自己的目录识别结果；epformat 也只接受 MoviePilot 推荐结果。
         if media:
             kwargs["mediainfo"] = media
             media_type = getattr(media, "type", None)
             if media_type:
                 kwargs["mtype"] = media_type
+        elif epformat:
+            kwargs["mtype"] = MediaType.TV
         if epformat:
             kwargs["epformat"] = epformat
 

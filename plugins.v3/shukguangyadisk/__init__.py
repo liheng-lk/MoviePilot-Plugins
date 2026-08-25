@@ -45,7 +45,7 @@ class ShukGuangYaDisk(
 
     plugin_name = "光鸭云盘助手"
     plugin_desc = "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。"
-    plugin_version = "3.4.7"
+    plugin_version = "3.4.8"
     plugin_author = "liheng-lk"
     plugin_label = "存储,光鸭云盘,自动整理,目录监控,MoviePilot,挂载,Emby,WebDAV"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -181,7 +181,7 @@ class ShukGuangYaDisk(
                 "endpoint": self.verify_sms_login,
                 "auth": "bear",
                 "methods": ["POST"],
-                "summary": "校验短信验证码并完成光鸭云盘登录",
+                "summary": "校验短信验证码并完成登录",
                 "response_model": GuangYaActionResponse,
             },
         ])
