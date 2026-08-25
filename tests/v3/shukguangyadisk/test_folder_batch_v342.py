@@ -39,7 +39,7 @@ def test_monitor_root_is_never_recursively_submitted_as_one_folder():
     assert "监控根散放文件不能把根目录交给 MP" in PATCH
 
 
-def test_weak_episode_names_keep_per_file_compat_inside_same_folder_task():
+def test_legacy_weak_episode_fallback_remains_available_for_monitor_root_files():
     for token in (
         "_WEAK_EPISODE_NAME",
         "父目录 + 数字集号",
@@ -65,6 +65,6 @@ def test_patch_is_installed_before_final_plugin_mro_is_assembled():
 
 
 def test_folder_batch_feature_remains_enabled_in_current_release():
-    assert 'plugin_version = "3.4.5"' in ENTRY
-    assert '"version": "3.4.5"' in MANIFEST
+    assert 'plugin_version = "3.4.6"' in ENTRY
+    assert '"version": "3.4.6"' in MANIFEST
     assert '"v3.4.2"' in MANIFEST

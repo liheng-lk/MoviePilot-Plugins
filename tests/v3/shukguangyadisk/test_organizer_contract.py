@@ -9,7 +9,7 @@ PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
 INIT = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 ORGANIZER = (PLUGIN / "organizer.py").read_text(encoding="utf-8")
 RECOGNITION = (PLUGIN / "organizer_recognition.py").read_text(encoding="utf-8")
-SAFE_RECOGNITION = (PLUGIN / "organizer_safe_recognition_v344.py").read_text(encoding="utf-8")
+MP_FOLDER_CONTEXT = (PLUGIN / "organizer_mp_folder_context_v346.py").read_text(encoding="utf-8")
 RUNTIME = (PLUGIN / "organizer_runtime.py").read_text(encoding="utf-8")
 STATE = (PLUGIN / "organizer_state.py").read_text(encoding="utf-8")
 HISTORY = (PLUGIN / "organizer_history.py").read_text(encoding="utf-8")
@@ -20,15 +20,15 @@ PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v330.js"
 ACCOUNT_PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-dev.js").read_text(encoding="utf-8")
 
 
-def test_v345_version_and_federation_entry():
+def test_v346_version_and_federation_entry():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "3.4.5"
-    assert local["version"] == "3.4.5"
-    assert 'plugin_version = "3.4.5"' in INIT
-    assert "__federation_expose_AssistantPage-v330.js?v=3.4.5" in REMOTE
-    assert "v3.4.5" in package["history"]
-    assert "旧 Worker" in package["history"]["v3.4.5"]
+    assert package["version"] == "3.4.6"
+    assert local["version"] == "3.4.6"
+    assert 'plugin_version = "3.4.6"' in INIT
+    assert "__federation_expose_AssistantPage-v330.js?v=3.4.6" in REMOTE
+    assert "v3.4.6" in package["history"]
+    assert "完整目录" in package["history"]["v3.4.6"]
 
 
 def test_builtin_pages_have_no_internal_version_badge():
@@ -37,7 +37,7 @@ def test_builtin_pages_have_no_internal_version_badge():
     assert "gya-badge" not in PAGE
     assert "gy-version" not in ACCOUNT_PAGE
     assert "v2.2.15" not in ACCOUNT_PAGE
-    for version in ("v3.4.3", "v3.4.4", "v3.4.5"):
+    for version in ("v3.4.3", "v3.4.4", "v3.4.5", "v3.4.6"):
         assert f"'{version}'" not in PAGE
 
 
@@ -112,7 +112,7 @@ def test_snapshot_contract_tracks_current_moviepilot_parameter():
     assert '"fileid": getattr(fileitem, "fileid", None)' in STORAGE
 
 
-def test_explicit_episode_context_keeps_weak_name_support():
+def test_explicit_episode_context_keeps_root_loose_file_compatibility():
     for token in (
         "_release_parent_title",
         "_preferred_episode_title",
@@ -126,36 +126,28 @@ def test_explicit_episode_context_keeps_weak_name_support():
         assert token in RECOGNITION, token
 
 
-def test_safe_recognition_uses_parent_chinese_title_only_as_mp_hint():
+def test_resource_directory_identity_comes_from_moviepilot_full_path():
     for token in (
-        "MediaChain().recognize_by_meta",
+        "MediaChain().recognize_by_path",
+        "MoviePilot 目录识别",
+        "提交完整资源目录",
+        "transfer_chain.do_transfer(**kwargs)",
+        "识别/分类/命名/目标路径全部由 MoviePilot 执行",
+    ):
+        assert token in MP_FOLDER_CONTEXT, token
+    for forbidden in (
         "_release_parent_title",
-        "未按英文文件名继续猜测",
-        "无硬编码媒体ID",
-        "分类/命名仍由 MoviePilot 决定",
+        "recognize_by_meta",
+        "tmdb_id=",
+        "media_id=",
     ):
-        assert token in SAFE_RECOGNITION, token
-    assert "tmdb_id=" not in SAFE_RECOGNITION
-    assert "media_id=" not in SAFE_RECOGNITION
+        assert forbidden not in MP_FOLDER_CONTEXT, forbidden
 
 
-def test_safe_recognition_checks_localized_titles_and_aliases():
-    for token in (
-        '"hk_title"',
-        '"tw_title"',
-        '"sg_title"',
-        '"names"',
-        '"original_name"',
-        "overlap >= 0.70",
-    ):
-        assert token in SAFE_RECOGNITION, token
-
-
-def test_safe_recognition_stops_on_title_or_year_conflict():
-    assert "_recognition_matches_hint" in SAFE_RECOGNITION
-    assert "MoviePilot 返回" in SAFE_RECOGNITION
-    assert "int(str(media_year)[:4]) != int(year)" in SAFE_RECOGNITION
-    assert "return False, message" in SAFE_RECOGNITION
+def test_weak_directory_episode_format_is_recommended_by_moviepilot():
+    assert "recommend_episode_format" in MP_FOLDER_CONTEXT
+    assert "EpisodeFormat(format=episode_format)" in MP_FOLDER_CONTEXT
+    assert "不在插件里维护正则规则" in MP_FOLDER_CONTEXT
 
 
 def test_monitor_uses_persistent_settings_and_bounded_inventory():
