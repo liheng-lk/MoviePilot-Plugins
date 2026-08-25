@@ -5,14 +5,15 @@
 目标目录、命名、覆盖与刮削；插件不写死标题、TMDB ID 或媒体 ID。
 
 对于 ``剧集名称/01.mp4``、``22~[4K].mkv`` 等文件名本身缺少剧名/季集语义的目录，
-先调用 MoviePilot 自带的 ``recommend_episode_format``。只有 MoviePilot 自己确认存在集数
-定位模板时，才把“电视剧”作为结构类型约束重新交给 MoviePilot 识别目录标题，避免
-把纯数字集号误识别成电影。监控根散放文件仍不能把整个监控根递归提交。
+先调用 MoviePilot 自带的 ``recommend_episode_format``。v3.4.11 起优先把扫描阶段已经拿到的
+整组文件显式传给 MoviePilot 推荐器，避免远端目录二次取样失败。只有 MoviePilot 自己确认
+存在集数定位模板时，才把“电视剧”作为结构类型约束重新交给 MoviePilot 识别目录标题。
+监控根散放文件仍不能把整个监控根递归提交。
 """
 
 from __future__ import annotations
 
-from typing import Any, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from app.chain.media import MediaChain
 from app.chain.transfer import TransferChain
@@ -62,12 +63,13 @@ def _moviepilot_directory_context(path: str) -> Tuple[Any, Optional[str]]:
 def _moviepilot_episode_format(
     transfer_chain: TransferChain,
     directory_item: FileItem,
+    fileitems: Optional[List[FileItem]] = None,
 ) -> Tuple[Optional[EpisodeFormat], Optional[str]]:
     """仅使用 MoviePilot 自带推荐器判断是否存在集数结构。"""
     try:
         state, message, data = transfer_chain.recommend_episode_format(
             fileitem=directory_item,
-            fileitems=None,
+            fileitems=fileitems or None,
         )
     except Exception as err:  # noqa: BLE001
         return None, f"MoviePilot 集数定位推荐异常：{err}"
@@ -144,10 +146,11 @@ def install_mp_folder_context_v346() -> None:
         media = getattr(context, "media_info", None) if context else None
         meta = getattr(context, "meta_info", None) if context else None
 
-        # 对所有资源目录都让 MoviePilot 自己判断是否需要集数定位模板，而不是插件按文件名猜。
+        # 对所有资源目录都让 MoviePilot 自己判断是否需要集数定位模板；优先复用扫描阶段的整组成员。
         epformat, episode_error = _moviepilot_episode_format(
             transfer_chain=transfer_chain,
             directory_item=directory_item,
+            fileitems=list(item.members or []),
         )
         if epformat:
             logger.info(
@@ -202,7 +205,7 @@ def install_mp_folder_context_v346() -> None:
             "background": False,
             "manual": False,
         }
-        # mediainfo 只接受 MoviePilot 自己的目录识别结果；epformat 也只接受 MoviePilot 推荐结果。
+        # mediainfo 只接受 MoviePilot 自己的目录识别结果；epformat 也只接受 MoviePilot 推荐或验证结果。
         if media:
             kwargs["mediainfo"] = media
             media_type = getattr(media, "type", None)
