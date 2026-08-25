@@ -19,6 +19,7 @@ from .models import (
     GuangYaConfigData,
     GuangYaConfigSaveResponse,
 )
+from .organizer_folder_stream import GuangYaFolderStreamMixin
 from .organizer_recognition import GuangYaOrganizerMixin
 from .storage_contract import V3StorageContractMixin
 
@@ -28,7 +29,12 @@ _legacy_module.GuangYaApi = _StableGuangYaApi
 _LegacyPlugin = _legacy_module.ShukGuangYaDisk
 
 
-class ShukGuangYaDisk(GuangYaOrganizerMixin, V3StorageContractMixin, _LegacyPlugin):
+class ShukGuangYaDisk(
+    GuangYaFolderStreamMixin,
+    GuangYaOrganizerMixin,
+    V3StorageContractMixin,
+    _LegacyPlugin,
+):
     """光鸭云盘助手 MoviePilot V3 专用实现。"""
 
     plugin_name = "光鸭云盘助手"
