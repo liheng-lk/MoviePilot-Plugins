@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
   "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
-  "version": "3.4.11",
+  "version": "3.4.12",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v3.4.12": "按 MoviePilot 当前 category.yaml 重新核验分类，修复缓存或外部识别源残留分类导致的错误目录。",
     "v3.4.11": "增加多形态集号适配和整组校验，支持 01 4K、EP01、第01集等弱命名。",
     "v3.4.10": "跳过已搬空或无视频的陈旧目录任务，不再触发无意义的 MoviePilot 识别。",
     "v3.4.9": "增加整理前目标唯一性校验，防止集数误映射覆盖并进入回收站。",
