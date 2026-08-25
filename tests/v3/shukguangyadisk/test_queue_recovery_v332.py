@@ -13,15 +13,14 @@ def test_queue_recovery_mixin_precedes_organizer_submission_mixin():
     assert "from .organizer_queue_recovery import GuangYaQueueRecoveryMixin" in INIT
     mro = INIT.split("class ShukGuangYaDisk(", 1)[1].split("):", 1)[0]
     assert mro.index("GuangYaQueueRecoveryMixin") < mro.index("GuangYaOrganizerMixin")
-    assert 'plugin_version = "3.3.2"' in INIT
 
 
-def test_recovery_only_targets_guangya_monitor_pending_rows():
+def test_legacy_recovery_only_targets_guangya_monitor_pending_rows():
     for token in (
         "get_chain_transfer_pending_port",
         ".list_all()",
         "_queue_guard_storage_names",
-        "_is_monitored_path",
+        "_queue_guard_path_matches",
         "pending_oper.discard",
         "global_vars.stop_transfer",
     ):
@@ -30,41 +29,88 @@ def test_recovery_only_targets_guangya_monitor_pending_rows():
     assert "not self._queue_guard_path_matches(src_path)" in RECOVERY
 
 
-def test_recovery_never_mutates_moviepilot_private_queue_or_workers():
+def test_isolated_worker_never_mutates_moviepilot_private_queue_or_workers():
     forbidden_code = (
         "TransferChain()._queue",
-        "self._queue.put(",
-        "self._queue.get(",
+        "TransferChain()._threads",
+        "TransferChain()._worker_stop_event",
         "close_workers(",
         "on_config_changed(",
-        "_worker_stop_event.set(",
         "_TransferChain__stop",
-        "self._threads =",
     )
     for token in forbidden_code:
         assert token not in RECOVERY, token
 
 
-def test_recovery_pauses_unsafe_auto_monitor_but_keeps_plugin_storage_enabled():
-    assert 'config["enabled"] = False' in RECOVERY
-    assert "self._organize_monitor_enabled = False" in RECOVERY
-    assert "payload[\"enabled\"] = False" in RECOVERY
-    assert "def run_organize_monitor_scan" in RECOVERY
-    assert "def organize_monitor_tick" in RECOVERY
-    # The guard must not disable the plugin/storage itself.
-    assert "self._enabled = False" not in RECOVERY
-    assert "self._guangya_api = None" not in RECOVERY
-
-
-def test_recovery_preserves_quarantined_work_for_future_safe_scheduler():
+def test_v340_uses_plugin_private_queue_and_sync_moviepilot_business_chain():
     for token in (
-        "_move_quarantined_inflight_to_retry",
-        'state["inflight"]',
-        'state["retry"]',
-        '"retry_at": 0',
-        '"restart_required"',
-        '"queue_guard_active"',
+        "queue.Queue(maxsize=self._isolated_queue_capacity)",
+        "threading.Thread(",
+        'name="ShukGuangYa-IsolatedTransfer"',
+        "def _isolated_worker_loop",
+        "def _execute_isolated_transfer",
+        "TransferChain().do_transfer(**kwargs)",
+        '"background": False',
+        '"manual": False',
+        '"mode": "isolated_sync_worker"',
     ):
         assert token in RECOVERY, token
-    # All quarantined paths are used for state migration, not only a preview slice.
-    assert '"paths": quarantined,' in RECOVERY
+    assert "TransferDispatcher" not in RECOVERY
+
+
+def test_v340_no_longer_forces_auto_monitor_disabled():
+    assert 'config["enabled"] = False' not in RECOVERY
+    assert 'payload["enabled"] = False' not in RECOVERY
+    assert "self._organize_monitor_enabled = False" not in RECOVERY
+    assert "def api_organize_monitor_save" in RECOVERY
+    assert "return super().api_organize_monitor_save" not in RECOVERY  # response is enriched after save
+    assert "super().api_organize_monitor_save(dict(payload or {}))" in RECOVERY
+
+
+def test_old_global_queue_is_read_only_gate_before_isolated_start():
+    for token in (
+        "TransferChain().get_queue_tasks()",
+        "_legacy_global_queue_snapshot",
+        "_legacy_queue_blocks_isolated_start",
+        "请先重启 MoviePilot 一次",
+        "拒绝新增任务",
+    ):
+        assert token in RECOVERY, token
+    # Public queue view is only observed; the module does not remove MP queue tasks.
+    assert "remove_from_queue(" not in RECOVERY
+
+
+def test_private_worker_restart_reopens_inflight_instead_of_mp_replay():
+    for token in (
+        "_recover_isolated_inflight_once",
+        'state["inflight"] = inflight',
+        'state["retry"] = retry',
+        '"retry_at": 0',
+        "v3.4 私有整理 worker 重启恢复",
+        "_monitor_inflight_lease = 7 * 24 * 3600",
+    ):
+        assert token in RECOVERY, token
+
+
+def test_terminal_result_prefers_moviepilot_event_with_return_value_fallback():
+    for token in (
+        "_fallback_terminal_state",
+        "still_inflight",
+        "state_store.mark_completed",
+        "state_store.mark_failed",
+        "最终事件缺失",
+    ):
+        assert token in RECOVERY, token
+
+
+def test_stop_service_only_stops_plugin_owned_worker():
+    for token in (
+        "def _stop_isolated_worker",
+        "self._isolated_stop",
+        "worker.join",
+        "def stop_service",
+        "return super().stop_service()",
+    ):
+        assert token in RECOVERY, token
+    assert "TransferChain().close" not in RECOVERY
+    assert "TransferChain().close_workers" not in RECOVERY
