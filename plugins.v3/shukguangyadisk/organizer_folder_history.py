@@ -31,6 +31,22 @@ class GuangYaFolderHistoryMixin:
         "ignored": "ignored",
     }
 
+    _isolated_message_replacements = (
+        ("已进入 MoviePilot 整理链，等待最终回执", "已进入光鸭私有整理队列，等待独立 worker 执行"),
+        ("MoviePilot 暂未接收入队", "光鸭私有整理队列暂未接收"),
+        ("提交 MP 失败", "提交私有整理队列失败"),
+    )
+
+    def _append_monitor_history(self, row: Dict[str, Any]) -> None:
+        """把旧 folder-stream 的共享队列文案统一为 v3.4 私有 worker 语义。"""
+        normalized = dict(row or {})
+        message = str(normalized.get("message") or "")
+        for old, new in self._isolated_message_replacements:
+            message = message.replace(old, new)
+        if message:
+            normalized["message"] = message
+        return super()._append_monitor_history(normalized)
+
     @staticmethod
     def _empty_folder_counts() -> Dict[str, int]:
         return {
