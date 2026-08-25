@@ -1,5 +1,3 @@
-// v3.4.0 preview switches Page to the queue-isolation console. The previous federation asset
-// __federation_expose_AssistantPage-v330.js?v=3.3.1 remains in the package for rollback until release.
 const moduleMap = {
   './Page': () => import('./__federation_expose_AssistantPage-v340.js?v=3.4.0-preview2').then((mod) => () => mod.default),
   './Config': () => import('./__federation_expose_AssistantConfig-v300.js?v=3.0.0').then((mod) => () => mod.default),
