@@ -9,6 +9,9 @@ v3.4.1 同时修复一个现场调度缺陷：完整扫描把一批候选放入�
 ``capacity_wait`` 或正在等待稳定的文件，也会看起来“整理一次就停止”。这里仅在插件
 私有队列接近耗尽且上轮明确存在待续工作时触发快速补充；正常无积压时仍严格使用用户
 配置的扫描周期，因此不会把光鸭 API 变成持续高频全量轮询。
+
+v3.4.2 进一步把“目录分组”升级为真正执行语义：监控根直接子目录作为一个私有任务，
+常规命名目录由 MoviePilot 一次规划整个目录；弱命名仍在同一个文件夹任务内部兼容执行。
 """
 
 from __future__ import annotations
@@ -129,6 +132,14 @@ class GuangYaCandidateFilterMixin:
                 self._save_monitor_status(fast_refill_active=False)
 
         return super().organize_monitor_tick()
+
+
+# 在 CandidateFilter 模块加载时安装 v3.4.2 文件夹任务补丁。该模块在 QueueRecovery 之后、
+# FolderStream/Organizer 最终类装配之前加载，因此可以安全替换对应 mixin 的执行边界；
+# 安装函数自身具备幂等保护，MoviePilot 热重载不会重复包裹。
+from .organizer_folder_batch_v342 import install_folder_batch_v342
+
+install_folder_batch_v342()
 
 
 __all__ = ["GuangYaCandidateFilterMixin"]
