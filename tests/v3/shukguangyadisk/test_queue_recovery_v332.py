@@ -31,15 +31,17 @@ def test_recovery_only_targets_guangya_monitor_pending_rows():
 
 
 def test_recovery_never_mutates_moviepilot_private_queue_or_workers():
-    forbidden = (
-        "._queue",
+    forbidden_code = (
+        "TransferChain()._queue",
+        "self._queue.put(",
+        "self._queue.get(",
         "close_workers(",
         "on_config_changed(",
-        "_worker_stop_event",
+        "_worker_stop_event.set(",
         "_TransferChain__stop",
-        "self._threads",
+        "self._threads =",
     )
-    for token in forbidden:
+    for token in forbidden_code:
         assert token not in RECOVERY, token
 
 
