@@ -40,7 +40,6 @@ def test_folder_stream_never_calls_moviepilot_dispatcher_handle_file():
     assert "self._dispatch_to_moviepilot(item)" in STREAM
     assert ".handle_file(" not in STREAM
     assert "TransferChain().do_transfer" not in STREAM
-    # Actual transfer submission is owned by the isolated recovery layer.
     assert "TransferChain().do_transfer(**kwargs)" in RECOVERY
     assert '"background": False' in RECOVERY
 
@@ -95,31 +94,33 @@ def test_folder_history_is_grouped_without_business_rule_duplication():
         assert forbidden not in HISTORY, forbidden
 
 
-def test_hot_reload_guard_prevents_two_private_workers():
+def test_hot_reload_guard_prevents_two_private_workers_and_throttles_conflict_logs():
     for token in (
         "_OWNER_ATTR",
         "weakref.ref(self)",
         "_claim_isolated_runtime",
         "_release_isolated_runtime",
-        "旧插件实例仍在收尾",
+        "_log_owner_conflict",
+        "_WARN_INTERVAL = 30.0",
+        "旧插件实例正在交接",
         "暂不启动新 worker",
-        "旧实例仍在执行，当前文件延后",
     ):
         assert token in GUARD, token
-    assert "MoviePilot 的整理队列和 worker" in GUARD
+    assert "MoviePilot 的全局整理队列" in GUARD
 
 
-def test_worker_shutdown_does_not_drop_runtime_during_active_sync_transfer():
+def test_worker_shutdown_only_finishes_current_task_and_returns_waiting_queue():
     for token in (
         "_isolated_deferred_shutdown",
         "_finish_deferred_shutdown_from_worker",
-        "停止等待超时",
-        "保留 owner",
-        "插件停止已进入延迟收尾",
-        "当前文件完成后自动释放旧实例",
+        "_drain_owner_waiting_queue",
+        "_return_items_to_retry_now",
+        '"retry_at": 0',
+        "仅保留当前任务收尾",
+        "未开始任务已全部退回",
+        "完成后自动交接给新实例",
     ):
         assert token in GUARD, token
-    # Recovery uses a per-instance boolean; there is no persisted object-id comparison.
     recovery_block = GUARD.split("def _recover_isolated_inflight_once", 1)[1]
     assert '== id(self)' not in recovery_block
     assert '"process_token"' not in recovery_block
