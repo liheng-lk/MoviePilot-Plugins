@@ -30,7 +30,7 @@ def test_dispatch_boundary_owns_contextual_transferchain_submission():
 
 
 def test_backpressure_separates_scan_batch_from_mp_inflight_limit():
-    assert "_monitor_default_max_inflight = 2" in BACKPRESSURE
+    assert "_monitor_default_max_inflight = 1" in BACKPRESSURE
     assert "_monitor_default_stall_timeout = 900" in BACKPRESSURE
     assert "_monitor_inflight_lease = 21600" in BACKPRESSURE
     assert 'config.setdefault("max_inflight"' in BACKPRESSURE
@@ -39,6 +39,15 @@ def test_backpressure_separates_scan_batch_from_mp_inflight_limit():
     assert "_organize_monitor_max_inflight" in BACKPRESSURE
     assert "min(" in BACKPRESSURE
     assert 'snapshot.get("slots")' in BACKPRESSURE
+
+
+def test_host_worker_reservation_is_best_effort_and_never_mutates_moviepilot():
+    assert "get_runtime_setting(\"TRANSFER_THREADS\")" in BACKPRESSURE
+    assert "effective_max = min(configured_max, max(host_threads - 1, 1))" in BACKPRESSURE
+    assert "strict_isolation = host_threads >= 2" in BACKPRESSURE
+    assert '"dispatch_host_transfer_threads"' in BACKPRESSURE
+    assert '"dispatch_strict_isolation"' in BACKPRESSURE
+    assert "isolation_limited" in BACKPRESSURE
 
 
 def test_folder_priority_and_heartbeat_refill_do_not_rescan_whole_tree():
