@@ -20,15 +20,15 @@ PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v330.js"
 ACCOUNT_PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-dev.js").read_text(encoding="utf-8")
 
 
-def test_v347_version_and_federation_entry():
+def test_v348_version_and_federation_entry():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "3.4.7"
-    assert local["version"] == "3.4.7"
-    assert 'plugin_version = "3.4.7"' in INIT
-    assert "__federation_expose_AssistantPage-v330.js?v=3.4.7" in REMOTE
-    assert "v3.4.7" in package["history"]
-    assert "DNS/网络" in package["history"]["v3.4.7"]
+    assert package["version"] == "3.4.8"
+    assert local["version"] == "3.4.8"
+    assert 'plugin_version = "3.4.8"' in INIT
+    assert "__federation_expose_AssistantPage-v330.js?v=3.4.8" in REMOTE
+    assert "v3.4.8" in package["history"]
+    assert "01.mp4" in package["history"]["v3.4.8"]
 
 
 def test_builtin_pages_have_no_internal_version_badge():
@@ -37,7 +37,7 @@ def test_builtin_pages_have_no_internal_version_badge():
     assert "gya-badge" not in PAGE
     assert "gy-version" not in ACCOUNT_PAGE
     assert "v2.2.15" not in ACCOUNT_PAGE
-    for version in ("v3.4.3", "v3.4.4", "v3.4.5", "v3.4.6", "v3.4.7"):
+    for version in ("v3.4.3", "v3.4.4", "v3.4.5", "v3.4.6", "v3.4.7", "v3.4.8"):
         assert f"'{version}'" not in PAGE
 
 
@@ -137,17 +137,23 @@ def test_resource_directory_identity_comes_from_moviepilot_full_path():
         assert token in MP_FOLDER_CONTEXT, token
     for forbidden in (
         "_release_parent_title",
-        "recognize_by_meta",
         "tmdb_id=",
         "media_id=",
     ):
         assert forbidden not in MP_FOLDER_CONTEXT, forbidden
 
 
-def test_weak_directory_episode_format_is_recommended_by_moviepilot():
-    assert "recommend_episode_format" in MP_FOLDER_CONTEXT
-    assert "EpisodeFormat(format=episode_format)" in MP_FOLDER_CONTEXT
-    assert "不在插件里维护正则规则" in MP_FOLDER_CONTEXT
+def test_numeric_episode_directory_uses_moviepilot_episode_format_and_tv_constraint():
+    for token in (
+        "recommend_episode_format",
+        "EpisodeFormat(format=episode_format)",
+        "MediaChain().recognize_by_meta",
+        "mtype=MediaType.TV",
+        "集数结构已确认，MoviePilot 按电视剧重新识别",
+        "01.mp4",
+    ):
+        assert token in MP_FOLDER_CONTEXT, token
+    assert "if not item.directory_mode" not in MP_FOLDER_CONTEXT
 
 
 def test_monitor_uses_persistent_settings_and_bounded_inventory():
