@@ -2,9 +2,11 @@
 
 标准整季目录仍保持“一个文件夹一个任务”和 MoviePilot 原生目录批量；当发布目录中存在
 明确中文标题而文件名只有英文标题时，先用 MoviePilot 自己的 MediaChain 按“中文标题 +
-可用年份”做一次目录级识别。只有返回标题/年份通过一致性校验时，才把这个 MoviePilot
-识别结果用于整包；不通过则停止该目录，宁可等待人工处理，也不回退到容易误命中的英文
-文件名识别。插件不维护 TMDB ID 映射，也不写死任何影视作品。
+可用年份”做一次目录级识别。只有 MoviePilot 返回的标题、地区标题、译名或别名与发布
+目录一致，且可用年份不冲突时，才把这一 MoviePilot 识别结果用于整包；不通过则停止该
+目录，宁可等待人工处理，也不回退到容易误命中的英文文件名识别。
+
+插件不维护 TMDB ID 映射、不写死任何影视作品，也不自行决定媒体库分类。
 """
 
 from __future__ import annotations
@@ -64,14 +66,30 @@ def _folder_hint(plugin: Any, item: _FolderBatchEnvelope) -> Optional[Tuple[str,
 
 
 def _recognized_title_candidates(media: Any) -> list[str]:
-    values = []
-    for attr in ("title", "original_title", "en_title", "title_year"):
+    """收集 MoviePilot MediaInfo 中所有可用于核对的标题/译名。
+
+    不能只看 ``title``：例如台湾剧可能以英文主标题返回，但 ``tw_title`` 或 ``names``
+    中仍包含正确中文片名。反过来，如果这些字段都与父目录中文标题无关，就不能继续整理。
+    """
+    values: list[str] = []
+    for attr in (
+        "title",
+        "original_title",
+        "original_name",
+        "en_title",
+        "hk_title",
+        "tw_title",
+        "sg_title",
+        "title_year",
+    ):
         value = getattr(media, attr, None)
         if value:
             values.append(str(value))
-    aliases = getattr(media, "aliases", None)
-    if isinstance(aliases, (list, tuple, set)):
-        values.extend(str(value) for value in aliases if value)
+
+    for attr in ("names", "aliases"):
+        aliases = getattr(media, attr, None)
+        if isinstance(aliases, (list, tuple, set)):
+            values.extend(str(value) for value in aliases if value)
     return values
 
 
@@ -85,7 +103,15 @@ def _recognition_matches_hint(title: str, year: Optional[int], media: Any) -> bo
     title_ok = False
     for candidate in _recognized_title_candidates(media):
         candidate_norm = _normalize_title(candidate)
-        if hint_norm and candidate_norm and (hint_norm == candidate_norm or hint_norm in candidate_norm or candidate_norm in hint_norm):
+        if (
+            hint_norm
+            and candidate_norm
+            and (
+                hint_norm == candidate_norm
+                or hint_norm in candidate_norm
+                or candidate_norm in hint_norm
+            )
+        ):
             title_ok = True
             break
         candidate_cjk = _cjk_chars(candidate)
@@ -134,7 +160,11 @@ def _recognize_folder_with_moviepilot(plugin: Any, item: _FolderBatchEnvelope):
         return hint, None, f"MoviePilot 目录标题识别异常：{err}"
 
     if not _recognition_matches_hint(title, year, media):
-        got_title = str(getattr(media, "title_year", None) or getattr(media, "title", None) or "未识别")
+        got_title = str(
+            getattr(media, "title_year", None)
+            or getattr(media, "title", None)
+            or "未识别"
+        )
         return hint, None, f"目录标题“{hint_text}”与 MoviePilot 返回“{got_title}”不一致"
     return hint, media, None
 
@@ -157,7 +187,10 @@ def install_safe_recognition_v344() -> None:
         title, year = hint
         hint_text = f"{title} {year}" if year else title
         if error or not media:
-            message = f"安全识别已停止整理：{error or 'MoviePilot 未识别到目录标题'}；未按英文文件名继续硬匹配"
+            message = (
+                f"安全识别已停止整理：{error or 'MoviePilot 未识别到目录标题'}；"
+                "未按英文文件名继续猜测"
+            )
             logger.warning("【光鸭云盘助手】【安全识别】%s - %s", item.path, message)
             return False, message
 
@@ -173,8 +206,8 @@ def install_safe_recognition_v344() -> None:
             fileid=None,
         )
         logger.info(
-            "【光鸭云盘助手】【安全识别】目录中文标题仅作 MP 识别提示: %s -> %s；"
-            "未硬编码 TMDB/媒体ID，整包仍由 MoviePilot 处理",
+            "【光鸭云盘助手】【安全识别】父目录中文标题仅作 MoviePilot 识别提示: %s -> %s；"
+            "无硬编码媒体ID，分类/命名仍由 MoviePilot 决定",
             hint_text,
             getattr(media, "title_year", None) or getattr(media, "title", ""),
         )
