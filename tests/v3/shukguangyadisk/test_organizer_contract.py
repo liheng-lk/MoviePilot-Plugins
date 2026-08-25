@@ -18,17 +18,17 @@ REMOTE = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf
 PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v330.js").read_text(encoding="utf-8")
 
 
-def test_v340_version_and_federation_entry():
+def test_v341_version_and_federation_entry():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "3.4.0"
-    assert local["version"] == "3.4.0"
-    assert 'plugin_version = "3.4.0"' in INIT
-    assert "__federation_expose_AssistantPage-v330.js?v=3.4.0" in REMOTE
+    assert package["version"] == "3.4.1"
+    assert local["version"] == "3.4.1"
+    assert 'plugin_version = "3.4.1"' in INIT
+    assert "__federation_expose_AssistantPage-v330.js?v=3.4.1" in REMOTE
     assert "自动整理监控" in PAGE
-    assert "v3.4.0" in package["history"]
-    assert "background=False" in package["history"]["v3.4.0"]
-    assert "私有 Queue" in package["history"]["v3.4.0"]
+    assert "v3.4.1" in package["history"]
+    assert "低水位" in package["history"]["v3.4.1"]
+    assert "background=False" in package["history"]["v3.4.1"]
 
 
 def test_architecture_separates_monitor_state_history_recognition_and_runtime():
