@@ -6,7 +6,8 @@ MoviePilot 全局后台整理队列，而 v3.4 明确禁止走这条路径。本
 
 v3.4.1 修复私有队列完成一批后可能等待完整扫描周期才继续的问题。
 v3.4.2 把资源目录升级为真正的“一个文件夹一个整理任务”。
-v3.4.3 清理重启后仍残留的旧光鸭全局 waiting 任务，并自动切换到私有 worker。
+v3.4.3 清理重启后仍残留的旧光鸭全局任务并自动切换到私有 worker。
+v3.4.4 中文发布目录只作为 MoviePilot 识别提示，并增加标题/年份一致性保护。
 """
 
 from __future__ import annotations
@@ -118,9 +119,11 @@ class GuangYaCandidateFilterMixin:
 
 from .organizer_folder_batch_v342 import install_folder_batch_v342
 from .organizer_legacy_queue_cleanup_v343 import install_legacy_queue_cleanup_v343
+from .organizer_safe_recognition_v344 import install_safe_recognition_v344
 
 install_folder_batch_v342()
 install_legacy_queue_cleanup_v343()
+install_safe_recognition_v344()
 
 
 __all__ = ["GuangYaCandidateFilterMixin"]
