@@ -65,6 +65,6 @@ def test_patch_is_installed_before_final_plugin_mro_is_assembled():
 
 
 def test_folder_batch_feature_remains_enabled_in_current_release():
-    assert 'plugin_version = "3.4.10"' in ENTRY
-    assert '"version": "3.4.10"' in MANIFEST
+    assert 'plugin_version = "3.4.11"' in ENTRY
+    assert '"version": "3.4.11"' in MANIFEST
     assert '"v3.4.2"' in MANIFEST
