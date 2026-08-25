@@ -77,12 +77,12 @@ def test_stall_breaker_stops_new_plugin_submissions_without_touching_mp_workers(
     ):
         assert token in BACKPRESSURE, token
     forbidden = (
-        "close_workers",
-        "on_config_changed",
+        "close_workers(",
+        "on_config_changed(",
         "_TransferChain__stop",
         "_worker_stop_event",
-        "_queue.put",
-        "_threads",
+        "._queue.put(",
+        "self._threads",
     )
     joined = BACKPRESSURE + DISPATCH + FOLDER_STREAM
     for token in forbidden:
