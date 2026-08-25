@@ -129,6 +129,7 @@ from .guangya_network_resilience_v347 import install_network_resilience_v347
 from .organizer_loss_guard_v349 import install_loss_guard_v349
 from .organizer_empty_folder_guard_v3410 import install_empty_folder_guard_v3410
 from .organizer_episode_name_adapter_v3411 import install_episode_name_adapter_v3411
+from .organizer_episode_sample_bridge_v3411 import install_episode_sample_bridge_v3411
 
 install_folder_batch_v342()
 install_legacy_queue_cleanup_v343()
@@ -137,6 +138,7 @@ install_network_resilience_v347()
 install_loss_guard_v349()
 install_empty_folder_guard_v3410()
 install_episode_name_adapter_v3411()
+install_episode_sample_bridge_v3411()
 
 
 __all__ = ["GuangYaCandidateFilterMixin"]
