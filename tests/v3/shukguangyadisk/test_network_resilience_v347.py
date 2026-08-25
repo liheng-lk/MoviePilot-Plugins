@@ -30,7 +30,6 @@ def test_transient_network_requests_bypass_legacy_error_spam():
     assert "requests.exceptions.ConnectionError" in NETWORK
     assert "requests.exceptions.Timeout" in NETWORK
     assert "_TRANSIENT_HTTP_STATUS = {408, 425, 429, 500, 502, 503, 504}" in NETWORK
-    # Legacy still has the original ERROR path for non-patched/legacy consumers; v3.4.7 V3 runtime bypasses it.
     assert 'logger.error(f"【光鸭云盘助手】请求失败:' in LEGACY
 
 
@@ -77,10 +76,10 @@ def test_auto_scan_marks_incomplete_inventory_truncated_on_network_failure():
 def test_v347_network_history_remains_in_current_release():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "3.4.9"
-    assert local["version"] == "3.4.9"
-    assert 'plugin_version = "3.4.9"' in ENTRY
-    assert "__federation_expose_AssistantPage-v330.js?v=3.4.9" in REMOTE
+    assert package["version"] == "3.4.10"
+    assert local["version"] == "3.4.10"
+    assert 'plugin_version = "3.4.10"' in ENTRY
+    assert "__federation_expose_AssistantPage-v330.js?v=3.4.10" in REMOTE
     assert package["history"]["v3.4.7"] == "降低光鸭 DNS/网络异常日志噪音，增加自动退避和扫描保护，网络恢复后自动继续。"
 
 
