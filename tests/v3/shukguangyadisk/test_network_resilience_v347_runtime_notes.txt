@@ -1,7 +1,0 @@
-v3.4.7 network resilience expectations:
-- transient DNS/connection failures do not invalidate login tokens;
-- requests retry 3 times total, then enter a short per-host circuit breaker;
-- repeated outage warnings are throttled;
-- account summary uses recent successful cache during transient outages;
-- folder scans mark incomplete inventory truncated and retry later;
-- network recovery resumes automatic monitoring without a MoviePilot restart.
