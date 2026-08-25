@@ -69,15 +69,16 @@ def test_folder_success_cannot_silently_complete_members_without_file_events():
     assert "previous_fallback(self, item, success=True" not in success_block
 
 
-def test_loss_guard_is_installed_last_and_version_is_v349():
+def test_loss_guard_remains_installed_before_v3410_empty_folder_guard():
     assert "from .organizer_loss_guard_v349 import install_loss_guard_v349" in FILTER
     assert "install_loss_guard_v349()" in FILTER
     assert FILTER.index("install_network_resilience_v347()") < FILTER.index("install_loss_guard_v349()")
+    assert FILTER.index("install_loss_guard_v349()") < FILTER.index("install_empty_folder_guard_v3410()")
 
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "3.4.9"
-    assert local["version"] == "3.4.9"
-    assert 'plugin_version = "3.4.9"' in ENTRY
-    assert "__federation_expose_AssistantPage-v330.js?v=3.4.9" in REMOTE
+    assert package["version"] == "3.4.10"
+    assert local["version"] == "3.4.10"
+    assert 'plugin_version = "3.4.10"' in ENTRY
+    assert "__federation_expose_AssistantPage-v330.js?v=3.4.10" in REMOTE
     assert package["history"]["v3.4.9"] == "增加整理前目标唯一性校验，防止集数误映射覆盖并进入回收站。"

@@ -11,6 +11,7 @@ v3.4.4 曾增加中文父目录提示保护。
 v3.4.6 改为完整资源目录直接走 MoviePilot 路径识别与目录整理，不再由插件提取标题。
 v3.4.7 增加 DNS/连接故障熔断、日志降噪和扫描状态保护。
 v3.4.9 增加整理前零损失预览校验和逐文件终态确认，阻止同名覆盖导致集数进入回收站。
+v3.4.10 增加执行前源目录复核，已搬空/无视频目录不再进入 MoviePilot 识别。
 """
 
 from __future__ import annotations
@@ -125,12 +126,14 @@ from .organizer_legacy_queue_cleanup_v343 import install_legacy_queue_cleanup_v3
 from .organizer_mp_folder_context_v346 import install_mp_folder_context_v346
 from .guangya_network_resilience_v347 import install_network_resilience_v347
 from .organizer_loss_guard_v349 import install_loss_guard_v349
+from .organizer_empty_folder_guard_v3410 import install_empty_folder_guard_v3410
 
 install_folder_batch_v342()
 install_legacy_queue_cleanup_v343()
 install_mp_folder_context_v346()
 install_network_resilience_v347()
 install_loss_guard_v349()
+install_empty_folder_guard_v3410()
 
 
 __all__ = ["GuangYaCandidateFilterMixin"]
