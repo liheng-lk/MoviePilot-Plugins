@@ -86,7 +86,7 @@ class GuangYaQueueRecoveryMixin:
 
         return {
             "quarantined": len(quarantined),
-            "paths": quarantined[:20],
+            "paths": quarantined,
             "errors": errors[:20],
         }
 
