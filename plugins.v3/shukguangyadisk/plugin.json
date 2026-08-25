@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
   "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
-  "version": "3.4.2",
+  "version": "3.4.3",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v3.4.3": "自动清理重启后残留的旧光鸭全局等待任务，并安全切换到插件私有 Worker。",
     "v3.4.2": "自动整理改为一个文件夹一个 folder task，并使用 background=False 整包处理，修复保存设置切换 Worker 和剩余文件不续跑。",
     "v3.4.1": "增加私有队列低水位自动补充，修复批次完成后长时间等待下一次扫描的问题。",
     "v3.4.0": "自动整理改用插件私有队列和独立 Worker，避免阻塞 MoviePilot 全局整理队列。",
