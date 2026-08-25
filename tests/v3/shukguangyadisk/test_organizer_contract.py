@@ -17,17 +17,18 @@ HISTORY = (PLUGIN / "organizer_history.py").read_text(encoding="utf-8")
 STORAGE = (PLUGIN / "storage_contract.py").read_text(encoding="utf-8")
 MODELS = (PLUGIN / "models.py").read_text(encoding="utf-8")
 REMOTE = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf-8")
-PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v330.js").read_text(encoding="utf-8")
+PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v340.js").read_text(encoding="utf-8")
 
 
-def test_v331_version_and_federation_entry():
+def test_v331_metadata_with_v340_preview_federation_entry():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     assert package["version"] == "3.3.1"
     assert local["version"] == "3.3.1"
     assert 'plugin_version = "3.3.1"' in INIT
-    assert "__federation_expose_AssistantPage-v330.js?v=3.3.1" in REMOTE
+    assert "__federation_expose_AssistantPage-v340.js?v=3.4.0-preview2" in REMOTE
     assert "自动整理监控" in PAGE
+    assert "v3.4.0 preview" in PAGE
     assert "v3.3.1" in package["history"]
 
 
@@ -255,12 +256,14 @@ def test_ui_is_a_state_console_not_a_second_organizer():
         "重新检查 MP 门控",
         "整理中",
         "重试等待",
-        "按子目录整理历史",
-        "MoviePilot 内置",
+        "按子文件夹整理历史",
+        "MoviePilot 决定",
         "folderHistory",
         "toggleGroup",
         "groups_scanned",
         "queue_slots",
+        "光鸭 MP 占用上限",
+        "已触发整理熔断",
         "v3.4.0 preview",
     ):
         assert token in PAGE, token
