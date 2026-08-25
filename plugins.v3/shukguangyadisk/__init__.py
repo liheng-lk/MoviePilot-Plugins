@@ -20,6 +20,7 @@ from .models import (
     GuangYaConfigSaveResponse,
 )
 from .organizer_folder_history import GuangYaFolderHistoryMixin
+from .organizer_queue_recovery import GuangYaQueueRecoveryMixin
 from .organizer_backpressure import GuangYaBackpressureMixin
 from .organizer_folder_stream import GuangYaFolderStreamMixin
 from .organizer_dispatch import GuangYaDispatchMixin
@@ -34,6 +35,7 @@ _LegacyPlugin = _legacy_module.ShukGuangYaDisk
 
 class ShukGuangYaDisk(
     GuangYaFolderHistoryMixin,
+    GuangYaQueueRecoveryMixin,
     GuangYaBackpressureMixin,
     GuangYaFolderStreamMixin,
     GuangYaDispatchMixin,
@@ -44,7 +46,7 @@ class ShukGuangYaDisk(
     """光鸭云盘助手 MoviePilot V3 专用实现。"""
 
     plugin_name = "光鸭云盘助手"
-    plugin_desc = "MoviePilot V3 光鸭云盘存储助手：远程目录发现、目录流式调度、受控 MP 背压、持久状态机、剧集上下文与最终整理回执分层实现；分类、命名、目标目录、覆盖和刮削仍由 MoviePilot 原生整理链负责。"
+    plugin_desc = "MoviePilot V3 光鸭云盘存储助手：远程目录发现、目录流式调度、原生队列积压恢复、受控 MP 背压、持久状态机、剧集上下文与最终整理回执分层实现；分类、命名、目标目录、覆盖和刮削仍由 MoviePilot 原生整理链负责。"
     plugin_version = "3.3.1"
     plugin_author = "liheng-lk"
     plugin_label = "存储,光鸭云盘,自动整理,目录监控,MoviePilot,挂载,Emby,WebDAV"
