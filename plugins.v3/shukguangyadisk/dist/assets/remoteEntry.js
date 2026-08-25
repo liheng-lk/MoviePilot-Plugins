@@ -1,3 +1,4 @@
+// Previous v3.4 preview entry retained as rollback marker: __federation_expose_AssistantPage-v340.js?v=3.4.0-preview2
 const moduleMap = {
   './Page': () => import('./__federation_expose_AssistantPage-v341.js?v=3.4.0-preview3').then((mod) => () => mod.default),
   './Config': () => import('./__federation_expose_AssistantConfig-v300.js?v=3.0.0').then((mod) => () => mod.default),
