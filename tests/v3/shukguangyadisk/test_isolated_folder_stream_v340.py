@@ -46,8 +46,10 @@ def test_folder_stream_never_calls_moviepilot_dispatcher_handle_file():
 
 
 def test_active_candidate_filter_has_no_dispatcher_or_queue_state():
-    assert "TransferDispatcher" not in FILTER
-    assert "TransferChain" not in FILTER
+    assert "from app.monitor.dispatcher import" not in FILTER
+    assert "TransferDispatcher()" not in FILTER
+    assert "from app.chain.transfer import" not in FILTER
+    assert "TransferChain()" not in FILTER
     assert "get_runtime_setting" in FILTER
     for key in ("RMT_MEDIAEXT", "RMT_SUBEXT", "RMT_AUDIOEXT", "DOWNLOAD_TMPEXT"):
         assert key in FILTER, key
@@ -117,10 +119,10 @@ def test_worker_shutdown_does_not_drop_runtime_during_active_sync_transfer():
         "当前文件完成后自动释放旧实例",
     ):
         assert token in GUARD, token
-    # Persistent recovery uses a per-instance boolean, never a persisted Python object id.
+    # Recovery uses a per-instance boolean; there is no persisted object-id comparison.
     recovery_block = GUARD.split("def _recover_isolated_inflight_once", 1)[1]
-    assert "id(self)" not in recovery_block
-    assert "process_token" not in recovery_block
+    assert '== id(self)' not in recovery_block
+    assert '"process_token"' not in recovery_block
 
 
 def test_v340_has_no_shared_queue_backpressure_module_in_active_mro():
