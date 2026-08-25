@@ -26,8 +26,8 @@ class GuangYaBackpressureMixin:
     _monitor_default_max_inflight = 1
     _monitor_default_stall_timeout = 900
     # 不再用 30 分钟 lease 自动把仍可能留在 MP 全局队列的任务重新提交，避免重复排队。
-    # 卡顿先由 stall breaker 停止新增；MP pending/replay 负责进程重启后的恢复。
-    _monitor_inflight_lease = 21600
+    # 卡顿先由 stall breaker 停止新增。极长时间无回执保持“需要人工确认”而不是自动重放。
+    _monitor_inflight_lease = 86400 * 365
 
     _organize_monitor_max_inflight: int = _monitor_default_max_inflight
     _organize_monitor_stall_timeout: int = _monitor_default_stall_timeout
@@ -360,7 +360,7 @@ class GuangYaBackpressureMixin:
                 dispatch_paused=True,
                 dispatch_pause_reason=(
                     f"最老光鸭任务 {snapshot['oldest_age_seconds']} 秒未收到最终回执，"
-                    "已停止新增任务，等待 MoviePilot 消化或恢复"
+                    "已停止新增任务，等待 MoviePilot 消化；若长期不恢复请人工检查 MP 整理历史/队列"
                 ),
             )
             return
