@@ -9,6 +9,7 @@ v3.4.2 把资源目录升级为真正的“一个文件夹一个整理任务”�
 v3.4.3 清理重启后仍残留的旧光鸭全局任务并自动切换到私有 worker。
 v3.4.4 曾增加中文父目录提示保护。
 v3.4.6 改为完整资源目录直接走 MoviePilot 路径识别与目录整理，不再由插件提取标题。
+v3.4.7 增加 DNS/连接故障熔断、日志降噪和扫描状态保护。
 """
 
 from __future__ import annotations
@@ -121,10 +122,12 @@ class GuangYaCandidateFilterMixin:
 from .organizer_folder_batch_v342 import install_folder_batch_v342
 from .organizer_legacy_queue_cleanup_v343 import install_legacy_queue_cleanup_v343
 from .organizer_mp_folder_context_v346 import install_mp_folder_context_v346
+from .guangya_network_resilience_v347 import install_network_resilience_v347
 
 install_folder_batch_v342()
 install_legacy_queue_cleanup_v343()
 install_mp_folder_context_v346()
+install_network_resilience_v347()
 
 
 __all__ = ["GuangYaCandidateFilterMixin"]
