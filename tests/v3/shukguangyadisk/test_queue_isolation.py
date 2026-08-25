@@ -32,7 +32,7 @@ def test_dispatch_boundary_owns_contextual_transferchain_submission():
 def test_backpressure_separates_scan_batch_from_mp_inflight_limit():
     assert "_monitor_default_max_inflight = 1" in BACKPRESSURE
     assert "_monitor_default_stall_timeout = 900" in BACKPRESSURE
-    assert "_monitor_inflight_lease = 21600" in BACKPRESSURE
+    assert "_monitor_inflight_lease = 86400 * 365" in BACKPRESSURE
     assert 'config.setdefault("max_inflight"' in BACKPRESSURE
     assert 'config.setdefault("stall_timeout"' in BACKPRESSURE
     assert "_organize_monitor_batch_size" in BACKPRESSURE
@@ -73,7 +73,8 @@ def test_stall_breaker_stops_new_plugin_submissions_without_touching_mp_workers(
         'slots = 0 if stalled',
         "dispatch_paused=True",
         "已停止新增任务",
-        "等待 MoviePilot 消化或恢复",
+        "等待 MoviePilot 消化",
+        "人工检查 MP 整理历史/队列",
     ):
         assert token in BACKPRESSURE, token
     forbidden = (
