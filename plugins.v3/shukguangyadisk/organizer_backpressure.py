@@ -20,7 +20,10 @@ from app.sdk.logging import logger
 class GuangYaBackpressureMixin:
     """为目录流式调度增加小并发、目录优先和卡顿熔断。"""
 
-    _monitor_default_max_inflight = 2
+    # MoviePilot 当前默认 TRANSFER_THREADS=1。插件默认只允许 1 个未终态任务，
+    # 防止再次出现一次向全局队列灌入 100 个任务。宿主线程数 >=2 时还会自动至少
+    # 给其它 MoviePilot 整理任务保留 1 个 worker 的容量。
+    _monitor_default_max_inflight = 1
     _monitor_default_stall_timeout = 900
     # 不再用 30 分钟 lease 自动把仍可能留在 MP 全局队列的任务重新提交，避免重复排队。
     # 卡顿先由 stall breaker 停止新增；MP pending/replay 负责进程重启后的恢复。
@@ -65,6 +68,15 @@ class GuangYaBackpressureMixin:
         })
         return payload
 
+    def _moviepilot_transfer_threads(self) -> int:
+        """读取宿主公开运行设置；失败时按当前 MoviePilot 默认 1 个 worker 保守处理。"""
+        try:
+            from app.runtime.settings import get_runtime_setting
+
+            return max(int(get_runtime_setting("TRANSFER_THREADS") or 1), 1)
+        except Exception:
+            return 1
+
     def api_organize_monitor_save(self, payload: dict) -> Dict[str, Any]:
         """保存基础扫描参数后，再持久化与扫描批次独立的 MP 占用上限。"""
         payload = payload or {}
@@ -91,11 +103,13 @@ class GuangYaBackpressureMixin:
         self._organize_monitor_max_inflight = max_inflight
         self._organize_monitor_stall_timeout = stall_timeout
 
+        snapshot = self._backpressure_snapshot()
         data = response.setdefault("data", {})
         data["config"] = self._monitor_config_payload()
         response["message"] = (
-            "自动整理设置已保存；扫描批次与 MoviePilot 占用上限已分离，"
-            f"光鸭最多同时占用 {max_inflight} 个未终态任务"
+            "自动整理设置已保存；扫描批次与 MoviePilot 占用上限已分离。"
+            f"配置上限 {max_inflight}，当前宿主 {snapshot['host_transfer_threads']} 个整理 worker，"
+            f"实际光鸭并发上限 {snapshot['max_inflight']}"
         )
         return response
 
@@ -107,6 +121,13 @@ class GuangYaBackpressureMixin:
         except Exception as err:
             logger.warning("【光鸭云盘助手】【自动整理】【背压】读取 inflight 状态失败: %s", err)
             inflight = {}
+
+        host_threads = self._moviepilot_transfer_threads()
+        configured_max = max(int(self._organize_monitor_max_inflight), 1)
+        # >=2 worker 时始终至少给非光鸭任务留 1 个 worker；只有 1 worker 时无法做到真正
+        # 的 worker 隔离，只能把插件本身限制为最多 1 个任务，避免形成长队列。
+        effective_max = min(configured_max, max(host_threads - 1, 1))
+        strict_isolation = host_threads >= 2
 
         oldest_path = ""
         oldest_submitted_at = 0.0
@@ -124,12 +145,12 @@ class GuangYaBackpressureMixin:
             and oldest_submitted_at
             and oldest_age >= float(self._organize_monitor_stall_timeout)
         )
-        slots = 0 if stalled else max(
-            int(self._organize_monitor_max_inflight) - len(inflight),
-            0,
-        )
+        slots = 0 if stalled else max(effective_max - len(inflight), 0)
         return {
-            "max_inflight": int(self._organize_monitor_max_inflight),
+            "configured_max_inflight": configured_max,
+            "max_inflight": effective_max,
+            "host_transfer_threads": host_threads,
+            "strict_isolation": strict_isolation,
             "inflight": len(inflight),
             "slots": slots,
             "stalled": stalled,
@@ -145,11 +166,14 @@ class GuangYaBackpressureMixin:
         kwargs.update({
             "queue_limit": snapshot["max_inflight"],
             "queue_slots": snapshot["slots"],
+            "dispatch_configured_max_inflight": snapshot["configured_max_inflight"],
             "dispatch_inflight": snapshot["inflight"],
             "dispatch_stalled": snapshot["stalled"],
             "dispatch_stall_timeout": snapshot["stall_timeout"],
             "dispatch_oldest_path": snapshot["oldest_path"],
             "dispatch_oldest_age_seconds": snapshot["oldest_age_seconds"],
+            "dispatch_host_transfer_threads": snapshot["host_transfer_threads"],
+            "dispatch_strict_isolation": snapshot["strict_isolation"],
         })
         return super()._save_monitor_status(**kwargs)
 
@@ -356,15 +380,19 @@ class GuangYaBackpressureMixin:
         checks = dict(report.get("checks") or {})
         snapshot = self._backpressure_snapshot()
         checks.update({
+            "dispatch_configured_max_inflight": snapshot["configured_max_inflight"],
             "dispatch_max_inflight": snapshot["max_inflight"],
             "dispatch_inflight": snapshot["inflight"],
             "dispatch_slots": snapshot["slots"],
             "dispatch_stalled": snapshot["stalled"],
             "dispatch_oldest_age_seconds": snapshot["oldest_age_seconds"],
+            "dispatch_host_transfer_threads": snapshot["host_transfer_threads"],
+            "dispatch_strict_isolation": snapshot["strict_isolation"],
             "pending_group_count": len(self._read_pending_groups()),
         })
         report["checks"] = checks
         report["degraded"] = bool(snapshot["stalled"])
+        report["isolation_limited"] = not bool(snapshot["strict_isolation"])
         if snapshot["stalled"]:
             report["healthy"] = False
         return report
