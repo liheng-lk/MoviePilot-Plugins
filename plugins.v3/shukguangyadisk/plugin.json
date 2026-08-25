@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
   "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
-  "version": "3.4.5",
+  "version": "3.4.6",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v3.4.6": "资源文件夹改为完整目录交给 MoviePilot 路径识别和整包整理，不再由插件提取标题硬识别。",
     "v3.4.5": "修复插件热更新时旧 Worker 长时间占用和重复告警，未开始任务自动交接给新实例。",
     "v3.4.4": "中文发布目录改为 MoviePilot 安全识别提示，增加标题和年份校验，避免英文同名误识别。",
     "v3.4.3": "自动清理重启后残留的旧光鸭全局任务，包括已完成但卡在正在整理的僵尸任务。",
