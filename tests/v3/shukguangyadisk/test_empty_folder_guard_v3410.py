@@ -45,7 +45,7 @@ def test_empty_skip_does_not_reenter_v349_retry_fallback():
     assert "return previous_fallback(self, item, success=success, message=message)" in GUARD
 
 
-def test_v3410_guard_stays_enabled_in_v3411_release():
+def test_v3410_guard_stays_enabled_in_v3412_release():
     assert "from .organizer_empty_folder_guard_v3410 import install_empty_folder_guard_v3410" in FILTER
     assert "install_empty_folder_guard_v3410()" in FILTER
     assert FILTER.index("install_loss_guard_v349()") < FILTER.index("install_empty_folder_guard_v3410()")
@@ -53,8 +53,8 @@ def test_v3410_guard_stays_enabled_in_v3411_release():
 
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "3.4.11"
-    assert local["version"] == "3.4.11"
-    assert 'plugin_version = "3.4.11"' in ENTRY
-    assert "__federation_expose_AssistantPage-v330.js?v=3.4.11" in REMOTE
+    assert package["version"] == "3.4.12"
+    assert local["version"] == "3.4.12"
+    assert 'plugin_version = "3.4.12"' in ENTRY
+    assert "__federation_expose_AssistantPage-v330.js?v=3.4.12" in REMOTE
     assert package["history"]["v3.4.10"] == "跳过已搬空或无视频的陈旧目录任务，不再触发无意义的 MoviePilot 识别。"
