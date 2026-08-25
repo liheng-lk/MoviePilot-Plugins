@@ -44,8 +44,8 @@ class ShukGuangYaDisk(
     """光鸭云盘助手 MoviePilot V3 专用实现。"""
 
     plugin_name = "光鸭云盘助手"
-    plugin_desc = "MoviePilot V3 光鸭云盘存储助手：自动整理按资源文件夹建立私有任务，常规目录由 MoviePilot 一次规划整包内容，任务完成前不会被保存/扫描动作拆成新的逐文件批次。"
-    plugin_version = "3.4.3"
+    plugin_desc = "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。"
+    plugin_version = "3.4.4"
     plugin_author = "liheng-lk"
     plugin_label = "存储,光鸭云盘,自动整理,目录监控,MoviePilot,挂载,Emby,WebDAV"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
