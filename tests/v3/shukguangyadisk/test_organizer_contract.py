@@ -12,20 +12,21 @@ RECOGNITION = (PLUGIN / "organizer_recognition.py").read_text(encoding="utf-8")
 RUNTIME = (PLUGIN / "organizer_runtime.py").read_text(encoding="utf-8")
 STATE = (PLUGIN / "organizer_state.py").read_text(encoding="utf-8")
 HISTORY = (PLUGIN / "organizer_history.py").read_text(encoding="utf-8")
+STORAGE = (PLUGIN / "storage_contract.py").read_text(encoding="utf-8")
 MODELS = (PLUGIN / "models.py").read_text(encoding="utf-8")
 REMOTE = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf-8")
 PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v330.js").read_text(encoding="utf-8")
 
 
-def test_v330_version_and_federation_entry():
+def test_v331_version_and_federation_entry():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "3.3.0"
-    assert local["version"] == "3.3.0"
-    assert 'plugin_version = "3.3.0"' in INIT
-    assert "__federation_expose_AssistantPage-v330.js?v=3.3.0" in REMOTE
+    assert package["version"] == "3.3.1"
+    assert local["version"] == "3.3.1"
+    assert 'plugin_version = "3.3.1"' in INIT
+    assert "__federation_expose_AssistantPage-v330.js?v=3.3.1" in REMOTE
     assert "自动整理监控" in PAGE
-    assert "v3.3.0" in package["history"]
+    assert "v3.3.1" in package["history"]
 
 
 def test_architecture_separates_monitor_state_history_recognition_and_runtime():
@@ -59,19 +60,21 @@ def test_auto_monitor_delegates_business_rules_to_moviepilot():
         assert legacy_symbol not in ORGANIZER
 
 
-def test_runtime_bridge_covers_storage_video_subtitle_and_audio_terminal_events():
+def test_runtime_bridge_is_install_safe_across_v3_event_surfaces():
     for token in (
-        "ChainEventType.StorageOperSelection",
-        "EventType.TransferComplete",
-        "EventType.TransferFailed",
-        "EventType.SubtitleTransferComplete",
-        "EventType.SubtitleTransferFailed",
-        "EventType.AudioTransferComplete",
-        "EventType.AudioTransferFailed",
+        'getattr(ChainEventType, "StorageOperSelection", None)',
+        'getattr(EventType, "TransferComplete", None)',
+        'getattr(EventType, "TransferFailed", None)',
+        'getattr(EventType, "SubtitleTransferComplete", None)',
+        'getattr(EventType, "SubtitleTransferFailed", None)',
+        'getattr(EventType, "AudioTransferComplete", None)',
+        'getattr(EventType, "AudioTransferFailed", None)',
         "organizer_transfer_complete",
         "organizer_transfer_failed",
     ):
         assert token in RUNTIME, token
+    assert "def _register_optional" in RUNTIME
+    assert "except ImportError" in RUNTIME
     assert "weakref.ref(plugin)" in RUNTIME
     assert "active_organizer_plugin() is plugin" in RUNTIME
 
@@ -93,7 +96,7 @@ def test_state_machine_only_marks_terminal_success_completed():
     assert 'normalized["retry"][path]' in migration
 
 
-def test_moviepilot_history_gate_is_reused_instead_of_reimplemented():
+def test_moviepilot_history_gate_is_reused_but_not_an_install_time_dependency():
     for token in (
         "HistoryGateAction",
         "resolve_history",
@@ -103,10 +106,21 @@ def test_moviepilot_history_gate_is_reused_instead_of_reimplemented():
         "HistoryGateAction.SKIP_RETRY_EXHAUSTED",
     ):
         assert token in HISTORY, token
+    assert "def _load_history_api" in HISTORY
+    assert "from app.application.history import" in HISTORY
+    assert '"action": "delegate_to_dispatcher"' in HISTORY
     assert '"decision": "completed"' in HISTORY
     assert '"decision": "blocked"' in HISTORY
     assert '"decision": "unknown"' in HISTORY
     assert "inspect_moviepilot_history(" in ORGANIZER
+
+
+def test_snapshot_contract_tracks_current_moviepilot_previous_snapshot_parameter():
+    assert "def snapshot_storage(" in STORAGE
+    assert "previous_snapshot: Optional[Dict[str, Dict]] = None" in STORAGE
+    assert "PurePosixPath" in STORAGE
+    assert '"fileid": getattr(fileitem, "fileid", None)' in STORAGE
+    assert "remove_deleted_children" in STORAGE
 
 
 def test_scan_marks_inflight_before_dispatch_and_waits_for_terminal_receipt():
@@ -147,7 +161,6 @@ def test_explicit_episode_recognition_prefers_clean_localized_release_title():
     assert 'MetaInfo(f"{title} S{season:02d}E{episode:02d}")' in RECOGNITION
     assert "mtype=media_type" in RECOGNITION
     assert "meta.year = file_meta.year" in RECOGNITION
-    # 当前 MoviePilot do_transfer 返回 (是否接受, 消息)，插件只用第一项判断是否入队。
     assert "result = TransferChain().do_transfer(" in RECOGNITION
     assert "return bool(result[0])" in RECOGNITION
 

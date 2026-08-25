@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import importlib.util
 import unittest
 from pathlib import Path
@@ -23,28 +24,61 @@ class FakeModel:
 
 
 class FakeFileItem:
-    def __init__(self, storage: str, path: str = "/媒体/电视剧"):
+    def __init__(
+        self,
+        storage: str,
+        path: str = "/媒体/电视剧",
+        *,
+        item_type: str = "dir",
+        size: int = 0,
+        modify_time: float = 0,
+        fileid: str | None = None,
+    ):
         self.storage = storage
         self.path = path
+        self.type = item_type
+        self.size = size
+        self.modify_time = modify_time
+        self.fileid = fileid
 
     def model_copy(self, update=None):
         update = update or {}
         return FakeFileItem(
             storage=update.get("storage", self.storage),
             path=update.get("path", self.path),
+            item_type=update.get("type", self.type),
+            size=update.get("size", self.size),
+            modify_time=update.get("modify_time", self.modify_time),
+            fileid=update.get("fileid", self.fileid),
         )
 
 
 class FakeApi:
     def __init__(self):
         self.paths = []
+        self.root = FakeFileItem("光鸭云盘助手", "/媒体", item_type="dir", modify_time=100)
+        self.current = FakeFileItem(
+            "光鸭云盘助手",
+            "/媒体/current.mkv",
+            item_type="file",
+            size=123,
+            modify_time=200,
+            fileid="f-current",
+        )
 
     def get_folder(self, path):
         self.paths.append(path)
         return {"path": str(path), "type": "dir"}
 
     def get_item(self, path):
+        if Path(path).as_posix() == "/媒体":
+            return self.root
         return {"path": str(path), "type": "dir"}
+
+    def list(self, fileitem):
+        if getattr(fileitem, "path", "") == "/媒体":
+            return [self.current]
+        return []
 
 
 class FakeStorageHelper:
@@ -67,6 +101,7 @@ class FakeBase:
         return {
             "list_files": self.list_files,
             "upload_file": self.upload_file,
+            "snapshot_storage": self.snapshot_storage,
             "storage_usage": self.base_storage_usage,
         }
 
@@ -83,6 +118,7 @@ class FakeBase:
 class FakePlugin(V3StorageContractMixin, FakeBase):
     _disk_name = "光鸭云盘助手"
     _legacy_disk_name = "Shuk-光鸭云盘"
+    snapshot_check_folder_modtime = True
 
     def __init__(self):
         self._enabled = True
@@ -127,6 +163,7 @@ class StorageContractTest(unittest.TestCase):
         modules = self.plugin.get_module()
         self.assertIn("list_files", modules)
         self.assertIn("upload_file", modules)
+        self.assertIn("snapshot_storage", modules)
         self.assertIs(modules["storage_manage"].__self__, self.plugin)
         self.assertIs(modules["get_folder"].__self__, self.plugin)
 
@@ -159,6 +196,49 @@ class StorageContractTest(unittest.TestCase):
         usage = modules["storage_usage"]("Shuk-光鸭云盘")
         self.assertEqual(usage, {"storage": "光鸭云盘助手"})
         self.assertEqual(item.storage, "Shuk-光鸭云盘")
+
+    def test_snapshot_matches_current_moviepilot_signature(self):
+        params = inspect.signature(self.plugin.snapshot_storage).parameters
+        self.assertIn("previous_snapshot", params)
+        modules = self.plugin.get_module()
+        wrapped_params = inspect.signature(modules["snapshot_storage"]).parameters
+        self.assertIn("previous_snapshot", wrapped_params)
+
+    def test_snapshot_reconciles_previous_snapshot_and_keeps_full_file_metadata(self):
+        previous = {
+            "/媒体/old.mkv": {
+                "size": 99,
+                "modify_time": 50,
+                "fileid": "f-old",
+                "type": "file",
+            }
+        }
+        result = self.plugin.snapshot_storage(
+            "光鸭云盘助手",
+            Path("/媒体"),
+            last_snapshot_time=150,
+            max_depth=5,
+            previous_snapshot=previous,
+        )
+        self.assertNotIn("/媒体/old.mkv", result)
+        self.assertEqual(
+            result["/媒体/current.mkv"],
+            {
+                "size": 123,
+                "modify_time": 200,
+                "fileid": "f-current",
+                "type": "file",
+            },
+        )
+
+    def test_snapshot_accepts_legacy_storage_name_and_normalizes_it(self):
+        modules = self.plugin.get_module()
+        result = modules["snapshot_storage"](
+            storage="Shuk-光鸭云盘",
+            path=Path("/媒体"),
+            previous_snapshot={},
+        )
+        self.assertIn("/媒体/current.mkv", result)
 
     def test_get_folder_matches_v3_storage_chain_signature(self):
         result = self.plugin.get_folder("光鸭云盘助手", Path("/媒体/电视剧"))
