@@ -20,13 +20,13 @@ PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v330.js"
 ACCOUNT_PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-dev.js").read_text(encoding="utf-8")
 
 
-def test_v3412_version_and_federation_entry():
+def test_current_version_and_federation_entry_are_consistent():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "3.4.12"
-    assert local["version"] == "3.4.12"
-    assert 'plugin_version = "3.4.12"' in INIT
-    assert "__federation_expose_AssistantPage-v330.js?v=3.4.12" in REMOTE
+    current = package["version"]
+    assert local["version"] == current
+    assert f'plugin_version = "{current}"' in INIT
+    assert f"__federation_expose_AssistantPage-v330.js?v={current}" in REMOTE
     assert "v3.4.12" in package["history"]
     assert "category.yaml" in package["history"]["v3.4.12"]
 
@@ -37,7 +37,7 @@ def test_builtin_pages_have_no_internal_version_badge():
     assert "gya-badge" not in PAGE
     assert "gy-version" not in ACCOUNT_PAGE
     assert "v2.2.15" not in ACCOUNT_PAGE
-    for version in ("v3.4.3", "v3.4.4", "v3.4.5", "v3.4.6", "v3.4.7", "v3.4.8", "v3.4.9", "v3.4.10", "v3.4.11", "v3.4.12"):
+    for version in ("v3.4.3", "v3.4.4", "v3.4.5", "v3.4.6", "v3.4.7", "v3.4.8", "v3.4.9", "v3.4.10", "v3.4.11", "v3.4.12", "v3.4.13"):
         assert f"'{version}'" not in PAGE
 
 
