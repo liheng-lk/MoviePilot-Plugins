@@ -14,6 +14,7 @@ v3.4.9 增加整理前零损失预览校验和逐文件终态确认，阻止同�
 v3.4.10 增加执行前源目录复核，已搬空/无视频目录不再进入 MoviePilot 识别。
 v3.4.11 增加整组样本推荐与多形态集号兼容层，适配 01 4K、EP01、第01集等弱命名。
 v3.4.12 使用 MoviePilot 当前 category.yaml 重新核验分类，消除缓存/外部识别源残留分类。
+v3.4.13 多级目录改为按实际文件所在目录独立分组，避免第一层分类目录吞并整棵子树。
 """
 
 from __future__ import annotations
@@ -126,6 +127,7 @@ class GuangYaCandidateFilterMixin:
 from .organizer_folder_batch_v342 import install_folder_batch_v342
 from .organizer_legacy_queue_cleanup_v343 import install_legacy_queue_cleanup_v343
 from .organizer_mp_folder_context_v346 import install_mp_folder_context_v346
+from .organizer_deep_folder_stream_v3413 import install_deep_folder_stream_v3413
 from .guangya_network_resilience_v347 import install_network_resilience_v347
 from .organizer_loss_guard_v349 import install_loss_guard_v349
 from .organizer_empty_folder_guard_v3410 import install_empty_folder_guard_v3410
@@ -136,6 +138,7 @@ from .organizer_category_consistency_v3412 import install_category_consistency_v
 install_folder_batch_v342()
 install_legacy_queue_cleanup_v343()
 install_mp_folder_context_v346()
+install_deep_folder_stream_v3413()
 install_network_resilience_v347()
 install_loss_guard_v349()
 install_empty_folder_guard_v3410()

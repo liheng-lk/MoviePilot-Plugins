@@ -68,8 +68,8 @@ def test_category_diagnostics_expose_moviepilot_facts():
 def test_v3412_release_metadata_is_consistent():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "3.4.12"
-    assert local["version"] == "3.4.12"
-    assert 'plugin_version = "3.4.12"' in ENTRY
-    assert "__federation_expose_AssistantPage-v330.js?v=3.4.12" in REMOTE
+    current = package["version"]
+    assert local["version"] == current
+    assert f'plugin_version = "{current}"' in ENTRY
+    assert f"__federation_expose_AssistantPage-v330.js?v={current}" in REMOTE
     assert package["history"]["v3.4.12"] == "按 MoviePilot 当前 category.yaml 重新核验分类，修复缓存或外部识别源残留分类导致的错误目录。"
