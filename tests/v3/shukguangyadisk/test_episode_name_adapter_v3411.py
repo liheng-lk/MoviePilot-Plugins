@@ -84,11 +84,11 @@ def test_adapter_is_installed_after_loss_and_empty_folder_guards():
     assert FILTER.index("install_empty_folder_guard_v3410()") < FILTER.index("install_episode_name_adapter_v3411()")
 
 
-def test_v3411_feature_remains_in_v3412_release():
+def test_v3411_feature_remains_in_current_release():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "3.4.12"
-    assert local["version"] == "3.4.12"
-    assert 'plugin_version = "3.4.12"' in ENTRY
-    assert "__federation_expose_AssistantPage-v330.js?v=3.4.12" in REMOTE
+    current = package["version"]
+    assert local["version"] == current
+    assert f'plugin_version = "{current}"' in ENTRY
+    assert f"__federation_expose_AssistantPage-v330.js?v={current}" in REMOTE
     assert package["history"]["v3.4.11"] == "增加多形态集号适配和整组校验，支持 01 4K、EP01、第01集等弱命名。"
