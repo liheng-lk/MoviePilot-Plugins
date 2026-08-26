@@ -78,8 +78,8 @@ def test_loss_guard_remains_before_empty_and_episode_adapter_guards():
 
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "3.4.12"
-    assert local["version"] == "3.4.12"
-    assert 'plugin_version = "3.4.12"' in ENTRY
-    assert "__federation_expose_AssistantPage-v330.js?v=3.4.12" in REMOTE
+    current = package["version"]
+    assert local["version"] == current
+    assert f'plugin_version = "{current}"' in ENTRY
+    assert f"__federation_expose_AssistantPage-v330.js?v={current}" in REMOTE
     assert package["history"]["v3.4.9"] == "增加整理前目标唯一性校验，防止集数误映射覆盖并进入回收站。"
