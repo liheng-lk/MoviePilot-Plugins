@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 
@@ -8,7 +9,7 @@ PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
 PATCH = (PLUGIN / "organizer_folder_batch_v342.py").read_text(encoding="utf-8")
 FILTER = (PLUGIN / "organizer_candidate_filter.py").read_text(encoding="utf-8")
 ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
-MANIFEST = (PLUGIN / "plugin.json").read_text(encoding="utf-8")
+MANIFEST = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
 
 
 def test_normal_resource_folder_is_one_private_task():
@@ -65,6 +66,6 @@ def test_patch_is_installed_before_final_plugin_mro_is_assembled():
 
 
 def test_folder_batch_feature_remains_enabled_in_current_release():
-    assert 'plugin_version = "3.4.12"' in ENTRY
-    assert '"version": "3.4.12"' in MANIFEST
-    assert '"v3.4.2"' in MANIFEST
+    current = MANIFEST["version"]
+    assert f'plugin_version = "{current}"' in ENTRY
+    assert "v3.4.2" in MANIFEST["history"]
