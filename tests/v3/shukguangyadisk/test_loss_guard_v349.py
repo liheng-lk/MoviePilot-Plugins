@@ -81,5 +81,5 @@ def test_loss_guard_remains_before_empty_and_episode_adapter_guards():
     current = package["version"]
     assert local["version"] == current
     assert f'plugin_version = "{current}"' in ENTRY
-    assert f"__federation_expose_AssistantPage-v330.js?v={current}" in REMOTE
+    assert f"__federation_expose_AssistantPage-v352.js?v={current}" in REMOTE
     assert package["history"]["v3.4.9"] == "增加整理前目标唯一性校验，防止集数误映射覆盖并进入回收站。"
