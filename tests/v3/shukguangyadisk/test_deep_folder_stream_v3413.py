@@ -18,13 +18,34 @@ def test_nested_scan_groups_each_actual_file_directory_instead_of_first_level_co
         "direct_files.append(child)",
         "yield current_path, direct_files",
         "queue.extend(child_dirs)",
-        'scan_meta["grouping_mode"] = "deep_direct_files"',
+        'scan_meta["grouping_mode"] = "deep_direct_files_streaming"',
     ):
         assert token in DEEP, token
 
-    # 旧实现会在第一层目录里递归收集 group_files，导致 /剧/国产剧/片名/Season 1 被合成 /剧 一个任务。
     assert "group_files.append(child)" not in DEEP
     assert "root / relative.parts[0]" not in DEEP
+
+
+def test_large_generic_container_streams_primary_video_before_inventory_cap():
+    for token in (
+        "_STREAMING_CONTAINER_NAMES",
+        "_is_streaming_container",
+        "_runtime_media_exts()",
+        'scan_meta["streaming_discovery"] = True',
+        "yield current_path, [child]",
+        "不对同级全部主视频消耗 visited/inventory cap",
+        "纪录片",
+        "华语电影",
+    ):
+        assert token in DEEP, token
+
+
+def test_sidecar_only_files_do_not_form_streaming_video_groups():
+    assert "suffix in media_exts" in DEEP
+    assert "primary_files.append(child)" in DEEP
+    assert "yield current_path, [child]" in DEEP
+    assert "RMT_AUDIOEXT" not in DEEP
+    assert "RMT_SUBEXT" not in DEEP
 
 
 def test_parent_and_child_folders_cannot_be_recursively_submitted_twice():
@@ -45,15 +66,14 @@ def test_deep_grouping_is_installed_before_network_resilience_wraps_iterator():
     assert FILTER.index("install_deep_folder_stream_v3413()") < FILTER.index("install_network_resilience_v347()")
 
 
-def test_fix_does_not_create_media_classification_or_naming_rules():
+def test_streaming_container_names_are_structural_only_not_business_classification():
     for forbidden in (
         "CategoryHelper",
         "RENAME_FORMAT",
         "get_rename_path",
-        "tmdb_id",
-        "media_id",
-        '"国产剧"',
-        '"日韩剧"',
-        '"欧美剧"',
+        "tmdb_id=",
+        "media_id=",
+        "get_tv_category(",
+        "get_movie_category(",
     ):
         assert forbidden not in DEEP, forbidden
