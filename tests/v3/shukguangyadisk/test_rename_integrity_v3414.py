@@ -71,11 +71,11 @@ def test_v3414_patches_install_in_correct_order():
     assert FILTER.index("install_folder_identity_v350()") < FILTER.index("install_rename_diagnostics_v3414()")
 
 
-def test_v3414_integrity_remains_enabled_in_v350_release():
+def test_v3414_integrity_remains_enabled_in_v351_release():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "3.5.0"
-    assert local["version"] == "3.5.0"
-    assert 'plugin_version = "3.5.0"' in ENTRY
-    assert "__federation_expose_AssistantPage-v330.js?v=3.5.0" in REMOTE
+    assert package["version"] == "3.5.1"
+    assert local["version"] == "3.5.1"
+    assert 'plugin_version = "3.5.1"' in ENTRY
+    assert "__federation_expose_AssistantPage-v330.js?v=3.5.1" in REMOTE
     assert package["history"]["v3.4.14"] == "增加远端重命名终态确认，修复整理成功但目标文件仍保留原名的问题。"
