@@ -17,6 +17,7 @@ v3.4.12 使用 MoviePilot 当前 category.yaml 重新核验分类，消除缓存
 v3.4.13 多级目录改为按实际文件所在目录独立分组，避免第一层分类目录吞并整棵子树。
 v3.4.14 对光鸭远端 move/copy 后的重命名做真实可见性确认，拒绝理论目标路径假成功。
 v3.5.0 把作品目录身份与单文件集号分离，并改为严格“发现一个→识别一个→整理一个”的单任务流水。
+v3.5.1 修复电影容器仍可能整目录预览、热更新交接状态不清和运行状态统计口径错误。
 """
 
 from __future__ import annotations
@@ -142,6 +143,7 @@ from .organizer_folder_identity_v350 import install_folder_identity_v350
 from .organizer_rename_diagnostics_v3414 import install_rename_diagnostics_v3414
 from .organizer_single_flight_v350 import install_single_flight_v350
 from .organizer_single_flight_refill_v350 import install_single_flight_refill_v350
+from .organizer_orchestrator_v351 import install_orchestrator_v351
 
 # 存储层补丁必须最先安装，确保 MoviePilot 真正执行 move/copy 时拿到的是强确认接口。
 install_rename_integrity_v3414()
@@ -161,6 +163,8 @@ install_rename_diagnostics_v3414()
 # 最后收口调度：运行中绝不预排第二个资源；worker 真正空闲后立即续跑。
 install_single_flight_v350()
 install_single_flight_refill_v350()
+# v3.5.1 在单任务闭包安装后覆盖结构判断，并投影真实 worker 运行态。
+install_orchestrator_v351()
 
 
 __all__ = ["GuangYaCandidateFilterMixin"]
