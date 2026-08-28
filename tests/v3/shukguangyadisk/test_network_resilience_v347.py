@@ -79,7 +79,7 @@ def test_v347_network_history_remains_in_current_release():
     current = package["version"]
     assert local["version"] == current
     assert f'plugin_version = "{current}"' in ENTRY
-    assert f"__federation_expose_AssistantPage-v330.js?v={current}" in REMOTE
+    assert f"__federation_expose_AssistantPage-v352.js?v={current}" in REMOTE
     assert package["history"]["v3.4.7"] == "降低光鸭 DNS/网络异常日志噪音，增加自动退避和扫描保护，网络恢复后自动继续。"
 
 
