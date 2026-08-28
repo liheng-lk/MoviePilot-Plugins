@@ -56,5 +56,5 @@ def test_v3410_guard_stays_enabled_in_current_release():
     current = package["version"]
     assert local["version"] == current
     assert f'plugin_version = "{current}"' in ENTRY
-    assert f"__federation_expose_AssistantPage-v330.js?v={current}" in REMOTE
+    assert f"__federation_expose_AssistantPage-v352.js?v={current}" in REMOTE
     assert package["history"]["v3.4.10"] == "跳过已搬空或无视频的陈旧目录任务，不再触发无意义的 MoviePilot 识别。"
