@@ -90,5 +90,5 @@ def test_v3411_feature_remains_in_current_release():
     current = package["version"]
     assert local["version"] == current
     assert f'plugin_version = "{current}"' in ENTRY
-    assert f"__federation_expose_AssistantPage-v330.js?v={current}" in REMOTE
+    assert f"__federation_expose_AssistantPage-v352.js?v={current}" in REMOTE
     assert package["history"]["v3.4.11"] == "增加多形态集号适配和整组校验，支持 01 4K、EP01、第01集等弱命名。"
