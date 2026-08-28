@@ -1,9 +1,10 @@
 """v3.5.1：整理任务边界、运行态与 MoviePilot 历史可观测性统一修复。
 
-本层不接管 MoviePilot 的媒体识别/分类/命名规则，只修正三个调度问题：
+本层不接管 MoviePilot 的媒体识别/分类/命名规则，只修正四个调度/观测问题：
 1. 电影容器目录必须按单视频资源串行，不能把 /电影、/华语电影 这类容器整目录交给 MP；
 2. 作品目录/Season 目录继续保持文件夹事务，错误文件名不能反过来否定正确文件夹身份；
-3. UI 运行状态展示真实 worker 任务，而不是把状态机缓存数量误当作“正在整理/累计完成”。
+3. UI 运行状态展示真实 worker 任务，而不是把状态机缓存数量误当作“正在整理/累计完成”；
+4. 最终事件记录 MoviePilot ``transfer_history_id``，明确区分“还在预检”与“已经真实落库”。
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from app.sdk.logging import logger
 
 from . import organizer_single_flight_v350 as _single
 from .organizer_folder_history import GuangYaFolderHistoryMixin
+from .organizer_recognition import GuangYaOrganizerMixin as GuangYaRecognitionMixin
 from .organizer_worker_guard import _runtime_owner
 
 
@@ -187,8 +189,44 @@ def _project_runtime_status(plugin: Any, status: Dict[str, Any]) -> Dict[str, An
         "scan_is_partial": bool(status.get("truncated") or status.get("single_flight_partial") or status.get("single_flight_busy")),
         "state_inflight_files": int(status.get("state_inflight") or status.get("inflight") or 0),
         "state_completed_cache": int(status.get("state_completed") or status.get("completed") or 0),
+        "mp_history_confirmed_total": int(status.get("mp_history_confirmed_total") or 0),
     })
     return status
+
+
+def _bind_moviepilot_history_to_terminal_event() -> None:
+    original_record = GuangYaRecognitionMixin._record_terminal_transfer
+
+    def record(self: Any, event: Any, success: bool) -> None:
+        payload_getter = getattr(self, "_event_payload", None)
+        payload = payload_getter(event) if callable(payload_getter) else {}
+        history_id = payload.get("transfer_history_id") if isinstance(payload, dict) else None
+        fileitem = payload.get("fileitem") if isinstance(payload, dict) else None
+        source_path = str(getattr(fileitem, "path", "") or "") if fileitem else ""
+
+        original_record(self, event, success)
+
+        status = dict(self.get_data(self._monitor_status_key) or {})
+        status["last_transfer_history_id"] = int(history_id) if history_id else None
+        status["last_transfer_history_confirmed"] = bool(history_id)
+        if success and history_id:
+            status["mp_history_confirmed_total"] = int(status.get("mp_history_confirmed_total") or 0) + 1
+        self._save_monitor_status(**status)
+
+        if success and history_id:
+            logger.info(
+                "【光鸭云盘助手】【MP整理历史】真实整理已落库: history_id=%s；source=%s",
+                history_id,
+                source_path,
+            )
+        elif success:
+            logger.warning(
+                "【光鸭云盘助手】【MP整理历史】收到成功终态但事件未携带 history_id；"
+                "请以 MoviePilot 媒体整理记录为准: %s",
+                source_path,
+            )
+
+    GuangYaRecognitionMixin._record_terminal_transfer = record
 
 
 def install_orchestrator_v351() -> None:
@@ -210,8 +248,9 @@ def install_orchestrator_v351() -> None:
         return response
 
     GuangYaFolderHistoryMixin.api_organize_monitor_status = api_status
+    _bind_moviepilot_history_to_terminal_event()
     _single._guangya_orchestrator_v351 = True
-    logger.info("【光鸭云盘助手】【v3.5.1】任务边界与运行态投影已启用")
+    logger.info("【光鸭云盘助手】【v3.5.1】任务边界、运行态和 MP 历史确认已启用")
 
 
 __all__ = [
