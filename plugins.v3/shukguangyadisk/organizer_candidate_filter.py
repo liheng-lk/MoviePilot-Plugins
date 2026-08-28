@@ -16,6 +16,7 @@ v3.4.11 增加整组样本推荐与多形态集号兼容层，适配 01 4K、EP0
 v3.4.12 使用 MoviePilot 当前 category.yaml 重新核验分类，消除缓存/外部识别源残留分类。
 v3.4.13 多级目录改为按实际文件所在目录独立分组，避免第一层分类目录吞并整棵子树。
 v3.4.14 对光鸭远端 move/copy 后的重命名做真实可见性确认，拒绝理论目标路径假成功。
+v3.5.0 把作品目录身份与单文件集号分离，并改为严格“发现一个→识别一个→整理一个”的单任务流水。
 """
 
 from __future__ import annotations
@@ -62,13 +63,13 @@ class _MoviePilotCandidateFilter:
 
 
 class GuangYaCandidateFilterMixin:
-    """无 MP 队列状态的候选过滤器 + 私有队列低水位连续补充。"""
+    """无 MP 全局队列状态的候选过滤器 + 私有单任务流水补充。"""
 
     _organize_candidate_filter: _MoviePilotCandidateFilter | None = None
 
     _monitor_heartbeat = 10
-    _isolated_refill_low_watermark = 8
-    _isolated_refill_min_gap = 8.0
+    _isolated_refill_low_watermark = 0
+    _isolated_refill_min_gap = 3.0
     _organize_last_fast_refill: float = 0.0
 
     def _get_organize_dispatcher(self) -> _MoviePilotCandidateFilter:
@@ -89,15 +90,16 @@ class GuangYaCandidateFilterMixin:
             return False, "snapshot_error"
 
         queued = int(isolated.get("queued") or 0)
-        if queued > self._isolated_refill_low_watermark:
-            return False, "queue_has_buffer"
+        running_path = str(isolated.get("running_path") or "")
+        if running_path or queued > 0:
+            return False, "worker_busy"
 
         status = dict(self.get_data(self._monitor_status_key) or {})
         capacity_wait = int(status.get("capacity_wait") or 0)
         waiting = int(status.get("waiting") or 0)
         if capacity_wait > 0:
-            return True, f"capacity_wait={capacity_wait},queued={queued}"
-        if waiting > 0 and queued == 0 and not str(isolated.get("running_path") or ""):
+            return True, f"capacity_wait={capacity_wait},queued=0"
+        if waiting > 0:
             return True, f"stability_wait={waiting},queued=0"
         return False, "no_backlog"
 
@@ -116,7 +118,7 @@ class GuangYaCandidateFilterMixin:
                 fast_refill_reason=reason,
                 fast_refill_at=time.time(),
             )
-            logger.info("【光鸭云盘助手】【独立worker】【连续补充】触发下一批扫描: %s", reason)
+            logger.info("【光鸭云盘助手】【单任务流水】【连续补充】触发下一资源扫描: %s", reason)
             try:
                 return self.run_organize_monitor_scan(manual=False)
             finally:
@@ -136,7 +138,9 @@ from .organizer_empty_folder_guard_v3410 import install_empty_folder_guard_v3410
 from .organizer_episode_name_adapter_v3411 import install_episode_name_adapter_v3411
 from .organizer_episode_sample_bridge_v3411 import install_episode_sample_bridge_v3411
 from .organizer_category_consistency_v3412 import install_category_consistency_v3412
+from .organizer_folder_identity_v350 import install_folder_identity_v350
 from .organizer_rename_diagnostics_v3414 import install_rename_diagnostics_v3414
+from .organizer_single_flight_v350 import install_single_flight_v350
 
 # 存储层补丁必须最先安装，确保 MoviePilot 真正执行 move/copy 时拿到的是强确认接口。
 install_rename_integrity_v3414()
@@ -150,8 +154,11 @@ install_empty_folder_guard_v3410()
 install_episode_name_adapter_v3411()
 install_episode_sample_bridge_v3411()
 install_category_consistency_v3412()
-# 最后包裹已完成的 MP 目录上下文/分类构造，输出真实目录的 renaming 决策。
+# v3.5.0：先让作品目录身份覆盖错误文件名，再输出最终 MP 重命名诊断。
+install_folder_identity_v350()
 install_rename_diagnostics_v3414()
+# 最后收口调度：运行中绝不预排第二个资源。
+install_single_flight_v350()
 
 
 __all__ = ["GuangYaCandidateFilterMixin"]
