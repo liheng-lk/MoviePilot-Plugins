@@ -141,6 +141,7 @@ from .organizer_category_consistency_v3412 import install_category_consistency_v
 from .organizer_folder_identity_v350 import install_folder_identity_v350
 from .organizer_rename_diagnostics_v3414 import install_rename_diagnostics_v3414
 from .organizer_single_flight_v350 import install_single_flight_v350
+from .organizer_single_flight_refill_v350 import install_single_flight_refill_v350
 
 # 存储层补丁必须最先安装，确保 MoviePilot 真正执行 move/copy 时拿到的是强确认接口。
 install_rename_integrity_v3414()
@@ -157,8 +158,9 @@ install_category_consistency_v3412()
 # v3.5.0：先让作品目录身份覆盖错误文件名，再输出最终 MP 重命名诊断。
 install_folder_identity_v350()
 install_rename_diagnostics_v3414()
-# 最后收口调度：运行中绝不预排第二个资源。
+# 最后收口调度：运行中绝不预排第二个资源；worker 真正空闲后立即续跑。
 install_single_flight_v350()
+install_single_flight_refill_v350()
 
 
 __all__ = ["GuangYaCandidateFilterMixin"]
