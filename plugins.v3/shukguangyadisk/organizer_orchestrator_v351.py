@@ -1,10 +1,11 @@
 """v3.5.1：整理任务边界、运行态与 MoviePilot 历史可观测性统一修复。
 
-本层不接管 MoviePilot 的媒体识别/分类/命名规则，只修正四个调度/观测问题：
-1. 电影容器目录必须按单视频资源串行，不能把 /电影、/华语电影 这类容器整目录交给 MP；
+本层不接管 MoviePilot 的媒体识别/分类/命名规则，只修正调度/观测问题：
+1. 分类/电影容器目录必须按单视频资源串行，不能把 /电影、/华语电影、/纪录片 等容器整目录交给 MP；
 2. 作品目录/Season 目录继续保持文件夹事务，错误文件名不能反过来否定正确文件夹身份；
-3. UI 运行状态展示真实 worker 任务，而不是把状态机缓存数量误当作“正在整理/累计完成”；
-4. 最终事件记录 MoviePilot ``transfer_history_id``，明确区分“还在预检”与“已经真实落库”。
+3. 没有 MoviePilot ``RMT_MEDIAEXT`` 主视频的目录不会因为 mp3/字幕等旁路文件单独触发影视整理；
+4. UI 运行状态展示真实 worker 任务，而不是把状态机缓存数量误当作“正在整理/累计完成”；
+5. 最终事件记录 MoviePilot ``transfer_history_id``，明确区分“还在预检”与“已经真实落库”。
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from app.sdk.logging import logger
 
 from . import organizer_single_flight_v350 as _single
 from .organizer_folder_history import GuangYaFolderHistoryMixin
+from .organizer_folder_stream import GuangYaFolderStreamMixin
 from .organizer_recognition import GuangYaOrganizerMixin as GuangYaRecognitionMixin
 from .organizer_worker_guard import _runtime_owner
 
@@ -25,6 +27,16 @@ _GENERIC_MOVIE_CONTAINERS = {
     "movie", "movies", "film", "films", "电影", "電影", "影片",
     "华语电影", "華語電影", "国产电影", "國產電影", "外语电影", "外語電影",
     "欧美电影", "歐美電影", "日韩电影", "日韓電影", "动画电影", "動畫電影",
+}
+
+# 这些只表示“结构容器名”，不代表插件自己决定媒体分类。它们的用途仅是避免把
+# 分类目录名当作品标题交给 MoviePilot；最终分类仍完全由 MP 当前目录/category 规则决定。
+_GENERIC_LIBRARY_CONTAINERS = {
+    "纪录片", "紀錄片", "记录片", "記錄片", "documentary", "documentaries",
+    "综艺", "綜藝", "variety", "variety show", "variety shows",
+    "儿童", "兒童", "少儿", "少兒", "kids", "children",
+    "国漫", "國漫", "日番", "韩剧", "韓劇", "港剧", "港劇", "台剧", "台劇",
+    "合集", "collection", "collections", "经典电影", "經典電影", "老电影", "老電影",
 }
 
 
@@ -61,15 +73,21 @@ def _configured_type(plugin: Any, group_path: str, files: List[Any]) -> Optional
     return None
 
 
+def _generic_container_names(plugin: Any) -> set[str]:
+    names = {_norm(value) for value in _GENERIC_MOVIE_CONTAINERS}
+    names.update({_norm(value) for value in _GENERIC_LIBRARY_CONTAINERS})
+    names.update({_norm(value) for value in _single._GENERIC_CONTAINER_NAMES})
+    names.update({_norm(value) for value in getattr(plugin, "_generic_title_dirs", set())})
+    return names
+
+
 def _is_specific_media_folder(plugin: Any, group_path: str) -> bool:
     """作品目录名称可靠时保留文件夹事务，文件名只负责集号/技术信息。"""
     name = str(PurePosixPath(group_path).name or "").strip()
     if not name:
         return False
     normalized = _norm(name)
-    generic = {_norm(value) for value in getattr(plugin, "_generic_title_dirs", set())}
-    generic.update({_norm(value) for value in _single._GENERIC_CONTAINER_NAMES})
-    if normalized in generic:
+    if normalized in _generic_container_names(plugin):
         return False
     useful = getattr(plugin, "_is_useful_title", None)
     if callable(useful):
@@ -80,24 +98,23 @@ def _is_specific_media_folder(plugin: Any, group_path: str) -> bool:
     return any("\u3400" <= ch <= "\u9fff" or ch.isalpha() for ch in name)
 
 
+def _primary_media_files(files: List[Any]) -> List[Any]:
+    """只把 MoviePilot RMT_MEDIAEXT 视频视为影视整理的主资源。"""
+    return list(_single._media_files(files))
+
+
 def _is_loose_container_v351(plugin: Any, group_path: str, files: List[Any]) -> bool:
     """只决定任务粒度，不自行判断影片身份。
 
     规则：
-    - Season/剧集结构：整目录事务；
-    - 明确 TV：整目录事务；
-    - 电影根下的泛化容器目录：单视频串行；
-    - 具体作品目录：即使文件名很乱也保留目录事务；
-    - 监控根直接散放多视频：单视频串行。
+    - 没有主视频：不在这里决定，外层直接阻止形成影视任务；
+    - 监控根/泛化分类容器：哪怕当前只剩 1 个视频，也必须单视频串行，绝不把容器目录递归交给 MP；
+    - Season/具体剧集目录：整目录事务；
+    - 明确 TV 的具体作品目录：整目录事务；
+    - 具体作品目录：即使文件名很乱也保留目录事务。
     """
-    media = _single._media_files(files)
-    if len(media) <= 1:
-        return False
-    if _single._has_episode_structure(plugin, group_path, files):
-        return False
-
-    configured = _configured_type(plugin, group_path, files)
-    if configured == MediaType.TV:
+    media = _primary_media_files(files)
+    if not media:
         return False
 
     normalized_group = plugin._organize_normalize_path(group_path)
@@ -105,18 +122,31 @@ def _is_loose_container_v351(plugin: Any, group_path: str, files: List[Any]) -> 
     if normalized_group == normalized_root:
         return True
 
+    # 泛化目录判断必须早于 len(media) 和 configured_type。
+    # 否则一个 /电影 目录当前只剩 1 个视频时会再次被当作完整目录任务递归提交。
     name = _norm(PurePosixPath(group_path).name)
-    if name in {_norm(value) for value in _GENERIC_MOVIE_CONTAINERS}:
+    if name in _generic_container_names(plugin):
         return True
-    if name in {_norm(value) for value in _single._GENERIC_CONTAINER_NAMES}:
-        return configured != MediaType.TV
+
+    if _single._has_episode_structure(plugin, group_path, files):
+        return False
+
+    configured = _configured_type(plugin, group_path, files)
+    if configured == MediaType.TV:
+        return False
 
     # 具体作品文件夹优先保护：目录名正确但文件名错误时，仍把文件夹作为作品身份来源。
     if _is_specific_media_folder(plugin, group_path):
         return False
 
     # 明确 Movie 但目录本身不是可用作品名时，视为电影合集/散放容器。
-    return configured == MediaType.MOVIE
+    return configured == MediaType.MOVIE or len(media) > 1
+
+
+def _sidecar_only_counters(file_count: int) -> Dict[str, int]:
+    counters = _single._empty_counters(file_count)
+    counters["ignored"] = file_count
+    return counters
 
 
 def _current_task_members(plugin: Any, current_path: str) -> int:
@@ -207,11 +237,32 @@ def _bind_moviepilot_history_to_terminal_event() -> None:
         original_record(self, event, success)
 
         status = dict(self.get_data(self._monitor_status_key) or {})
-        status["last_transfer_history_id"] = int(history_id) if history_id else None
+        if history_id:
+            history_value = int(history_id)
+            status["last_transfer_history_id"] = history_value
+            if success and int(status.get("last_counted_transfer_history_id") or 0) != history_value:
+                status["mp_history_confirmed_total"] = int(status.get("mp_history_confirmed_total") or 0) + 1
+                status["last_counted_transfer_history_id"] = history_value
         status["last_transfer_history_confirmed"] = bool(history_id)
-        if success and history_id:
-            status["mp_history_confirmed_total"] = int(status.get("mp_history_confirmed_total") or 0) + 1
         self._save_monitor_status(**status)
+
+        # 把真实 MP history id 补到刚刚写入的 flat history，供 UI 直接显示。
+        if history_id and source_path:
+            try:
+                rows = list(self.get_data(self._monitor_history_key) or [])
+                normalized_source = self._organize_normalize_path(source_path)
+                for row in reversed(rows):
+                    if not isinstance(row, dict):
+                        continue
+                    if self._organize_normalize_path(str(row.get("path") or "")) != normalized_source:
+                        continue
+                    if str(row.get("result") or "") not in {"completed", "failed"}:
+                        continue
+                    row["transfer_history_id"] = int(history_id)
+                    break
+                self.save_data(self._monitor_history_key, rows[-self._monitor_history_limit :])
+            except Exception:
+                pass
 
         if success and history_id:
             logger.info(
@@ -236,6 +287,25 @@ def install_orchestrator_v351() -> None:
     # v3.5.0 的 process 闭包运行时从模块全局查找该函数，因此替换后旧闭包也会使用新判断。
     _single._is_loose_container = _is_loose_container_v351
 
+    # 影视整理只能由 RMT_MEDIAEXT 主视频触发。字幕/音频仍可以在 MoviePilot 真正处理
+    # 一个视频目录时作为伴随文件参与，但不能单独把“纪录片/电影”等容器目录送去识别。
+    original_process = GuangYaFolderStreamMixin._process_folder_group
+
+    def process_group(self: Any, **kwargs: Any) -> Dict[str, int]:
+        files = list(kwargs.get("files") or [])
+        group_path = str(kwargs.get("group_path") or "")
+        if files and not _primary_media_files(files):
+            logger.info(
+                "【光鸭云盘助手】【主视频门禁】跳过无视频目录，不触发 MoviePilot 影视识别: %s；"
+                "当前仅有字幕/音频等旁路文件=%s",
+                group_path,
+                len(files),
+            )
+            return _sidecar_only_counters(len(files))
+        return original_process(self, **kwargs)
+
+    GuangYaFolderStreamMixin._process_folder_group = process_group
+
     original_status = GuangYaFolderHistoryMixin.api_organize_monitor_status
 
     def api_status(self: Any) -> Dict[str, Any]:
@@ -250,11 +320,12 @@ def install_orchestrator_v351() -> None:
     GuangYaFolderHistoryMixin.api_organize_monitor_status = api_status
     _bind_moviepilot_history_to_terminal_event()
     _single._guangya_orchestrator_v351 = True
-    logger.info("【光鸭云盘助手】【v3.5.1】任务边界、运行态和 MP 历史确认已启用")
+    logger.info("【光鸭云盘助手】【v3.5.1】任务边界、主视频门禁、运行态和 MP 历史确认已启用")
 
 
 __all__ = [
     "install_orchestrator_v351",
     "_is_loose_container_v351",
+    "_primary_media_files",
     "_project_runtime_status",
 ]
