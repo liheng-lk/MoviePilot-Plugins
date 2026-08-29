@@ -67,11 +67,11 @@ def test_v351_installs_after_v350_single_flight():
     assert FILTER.index("install_single_flight_refill_v350()") < FILTER.index("install_orchestrator_v351()")
 
 
-def test_v351_remains_enabled_in_v352_release():
+def test_v351_remains_enabled_in_current_release():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "3.5.2"
-    assert local["version"] == "3.5.2"
-    assert 'plugin_version = "3.5.2"' in ENTRY
-    assert "__federation_expose_AssistantPage-v352.js?v=3.5.2" in REMOTE
+    current = package["version"]
+    assert local["version"] == current
+    assert f'plugin_version = "{current}"' in ENTRY
+    assert f"__federation_expose_AssistantPage-v352.js?v={current}" in REMOTE
     assert package["history"]["v3.5.1"] == "修复电影容器整目录预览积压，并校正运行状态和 MoviePilot 整理历史确认。"
