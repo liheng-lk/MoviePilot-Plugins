@@ -1,10 +1,10 @@
 """光鸭自动整理与 MoviePilot 运行时事件桥。
 
 事件注册属于运行时基础设施，不应和媒体识别规则混在一起。本模块只维护当前插件
-实例引用，并把 MoviePilot 的存储选择和整理终态事件转发给该实例。
+实例引用，并把 MoviePilot 的存储选择、重命名链式事件和整理终态事件转发给该实例。
 
 不同 MoviePilot V3 小版本的事件枚举并不完全一致。基础视频整理事件是必需能力，
-字幕/音频事件属于可选增强；缺少可选枚举时必须跳过注册，而不能让插件在导入阶段
+字幕/音频/重命名事件属于可选增强；缺少可选枚举时必须跳过注册，而不能让插件在导入阶段
 直接失败，从而出现“插件安装不了”。
 """
 
@@ -64,6 +64,12 @@ def _register_optional(event_type: Any) -> Callable[[Callable[..., Any]], Callab
 @_register_optional(getattr(ChainEventType, "StorageOperSelection", None))
 def _guangya_storage_selection_bridge(event: Event) -> None:
     _dispatch("storage_oper_selection", event)
+
+
+@_register_optional(getattr(ChainEventType, "TransferRename", None))
+def _guangya_transfer_rename_bridge(event: Event) -> None:
+    """只在 v3.5.3 当前线程存在版本消歧上下文时才会真正改写名称。"""
+    _dispatch("organizer_transfer_rename", event)
 
 
 @_register_optional(getattr(EventType, "TransferComplete", None))
