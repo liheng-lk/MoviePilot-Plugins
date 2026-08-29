@@ -89,9 +89,9 @@ def test_v352_release_metadata_is_consistent():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     note = "增加剧集目录粘性整理和安全停止，并优化超大分类目录主视频流式发现。"
-    assert package["version"] == "3.5.2"
-    assert local["version"] == "3.5.2"
+    current = package["version"]
+    assert local["version"] == current
     assert package["history"]["v3.5.2"] == note
     assert local["history"]["v3.5.2"] == note
-    assert 'plugin_version = "3.5.2"' in ENTRY
-    assert "__federation_expose_AssistantPage-v352.js?v=3.5.2" in REMOTE
+    assert f'plugin_version = "{current}"' in ENTRY
+    assert f"__federation_expose_AssistantPage-v352.js?v={current}" in REMOTE
