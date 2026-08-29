@@ -19,6 +19,7 @@ v3.4.14 对光鸭远端 move/copy 后的重命名做真实可见性确认，拒�
 v3.5.0 把作品目录身份与单文件集号分离，并改为严格“发现一个→识别一个→整理一个”的单任务流水。
 v3.5.1 修复电影容器仍可能整目录预览、热更新交接状态不清和运行状态统计口径错误。
 v3.5.2 增加超大分类目录流式发现、剧集目录粘性事务、手动安全停止，并收口电影/旁路文件任务语义。
+v3.5.3 对 MoviePilot 重复目标做电影去重/多版本和剧集冲突组局部隔离。
 """
 
 from __future__ import annotations
@@ -147,6 +148,7 @@ from .organizer_single_flight_refill_v350 import install_single_flight_refill_v3
 from .organizer_orchestrator_v351 import install_orchestrator_v351
 from .organizer_tv_sticky_graceful_stop_v352 import install_tv_sticky_graceful_stop_v352
 from .organizer_task_semantics_v352 import install_task_semantics_v352
+from .organizer_conflict_resolution_v353 import install_conflict_resolution_v353
 
 # 存储层补丁必须最先安装，确保 MoviePilot 真正执行 move/copy 时拿到的是强确认接口。
 install_rename_integrity_v3414()
@@ -171,6 +173,8 @@ install_orchestrator_v351()
 # v3.5.2：先安装剧集事务粘性/安全停止，再最终收口电影与旁路文件任务语义。
 install_tv_sticky_graceful_stop_v352()
 install_task_semantics_v352()
+# v3.5.3 最后只处理 MP 已明确产生的重复目标，不改变普通命名/分类路径。
+install_conflict_resolution_v353()
 
 
 __all__ = ["GuangYaCandidateFilterMixin"]
