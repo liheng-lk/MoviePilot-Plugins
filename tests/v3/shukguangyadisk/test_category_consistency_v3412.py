@@ -71,5 +71,5 @@ def test_v3412_release_metadata_is_consistent():
     current = package["version"]
     assert local["version"] == current
     assert f'plugin_version = "{current}"' in ENTRY
-    assert f"__federation_expose_AssistantPage-v330.js?v={current}" in REMOTE
+    assert f"__federation_expose_AssistantPage-v352.js?v={current}" in REMOTE
     assert package["history"]["v3.4.12"] == "按 MoviePilot 当前 category.yaml 重新核验分类，修复缓存或外部识别源残留分类导致的错误目录。"

@@ -16,7 +16,7 @@ HISTORY = (PLUGIN / "organizer_history.py").read_text(encoding="utf-8")
 STORAGE = (PLUGIN / "storage_contract.py").read_text(encoding="utf-8")
 MODELS = (PLUGIN / "models.py").read_text(encoding="utf-8")
 REMOTE = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf-8")
-PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v330.js").read_text(encoding="utf-8")
+PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v352.js").read_text(encoding="utf-8")
 ACCOUNT_PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-dev.js").read_text(encoding="utf-8")
 
 
@@ -26,7 +26,7 @@ def test_current_version_and_federation_entry_are_consistent():
     current = package["version"]
     assert local["version"] == current
     assert f'plugin_version = "{current}"' in INIT
-    assert f"__federation_expose_AssistantPage-v330.js?v={current}" in REMOTE
+    assert f"__federation_expose_AssistantPage-v352.js?v={current}" in REMOTE
     assert "v3.4.12" in package["history"]
     assert "category.yaml" in package["history"]["v3.4.12"]
 
@@ -37,7 +37,7 @@ def test_builtin_pages_have_no_internal_version_badge():
     assert "gya-badge" not in PAGE
     assert "gy-version" not in ACCOUNT_PAGE
     assert "v2.2.15" not in ACCOUNT_PAGE
-    for version in ("v3.4.3", "v3.4.4", "v3.4.5", "v3.4.6", "v3.4.7", "v3.4.8", "v3.4.9", "v3.4.10", "v3.4.11", "v3.4.12", "v3.4.13"):
+    for version in ("v3.4.3", "v3.4.4", "v3.4.5", "v3.4.6", "v3.4.7", "v3.4.8", "v3.4.9", "v3.4.10", "v3.4.11", "v3.4.12", "v3.4.13", "v3.5.2"):
         assert f"'{version}'" not in PAGE
 
 
@@ -188,6 +188,7 @@ def test_ui_remains_a_state_console_not_a_second_organizer():
         "启用自动监控整理",
         "保存设置",
         "立即扫描",
+        "安全停止并清理待执行",
         "运行自检",
         "最近自动整理流水",
         "MoviePilot 内置",
