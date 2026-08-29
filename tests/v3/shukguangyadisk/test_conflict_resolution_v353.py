@@ -13,9 +13,11 @@ RUNTIME = (PLUGIN / "organizer_runtime.py").read_text(encoding="utf-8")
 def test_movie_duplicates_wait_for_real_moviepilot_history_before_delete():
     assert "同目标同大小视为重复副本" in PATCH
     assert "history_id" in PATCH
-    assert "if not success or not history_id:" in PATCH
     assert "api.delete(current)" in PATCH
-    assert PATCH.index("if not success or not history_id:") < PATCH.index("api.delete(current)")
+    record_tail = PATCH[PATCH.index("def record(self: Any, event: Any, success: bool)") :]
+    assert "if not success or not history_id:" in record_tail
+    assert "target=_delete_duplicate_worker" in record_tail
+    assert record_tail.index("if not success or not history_id:") < record_tail.index("target=_delete_duplicate_worker")
     assert "duplicate_deleted_after_keeper" in PATCH
 
 
