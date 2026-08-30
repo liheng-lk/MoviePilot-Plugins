@@ -54,7 +54,7 @@ def test_v355_keeps_target_uniqueness_guard_when_falling_back_to_per_member():
 def test_safe_members_continue_through_moviepilot_real_transfer():
     for token in (
         '_conflict._execute_member(',
-        'actual' if False else 'attempted += 1',
+        'attempted += 1',
         '成员是否完成仍由 MP 最终事件/历史证据决定',
     ):
         assert token in PATCH, token
