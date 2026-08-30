@@ -45,7 +45,7 @@ class ShukGuangYaDisk(
 
     plugin_name = "光鸭云盘助手"
     plugin_desc = "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。"
-    plugin_version = "3.5.6"
+    plugin_version = "3.5.7"
     plugin_author = "liheng-lk"
     plugin_label = "存储,光鸭云盘,自动整理,目录监控,MoviePilot,挂载,Emby,WebDAV"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -64,14 +64,14 @@ class ShukGuangYaDisk(
             storage_helper = StorageHelper()
             storages = storage_helper.get_storagies() or []
             if not any(storage.type == self._disk_name for storage in storages):
-                storage_helper.add_storage(
-                    storage=self._disk_name,
-                    name=self._disk_name,
-                    conf={},
-                )
+                storage_helper.add_storage(storage=self._disk_name, name=self._disk_name, conf={})
                 logger.info("【光鸭云盘助手】MoviePilot V3 已注册存储: %s", self._disk_name)
             if any(storage.type == self._legacy_disk_name for storage in storages):
-                logger.info("【光鸭云盘助手】检测到历史存储名称 %s；V3 使用当前存储 %s，不直接修改宿主内部配置", self._legacy_disk_name, self._disk_name)
+                logger.info(
+                    "【光鸭云盘助手】检测到历史存储名称 %s；V3 使用当前存储 %s，不直接修改宿主内部配置",
+                    self._legacy_disk_name,
+                    self._disk_name,
+                )
         except Exception as err:
             logger.warning("【光鸭云盘助手】V3 存储注册检查失败: %s", err)
 
@@ -86,7 +86,6 @@ class ShukGuangYaDisk(
             self._guangya_api.upload_progress_log = self._upload_progress_log
 
     def get_form(self) -> Tuple[Optional[List[dict]], Dict[str, Any]]:
-        """Vue Federation 模式下仅提供初始配置。"""
         return None, {
             "enabled": self._enabled,
             "access_token": self._access_token,
@@ -102,13 +101,11 @@ class ShukGuangYaDisk(
         }
 
     def _get_config(self) -> Dict[str, Any]:
-        """读取配置；临时网络异常时保留本地登录态。"""
         data = super()._get_config()
         data["upload_progress_log"] = self._upload_progress_log
         data["storage_name"] = self._disk_name
         data["remote_status_available"] = True
         data["remote_status_message"] = ""
-
         if self._access_token and not data.get("logged_in"):
             refresh_invalid = bool(
                 self._client
@@ -119,11 +116,9 @@ class ShukGuangYaDisk(
                 data["logged_in"] = True
                 data["remote_status_available"] = False
                 data["remote_status_message"] = "光鸭远端状态暂不可用，已保留本地登录态，稍后自动重试"
-
         return data
 
     def _save_config(self, config_payload: dict) -> Dict[str, Any]:
-        """保存账号与存储配置。自动整理设置由独立后端持久化接口保存。"""
         try:
             config_payload = config_payload or {}
             sort_type_value = config_payload.get("sort_type")
@@ -152,9 +147,7 @@ class ShukGuangYaDisk(
             return {"success": False, "message": f"保存配置失败: {err}"}
 
     def get_api(self) -> List[Dict[str, Any]]:
-        """返回 V3 插件 API，并为普通 JSON 端点声明明确响应模型。"""
         apis = list(super().get_api())
-
         for api in apis:
             path = str(api.get("path") or "")
             methods = {str(method).upper() for method in (api.get("methods") or [])}
@@ -166,7 +159,6 @@ class ShukGuangYaDisk(
                 api["response_model"] = GuangYaActionResponse
             elif path == "/browse":
                 api["response_model"] = GuangYaBrowseResponse
-
         apis.extend([
             {
                 "path": "/login/sms/send",
@@ -189,7 +181,6 @@ class ShukGuangYaDisk(
         return apis
 
     def _activate_storage_after_login(self) -> None:
-        """登录成功后启用并重新初始化存储适配器。"""
         self._enabled = True
         config = {
             "enabled": True,
@@ -208,7 +199,6 @@ class ShukGuangYaDisk(
         self.init_plugin(config)
 
     def send_sms_code(self, payload: dict) -> Dict[str, Any]:
-        """发送短信验证码。"""
         payload = payload or {}
         phone = str(payload.get("phone_number") or payload.get("phone") or "").strip()
         if not phone:
@@ -232,7 +222,6 @@ class ShukGuangYaDisk(
         return result
 
     def verify_sms_login(self, payload: dict) -> Dict[str, Any]:
-        """校验短信验证码并完成登录。"""
         payload = payload or {}
         phone = str(payload.get("phone_number") or payload.get("phone") or self._sms_phone_number or "").strip()
         verification_id = str(payload.get("verification_id") or self._sms_verification_id or "").strip()
@@ -244,7 +233,6 @@ class ShukGuangYaDisk(
             return {"success": False, "stage": "moviepilot", "message": "captcha_token 已丢失，请重新获取短信验证码"}
         if not self._client:
             return {"success": False, "stage": "moviepilot", "message": "请先发送短信验证码"}
-
         result = self._client.signin_by_sms(
             phone_number=phone,
             verification_id=verification_id,
@@ -253,7 +241,6 @@ class ShukGuangYaDisk(
         )
         if not result.get("success"):
             return result
-
         self._access_token = result.get("access_token") or ""
         self._refresh_token = result.get("refresh_token") or ""
         self._activate_storage_after_login()
@@ -268,12 +255,10 @@ class ShukGuangYaDisk(
         }
 
     def poll_login(self) -> Dict[str, Any]:
-        """轮询扫码登录状态并保存 Token。"""
         if not self._device_code:
             return {"success": False, "message": "请先获取二维码", "waiting": False, "stage": "missing_device_code"}
         if self._qr_expires_at and time.time() > self._qr_expires_at:
             return {"success": False, "message": "二维码已过期，请重新获取", "waiting": False, "stage": "expired"}
-
         temp_client = GuangYaClient(
             access_token=None,
             refresh_token=None,
@@ -295,12 +280,10 @@ class ShukGuangYaDisk(
                 "waiting": True,
                 "stage": "token_pending",
             }
-
         self._access_token = str(result.get("access_token") or "").strip()
         self._refresh_token = str(result.get("refresh_token") or "").strip()
         if not self._access_token:
             return {"success": False, "message": "光鸭未返回 access_token", "waiting": False, "stage": "missing_access_token"}
-
         self._activate_storage_after_login()
         self._device_code = ""
         self._user_code = ""
@@ -316,7 +299,6 @@ class ShukGuangYaDisk(
         }
 
     def stop_service(self) -> None:
-        """释放运行时客户端和临时登录状态；不修改用户持久化配置。"""
         self._device_code = ""
         self._user_code = ""
         self._verification_uri = ""
