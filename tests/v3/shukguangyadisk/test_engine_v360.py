@@ -14,11 +14,23 @@ ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 REMOTE = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf-8")
 
 
-def test_v360_engine_is_before_legacy_worker_and_scheduler_in_mro():
-    assert "class GuangYaFolderHistoryMixin(GuangYaOrganizerExecutionV360Mixin):" in HISTORY
+def test_v360_engine_is_explicit_first_mro_authority():
+    assert "class GuangYaFolderHistoryMixin:" in HISTORY
+    assert "organizer_execution_v360" not in HISTORY
     assert "class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):" in EXECUTION
-    assert ENTRY.index("GuangYaFolderHistoryMixin,") < ENTRY.index("GuangYaWorkerGuardMixin,")
-    assert ENTRY.index("GuangYaWorkerGuardMixin,") < ENTRY.index("GuangYaCandidateFilterMixin,")
+    class_start = ENTRY.index("class ShukGuangYaDisk(")
+    execution_pos = ENTRY.index("GuangYaOrganizerExecutionV360Mixin,", class_start)
+    history_pos = ENTRY.index("GuangYaFolderHistoryMixin,", class_start)
+    worker_pos = ENTRY.index("GuangYaWorkerGuardMixin,", class_start)
+    candidate_pos = ENTRY.index("GuangYaCandidateFilterMixin,", class_start)
+    assert execution_pos < history_pos < worker_pos < candidate_pos
+
+
+def test_v360_import_order_breaks_history_orchestrator_cycle():
+    history_import = ENTRY.index("from .organizer_folder_history import GuangYaFolderHistoryMixin")
+    engine_import = ENTRY.index("from .organizer_execution_v360 import GuangYaOrganizerExecutionV360Mixin")
+    assert history_import < engine_import
+    assert "不再让历史模块反向导入 Engine" in HISTORY
 
 
 def test_v360_all_scan_entries_gate_on_worker_owner_before_directory_discovery():
@@ -49,14 +61,13 @@ def test_v360_migration_removes_legacy_retry_stabilizing_and_sticky_only():
     assert "completed/blocked 保留" in ENGINE
     assert '"preserved_completed"' in ENGINE
     assert '"preserved_blocked"' in ENGINE
-    # completed/blocked must not be bulk-cleared by migration
     assert 'state["completed"] = {}' not in ENGINE
     assert 'state["blocked"] = {}' not in ENGINE
 
 
 def test_v360_worker_rejection_and_handoff_never_write_retry():
     assert "def _v360_return_members_to_pending" in ENGINE
-    assert 'state["retry"] = retry' in ENGINE  # persists mapping after removing selected rows
+    assert 'state["retry"] = retry' in ENGINE
     assert "stabilizing[path]" in ENGINE
     assert "私有 worker 暂未接收；仅回 discovery pending" in ENGINE
     assert "已回 pending，不写 retry" in ENGINE
@@ -79,6 +90,15 @@ def test_v360_weak_name_execution_uses_new_fallback_not_captured_old_completion(
     assert "if not isinstance(item, _FolderBatchEnvelope) or item.directory_mode:" in EXECUTION
     assert "self._fallback_terminal_state(member" in EXECUTION
     assert "TransferComplete/TransferFailed" in EXECUTION
+
+
+def test_v360_status_overrides_legacy_sticky_and_cursor_projection():
+    assert "def api_organize_monitor_status" in EXECUTION
+    assert '"organizer_engine": "v3.6.0"' in EXECUTION
+    assert '"scheduler_mode": "single_resource_worker"' in EXECUTION
+    assert '"sticky_tv_group_path": ""' in EXECUTION
+    assert '"sticky_tv_group_active": False' in EXECUTION
+    assert "self._v360_load_cursor(root)" in EXECUTION
 
 
 def test_v360_move_confirmation_does_not_compare_old_source_fileid_after_cross_dir_move():
