@@ -29,7 +29,8 @@ def test_v359_partial_pages_never_prune_unseen_state():
     assert 'scan_meta["truncated"] = True' in PATCH
     assert 'scan_meta["inventory_paths"] = set(inventory)' in PATCH
     assert 'scan_meta["truncated"] = False' in PATCH
-    assert '完整走完本 cycle' in PATCH
+    assert '目录游标完成一轮' in PATCH
+    assert '已允许本轮执行完整 inventory 核验' in PATCH
 
 
 def test_v359_preserves_single_flight_and_streaming_container_progress():
