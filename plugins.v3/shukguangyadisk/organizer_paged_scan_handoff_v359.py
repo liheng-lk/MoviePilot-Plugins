@@ -12,7 +12,7 @@
 - 每轮最多访问 50 个目录节点，剩余目录保存在持久游标，下一轮从断点继续；
 - 当前 TV sticky 事务永远优先，直接扫描当前剧集目录，不等待游标转到它；
 - 分页扫描期间 inventory 标记为 truncated，不会用局部清单误删状态；完整走完一轮目录
-  游标时才用累计 inventory 做一次 reconciliation；
+  游标且累计清单未溢出时，才用累计 inventory 做一次 reconciliation；
 - 旧 worker 仍存活时完全暂停 refill/目录扫描；旧 worker 退出后下一个 heartbeat 立即接管；
 - 交接期间把 sticky 路径投影为 current_task_path，让 UI 明确显示正在等待继续的资源。
 """
@@ -29,12 +29,14 @@ from .organizer_deep_folder_stream_v3413 import _is_streaming_container
 from .organizer_empty_folder_guard_v3410 import _runtime_media_exts
 from .organizer_folder_history import GuangYaFolderHistoryMixin
 from .organizer_folder_stream import GuangYaFolderStreamMixin
+from . import organizer_orchestrator_v351 as _orch
 from . import organizer_tv_sticky_graceful_stop_v352 as _sticky
 
 
 _CURSOR_KEY = "organize_v359_paged_scan_cursor"
 _CURSOR_SCHEMA = 1
 _PAGE_DIR_LIMIT = 50
+_CURSOR_CHECKPOINT_EVERY = 10
 _MAX_CURSOR_DIRS = 20000
 _MAX_CURSOR_FILES = 50000
 
@@ -69,6 +71,7 @@ def _new_cursor(root: str, *, cycle: int = 1) -> Dict[str, Any]:
         "queue": [root],
         "seen_dirs": [root],
         "inventory_paths": [],
+        "overflow": False,
         "updated_at": time.time(),
     }
 
@@ -95,6 +98,7 @@ def _load_cursor(plugin: Any, root: str) -> Dict[str, Any]:
         "queue": queue,
         "seen_dirs": seen_dirs or [root],
         "inventory_paths": inventory,
+        "overflow": bool(raw.get("overflow")),
         "updated_at": float(raw.get("updated_at") or 0),
     }
 
@@ -154,14 +158,22 @@ def _primary_files(files: List[Any]) -> List[Any]:
     ]
 
 
-def _account_files(plugin: Any, files: List[Any], scan_meta: Dict[str, Any], inventory: Set[str]) -> None:
+def _account_files(plugin: Any, files: List[Any], scan_meta: Dict[str, Any], inventory: Set[str]) -> bool:
+    """记录本页 inventory；持久累计超过安全上限时返回 overflow，禁止周期末 prune。"""
+    overflow = False
     for item in files:
         path = _norm(plugin, getattr(item, "path", ""))
         if not path:
             continue
         scan_meta["inventory_paths"].add(path)
-        inventory.add(path)
         scan_meta["files"] += 1
+        if path in inventory:
+            continue
+        if len(inventory) >= _MAX_CURSOR_FILES:
+            overflow = True
+            continue
+        inventory.add(path)
+    return overflow
 
 
 def _sticky_group(plugin: Any) -> str:
@@ -189,7 +201,7 @@ def _yield_sticky_first(
     scan_meta["paged_dir_limit"] = _PAGE_DIR_LIMIT
     scan_meta["paged_dirs_scanned"] = 1
     scan_meta["visited"] += 1
-    _account_files(plugin, direct_files, scan_meta, scan_meta["inventory_paths"])
+    _account_files(plugin, direct_files, scan_meta, set())
     if direct_files:
         scan_meta["groups_discovered"] += 1
         scan_meta["groups_scanned"] += 1
@@ -200,6 +212,24 @@ def _yield_sticky_first(
             "暂不猜测新的剧集边界: %s",
             sticky,
         )
+
+
+def _checkpoint_cursor(
+    plugin: Any,
+    cursor: Dict[str, Any],
+    *,
+    queue: List[str],
+    seen_dirs: Set[str],
+    inventory: Set[str],
+    overflow: bool,
+) -> None:
+    cursor.update({
+        "queue": list(queue),
+        "seen_dirs": list(seen_dirs),
+        "inventory_paths": list(inventory),
+        "overflow": bool(overflow),
+    })
+    _save_cursor(plugin, cursor)
 
 
 def _iter_paged_groups(
@@ -246,6 +276,7 @@ def _iter_paged_groups(
     queue: List[str] = list(cursor.get("queue") or [root])
     seen_dirs: Set[str] = set(cursor.get("seen_dirs") or [root])
     inventory: Set[str] = set(cursor.get("inventory_paths") or [])
+    overflow = bool(cursor.get("overflow"))
     dirs_scanned = 0
     page_started_queue = len(queue)
 
@@ -256,6 +287,7 @@ def _iter_paged_groups(
 
     while queue and dirs_scanned < _PAGE_DIR_LIMIT:
         current_path = queue[0]
+        # list 成功前不 pop；网络异常会把当前目录留在断点前端，下一轮安全重试。
         child_dirs, direct_files = _direct_children(plugin, current_path)
         queue.pop(0)
         dirs_scanned += 1
@@ -266,43 +298,53 @@ def _iter_paged_groups(
             if not child_path or child_path in seen_dirs:
                 continue
             if len(seen_dirs) >= _MAX_CURSOR_DIRS:
-                scan_meta["truncated"] = True
+                overflow = True
                 logger.warning(
-                    "【光鸭云盘助手】【v3.5.9】【分段扫描】目录游标达到安全上限 %s，暂停继续扩展: %s",
+                    "【光鸭云盘助手】【v3.5.9】【分段扫描】目录游标达到安全上限 %s；"
+                    "本 cycle 继续处理已发现目录，但禁止用不完整 inventory 清状态",
                     _MAX_CURSOR_DIRS,
-                    current_path,
                 )
                 break
             seen_dirs.add(child_path)
             queue.append(child_path)
 
-        _account_files(plugin, direct_files, scan_meta, inventory)
-        scan_meta["groups_discovered"] += 1 if direct_files else 0
+        overflow = _account_files(plugin, direct_files, scan_meta, inventory) or overflow
 
-        cursor.update({
-            "queue": list(queue),
-            "seen_dirs": list(seen_dirs),
-            "inventory_paths": list(inventory),
-        })
-        _save_cursor(plugin, cursor)
+        if dirs_scanned % _CURSOR_CHECKPOINT_EVERY == 0:
+            _checkpoint_cursor(
+                plugin,
+                cursor,
+                queue=queue,
+                seen_dirs=seen_dirs,
+                inventory=inventory,
+                overflow=overflow,
+            )
 
         if not direct_files:
             continue
 
-        if _is_streaming_container(plugin, current_path):
+        loose_container = bool(
+            _is_streaming_container(plugin, current_path)
+            or _orch._is_loose_container_v351(plugin, current_path, direct_files)
+        )
+        if loose_container:
             primary = _primary_files(direct_files)
+            scan_meta["groups_discovered"] += len(primary)
             for member in primary:
                 scan_meta["groups_scanned"] += 1
                 yield current_path, [member]
                 if getattr(plugin, "_guangya_single_flight_claimed_v350", False):
+                    # 同一散文件容器还有资源时优先回来；状态机自动跳过刚刚完成/在途的成员。
                     if current_path not in queue:
                         queue.insert(0, current_path)
-                    cursor.update({
-                        "queue": list(queue),
-                        "seen_dirs": list(seen_dirs),
-                        "inventory_paths": list(inventory),
-                    })
-                    _save_cursor(plugin, cursor)
+                    _checkpoint_cursor(
+                        plugin,
+                        cursor,
+                        queue=queue,
+                        seen_dirs=seen_dirs,
+                        inventory=inventory,
+                        overflow=overflow,
+                    )
                     scan_meta["truncated"] = True
                     scan_meta["single_flight_partial"] = True
                     scan_meta["paged_dirs_scanned"] = dirs_scanned
@@ -310,27 +352,38 @@ def _iter_paged_groups(
                     return
             continue
 
+        scan_meta["groups_discovered"] += 1
         scan_meta["groups_scanned"] += 1
         yield current_path, direct_files
         if getattr(plugin, "_guangya_single_flight_claimed_v350", False):
+            _checkpoint_cursor(
+                plugin,
+                cursor,
+                queue=queue,
+                seen_dirs=seen_dirs,
+                inventory=inventory,
+                overflow=overflow,
+            )
             scan_meta["truncated"] = True
             scan_meta["single_flight_partial"] = True
             scan_meta["paged_dirs_scanned"] = dirs_scanned
             scan_meta["paged_dirs_remaining"] = len(queue)
             return
 
-    cursor.update({
-        "queue": list(queue),
-        "seen_dirs": list(seen_dirs),
-        "inventory_paths": list(inventory),
-    })
     scan_meta["paged_dirs_scanned"] = dirs_scanned
     scan_meta["paged_dirs_remaining"] = len(queue)
     scan_meta["paged_page_started_queue"] = page_started_queue
 
     if queue:
         scan_meta["truncated"] = True
-        _save_cursor(plugin, cursor)
+        _checkpoint_cursor(
+            plugin,
+            cursor,
+            queue=queue,
+            seen_dirs=seen_dirs,
+            inventory=inventory,
+            overflow=overflow,
+        )
         logger.info(
             "【光鸭云盘助手】【v3.5.9】【分段扫描】本轮最多扫描 %s 个目录：已扫描=%s，"
             "剩余目录=%s，cycle=%s page=%s；下一轮从断点继续",
@@ -342,17 +395,25 @@ def _iter_paged_groups(
         )
         return
 
+    # 完整走完一轮目录游标；只有累计 inventory 没有达到安全上限时才允许 prune。
     scan_meta["inventory_paths"] = set(inventory)
-    scan_meta["truncated"] = False
+    scan_meta["truncated"] = bool(overflow)
     completed_cycle = int(cursor.get("cycle") or 1)
     next_cursor = _new_cursor(root, cycle=completed_cycle + 1)
     _save_cursor(plugin, next_cursor)
-    logger.info(
-        "【光鸭云盘助手】【v3.5.9】【分段扫描】目录游标完成一轮：cycle=%s，累计文件=%s；"
-        "已允许本轮执行完整 inventory 核验",
-        completed_cycle,
-        len(inventory),
-    )
+    if overflow:
+        logger.warning(
+            "【光鸭云盘助手】【v3.5.9】【分段扫描】目录游标完成 cycle=%s，但累计清单达到安全上限；"
+            "本轮禁止 inventory 清理，下一 cycle 继续正常发现",
+            completed_cycle,
+        )
+    else:
+        logger.info(
+            "【光鸭云盘助手】【v3.5.9】【分段扫描】目录游标完成一轮：cycle=%s，累计文件=%s；"
+            "已允许本轮执行完整 inventory 核验",
+            completed_cycle,
+            len(inventory),
+        )
 
 
 def install_paged_scan_handoff_v359(candidate_mixin: Any) -> None:
@@ -370,6 +431,7 @@ def install_paged_scan_handoff_v359(candidate_mixin: Any) -> None:
         handoff, snapshot = _handoff_snapshot(self)
         status = dict(self.get_data(self._monitor_status_key) or {})
         if handoff:
+            # 只推进既有安全交接，不扫描目录；当前同步 move/rename 从不强杀。
             try:
                 claimed = bool(self._claim_isolated_runtime())
             except Exception:
