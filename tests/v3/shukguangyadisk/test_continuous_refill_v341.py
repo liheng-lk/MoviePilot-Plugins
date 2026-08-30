@@ -11,18 +11,20 @@ RECOVERY = (PLUGIN / "organizer_queue_recovery.py").read_text(encoding="utf-8")
 SINGLE = (PLUGIN / "organizer_single_flight_v350.py").read_text(encoding="utf-8")
 
 
-def test_fast_refill_is_independent_from_normal_discovery_interval():
+def test_fast_refill_is_independent_from_normal_discovery_interval_for_capacity_only():
     for token in (
         "_monitor_heartbeat = 10",
         "_isolated_refill_low_watermark = 0",
         "_fast_refill_needed",
         "capacity_wait",
-        "stability_wait",
         "_organize_monitor_last_tick = now",
         "self.run_organize_monitor_scan(manual=False)",
         "【单任务流水】【连续补充】触发下一资源扫描",
     ):
         assert token in FILTER, token
+    # v3.6.0：稳定性等待不能每 3 秒继续翻页，否则 50 目录分页会退化回全库速扫。
+    assert "stability_wait=" not in FILTER
+    assert "稳定性等待不再触发 3 秒翻页扫完整库" in FILTER
 
 
 def test_fast_refill_never_scans_while_single_worker_is_busy():
