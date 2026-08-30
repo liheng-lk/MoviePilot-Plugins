@@ -22,6 +22,7 @@ v3.5.2 增加超大分类目录流式发现、剧集目录粘性事务、手动�
 v3.5.3 对 MoviePilot 重复目标做电影去重/多版本和剧集冲突组局部隔离，并兼容整理后旧路径查询。
 v3.5.4 修复同步 worker 假完成缓存导致扫描正常但永不提交 MoviePilot，并自动重新核验旧 completed 状态。
 v3.5.5 修复目录预览缺员导致剧集粘性永久 retry；改为同一 MP 上下文逐文件补预览并局部隔离异常成员。
+v3.5.6 升级后仅唤醒旧“目录预览缺员”retry，取消遗留指数退避，让 v3.5.5 立即接管处理。
 """
 
 from __future__ import annotations
@@ -154,6 +155,7 @@ from .organizer_task_semantics_v352 import install_task_semantics_v352
 from .organizer_conflict_resolution_v353 import install_conflict_resolution_v353
 from .organizer_completion_reconcile_v354 import install_completion_reconcile_v354
 from .organizer_preview_partial_v355 import install_preview_partial_v355
+from .organizer_preview_retry_wakeup_v356 import install_preview_retry_wakeup_v356
 
 # 存储层补丁必须最先安装，确保 MoviePilot 真正执行 move/copy 时拿到的是强确认接口。
 install_rename_integrity_v3414()
@@ -184,8 +186,10 @@ install_task_semantics_v352()
 install_conflict_resolution_v353()
 # v3.5.4 收口“完成”的证据边界，并对旧 completed 缓存做一次性自愈。
 install_completion_reconcile_v354()
-# v3.5.5 最后处理目录 preview 缺员：不放宽安全校验，只把异常成员局部隔离。
+# v3.5.5 处理新的目录 preview 缺员：不放宽安全校验，只把异常成员局部隔离。
 install_preview_partial_v355()
+# v3.5.6 最后唤醒升级前已经进入 retry 的同类错误，让 v3.5.5 立即获得执行机会。
+install_preview_retry_wakeup_v356()
 
 
 __all__ = ["GuangYaCandidateFilterMixin"]
