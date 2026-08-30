@@ -28,7 +28,8 @@ def test_v359_uses_persistent_50_directory_cursor():
 def test_v359_partial_pages_never_prune_unseen_state():
     assert 'scan_meta["truncated"] = True' in PATCH
     assert 'scan_meta["inventory_paths"] = set(inventory)' in PATCH
-    assert 'scan_meta["truncated"] = False' in PATCH
+    assert 'scan_meta["truncated"] = bool(overflow)' in PATCH
+    assert '禁止用不完整 inventory 清状态' in PATCH
     assert '目录游标完成一轮' in PATCH
     assert '已允许本轮执行完整 inventory 核验' in PATCH
 
