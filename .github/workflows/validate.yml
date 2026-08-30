@@ -31,14 +31,14 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import tomllib
-          manifests = list(Path('plugins.v3').glob('*/pyproject.toml'))
-          if not manifests:
-              raise SystemExit('no V3 pyproject.toml found')
-          for path in manifests:
+          for path in Path('plugins.v3').glob('*/pyproject.toml'):
               with path.open('rb') as f:
                   project = tomllib.load(f)['project']
               assert project.get('dynamic') == ['version'], path
               assert project.get('requires-python') == '>=3.12', path
+          shuk = Path('plugins.v3/shukguangyadisk')
+          assert not (shuk / 'pyproject.toml').exists(), 'ShukGuangYaDisk V3 must remain dependency-free'
+          assert not (shuk / 'requirements.txt').exists(), 'ShukGuangYaDisk V3 must remain dependency-free'
           PY
       - name: JSON indexes
         run: python -c "import json; [json.load(open(p,encoding='utf-8')) for p in ['plugin.json','package.v2.json','package.v3.json']]"
