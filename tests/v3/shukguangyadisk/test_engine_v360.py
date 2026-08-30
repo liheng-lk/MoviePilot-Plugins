@@ -14,6 +14,11 @@ ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 REMOTE = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf-8")
 
 
+def _semver(value: str) -> tuple[int, int, int]:
+    parts = str(value or "0.0.0").split(".")[:3]
+    return tuple(int(part) for part in parts)  # type: ignore[return-value]
+
+
 def test_v360_engine_is_explicit_first_mro_authority():
     assert "class GuangYaFolderHistoryMixin:" in HISTORY
     assert "organizer_execution_v360" not in HISTORY
@@ -122,13 +127,14 @@ def test_v360_keeps_moviepilot_business_rules_out_of_engine():
         assert forbidden not in ENGINE, forbidden
 
 
-def test_v360_release_metadata_is_consistent():
+def test_v360_release_contract_survives_patch_versions():
     plugin_meta = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     package_meta = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
-    assert plugin_meta["version"] == "3.6.0"
-    assert package_meta["ShukGuangYaDisk"]["version"] == "3.6.0"
-    assert 'plugin_version = "3.6.0"' in ENTRY
-    assert '?v=3.6.0' in REMOTE
+    current = plugin_meta["version"]
+    assert _semver(current) >= (3, 6, 0)
+    assert package_meta["ShukGuangYaDisk"]["version"] == current
+    assert f'plugin_version = "{current}"' in ENTRY
+    assert f'?v={current}' in REMOTE
     assert "v3.6.0" in plugin_meta["history"]
 
 

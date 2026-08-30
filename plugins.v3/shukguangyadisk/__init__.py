@@ -23,6 +23,7 @@ from .models import (
 # organizer_folder_history；此顺序确保引用的是已经定义完成的类，避免循环导入。
 from .organizer_folder_history import GuangYaFolderHistoryMixin
 from .organizer_execution_v360 import GuangYaOrganizerExecutionV360Mixin
+from .organizer_pending_revisit_v361 import GuangYaOrganizerPendingRevisitV361Mixin
 from .organizer_worker_guard import GuangYaWorkerGuardMixin
 from .organizer_queue_recovery import GuangYaQueueRecoveryMixin
 from .organizer_candidate_filter import GuangYaCandidateFilterMixin
@@ -35,8 +36,9 @@ _LegacyPlugin = _legacy_module.ShukGuangYaDisk
 
 
 class ShukGuangYaDisk(
-    # v3.6 统一执行/调度权必须是第一基类。3.5.x 各兼容层仍在后方提供 MoviePilot
-    # 识别、安全预览、season、冲突等能力，但不能再抢占 scan/tick/fallback 主状态机。
+    # v3.6.1 的等待/回访修正必须先于 v3.6 Engine；其余 3.5.x 兼容层继续只提供
+    # MoviePilot 识别、安全预览、season、冲突等能力，不能抢占 scan/tick/fallback 主状态机。
+    GuangYaOrganizerPendingRevisitV361Mixin,
     GuangYaOrganizerExecutionV360Mixin,
     GuangYaFolderHistoryMixin,
     GuangYaWorkerGuardMixin,
@@ -51,7 +53,7 @@ class ShukGuangYaDisk(
 
     plugin_name = "光鸭云盘助手"
     plugin_desc = "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。"
-    plugin_version = "3.6.0"
+    plugin_version = "3.6.1"
     plugin_author = "liheng-lk"
     plugin_label = "存储,光鸭云盘,自动整理,目录监控,MoviePilot,挂载,Emby,WebDAV"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
