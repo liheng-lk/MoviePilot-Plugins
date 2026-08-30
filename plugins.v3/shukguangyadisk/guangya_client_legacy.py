@@ -1,23 +1,18 @@
-"""
-光鸭云盘 HTTP 客户端
-"""
+"""光鸭云盘 HTTP 客户端。"""
 
 from __future__ import annotations
 
-import os
 import uuid
 from typing import Any, Callable, Dict, Optional
 
-import oss2
 import requests
 
 from app.log import logger
+from .oss_native_v357 import upload_file_multipart as _native_oss_multipart_upload
 
 
 class GuangYaClient:
-    """
-    光鸭云盘 HTTP 客户端。
-    """
+    """光鸭云盘 HTTP 客户端。"""
 
     ACCOUNT_BASE_URL = "https://account.guangyapan.com"
     API_BASE_URL = "https://api.guangyapan.com"
@@ -25,9 +20,6 @@ class GuangYaClient:
 
     @staticmethod
     def _mask_token(token: Optional[str], keep: int = 10) -> str:
-        """
-        脱敏显示 token。
-        """
         if not token:
             return ""
         token = str(token)
@@ -43,9 +35,6 @@ class GuangYaClient:
         device_id: str = None,
         on_token_refresh: Callable[[str, str], None] = None,
     ):
-        """
-        初始化客户端。
-        """
         self._access_token = (access_token or "").strip()
         self._refresh_token = (refresh_token or "").strip()
         self._client_id = (client_id or self.DEFAULT_CLIENT_ID).strip() or self.DEFAULT_CLIENT_ID
@@ -75,24 +64,15 @@ class GuangYaClient:
 
     @staticmethod
     def _generate_device_id() -> str:
-        """
-        生成设备 ID。
-        """
         return uuid.uuid4().hex
 
     @staticmethod
     def _normalize_device_id(device_id: Optional[str]) -> str:
-        """
-        规范化设备 ID。
-        """
         if not device_id:
             return ""
         return str(device_id).replace("-", "").strip()
 
     def _build_common_headers(self) -> Dict[str, str]:
-        """
-        构建公共请求头。
-        """
         return {
             "Accept": "application/json, text/plain, */*",
             "Content-Type": "application/json",
@@ -121,31 +101,19 @@ class GuangYaClient:
     def _is_auth_invalid_result(result: Dict[str, Any]) -> bool:
         if not isinstance(result, dict):
             return False
-        combined = " ".join(
-            [
-                str(result.get("error") or ""),
-                str(result.get("msg") or ""),
-                str(result.get("error_description") or ""),
-                str(result),
-            ]
+        combined = " ".join([
+            str(result.get("error") or ""),
+            str(result.get("msg") or ""),
+            str(result.get("error_description") or ""),
+            str(result),
+        ]).lower()
+        keywords = (
+            "unauthenticated", "无效token", "authorize failed", "认证失败",
+            "invalid_grant", "invalid token", "invalid_token", "token expiry",
         )
-        keywords = [
-            "unauthenticated",
-            "无效token",
-            "authorize failed",
-            "认证失败",
-            "invalid_grant",
-            "invalid token",
-            "invalid_token",
-            "token expiry",
-        ]
-        combined_lower = combined.lower()
-        return any(keyword.lower() in combined_lower for keyword in keywords)
+        return any(keyword.lower() in combined for keyword in keywords)
 
     def _get_auth_headers(self, use_access_token: bool = True) -> Dict[str, str]:
-        """
-        获取认证头。
-        """
         headers = {
             "Authorization": f"Bearer {self._access_token}",
             "Did": self._device_id,
@@ -168,9 +136,6 @@ class GuangYaClient:
         treat_http_error_as_response: bool = False,
         timeout: int = 30,
     ) -> Dict[str, Any]:
-        """
-        发送 HTTP 请求。
-        """
         req_headers = self._session.headers.copy()
         if headers:
             req_headers.update(headers)
@@ -180,17 +145,15 @@ class GuangYaClient:
         if need_auth:
             logger.debug(
                 "【光鸭云盘助手】发起请求: %s %s, device_id=%s, access_token=%s, refresh_token=%s",
-                method.upper(),
-                url,
-                self._device_id,
-                self._mask_token(self._access_token),
-                self._mask_token(self._refresh_token),
+                method.upper(), url, self._device_id,
+                self._mask_token(self._access_token), self._mask_token(self._refresh_token),
             )
 
         try:
-            if method.upper() == "GET":
+            method_upper = method.upper()
+            if method_upper == "GET":
                 response = self._session.get(url, headers=req_headers, params=data, timeout=timeout)
-            elif method.upper() == "PUT":
+            elif method_upper == "PUT":
                 response = self._session.put(url, headers=req_headers, data=data, timeout=timeout)
             else:
                 response = self._session.post(url, headers=req_headers, json=data, timeout=timeout)
@@ -212,9 +175,7 @@ class GuangYaClient:
             if status_code == 401 and retry_on_401 and need_auth:
                 logger.info(
                     "【光鸭云盘助手】Token 失效，尝试刷新: access_token=%s, refresh_token=%s, device_id=%s",
-                    self._mask_token(self._access_token),
-                    self._mask_token(self._refresh_token),
-                    self._device_id,
+                    self._mask_token(self._access_token), self._mask_token(self._refresh_token), self._device_id,
                 )
                 if self.refresh_access_token():
                     return self._request(
@@ -233,23 +194,17 @@ class GuangYaClient:
                     detail = f"{detail} - {err.response.text[:500]}"
             except Exception:
                 pass
-            logger.error(f"【光鸭云盘助手】请求失败: {url} - {detail}")
+            logger.error("【光鸭云盘助手】请求失败: %s - %s", url, detail)
             return {"msg": "error", "code": -1, "error": detail}
         except requests.exceptions.RequestException as err:
-            logger.error(f"【光鸭云盘助手】请求失败: {url} - {err}")
+            logger.error("【光鸭云盘助手】请求失败: %s - %s", url, err)
             return {"msg": "error", "code": -1, "error": str(err)}
 
     def get_device_code(self) -> Optional[Dict[str, Any]]:
-        """
-        获取设备码与二维码。
-        """
         result = self._request(
             method="POST",
             url=f"{self.ACCOUNT_BASE_URL}/v1/auth/device/code",
-            data={
-                "scope": "user",
-                "client_id": self._client_id,
-            },
+            data={"scope": "user", "client_id": self._client_id},
             need_auth=False,
         )
         if result.get("error"):
@@ -257,9 +212,6 @@ class GuangYaClient:
         return result
 
     def poll_device_code(self, device_code: str) -> Optional[Dict[str, Any]]:
-        """
-        轮询设备码状态。
-        """
         result = self._request(
             method="POST",
             url=f"{self.ACCOUNT_BASE_URL}/v1/auth/token",
@@ -280,9 +232,6 @@ class GuangYaClient:
         return None
 
     def refresh_access_token(self) -> bool:
-        """
-        刷新访问令牌。
-        """
         self._last_refresh_attempted = True
         self._last_refresh_invalid = False
         self._last_refresh_result = {}
@@ -310,37 +259,26 @@ class GuangYaClient:
             self._last_refresh_invalid = False
             logger.info(
                 "【光鸭云盘助手】Token 刷新成功: access_token %s -> %s, refresh_token %s -> %s",
-                self._mask_token(old_access_token),
-                self._mask_token(self._access_token),
-                self._mask_token(old_refresh_token),
-                self._mask_token(self._refresh_token),
+                self._mask_token(old_access_token), self._mask_token(self._access_token),
+                self._mask_token(old_refresh_token), self._mask_token(self._refresh_token),
             )
             if self._on_token_refresh:
                 try:
                     self._on_token_refresh(self._access_token, self._refresh_token)
                 except Exception as err:
-                    logger.error(f"【光鸭云盘助手】Token 刷新回调失败: {err}")
+                    logger.error("【光鸭云盘助手】Token 刷新回调失败: %s", err)
             return True
         self._last_refresh_invalid = self._is_auth_invalid_result(result)
         logger.warning(
             "【光鸭云盘助手】Token 刷新失败: device_id=%s, refresh_token=%s, auth_invalid=%s, response=%s",
-            self._device_id,
-            self._mask_token(old_refresh_token),
-            self._last_refresh_invalid,
-            result,
+            self._device_id, self._mask_token(old_refresh_token), self._last_refresh_invalid, result,
         )
         return False
 
     def get_user_info(self) -> Dict[str, Any]:
-        """
-        获取用户信息。
-        """
         return self._request("GET", f"{self.ACCOUNT_BASE_URL}/v1/user/me")
 
     def get_assets(self) -> Dict[str, Any]:
-        """
-        获取空间信息。
-        """
         return self._request("POST", f"{self.API_BASE_URL}/nd.bizassets.s/v1/get_assets", data={})
 
     def get_file_list(
@@ -353,9 +291,6 @@ class GuangYaClient:
         page: int = 0,
         dir_type: int = None,
     ) -> Dict[str, Any]:
-        """
-        获取文件列表。
-        """
         data = {
             "parentId": parent_id or "",
             "page": page,
@@ -374,47 +309,37 @@ class GuangYaClient:
 
     def create_dir(self, parent_id: str, dir_name: str, fail_if_exist: bool = True) -> Dict[str, Any]:
         return self._request(
-            "POST",
-            f"{self.API_BASE_URL}/nd.bizuserres.s/v1/file/create_dir",
-            data={
-                "parentId": parent_id or "",
-                "dirName": dir_name,
-                "failIfNameExist": fail_if_exist,
-            },
+            "POST", f"{self.API_BASE_URL}/nd.bizuserres.s/v1/file/create_dir",
+            data={"parentId": parent_id or "", "dirName": dir_name, "failIfNameExist": fail_if_exist},
         )
 
     def rename(self, file_id: str, new_name: str) -> Dict[str, Any]:
         return self._request(
-            "POST",
-            f"{self.API_BASE_URL}/nd.bizuserres.s/v1/file/rename",
+            "POST", f"{self.API_BASE_URL}/nd.bizuserres.s/v1/file/rename",
             data={"fileId": file_id, "newName": new_name},
         )
 
     def delete_file(self, file_ids: list) -> Dict[str, Any]:
         return self._request(
-            "POST",
-            f"{self.API_BASE_URL}/nd.bizuserres.s/v1/file/delete_file",
+            "POST", f"{self.API_BASE_URL}/nd.bizuserres.s/v1/file/delete_file",
             data={"fileIds": file_ids},
         )
 
     def move_file(self, file_ids: list, target_parent_id: str) -> Dict[str, Any]:
         return self._request(
-            "POST",
-            f"{self.API_BASE_URL}/nd.bizuserres.s/v1/file/move_file",
+            "POST", f"{self.API_BASE_URL}/nd.bizuserres.s/v1/file/move_file",
             data={"fileIds": file_ids, "parentId": target_parent_id},
         )
 
     def copy_file(self, file_ids: list, target_parent_id: str) -> Dict[str, Any]:
         return self._request(
-            "POST",
-            f"{self.API_BASE_URL}/nd.bizuserres.s/v1/file/copy_file",
+            "POST", f"{self.API_BASE_URL}/nd.bizuserres.s/v1/file/copy_file",
             data={"fileIds": file_ids, "parentId": target_parent_id},
         )
 
     def get_download_url(self, file_id: str) -> Dict[str, Any]:
         return self._request(
-            "POST",
-            f"{self.API_BASE_URL}/nd.bizuserres.s/v1/get_res_download_url",
+            "POST", f"{self.API_BASE_URL}/nd.bizuserres.s/v1/get_res_download_url",
             data={"fileId": file_id},
         )
 
@@ -427,8 +352,7 @@ class GuangYaClient:
         capacity: int = 1,
     ) -> Dict[str, Any]:
         return self._request(
-            "POST",
-            f"{self.API_BASE_URL}/nd.bizuserres.s/v1/get_res_center_token",
+            "POST", f"{self.API_BASE_URL}/nd.bizuserres.s/v1/get_res_center_token",
             data={
                 "capacity": capacity,
                 "name": file_name,
@@ -453,33 +377,24 @@ class GuangYaClient:
         if parent_id is not None:
             data["parentId"] = parent_id
         return self._request(
-            "POST",
-            f"{self.API_BASE_URL}/nd.bizuserres.s/v1/check_can_flash_upload",
-            data=data,
+            "POST", f"{self.API_BASE_URL}/nd.bizuserres.s/v1/check_can_flash_upload", data=data,
         )
 
     def get_resume_token(self, task_id: str, file_size: int) -> Dict[str, Any]:
         return self._request(
-            "POST",
-            f"{self.API_BASE_URL}/nd.bizuserres.s/v1/get_res_center_resume_token",
-            data={
-                "capacity": 2,
-                "res": {"fileSize": file_size},
-                "taskId": task_id,
-            },
+            "POST", f"{self.API_BASE_URL}/nd.bizuserres.s/v1/get_res_center_resume_token",
+            data={"capacity": 2, "res": {"fileSize": file_size}, "taskId": task_id},
         )
 
     def get_file_info_by_task_id(self, task_id: str) -> Dict[str, Any]:
         return self._request(
-            "POST",
-            f"{self.API_BASE_URL}/nd.bizuserres.s/v1/file/get_info_by_task_id",
+            "POST", f"{self.API_BASE_URL}/nd.bizuserres.s/v1/file/get_info_by_task_id",
             data={"taskId": task_id},
         )
 
     def get_task_status(self, task_id: str) -> Dict[str, Any]:
         return self._request(
-            "POST",
-            f"{self.API_BASE_URL}/nd.bizuserres.s/v1/get_task_status",
+            "POST", f"{self.API_BASE_URL}/nd.bizuserres.s/v1/get_task_status",
             data={"taskId": task_id},
         )
 
@@ -494,22 +409,18 @@ class GuangYaClient:
         security_token: str,
         progress_callback: Callable = None,
     ) -> Optional[str]:
-        """
-        使用 OSS SDK 分片上传。
-        """
+        """使用 MoviePilot 已有 requests 直接执行 OSS STS 分片上传。"""
         try:
-            if not endpoint.startswith("http"):
-                endpoint = f"https://{endpoint}"
-            auth = oss2.StsAuth(oss_access_key_id, oss_access_key_secret, security_token)
-            bucket = oss2.Bucket(auth, endpoint, bucket_name)
-            result = oss2.resumable_upload(
-                bucket,
-                object_path,
-                file_path,
-                part_size=5 * 1024 * 1024,
+            return _native_oss_multipart_upload(
+                endpoint=endpoint,
+                bucket_name=bucket_name,
+                object_path=object_path,
+                file_path=file_path,
+                oss_access_key_id=oss_access_key_id,
+                oss_access_key_secret=oss_access_key_secret,
+                security_token=security_token,
                 progress_callback=progress_callback,
             )
-            return result.etag if hasattr(result, "etag") else str(result)
         except Exception as err:
-            logger.error(f"【光鸭云盘助手】OSS 分片上传失败: {err}")
+            logger.error("【光鸭云盘助手】OSS 原生分片上传失败: %s", err)
             return None

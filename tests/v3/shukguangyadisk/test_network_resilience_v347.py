@@ -30,7 +30,7 @@ def test_transient_network_requests_bypass_legacy_error_spam():
     assert "requests.exceptions.ConnectionError" in NETWORK
     assert "requests.exceptions.Timeout" in NETWORK
     assert "_TRANSIENT_HTTP_STATUS = {408, 425, 429, 500, 502, 503, 504}" in NETWORK
-    assert 'logger.error(f"【光鸭云盘助手】请求失败:' in LEGACY
+    assert "【光鸭云盘助手】请求失败: %s - %s" in LEGACY
 
 
 def test_dns_retry_is_bounded_and_host_circuit_breaker_prevents_request_storms():
