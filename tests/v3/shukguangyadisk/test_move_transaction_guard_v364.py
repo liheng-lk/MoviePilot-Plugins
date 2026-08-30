@@ -40,11 +40,20 @@ def test_v364_rename_only_failure_retries_confirmation_before_rollback():
     assert "跨目录 move 已完成，仅 rename 延迟；重试确认后按成功收口" in PATCH
 
 
-def test_v364_rollback_uses_move_only_and_never_deletes_source_or_target():
+def test_v364_rollback_requires_strong_identity_and_never_deletes_source_or_target():
+    target = PATCH[PATCH.index("def _target_candidate"):PATCH.index("def _protection_state")]
+    assert "有源 fileId 时绝不降级成同名/同大小猜测" in target
+    assert "if source_id:" in target
+    assert 'str(getattr(item, "fileid", "") or "") == source_id' in target
+    assert "return matches[0] if len(matches) == 1 else None" in target
+    assert "只有源端本来就没有 fileId 时" in target
+
     start = PATCH.index("def _rollback_to_source")
     end = PATCH.index("def install_move_transaction_guard_v364")
     rollback = PATCH[start:end]
-    assert "api.client.move_file(" in rollback
+    assert "moved_id =" in rollback
+    assert "待回滚文件缺少 fileId，拒绝猜测回滚" in rollback
+    assert "api.client.move_file([moved_id]" in rollback
     assert "api._wait_item_visible(" in rollback
     assert "api.rename(restored, source_name)" in rollback
     assert "delete_file(" not in rollback
@@ -64,7 +73,13 @@ def test_v364_every_failed_move_path_registers_delete_protection_before_returnin
     assert "return None" in tail
 
 
-def test_v364_blocks_delete_schedule_and_irreversible_purge_for_protected_move():
+def test_v364_blocks_file_and_parent_directory_delete_for_protected_move():
+    protected = PATCH[PATCH.index("def _protected_delete_record"):PATCH.index("def _rollback_to_source")]
+    assert "is_dir =" in protected
+    assert "dir_prefix =" in protected
+    assert "protected_path.startswith(dir_prefix)" in protected
+    assert "如果宿主失败清理尝试删整个源/目标父目录" in protected
+
     delete_start = PATCH.index("def delete(")
     schedule_start = PATCH.index("def schedule_purge(", delete_start)
     purge_start = PATCH.index("def purge(", schedule_start)
@@ -102,11 +117,7 @@ def test_v364_protection_matching_uses_identity_path_or_name_size_not_size_only(
     assert "if path and path in paths:" in PATCH
     assert "if parent in parents and name in names:" in PATCH
     assert "expected_size" in PATCH
-    target = PATCH[PATCH.index("def _target_candidate"):PATCH.index("def _protection_state")]
-    assert "source_id" in target
-    assert "fileid" in target
-    assert "return matches[0] if len(matches) == 1 else None" in target
-    assert "不做纯大小猜测" in target
+    assert "return next(iter(unique.values())) if len(unique) == 1 else None" in PATCH
 
 
 def test_v364_protection_window_covers_delayed_permanent_delete_queue():
