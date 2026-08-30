@@ -15,7 +15,7 @@ REMOTE = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf
 def test_v358_passes_season_only_through_moviepilot_public_argument():
     for token in (
         'kwargs["season"] = season',
-        'MoviePilot 原生 ``season`` 参数',
+        'MoviePilot 公开的 ``season`` 参数',
         '不拼接目标路径、不修改命名模板',
         'if plan_error or not _is_tv_kwargs',
     ):
