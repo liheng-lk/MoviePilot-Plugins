@@ -24,7 +24,8 @@ v3.5.4 修复同步 worker 假完成缓存导致扫描正常但永不提交 Movi
 v3.5.5 修复目录预览缺员导致剧集粘性永久 retry；改为同一 MP 上下文逐文件补预览并局部隔离异常成员。
 v3.5.6 升级后仅唤醒旧“目录预览缺员”retry，取消遗留指数退避，让 v3.5.5 立即接管处理。
 v3.5.8 为电视剧弱命名补 MoviePilot 原生 season 参数，并唤醒旧空 Season 目标失败重试。
-v3.5.9 改为 50 目录持久游标增量扫描，并在旧 worker 交接期间停止无效全量 refill。
+v3.5.9 曾引入 50 目录游标与热更新交接暂停。
+v3.6.0 收敛调度入口，修复空 sticky 被误转成 /、旧实例扫描污染 retry 与重复 legacy 初始化。
 """
 
 from __future__ import annotations
@@ -86,6 +87,7 @@ class GuangYaCandidateFilterMixin:
         return self._organize_candidate_filter
 
     def _fast_refill_needed(self) -> Tuple[bool, str]:
+        """只为真正的容量边界快速续跑；稳定性等待不再触发 3 秒翻页扫完整库。"""
         if not getattr(self, "_organize_monitor_enabled", False):
             return False, "disabled"
 
@@ -104,12 +106,9 @@ class GuangYaCandidateFilterMixin:
 
         status = dict(self.get_data(self._monitor_status_key) or {})
         capacity_wait = int(status.get("capacity_wait") or 0)
-        waiting = int(status.get("waiting") or 0)
         if capacity_wait > 0:
             return True, f"capacity_wait={capacity_wait},queued=0"
-        if waiting > 0:
-            return True, f"stability_wait={waiting},queued=0"
-        return False, "no_backlog"
+        return False, "no_capacity_backlog"
 
     def organize_monitor_tick(self) -> None:
         self.init_organizer_monitor()
@@ -159,7 +158,7 @@ from .organizer_completion_reconcile_v354 import install_completion_reconcile_v3
 from .organizer_preview_partial_v355 import install_preview_partial_v355
 from .organizer_preview_retry_wakeup_v356 import install_preview_retry_wakeup_v356
 from .organizer_season_context_v358 import install_season_context_v358
-from .organizer_paged_scan_handoff_v359 import install_paged_scan_handoff_v359
+from .organizer_scheduler_convergence_v360 import install_scheduler_convergence_v360
 
 # 存储层补丁必须最先安装，确保 MoviePilot 真正执行 move/copy 时拿到的是强确认接口。
 install_rename_integrity_v3414()
@@ -178,26 +177,18 @@ install_category_consistency_v3412()
 # v3.5.0：先让作品目录身份覆盖错误文件名，再输出最终 MP 重命名诊断。
 install_folder_identity_v350()
 install_rename_diagnostics_v3414()
-# 最后收口调度：运行中绝不预排第二个资源；worker 真正空闲后立即续跑。
 install_single_flight_v350()
 install_single_flight_refill_v350()
-# v3.5.1 在单任务闭包安装后覆盖结构判断，并投影真实 worker 运行态。
 install_orchestrator_v351()
-# v3.5.2：先安装剧集事务粘性/安全停止，再最终收口电影与旁路文件任务语义。
 install_tv_sticky_graceful_stop_v352()
 install_task_semantics_v352()
-# v3.5.3 最后只处理 MP 已明确产生的重复目标，不改变普通命名/分类路径。
 install_conflict_resolution_v353()
-# v3.5.4 收口“完成”的证据边界，并对旧 completed 缓存做一次性自愈。
 install_completion_reconcile_v354()
-# v3.5.5 处理新的目录 preview 缺员：不放宽安全校验，只把异常成员局部隔离。
 install_preview_partial_v355()
-# v3.5.6 唤醒升级前已经进入 retry 的同类错误，让 v3.5.5 立即获得执行机会。
 install_preview_retry_wakeup_v356()
-# v3.5.8 补齐 MoviePilot 原生 season 上下文，并唤醒旧空 Season 失败重试。
 install_season_context_v358()
-# v3.5.9 最后替换 discovery：50 目录游标分页，sticky 优先，worker 交接期间不扫库。
-install_paged_scan_handoff_v359(GuangYaCandidateFilterMixin)
+# v3.6.0 成为唯一 discovery 入口；不再安装 v3.5.9 的 FolderStream 全局 monkey-patch。
+install_scheduler_convergence_v360(GuangYaCandidateFilterMixin)
 
 
 __all__ = ["GuangYaCandidateFilterMixin"]
