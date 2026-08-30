@@ -3,9 +3,8 @@
 本模块只负责把文件级流水整理成适合 UI 展示的“目录批次视图”。它不参与媒体识别、
 分类、目标目录、命名或实际整理；这些业务规则仍全部由 MoviePilot 原生整理链负责。
 
-v3.6.0：历史层作为插件 MRO 的第一层，将统一 v3.6 execution/engine 放在旧 WorkerGuard /
-QueueRecovery / CandidateFilter / FolderStream 之前。这样新引擎直接拥有 scan/tick/fallback 的
-唯一调度权，旧 3.5.x 兼容层仍可提供识别与安全能力，但不能再改写主状态机语义。
+v3.6.0 的统一 Engine 由插件入口显式放在本历史层之前，不再让历史模块反向导入 Engine。
+这样 organizer_orchestrator 等旧兼容模块可以安全引用本历史类，不形成循环导入。
 """
 
 from __future__ import annotations
@@ -13,10 +12,8 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import Any, Dict, List
 
-from .organizer_execution_v360 import GuangYaOrganizerExecutionV360Mixin
 
-
-class GuangYaFolderHistoryMixin(GuangYaOrganizerExecutionV360Mixin):
+class GuangYaFolderHistoryMixin:
     """为目录流式调度提供持久历史保留和按子目录折叠的状态视图。"""
 
     _monitor_history_limit = 1000
