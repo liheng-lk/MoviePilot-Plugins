@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
   "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
-  "version": "3.5.8",
+  "version": "3.5.9",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v3.5.9": "自动整理改为每轮最多 50 个目录的持久游标增量扫描，sticky 剧集优先；旧 Worker 交接期间暂停无效全量扫描并恢复当前资源显示。",
     "v3.5.8": "为电视剧弱命名任务补齐 MoviePilot 原生 season 上下文，修复空 Season 目标目录导致整季失败，并自动唤醒同类旧重试。",
     "v3.5.7": "移除 V3 oss2 外部依赖，改用 MoviePilot 自带 requests 直连 OSS STS 分片上传，修复每次重启重复安装插件依赖。",
     "v3.5.6": "升级后自动唤醒旧版‘目录预览缺员’重试状态，取消遗留指数退避，让 v3.5.5 局部补预览立即接管；其它失败退避不受影响。",
