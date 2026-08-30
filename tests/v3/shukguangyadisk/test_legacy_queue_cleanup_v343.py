@@ -9,10 +9,12 @@ PATCH = (PLUGIN / "organizer_legacy_queue_cleanup_v343.py").read_text(encoding="
 FILTER = (PLUGIN / "organizer_candidate_filter.py").read_text(encoding="utf-8")
 
 
-def test_v343_rechecks_legacy_queue_instead_of_one_shot_marker():
-    assert "每次初始化都会重新检查" in PATCH
+def test_v343_legacy_queue_recheck_survives_without_running_on_every_init():
     assert "legacy_before = self._legacy_global_queue_snapshot()" in PATCH
     assert "_cleanup_legacy_global_tasks(self)" in PATCH
+    assert "_V362_RECHECK_SECONDS = 60.0" in PATCH
+    assert "if checked and now_mono < next_recheck:" in PATCH
+    assert "每次初始化都会重新检查" not in PATCH
 
 
 def test_waiting_legacy_tasks_are_removed_with_public_moviepilot_api():
