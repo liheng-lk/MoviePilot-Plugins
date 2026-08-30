@@ -59,14 +59,15 @@ def test_v358_installs_after_v356():
     assert 'from .organizer_season_context_v358 import install_season_context_v358' in CANDIDATE
 
 
-def test_v358_release_metadata_is_consistent():
+def test_v358_history_and_current_release_metadata_remain_consistent():
     plugin_meta = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     package_meta = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
-    assert plugin_meta["version"] == "3.5.8"
-    assert package_meta["ShukGuangYaDisk"]["version"] == "3.5.8"
-    assert 'plugin_version = "3.5.8"' in ENTRY
-    assert '?v=3.5.8' in REMOTE
+    current = plugin_meta["version"]
+    assert package_meta["ShukGuangYaDisk"]["version"] == current
+    assert f'plugin_version = "{current}"' in ENTRY
+    assert f'?v={current}' in REMOTE
     assert 'v3.5.8' in plugin_meta["history"]
+    assert 'v3.5.8' in package_meta["ShukGuangYaDisk"]["history"]
 
 
 def test_v358_has_runtime_diagnostics():

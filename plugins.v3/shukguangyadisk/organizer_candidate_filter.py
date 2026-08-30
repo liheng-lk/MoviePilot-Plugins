@@ -24,6 +24,7 @@ v3.5.4 修复同步 worker 假完成缓存导致扫描正常但永不提交 Movi
 v3.5.5 修复目录预览缺员导致剧集粘性永久 retry；改为同一 MP 上下文逐文件补预览并局部隔离异常成员。
 v3.5.6 升级后仅唤醒旧“目录预览缺员”retry，取消遗留指数退避，让 v3.5.5 立即接管处理。
 v3.5.8 为电视剧弱命名补 MoviePilot 原生 season 参数，并唤醒旧空 Season 目标失败重试。
+v3.5.9 改为 50 目录持久游标增量扫描，并在旧 worker 交接期间停止无效全量 refill。
 """
 
 from __future__ import annotations
@@ -158,6 +159,7 @@ from .organizer_completion_reconcile_v354 import install_completion_reconcile_v3
 from .organizer_preview_partial_v355 import install_preview_partial_v355
 from .organizer_preview_retry_wakeup_v356 import install_preview_retry_wakeup_v356
 from .organizer_season_context_v358 import install_season_context_v358
+from .organizer_paged_scan_handoff_v359 import install_paged_scan_handoff_v359
 
 # 存储层补丁必须最先安装，确保 MoviePilot 真正执行 move/copy 时拿到的是强确认接口。
 install_rename_integrity_v3414()
@@ -192,8 +194,10 @@ install_completion_reconcile_v354()
 install_preview_partial_v355()
 # v3.5.6 唤醒升级前已经进入 retry 的同类错误，让 v3.5.5 立即获得执行机会。
 install_preview_retry_wakeup_v356()
-# v3.5.8 最后补齐 MoviePilot 原生 season 上下文，并唤醒旧空 Season 失败重试。
+# v3.5.8 补齐 MoviePilot 原生 season 上下文，并唤醒旧空 Season 失败重试。
 install_season_context_v358()
+# v3.5.9 最后替换 discovery：50 目录游标分页，sticky 优先，worker 交接期间不扫库。
+install_paged_scan_handoff_v359(GuangYaCandidateFilterMixin)
 
 
 __all__ = ["GuangYaCandidateFilterMixin"]
