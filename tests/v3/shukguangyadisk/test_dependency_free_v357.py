@@ -71,10 +71,12 @@ class DependencyFreeV357Tests(unittest.TestCase):
     def test_version_metadata_is_consistent(self):
         plugin_meta = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
         package_meta = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
-        self.assertEqual(plugin_meta["version"], "3.5.7")
-        self.assertEqual(package_meta["ShukGuangYaDisk"]["version"], "3.5.7")
-        self.assertIn('plugin_version = "3.5.7"', ENTRY)
-        self.assertIn("?v=3.5.7", REMOTE)
+        current = plugin_meta["version"]
+        self.assertEqual(package_meta["ShukGuangYaDisk"]["version"], current)
+        self.assertIn(f'plugin_version = "{current}"', ENTRY)
+        self.assertIn(f"?v={current}", REMOTE)
+        self.assertIn("v3.5.7", plugin_meta["history"])
+        self.assertIn("v3.5.7", package_meta["ShukGuangYaDisk"]["history"])
 
 
 if __name__ == "__main__":
