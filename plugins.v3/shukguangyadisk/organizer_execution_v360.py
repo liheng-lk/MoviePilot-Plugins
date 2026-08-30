@@ -1,11 +1,12 @@
-"""v3.6.0：统一执行边界。
+"""v3.6.0+：统一执行边界。
 
 该层显式位于插件 MRO 最前面：
-1. 最后安装 move 终态修复，覆盖 v3.4.14 跨目录 move 的旧 fileId 强匹配；
+1. 先安装 v3.6.0 move 终态修复，再安装 v3.6.4 move 失败事务保护；
 2. 弱命名 folder envelope 内部逐文件执行时，最终状态统一回到 v3.6 fallback；
 3. 状态 API 最后投影 v3.6 Worker/discovery 事实，屏蔽旧 v3.5.9 cursor/sticky 的展示残留。
 
 普通 MoviePilot 原生目录任务继续走旧安全预览/冲突/season 兼容链，不在这里重写业务规则。
+v3.6.4 只收紧存储失败事务：移动失败先确认/回滚，并阻止不确定文件被失败清理永久删除。
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from typing import Any, Dict, List, Tuple
 from app.sdk.logging import logger
 
 from .guangya_move_confirmation_v360 import install_move_confirmation_v360
+from .guangya_move_transaction_guard_v364 import install_move_transaction_guard_v364
 from .organizer_engine_v360 import GuangYaOrganizerEngineV360Mixin, _PAGE_DIR_LIMIT
 from .organizer_folder_batch_v342 import _FolderBatchEnvelope
 
@@ -26,7 +28,10 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
 
     def init_organizer_monitor(self) -> None:
         if not self._v360_storage_patch_ready:
+            # 安装顺序不可交换：v3.6.4 必须包在 v3.6.0 最终 move_item 外层，才能在
+            # MoviePilot 收到失败前进行延长确认、回滚和 delete/purge 保护。
             install_move_confirmation_v360()
+            install_move_transaction_guard_v364()
             self._v360_storage_patch_ready = True
         return super().init_organizer_monitor()
 
