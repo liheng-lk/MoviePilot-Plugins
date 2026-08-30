@@ -50,13 +50,13 @@ def test_v362_cleanup_still_scopes_to_guangya_monitored_paths_only():
     assert "其它存储未处理" in CLEANUP
 
 
-def test_v362_release_metadata_is_consistent():
+def test_v362_release_metadata_is_preserved_by_later_patch_versions():
     plugin_meta = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     package_meta = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
-    assert plugin_meta["version"] == "3.6.2"
-    assert package_meta["ShukGuangYaDisk"]["version"] == "3.6.2"
-    assert 'plugin_version = "3.6.2"' in ENTRY
-    assert '?v=3.6.2' in REMOTE
+    current = plugin_meta["version"]
+    assert current == package_meta["ShukGuangYaDisk"]["version"]
+    assert f'plugin_version = "{current}"' in ENTRY
+    assert f'?v={current}' in REMOTE
     assert "v3.6.2" in plugin_meta["history"]
 
 
