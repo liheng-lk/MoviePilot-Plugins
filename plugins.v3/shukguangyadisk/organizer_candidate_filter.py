@@ -21,6 +21,7 @@ v3.5.1 修复电影容器仍可能整目录预览、热更新交接状态不清�
 v3.5.2 增加超大分类目录流式发现、剧集目录粘性事务、手动安全停止，并收口电影/旁路文件任务语义。
 v3.5.3 对 MoviePilot 重复目标做电影去重/多版本和剧集冲突组局部隔离，并兼容整理后旧路径查询。
 v3.5.4 修复同步 worker 假完成缓存导致扫描正常但永不提交 MoviePilot，并自动重新核验旧 completed 状态。
+v3.5.5 修复目录预览缺员导致剧集粘性永久 retry；改为同一 MP 上下文逐文件补预览并局部隔离异常成员。
 """
 
 from __future__ import annotations
@@ -152,6 +153,7 @@ from .organizer_tv_sticky_graceful_stop_v352 import install_tv_sticky_graceful_s
 from .organizer_task_semantics_v352 import install_task_semantics_v352
 from .organizer_conflict_resolution_v353 import install_conflict_resolution_v353
 from .organizer_completion_reconcile_v354 import install_completion_reconcile_v354
+from .organizer_preview_partial_v355 import install_preview_partial_v355
 
 # 存储层补丁必须最先安装，确保 MoviePilot 真正执行 move/copy 时拿到的是强确认接口。
 install_rename_integrity_v3414()
@@ -180,8 +182,10 @@ install_tv_sticky_graceful_stop_v352()
 install_task_semantics_v352()
 # v3.5.3 最后只处理 MP 已明确产生的重复目标，不改变普通命名/分类路径。
 install_conflict_resolution_v353()
-# v3.5.4 最后收口“完成”的证据边界，并对旧 completed 缓存做一次性自愈。
+# v3.5.4 收口“完成”的证据边界，并对旧 completed 缓存做一次性自愈。
 install_completion_reconcile_v354()
+# v3.5.5 最后处理目录 preview 缺员：不放宽安全校验，只把异常成员局部隔离。
+install_preview_partial_v355()
 
 
 __all__ = ["GuangYaCandidateFilterMixin"]
