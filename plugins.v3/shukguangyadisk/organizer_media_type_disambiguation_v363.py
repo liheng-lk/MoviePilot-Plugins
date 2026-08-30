@@ -5,12 +5,13 @@
 - 当前资源不是 Season/Sxx/第N季目录；
 - 只有一个主视频；
 - 文件名没有任何已知集号结构；
-- MoviePilot 最终 kwargs 没有 epformat/season；
+- MoviePilot 最终 kwargs 没有 epformat；
 - 再由 MoviePilot 以 ``MediaType.MOVIE`` 对同一目录 meta 做约束识别；
 - 电影候选必须与原 TV 候选标题一致，且年份不存在冲突。
 
-只有全部满足才把最终 ``mediainfo/mtype`` 切换为 MoviePilot 的电影结果。任何条件不满足
-都保持原 TV 结果，不猜测、不强制改类型。
+仅由 TV 媒体元数据推导出的 ``season`` 不是文件自身的剧集证据，因此不会阻止电影复核；
+如果最终确认电影，会移除该 TV season 上下文。任何条件不满足都保持原 TV 结果，不猜测、
+不强制改类型。
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Set, Tuple
+from typing import Any, Dict, Optional, Set, Tuple
 
 from app.chain.media import MediaChain
 from app.schemas.types import MediaType
@@ -28,6 +29,9 @@ from . import organizer_loss_guard_v349 as _loss_guard
 from .organizer_episode_name_adapter_v3411 import _episode_token, _media_members
 from .organizer_folder_identity_v350 import _resource_identity_path
 from .organizer_mp_folder_context_v346 import _is_tv_media, _moviepilot_directory_context
+
+
+_TV_SEASON_PLAN_ERROR = "电视剧季号上下文未确认"
 
 
 def _is_movie_media(media: Any) -> bool:
@@ -124,8 +128,6 @@ def _eligible(plugin: Any, item: Any, kwargs: Dict[str, Any]) -> Tuple[bool, str
         return False, "当前 MoviePilot 结果不是电视剧"
     if kwargs.get("epformat"):
         return False, "MoviePilot 已确认集数模板"
-    if kwargs.get("season") not in (None, "", 0, "0"):
-        return False, "MoviePilot 已确认 season 上下文"
 
     current = plugin._organize_normalize_path(str(getattr(item, "path", "") or ""))
     identity = _resource_identity_path(plugin, current)
@@ -133,6 +135,13 @@ def _eligible(plugin: Any, item: Any, kwargs: Dict[str, Any]) -> Tuple[bool, str
         return False, "当前是 Season/Sxx/第N季目录"
 
     return _single_video_without_episode(item)
+
+
+def _plan_error_allows_movie_recheck(plan_error: Any) -> bool:
+    if not plan_error:
+        return True
+    # 只允许覆盖 v3.5.8 因 TV season 不明确产生的阻断；其它安全错误绝不绕过。
+    return _TV_SEASON_PLAN_ERROR in str(plan_error)
 
 
 def install_media_type_disambiguation_v363() -> None:
@@ -144,8 +153,7 @@ def install_media_type_disambiguation_v363() -> None:
 
     def build(plugin: Any, item: Any):
         transfer_chain, directory_item, kwargs, plan_error = previous_build(plugin, item)
-        # 绝不绕过已有安全阻断；本层只对已经可执行但媒体类型存疑的结果做消歧。
-        if plan_error:
+        if not _plan_error_allows_movie_recheck(plan_error):
             return transfer_chain, directory_item, kwargs, plan_error
 
         current_kwargs = dict(kwargs or {})
@@ -156,9 +164,10 @@ def install_media_type_disambiguation_v363() -> None:
         tv_media = current_kwargs.get("mediainfo")
         logger.info(
             "【光鸭云盘助手】【v3.6.3】【媒体类型消歧】TV 已识别但无有效剧集结构，"
-            "开始使用 MoviePilot 电影类型复核: %s -> %s",
+            "开始使用 MoviePilot 电影类型复核: %s -> %s%s",
             getattr(item, "path", ""),
             getattr(tv_media, "title_year", None) or getattr(tv_media, "title", ""),
+            f"；原 TV 阻断={plan_error}" if plan_error else "",
         )
 
         movie_media, movie_error = _moviepilot_movie_from_same_meta(str(getattr(item, "path", "") or ""))
