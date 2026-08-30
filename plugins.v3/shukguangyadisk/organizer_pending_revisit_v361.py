@@ -9,6 +9,7 @@
 - 每个进入 stabilizing/history_wait/retry_wait 的资源目录记录一个轻量 pending-resource；
 - 到期后下一次扫描优先回访该资源，成功入 Worker 后立即移除；
 - 每次优先回访只读取 1 个目录，仍满足单轮最多 50 个目录的边界；
+- 升级时从现有 stabilizing 文件直接种入 pending-resource，避免已有等待项再绕完整 cycle；
 - 修复 3.6.0 部分“回 discovery pending”路径把 ``first_seen=0`` 写入状态，而
   ``OrganizerStateStore.classify`` 使用 ``row.get('first_seen') or now`` 导致每次重新从当前
   时间开始稳定计时、理论上永久 stabilizing 的问题。
@@ -40,9 +41,11 @@ class GuangYaOrganizerPendingRevisitV361Mixin:
             return
         self._v361_initialized = True
         repaired = self._v361_repair_zero_first_seen()
+        seeded = self._v361_seed_existing_stabilizing()
         logger.info(
-            "【光鸭云盘助手】【v3.6.1】稳定资源优先回访已启用：pending 到期即优先处理，不等待整库 cycle；first_seen 修复=%s",
+            "【光鸭云盘助手】【v3.6.1】稳定资源优先回访已启用：pending 到期即优先处理，不等待整库 cycle；first_seen 修复=%s，升级种入资源=%s",
             repaired,
+            seeded,
         )
 
     # ------------------------------------------------------------------
@@ -94,11 +97,13 @@ class GuangYaOrganizerPendingRevisitV361Mixin:
         recovered = int(super()._recover_isolated_inflight_once() or 0)
         if recovered:
             self._v361_repair_zero_first_seen()
+            self._v361_seed_existing_stabilizing()
         return recovered
 
     def _v360_reopen_completed(self, path: str, fingerprint: str) -> None:
         super()._v360_reopen_completed(path, fingerprint)
         self._v361_repair_zero_first_seen([path])
+        self._v361_seed_existing_stabilizing([path])
 
     # ------------------------------------------------------------------
     # pending resource queue
@@ -136,6 +141,52 @@ class GuangYaOrganizerPendingRevisitV361Mixin:
                 "updated_at": time.time(),
             },
         )
+
+    def _v361_seed_existing_stabilizing(self, only_paths: Iterable[str] | None = None) -> int:
+        """把升级前已经存在的文件级 stabilizing 状态折叠成资源目录优先回访队列。"""
+        wanted = {self._v360_norm(path) for path in (only_paths or []) if path}
+        state = self._state().load()
+        stabilizing = dict(state.get("stabilizing") or {})
+        rows = self._v361_load_pending()
+        root = self._v360_norm(getattr(self, "_organize_monitor_path", ""))
+        stability = max(float(getattr(self, "_organize_monitor_stability", 0) or 0), 0.0)
+        now = time.time()
+        seeded_groups: set[str] = set()
+
+        for raw_path, raw_row in stabilizing.items():
+            path = self._v360_norm(raw_path)
+            if wanted and path not in wanted:
+                continue
+            if not path or not root or not self._v360_is_under(path, root):
+                continue
+            row = dict(raw_row or {}) if isinstance(raw_row, dict) else {}
+            try:
+                first_seen = float(row.get("first_seen") or 0)
+            except (TypeError, ValueError):
+                first_seen = 0
+            if first_seen <= 0:
+                first_seen = now
+
+            group_path = self._v360_norm(Path(path).parent.as_posix())
+            if not group_path or group_path == "/":
+                continue
+            due_at = first_seen + stability
+            existing = dict(rows.get(group_path) or {})
+            existing_due = float(existing.get("due_at") or 0)
+            # 目录任务要求同目录所有待稳定成员都成熟，因此取最晚 due_at，防止反复抢占游标。
+            existing.update(
+                {
+                    "due_at": max(existing_due, due_at),
+                    "reason": "startup_stabilizing_seed",
+                    "updated_at": now,
+                }
+            )
+            rows[group_path] = existing
+            seeded_groups.add(group_path)
+
+        if seeded_groups:
+            self._v361_save_pending(rows)
+        return len(seeded_groups)
 
     def _v361_remove_pending(self, group_path: str) -> None:
         group_path = self._v360_norm(group_path)
@@ -181,7 +232,8 @@ class GuangYaOrganizerPendingRevisitV361Mixin:
         if phases.get("inflight"):
             due_values.append(now + _HISTORY_RECHECK_SECONDS)
 
-        return max(min(due_values or [now + _HISTORY_RECHECK_SECONDS]), now + 0.5)
+        # 目录级任务必须等所有 hard-wait 成员到期，所以取最晚时间；单文件 loose 目录只有一个值。
+        return max(max(due_values or [now + _HISTORY_RECHECK_SECONDS]), now + 0.5)
 
     def _v361_register_pending(self, group_path: str, files: Sequence[Any], result: Dict[str, Any]) -> None:
         group_path = self._v360_norm(group_path)
