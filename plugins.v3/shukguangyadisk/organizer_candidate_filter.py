@@ -25,6 +25,7 @@ v3.5.5 修复目录预览缺员导致剧集粘性永久 retry；改为同一 MP 
 v3.5.6 升级后仅唤醒旧“目录预览缺员”retry，取消遗留指数退避，让 v3.5.5 立即接管处理。
 v3.5.8 为电视剧弱命名补 MoviePilot 原生 season 参数，并唤醒旧空 Season 目标失败重试。
 v3.5.9 改为 50 目录持久游标增量扫描，并在旧 worker 交接期间停止无效全量 refill。
+v3.6.3 在最终 MoviePilot kwargs 上增加 TV→MOVIE 安全消歧，仅对单主视频、无集号、非 Season 目录生效。
 """
 
 from __future__ import annotations
@@ -159,6 +160,7 @@ from .organizer_completion_reconcile_v354 import install_completion_reconcile_v3
 from .organizer_preview_partial_v355 import install_preview_partial_v355
 from .organizer_preview_retry_wakeup_v356 import install_preview_retry_wakeup_v356
 from .organizer_season_context_v358 import install_season_context_v358
+from .organizer_media_type_disambiguation_v363 import install_media_type_disambiguation_v363
 from .organizer_paged_scan_handoff_v359 import install_paged_scan_handoff_v359
 
 # 存储层补丁必须最先安装，确保 MoviePilot 真正执行 move/copy 时拿到的是强确认接口。
@@ -196,6 +198,8 @@ install_preview_partial_v355()
 install_preview_retry_wakeup_v356()
 # v3.5.8 补齐 MoviePilot 原生 season 上下文，并唤醒旧空 Season 失败重试。
 install_season_context_v358()
+# v3.6.3 必须位于 season/folder identity 之后，最终决定是否允许 TV→MOVIE 安全回退。
+install_media_type_disambiguation_v363()
 # v3.5.9 最后替换 discovery：50 目录游标分页，sticky 优先，worker 交接期间不扫库。
 install_paged_scan_handoff_v359(GuangYaCandidateFilterMixin)
 
