@@ -8,8 +8,6 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
 PATCH = (PLUGIN / "organizer_paged_scan_handoff_v359.py").read_text(encoding="utf-8")
 FILTER = (PLUGIN / "organizer_candidate_filter.py").read_text(encoding="utf-8")
-ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
-REMOTE = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf-8")
 
 
 def test_v359_uses_persistent_50_directory_cursor():
@@ -71,20 +69,18 @@ def test_v359_projects_sticky_path_as_current_resource_during_handoff():
     assert 'status["scan_page_size"] = _PAGE_DIR_LIMIT' in PATCH
 
 
-def test_v359_installs_after_v358_as_final_discovery_layer():
+def test_v359_installs_after_v358_as_legacy_discovery_layer():
     assert 'from .organizer_paged_scan_handoff_v359 import install_paged_scan_handoff_v359' in FILTER
     assert FILTER.index('install_paged_scan_handoff_v359(GuangYaCandidateFilterMixin)') > FILTER.index('install_season_context_v358()')
     assert '50 目录游标分页，sticky 优先，worker 交接期间不扫库' in FILTER
 
 
-def test_v359_release_metadata_is_consistent():
+def test_v359_release_history_is_preserved_after_v360_refactor():
     plugin_meta = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     package_meta = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
-    assert plugin_meta["version"] == "3.5.9"
-    assert package_meta["ShukGuangYaDisk"]["version"] == "3.5.9"
-    assert 'plugin_version = "3.5.9"' in ENTRY
-    assert '?v=3.5.9' in REMOTE
     assert 'v3.5.9' in plugin_meta["history"]
+    assert 'v3.5.9' in package_meta["ShukGuangYaDisk"]["history"]
+    assert plugin_meta["version"] != "3.5.9"
 
 
 def test_v359_keeps_moviepilot_business_rules_untouched():

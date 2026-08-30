@@ -19,7 +19,10 @@ from .models import (
     GuangYaConfigData,
     GuangYaConfigSaveResponse,
 )
+# 先完整加载纯历史层，再加载 v3.6 Engine。旧 orchestrator 在 Engine 导入期间会反向引用
+# organizer_folder_history；此顺序确保引用的是已经定义完成的类，避免循环导入。
 from .organizer_folder_history import GuangYaFolderHistoryMixin
+from .organizer_execution_v360 import GuangYaOrganizerExecutionV360Mixin
 from .organizer_worker_guard import GuangYaWorkerGuardMixin
 from .organizer_queue_recovery import GuangYaQueueRecoveryMixin
 from .organizer_candidate_filter import GuangYaCandidateFilterMixin
@@ -32,6 +35,9 @@ _LegacyPlugin = _legacy_module.ShukGuangYaDisk
 
 
 class ShukGuangYaDisk(
+    # v3.6 统一执行/调度权必须是第一基类。3.5.x 各兼容层仍在后方提供 MoviePilot
+    # 识别、安全预览、season、冲突等能力，但不能再抢占 scan/tick/fallback 主状态机。
+    GuangYaOrganizerExecutionV360Mixin,
     GuangYaFolderHistoryMixin,
     GuangYaWorkerGuardMixin,
     GuangYaQueueRecoveryMixin,
@@ -45,7 +51,7 @@ class ShukGuangYaDisk(
 
     plugin_name = "光鸭云盘助手"
     plugin_desc = "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。"
-    plugin_version = "3.5.9"
+    plugin_version = "3.6.0"
     plugin_author = "liheng-lk"
     plugin_label = "存储,光鸭云盘,自动整理,目录监控,MoviePilot,挂载,Emby,WebDAV"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"

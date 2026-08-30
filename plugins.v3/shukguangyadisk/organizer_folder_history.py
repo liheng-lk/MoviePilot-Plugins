@@ -2,6 +2,9 @@
 
 本模块只负责把文件级流水整理成适合 UI 展示的“目录批次视图”。它不参与媒体识别、
 分类、目标目录、命名或实际整理；这些业务规则仍全部由 MoviePilot 原生整理链负责。
+
+v3.6.0 的统一 Engine 由插件入口显式放在本历史层之前，不再让历史模块反向导入 Engine。
+这样 organizer_orchestrator 等旧兼容模块可以安全引用本历史类，不形成循环导入。
 """
 
 from __future__ import annotations
@@ -13,8 +16,6 @@ from typing import Any, Dict, List
 class GuangYaFolderHistoryMixin:
     """为目录流式调度提供持久历史保留和按子目录折叠的状态视图。"""
 
-    # 一个短剧/整季目录可能一次产生几十到上百条文件级事件。100 条历史很容易让一个
-    # 批次还没结束就丢失开头，因此 v3.4.0 提高保留量，但 API 只返回压缩后的目录视图。
     _monitor_history_limit = 1000
     _folder_history_group_limit = 40
     _folder_history_detail_limit = 80
@@ -38,7 +39,6 @@ class GuangYaFolderHistoryMixin:
     )
 
     def _append_monitor_history(self, row: Dict[str, Any]) -> None:
-        """把旧 folder-stream 的共享队列文案统一为 v3.4 私有 worker 语义。"""
         normalized = dict(row or {})
         message = str(normalized.get("message") or "")
         for old, new in self._isolated_message_replacements:
@@ -60,16 +60,10 @@ class GuangYaFolderHistoryMixin:
         }
 
     def _folder_history_groups(self) -> List[Dict[str, Any]]:
-        """将最近文件流水按监控根直接子目录聚合。
-
-        计数采用“每个源文件最近一条有效事件”，因此一个文件从 queued -> completed
-        不会被重复统计。folder_batch 仅作为目录批次摘要，不计入文件状态。
-        """
         raw_history = list(self.get_data(self._monitor_history_key) or [])
         history = raw_history[-self._monitor_history_limit :]
         groups: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
 
-        # 最新记录优先，便于确定每个源文件的当前/最近结果。
         for row in reversed(history):
             if not isinstance(row, dict):
                 continue
@@ -97,9 +91,8 @@ class GuangYaFolderHistoryMixin:
                     "_seen_paths": set(),
                 }
                 groups[group_path] = group
-            else:
-                if not group["latest_batch_id"] and row.get("batch_id"):
-                    group["latest_batch_id"] = str(row.get("batch_id") or "")
+            elif not group["latest_batch_id"] and row.get("batch_id"):
+                group["latest_batch_id"] = str(row.get("batch_id") or "")
 
             result = str(row.get("result") or "")
             if result == "folder_batch":
@@ -118,7 +111,6 @@ class GuangYaFolderHistoryMixin:
             group["counts"][bucket] += 1
             group["total_files"] += 1
 
-        # 用持久状态机补充“当前”视角。历史计数用于看批次结果，current 用于看此刻队列。
         state_current: Dict[str, Dict[str, int]] = {}
         try:
             state = self._state().load()
@@ -141,7 +133,6 @@ class GuangYaFolderHistoryMixin:
         except Exception:
             state_current = {}
 
-        # 仅存在状态但最近还没有流水的目录，也应能在 UI 中看到。
         for group_path, current in state_current.items():
             if group_path not in groups:
                 groups[group_path] = {
@@ -167,7 +158,6 @@ class GuangYaFolderHistoryMixin:
         return result_groups
 
     def api_organize_monitor_status(self) -> Dict[str, Any]:
-        """在兼容原状态 API 的基础上增加 folder_history。"""
         response = super().api_organize_monitor_status()
         if not isinstance(response, dict) or not response.get("success"):
             return response
@@ -175,7 +165,6 @@ class GuangYaFolderHistoryMixin:
         raw_history = list(self.get_data(self._monitor_history_key) or [])
         data["folder_history"] = self._folder_history_groups()
         data["history_retained"] = len(raw_history)
-        # 保留原 flat history 兼容旧前端，但比旧版 20 条多给一些，便于降级排查。
         data["history"] = raw_history[-40:][::-1]
         return response
 
