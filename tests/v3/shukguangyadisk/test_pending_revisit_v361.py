@@ -96,13 +96,13 @@ def test_v361_does_not_reimplement_moviepilot_business_rules():
         assert forbidden not in PATCH, forbidden
 
 
-def test_v361_release_metadata_is_consistent():
+def test_v361_release_metadata_is_preserved_by_later_patch_versions():
     plugin_meta = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     package_meta = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
-    assert plugin_meta["version"] == "3.6.1"
-    assert package_meta["ShukGuangYaDisk"]["version"] == "3.6.1"
-    assert 'plugin_version = "3.6.1"' in ENTRY
-    assert '?v=3.6.1' in REMOTE
+    current = plugin_meta["version"]
+    assert current == package_meta["ShukGuangYaDisk"]["version"]
+    assert f'plugin_version = "{current}"' in ENTRY
+    assert f'?v={current}' in REMOTE
     assert "v3.6.1" in plugin_meta["history"]
 
 
