@@ -86,7 +86,6 @@ def _load_cursor(plugin: Any, root: str) -> Dict[str, Any]:
     seen_dirs = _dedupe((_norm(plugin, value) for value in raw.get("seen_dirs") or []), limit=_MAX_CURSOR_DIRS)
     inventory = _dedupe((_norm(plugin, value) for value in raw.get("inventory_paths") or []), limit=_MAX_CURSOR_FILES)
     if not queue:
-        # 上一轮完整走完后，新一轮从根开始；旧 inventory 已经在上一轮用于 reconcile。
         return _new_cursor(root, cycle=int(raw.get("cycle") or 0) + 1)
     return {
         "schema": _CURSOR_SCHEMA,
@@ -111,11 +110,16 @@ def _handoff_snapshot(plugin: Any) -> Tuple[bool, Dict[str, Any]]:
         snapshot = dict(plugin._isolated_queue_snapshot() or {})
     except Exception:
         return False, {}
-    active = bool(
-        snapshot.get("owner_worker_alive")
-        and not snapshot.get("owner_current")
-    )
+    active = bool(snapshot.get("owner_worker_alive") and not snapshot.get("owner_current"))
     return active, snapshot
+
+
+def _worker_busy(snapshot: Dict[str, Any]) -> bool:
+    return bool(
+        snapshot.get("running_path")
+        or int(snapshot.get("queued") or 0) > 0
+        or int(snapshot.get("owned") or 0) > 0
+    )
 
 
 def _direct_children(plugin: Any, path: str) -> Tuple[List[Any], List[Any]]:
@@ -179,8 +183,6 @@ def _yield_sticky_first(
     scan_meta: Dict[str, Any],
 ) -> Iterator[Tuple[str, List[Any]]]:
     child_dirs, direct_files = _direct_children(plugin, sticky)
-    # sticky 来自此前真实 group_path，正常应是实际文件所在目录；若目录结构在运行中改变，
-    # 不递归猜另一个 Season，只保留状态等待下一轮正常发现/历史门控。
     scan_meta["truncated"] = True
     scan_meta["paged_scan"] = True
     scan_meta["paged_sticky_priority"] = True
@@ -209,6 +211,7 @@ def _iter_paged_groups(
     if not plugin._guangya_api:
         raise RuntimeError("光鸭云盘尚未登录或存储未初始化")
 
+    setattr(plugin, "_guangya_single_flight_claimed_v350", False)
     root = _norm(plugin, root_path)
     handoff, snapshot = _handoff_snapshot(plugin)
     if handoff:
@@ -221,10 +224,16 @@ def _iter_paged_groups(
             worker_handoff_at=time.time(),
             scan_page_size=_PAGE_DIR_LIMIT,
         )
-        logger.debug(
-            "【光鸭云盘助手】【v3.5.9】【Worker交接】旧 worker 仍在收尾，本轮不扫描目录: %s",
-            snapshot.get("running_path") or "handoff",
-        )
+        return
+
+    try:
+        snapshot = dict(plugin._isolated_queue_snapshot() or {})
+    except Exception:
+        snapshot = {}
+    if _worker_busy(snapshot):
+        scan_meta["truncated"] = True
+        scan_meta["single_flight_busy"] = True
+        scan_meta["paged_scan"] = True
         return
 
     sticky = _sticky_group(plugin)
@@ -247,7 +256,6 @@ def _iter_paged_groups(
 
     while queue and dirs_scanned < _PAGE_DIR_LIMIT:
         current_path = queue[0]
-        # 只有 list 成功后才 pop；网络异常会让当前目录留在断点最前面，下轮安全重试。
         child_dirs, direct_files = _direct_children(plugin, current_path)
         queue.pop(0)
         dirs_scanned += 1
@@ -260,8 +268,7 @@ def _iter_paged_groups(
             if len(seen_dirs) >= _MAX_CURSOR_DIRS:
                 scan_meta["truncated"] = True
                 logger.warning(
-                    "【光鸭云盘助手】【v3.5.9】【分段扫描】目录游标达到安全上限 %s，"
-                    "暂停继续扩展: %s",
+                    "【光鸭云盘助手】【v3.5.9】【分段扫描】目录游标达到安全上限 %s，暂停继续扩展: %s",
                     _MAX_CURSOR_DIRS,
                     current_path,
                 )
@@ -288,8 +295,6 @@ def _iter_paged_groups(
                 scan_meta["groups_scanned"] += 1
                 yield current_path, [member]
                 if getattr(plugin, "_guangya_single_flight_claimed_v350", False):
-                    # 泛化容器一次只允许一个 loose resource；当前容器重新放回队首，下一轮
-                    # 会由状态机跳过已完成文件并继续寻找下一文件。
                     if current_path not in queue:
                         queue.insert(0, current_path)
                     cursor.update({
@@ -337,7 +342,6 @@ def _iter_paged_groups(
         )
         return
 
-    # 完整走完本 cycle：本轮把跨页累计 inventory 交给既有 state.reconcile_inventory。
     scan_meta["inventory_paths"] = set(inventory)
     scan_meta["truncated"] = False
     completed_cycle = int(cursor.get("cycle") or 1)
@@ -355,7 +359,6 @@ def install_paged_scan_handoff_v359(candidate_mixin: Any) -> None:
     if getattr(GuangYaFolderStreamMixin, "_guangya_paged_scan_handoff_v359", False):
         return
 
-    # v3.5.9 是最终 discovery 层：保留 v3.5 单任务标志语义，但不再每轮从根全树遍历。
     GuangYaFolderStreamMixin._iter_folder_groups = _iter_paged_groups
 
     previous_tick = candidate_mixin.organize_monitor_tick
@@ -367,6 +370,20 @@ def install_paged_scan_handoff_v359(candidate_mixin: Any) -> None:
         handoff, snapshot = _handoff_snapshot(self)
         status = dict(self.get_data(self._monitor_status_key) or {})
         if handoff:
+            try:
+                claimed = bool(self._claim_isolated_runtime())
+            except Exception:
+                claimed = False
+            if claimed:
+                self._save_monitor_status(
+                    worker_handoff_waiting=False,
+                    worker_handoff_finished_at=time.time(),
+                    runtime_phase="idle",
+                    runtime_label="Worker 交接完成，继续当前资源",
+                )
+                logger.info("【光鸭云盘助手】【v3.5.9】【Worker交接】已取得新 worker 所有权，立即继续当前资源")
+                return self.run_organize_monitor_scan(manual=False)
+
             sticky = _sticky_group(self)
             self._save_monitor_status(
                 worker_handoff_waiting=True,
@@ -416,9 +433,7 @@ def install_paged_scan_handoff_v359(candidate_mixin: Any) -> None:
 
     GuangYaFolderHistoryMixin.api_organize_monitor_status = api_status
     GuangYaFolderStreamMixin._guangya_paged_scan_handoff_v359 = True
-    logger.info(
-        "【光鸭云盘助手】【v3.5.9】50 目录增量扫描、sticky 优先与 Worker 交接暂停已启用"
-    )
+    logger.info("【光鸭云盘助手】【v3.5.9】50 目录增量扫描、sticky 优先与 Worker 交接暂停已启用")
 
 
 __all__ = [
