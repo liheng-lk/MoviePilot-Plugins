@@ -86,10 +86,13 @@ def test_v360_only_real_execution_failure_creates_retry():
     assert "不把等待证据写成失败" in success_half
 
 
-def test_v360_weak_name_execution_uses_new_fallback_not_captured_old_completion():
+def test_v360_weak_name_execution_uses_member_results_only():
     assert "if not isinstance(item, _FolderBatchEnvelope) or item.directory_mode:" in EXECUTION
     assert "self._fallback_terminal_state(member" in EXECUTION
     assert "TransferComplete/TransferFailed" in EXECUTION
+    assert "def _fallback_terminal_state(self, item: Any, success: bool, message: str)" in EXECUTION
+    assert "isinstance(item, _FolderBatchEnvelope) and not item.directory_mode" in EXECUTION
+    assert "跳过聚合 fallback" in EXECUTION
 
 
 def test_v360_status_overrides_legacy_sticky_and_cursor_projection():
