@@ -8,10 +8,11 @@
 1. v3.6.0 ``move_item`` 返回失败后，再检查真实源/目标状态；
 2. 目标其实已经按 MoviePilot 目标名可见时，直接按成功收口；
 3. 文件已跨目录移动但仅重命名未确认时，再尝试一次强确认 rename；
-4. 仍失败且能唯一定位已移动文件时，优先移动回原目录并确认回滚；
+4. 仍失败且能按源 fileId 唯一定位已移动文件时，优先移动回原目录并确认回滚；
 5. 任何仍以失败返回的 move 都登记短期保护记录；MoviePilot 随后的 ``delete``、
    延迟回收站清理和最终永久删除只要命中该记录就被拒绝；
-6. 正常手动删除、已确认重复副本删除等未命中保护记录的操作继续走原逻辑。
+6. 删除包含受保护文件的父目录同样被拒绝，避免目录级失败清理绕过单文件保护；
+7. 正常手动删除、已确认重复副本删除等未命中保护记录的操作继续走原逻辑。
 
 原则是：整理失败可以重试，但失败本身绝不能成为不可逆删除的依据。
 """
@@ -21,7 +22,7 @@ from __future__ import annotations
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from app import schemas
 from app.log import logger
@@ -101,34 +102,48 @@ def _target_candidate(
     target_parent: str,
     target_name: str,
 ) -> Optional[schemas.FileItem]:
-    """只按目标名/源名/源 fileId 找唯一可信的已移动文件，不做纯大小猜测。"""
+    """回滚候选必须强身份确认；有源 fileId 时绝不降级成同名/同大小猜测。"""
+    normalized_target = _norm(api, target_parent)
+    source_id = str(getattr(source_item, "fileid", "") or "")
+
+    try:
+        target_id = api._path_to_id(normalized_target)
+        children = api._iter_parent_items(parent_id=target_id, parent_path=normalized_target)
+    except Exception:
+        children = []
+
+    if source_id:
+        matches = [
+            item
+            for item in children
+            if str(getattr(item, "fileid", "") or "") == source_id
+            and _same_type(source_item, item)
+            and _size_matches(source_item, item)
+        ]
+        # 有源 fileId 却无法精确命中时宁可冻结，不允许拿同名文件冒险回滚。
+        return matches[0] if len(matches) == 1 else None
+
+    # 只有源端本来就没有 fileId 时，才允许按名字找唯一候选；仍要求类型/大小一致。
     source_name = str(getattr(source_item, "name", "") or Path(str(source_item.path or "")).name)
+    candidates = []
+    seen = set()
     for name in (target_name, source_name):
+        if not name or name in seen:
+            continue
+        seen.add(name)
         item = _find_named_matching(
             api,
-            parent_path=target_parent,
+            parent_path=normalized_target,
             name=name,
             source_item=source_item,
         )
         if item:
-            return item
-
-    source_id = str(getattr(source_item, "fileid", "") or "")
-    if not source_id:
-        return None
-    try:
-        target_id = api._path_to_id(_norm(api, target_parent))
-        children = api._iter_parent_items(parent_id=target_id, parent_path=_norm(api, target_parent))
-    except Exception:
-        return None
-    matches = [
-        item
-        for item in children
-        if str(getattr(item, "fileid", "") or "") == source_id
-        and _same_type(source_item, item)
-        and _size_matches(source_item, item)
-    ]
-    return matches[0] if len(matches) == 1 else None
+            candidates.append(item)
+    unique = {
+        str(getattr(item, "fileid", "") or _norm(api, getattr(item, "path", ""))): item
+        for item in candidates
+    }
+    return next(iter(unique.values())) if len(unique) == 1 else None
 
 
 def _protection_state(api: GuangYaApi) -> Tuple[threading.RLock, Dict[str, Dict[str, Any]]]:
@@ -247,6 +262,8 @@ def _protected_delete_record(api: GuangYaApi, fileitem: schemas.FileItem) -> Opt
     name = str(getattr(fileitem, "name", "") or Path(path).name)
     fileid = str(getattr(fileitem, "fileid", "") or "")
     size = _item_size(fileitem)
+    is_dir = str(getattr(fileitem, "type", "") or "") == "dir"
+    dir_prefix = f"{path.rstrip('/')}/" if path != "/" else "/"
 
     lock, records = _protection_state(api)
     with lock:
@@ -260,6 +277,12 @@ def _protected_delete_record(api: GuangYaApi, fileitem: schemas.FileItem) -> Opt
             if fileid and fileid in ids:
                 return dict(record)
             if path and path in paths:
+                return dict(record)
+            # 如果宿主失败清理尝试删整个源/目标父目录，也不能让受保护文件随目录进入回收站。
+            if is_dir and any(
+                protected_path == path or protected_path.startswith(dir_prefix)
+                for protected_path in paths
+            ):
                 return dict(record)
             if parent in parents and name in names:
                 if expected_size in (None, 0) or size in (None, 0) or int(expected_size) == int(size):
@@ -284,7 +307,11 @@ def _rollback_to_source(
     if source_parent != "/" and not source_parent_id:
         return False, moved_item, "原目录 fileId 无法确认"
 
-    response = api.client.move_file([str(getattr(moved_item, "fileid", "") or "")], source_parent_id)
+    moved_id = str(getattr(moved_item, "fileid", "") or "")
+    if not moved_id:
+        return False, moved_item, "待回滚文件缺少 fileId，拒绝猜测回滚"
+
+    response = api.client.move_file([moved_id], source_parent_id)
     if response.get("msg") != "success" and response.get("code") != 0:
         return False, moved_item, f"回滚 move_file 失败: {response}"
 
@@ -395,7 +422,7 @@ def install_move_transaction_guard_v364() -> None:
             target_name=target_name,
         )
 
-        # 已跨目录移动但只停在旧名字时，再尝试一次强确认 rename。
+        # 已跨目录移动且能强身份确认目标文件时，再尝试一次强确认 rename。
         if target_actual and target_parent != source_parent:
             actual_name = str(getattr(target_actual, "name", "") or "")
             if actual_name != target_name and target_name:
@@ -422,7 +449,7 @@ def install_move_transaction_guard_v364() -> None:
                         )
                         return exact_target
 
-        # 源已经消失且能唯一确认目标侧文件，说明远端 move 真实发生；失败前先尝试回滚。
+        # 源已经消失且能按强身份唯一确认目标侧文件，说明远端 move 真实发生；失败前先尝试回滚。
         if not source_actual and target_actual and target_parent != source_parent:
             rollback_ok, rollback_item, rollback_reason = _rollback_to_source(
                 self,
