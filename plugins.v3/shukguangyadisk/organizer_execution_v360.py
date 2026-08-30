@@ -47,7 +47,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
                 success, message = super()._execute_isolated_transfer(member)
             except Exception as err:  # noqa: BLE001
                 success, message = False, str(err)
-            # 必须调用 self 的 v3.6 fallback。TransferComplete/TransferFailed 如果已经先到，
+            # 每个成员在这里独立收口。TransferComplete/TransferFailed 如果已经先到，v3.6
             # fallback 会看到成员不再 inflight 并保持幂等，不覆盖真实 MP 最终事件。
             self._fallback_terminal_state(member, success=bool(success), message=str(message or ""))
             all_success = all_success and bool(success)
@@ -55,6 +55,16 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
                 messages.append(str(message))
 
         return all_success, "；".join(messages[:3])
+
+    def _fallback_terminal_state(self, item: Any, success: bool, message: str) -> None:
+        """弱命名 envelope 已逐成员收口，禁止 Worker 外层再用聚合 True/False 覆盖成员结果。"""
+        if isinstance(item, _FolderBatchEnvelope) and not item.directory_mode:
+            logger.debug(
+                "【光鸭云盘助手】【v3.6.0】【最终结果】弱命名 envelope 已逐成员收口，跳过聚合 fallback: %s",
+                item.path,
+            )
+            return
+        return super()._fallback_terminal_state(item, success=success, message=message)
 
     def api_organize_monitor_status(self) -> Dict[str, Any]:
         """旧兼容层先补历史，最后由 3.6 用真实 Worker/cursor 事实覆盖调度展示。"""
