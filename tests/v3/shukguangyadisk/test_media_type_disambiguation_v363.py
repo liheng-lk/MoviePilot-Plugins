@@ -85,11 +85,11 @@ def test_v363_runtime_logs_expose_attempt_reject_and_accept_states():
     assert "TV→MOVIE 安全消歧已启用" in PATCH
 
 
-def test_v363_release_metadata_is_consistent():
+def test_v363_release_metadata_is_preserved_by_later_patch_versions():
     plugin_meta = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     package_meta = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
-    assert plugin_meta["version"] == "3.6.3"
-    assert package_meta["ShukGuangYaDisk"]["version"] == "3.6.3"
-    assert 'plugin_version = "3.6.3"' in ENTRY
-    assert '?v=3.6.3' in REMOTE
+    current = plugin_meta["version"]
+    assert current == package_meta["ShukGuangYaDisk"]["version"]
+    assert f'plugin_version = "{current}"' in ENTRY
+    assert f'?v={current}' in REMOTE
     assert "v3.6.3" in plugin_meta["history"]
