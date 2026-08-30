@@ -22,6 +22,16 @@ def test_v361_repairs_zero_first_seen_in_all_v360_pending_paths():
     assert "self._v361_repair_zero_first_seen([path])" in PATCH
 
 
+def test_v361_upgrade_seeds_existing_stabilizing_resources_without_rescanning_cycle():
+    assert "def _v361_seed_existing_stabilizing" in PATCH
+    assert "seeded = self._v361_seed_existing_stabilizing()" in PATCH
+    assert "Path(path).parent.as_posix()" in PATCH
+    assert '"reason": "startup_stabilizing_seed"' in PATCH
+    assert "existing.update(" in PATCH
+    assert '"due_at": max(existing_due, due_at)' in PATCH
+    assert "升级种入资源=%s" in PATCH
+
+
 def test_v361_pending_resource_queue_is_separate_from_retry_and_sticky():
     assert '_PENDING_KEY = "organize_v361_pending_resources"' in PATCH
     assert "_v361_register_pending" in PATCH
@@ -43,6 +53,11 @@ def test_v361_waiting_resources_are_registered_and_due_resources_run_first():
     assert "if priority is not None:" in PATCH
     assert "return priority" in PATCH
     assert "return super().run_organize_monitor_scan(manual=manual)" in PATCH
+
+
+def test_v361_directory_due_time_waits_for_latest_member():
+    assert "目录级任务必须等所有 hard-wait 成员到期，所以取最晚时间" in PATCH
+    assert "return max(max(due_values or [now + _HISTORY_RECHECK_SECONDS]), now + 0.5)" in PATCH
 
 
 def test_v361_priority_revisit_never_breaks_50_directory_scan_bound():
