@@ -5,6 +5,10 @@
   之间做有限、可诊断的兼容尝试，并统一 Bearer/X-API-Key 认证头；
 - “观影搜索”不再只展示 Magnet/ED2K。统一搜索同时返回观影迅雷分享、观影 Magnet/ED2K
   以及外部 API 候选，让 UI 和自动分流看到同一套真实来源。
+
+v1.10.3 修复 v1.10.0 重构时的方法名漂移：新版控制台与统一搜索调用
+``_parse_provider_defs``，而 v1.9.2 的真实配置解析入口仍叫 ``_provider_api_defs``。
+增加兼容桥接后，状态页、资源来源检测和统一搜索重新使用同一份 Magnet/ED2K 配置定义。
 """
 
 from __future__ import annotations
@@ -23,6 +27,14 @@ class GuangYaProviderReliabilityV1100Mixin:
     """最终外部 Provider 搜索、探测和统一搜索 API。"""
 
     build_id = "20260901-r11"
+
+    def _parse_provider_defs(self) -> List[Dict[str, str]]:
+        """兼容 v1.10 控制台命名，复用 v1.9.2 唯一的 Provider 配置解析入口。"""
+        parser = getattr(self, "_provider_api_defs", None)
+        if not callable(parser):
+            return []
+        rows = parser() or []
+        return [dict(row) for row in rows if isinstance(row, dict)]
 
     @staticmethod
     def _provider_query_variants(kind: str, keyword: str) -> List[Tuple[str, Dict[str, str]]]:
