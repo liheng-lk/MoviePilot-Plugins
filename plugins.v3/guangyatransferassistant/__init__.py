@@ -4,6 +4,7 @@ v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
 地址/登录配置及通用 Magnet/ED2K 搜索 API，外部搜索结果继续进入同一 ResourceGroup
 与光鸭原生 cloudcollection，不经过 MoviePilot 下载器。
+资源决策保持：光鸭直接转存 > Magnet > ED2K。
 """
 
 from __future__ import annotations
