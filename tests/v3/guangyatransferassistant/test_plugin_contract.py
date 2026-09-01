@@ -73,12 +73,14 @@ def test_versions_and_layered_legacy_contract():
     assert package["version"] == "1.9.3"
     assert local["version"] == "1.9.3"
     assert 'plugin_version = "1.9.3"' in entry_text
-    assert 'build_id = "20260901-r5"' in entry_text
+    assert 'build_id = "20260901-r6"' in entry_text
     assert 'plugin_version = "1.7.0"' in routing_text
     assert 'plugin_version = "1.6.5"' in legacy_text
     assert "from .routing_v170 import GuangYaTransferAssistant as _RoutingV170Assistant" in entry_text
     assert "from .legacy import GuangYaTransferAssistant as _LegacyGuangYaTransferAssistant" in routing_text
     assert "GuangYaConfigUiMixin" in entry_text
+    assert "GuangYaGyingFailoverMixin" in entry_text
+    assert "GuangYaGyingRuntimeMixin" in entry_text
     assert "GuangYaXunleiFlashMixin" in entry_text
     assert "GuangYaProviderSourcesMixin" in entry_text
     assert "GuangYaPlannerSafetyMixin" in entry_text
