@@ -27,6 +27,7 @@ from .channel_sources_v190 import install_channel_multisource_compat
 from .config_ui_v192 import GuangYaConfigUiMixin
 from .episode_compat_v171 import collapse_unparsed_failure_notice, install_episode_filename_compat
 from .experience_v170 import GuangYaExperienceMixin
+from .gying_failover_v193 import GuangYaGyingFailoverMixin
 from .gying_runtime_v193 import GuangYaGyingRuntimeMixin
 from .multisource_v180 import GuangYaMultiSourceMixin
 from .offline_safety_v180 import GuangYaOfflineSafetyMixin
@@ -46,6 +47,7 @@ install_channel_multisource_compat(_legacy_module)
 
 class GuangYaTransferAssistant(
     GuangYaConfigUiMixin,
+    GuangYaGyingFailoverMixin,
     GuangYaGyingRuntimeMixin,
     GuangYaXunleiFlashMixin,
     GuangYaProviderSourcesMixin,
