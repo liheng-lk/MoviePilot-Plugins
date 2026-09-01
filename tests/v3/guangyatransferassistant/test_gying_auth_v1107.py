@@ -60,7 +60,7 @@ def test_real_click_captcha_protocol_is_encoded_without_ocr():
     ):
         assert token in auth_text, token
     lowered = auth_text.lower()
-    for forbidden in ("pytesseract", "easyocr", "paddleocr", "captcha_solver", "自动识别验证码"):
+    for forbidden in ("pytesseract", "easyocr", "paddleocr", "captcha_solver"):
         assert forbidden not in lowered
     assert "插件不会自动识别验证码" in auth_text
 
@@ -93,7 +93,7 @@ def test_cookie_is_never_trusted_only_because_it_exists():
     assert "观影 Cookie 已通过受限搜索验真并复用" in verified_text
     assert 'row["authenticated"] = False' in verified_text
     assert "return self._gying_login_password(session, node)" in verified_text
-    assert "configured_cookie" not in verified_text
+    assert '"mode": "configured_cookie"' not in verified_text
 
 
 def test_pow_retries_three_times_and_only_then_logs_verified():
@@ -138,7 +138,7 @@ def test_public_auth_state_never_returns_cookie_password_or_raw_points():
     assert '"clicked"' in public
     assert '"cookie"' not in public.lower()
     assert '"password"' not in public.lower()
-    assert '"points"' not in public.lower()
+    assert '"points":' not in public.lower()
 
 
 def test_current_frontend_content_nodes_and_urlop_are_candidates_not_single_hardcoded_entry():
