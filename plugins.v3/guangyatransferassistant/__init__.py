@@ -26,6 +26,7 @@ from . import legacy as _legacy_module
 from .episode_compat_v171 import collapse_unparsed_failure_notice, install_episode_filename_compat
 from .experience_v170 import GuangYaExperienceMixin
 from .multisource_v180 import GuangYaMultiSourceMixin
+from .offline_safety_v180 import GuangYaOfflineSafetyMixin
 from .page_auth_v172 import force_bear_auth, strip_page_api_secrets
 from .reliability_v170 import GuangYaReliabilityMixin
 from .runtime_v170 import GuangYaRuntimeFinalizerMixin
@@ -37,6 +38,7 @@ install_episode_filename_compat(_legacy_module)
 
 
 class GuangYaTransferAssistant(
+    GuangYaOfflineSafetyMixin,
     GuangYaMultiSourceMixin,
     GuangYaRuntimeFinalizerMixin,
     GuangYaReliabilityMixin,
