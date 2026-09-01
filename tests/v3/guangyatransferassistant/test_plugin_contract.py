@@ -16,12 +16,10 @@ entry_text = ENTRY.read_text(encoding="utf-8")
 routing_text = ROUTING.read_text(encoding="utf-8")
 legacy_text = LEGACY.read_text(encoding="utf-8")
 
-# 三层都必须首先通过 Python 语法解析。
 ast.parse(entry_text)
 ast.parse(routing_text)
 legacy_tree = ast.parse(legacy_text)
 
-# 继续对 v1.6.5 的纯函数做真实回归，不依赖 MoviePilot 运行时。
 legacy_nodes = []
 for node in legacy_tree.body:
     if isinstance(node, ast.ClassDef):
@@ -49,7 +47,6 @@ class _MediaTypeStub:
     TV = "tv"
 
 
-# 执行 routing_v170 的参数解析纯函数。
 routing_tree = ast.parse(routing_text)
 routing_nodes = []
 for node in routing_tree.body:
@@ -215,13 +212,13 @@ def test_page_actions_use_v3_bearer_auth_without_api_secret_params():
     assert "from .page_auth_v172 import force_bear_auth, strip_page_api_secrets" in entry_text
 
 
-def test_route_status_and_health_are_visible():
+def test_route_guards_and_health_contract_remain_active():
     assert "固定分流路由健康" in routing_text
     assert "route_health" in routing_text
     assert "last_guarded_at" in routing_text
     assert "待落盘" in routing_text
     assert "最近结果" in routing_text
-    assert "RSS匹配门禁" in entry_text
+    assert "_guangya_match_guard" in entry_text
     assert "最终下载断路器" in entry_text
     assert "光鸭直接转存 > Magnet > ED2K" in entry_text
 
