@@ -1,4 +1,4 @@
-"""v1.9.2 紧凑配置页。
+"""v1.9.2 紧凑配置页（v1.9.3 增加观影迅雷秒传配置）。
 
 旧配置页由多个 mixin 逐层 append 卡片和提示，导致配置项重复、解释文字过多。
 本层只借用旧表单动态生成的订阅/目录选项和 defaults，最终返回重新分组后的单一配置页。
@@ -75,7 +75,6 @@ class GuangYaConfigUiMixin:
         }
 
     def get_form(self):
-        # 只调用旧链来拿动态订阅/目录选项和完整 defaults；旧 content 不会返回给前端。
         old_form, defaults = super().get_form()
         defaults = dict(defaults or {})
 
@@ -129,7 +128,7 @@ class GuangYaConfigUiMixin:
 
         sources = self._card(
             "资源来源",
-            "频道、观影和外部 Magnet API 都只负责发现候选；真正保存仍由光鸭执行。",
+            "观影中的迅雷分享先尝试光鸭秒传；未命中才继续频道、Magnet 和 ED2K。",
             [
                 {"component": "VRow", "content": [
                     self._textarea("channel_urls", "Telegram / 频道源（每行一个）", rows=4, md=6),
@@ -163,17 +162,34 @@ class GuangYaConfigUiMixin:
                         hint="站点需要验证码或非标准登录时直接填写 Cookie；配置 Cookie 后优先使用 Cookie，不在状态页或 API 中回显。",
                     ),
                 ]},
+                {"component": "VRow", "content": [
+                    self._switch("xunlei_flash_enabled", "观影迅雷秒传（最高优先级）", md=6),
+                    self._field("xunlei_flash_max_files", "单分享最多读取文件", cols=12, md=3, type="number", min="1", max="500"),
+                    self._field("xunlei_client_id", "迅雷 Client ID", cols=12, md=3),
+                ]},
+                {"component": "VRow", "content": [
+                    self._field("xunlei_device_id", "迅雷 Device ID", cols=12, md=6, placeholder="与 captcha_token 对应的 device_id"),
+                    self._field("xunlei_captcha_token", "迅雷 captcha_token", cols=12, md=6, type="password", autocomplete="off", hint="可直接填写当前浏览器捕获的 token；不会在状态 API 中回显", **{"persistent-hint": True}),
+                ]},
+                {"component": "VRow", "content": [
+                    self._textarea(
+                        "xunlei_captcha_init_json",
+                        "迅雷 shield/captcha/init 请求体（推荐，用于 token 失效后自动刷新）",
+                        rows=3,
+                        hint="从浏览器开发者工具复制该请求的 JSON 请求体。插件仅复用验证码/设备参数，不保存迅雷分享文件到本地，也不会回显此内容。",
+                    ),
+                ]},
             ],
         )
 
         decision = self._card(
             "资源决策与云添加",
-            "同一资源只选一条执行路径：光鸭分享 > Magnet > ED2K；剧集按真实缺集拆包。",
+            "固定优先级：观影迅雷秒传 > 光鸭分享 > Magnet > ED2K；剧集按真实缺集拆包，秒传未命中自动回退。",
             [
                 {"component": "VRow", "content": [
                     self._switch("external_auto_dispatch", "新增来源自动云添加", md=3),
                     self._switch("channel_external_auto_dispatch", "频道 Magnet/ED2K 自动候选", md=3),
-                    self._field("source_priority", "来源优先级", cols=12, md=6, hint="默认 guangya,magnet,ed2k", **{"persistent-hint": True}),
+                    self._field("source_priority", "后续来源优先级", cols=12, md=6, hint="迅雷秒传固定为 priority=0；此处默认 guangya,magnet,ed2k", **{"persistent-hint": True}),
                 ]},
                 {"component": "VRow", "content": [
                     self._field("episode_auto_confidence", "自动拆包置信度", cols=6, md=3, type="number", step="0.01", min="0.80", max="1.00"),
@@ -216,6 +232,12 @@ class GuangYaConfigUiMixin:
             "viewing_password": str(getattr(self, "_viewing_password", "") or ""),
             "viewing_cookie": str(getattr(self, "_viewing_cookie", "") or ""),
             "magnet_api_sources": str(getattr(self, "_magnet_api_sources", "") or ""),
+            "xunlei_flash_enabled": bool(getattr(self, "_xunlei_flash_enabled", True)),
+            "xunlei_flash_max_files": int(getattr(self, "_xunlei_flash_max_files", 80) or 80),
+            "xunlei_client_id": str(getattr(self, "_xunlei_client_id", "Xqp0kJBXWhwaTpB6") or ""),
+            "xunlei_device_id": str(getattr(self, "_xunlei_device_id", "") or ""),
+            "xunlei_captcha_token": str(getattr(self, "_xunlei_captcha_token", "") or ""),
+            "xunlei_captcha_init_json": str(getattr(self, "_xunlei_captcha_init_json", "") or ""),
         })
         return [{"component": "VForm", "content": [basic, sources, decision, advanced]}], defaults
 
