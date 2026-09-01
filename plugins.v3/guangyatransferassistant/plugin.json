@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.6 按真实浏览器 HAR 对齐观影 GYING 搜索与 downurl 协议，一次响应同时解析迅雷/网盘与 downlist Magnet，保留 panlist 提取码，区分 Cookie 复用、登录失效和网页图形验证码；同时修复历史 selected_subscriptions、source store 与 Provider 状态脏值导致的运行时崩溃。延续 v1.10.5 追更分享修复与 v1.10.4 全链路日志。固定优先级“观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K”，Magnet/ED2K 继续走光鸭原生云添加。",
-  "version": "1.10.6",
+  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.7 按观影真实 captcha 前端实现新增人工汉字点击认证，验证码由插件回传、用户本人点击，校验成功后用同一 Session 自动完成登录并以受限搜索二次验真；浏览器 PoW 改为最多连续恢复 3 次且仅在原请求恢复正常后判定通过，同时扩展 /urlop/ 与当前内容域名节点发现。延续 v1.10.6 的 search/downurl、迅雷/网盘与 downlist Magnet 解析。固定优先级“观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K”，Magnet/ED2K 继续走光鸭原生云添加。",
+  "version": "1.10.7",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
