@@ -13,6 +13,7 @@ if "from .config_ui_v1100 import GuangYaConfigUiV1100Mixin" not in entry:
         "from .config_ui_v192 import GuangYaConfigUiMixin\n",
         "from .config_ui_v1100 import GuangYaConfigUiV1100Mixin\n"
         "from .console_ui_v1100 import GuangYaConsoleUiV1100Mixin\n"
+        "from .diagnostics_v1100 import GuangYaDiagnosticsV1100Mixin\n"
         "from .provider_reliability_v1100 import GuangYaProviderReliabilityV1100Mixin\n"
         "from .xunlei_reliability_v1100 import GuangYaXunleiReliabilityV1100Mixin\n"
         "from .config_ui_v192 import GuangYaConfigUiMixin\n",
@@ -22,6 +23,7 @@ entry = entry.replace(
     "class GuangYaTransferAssistant(\n"
     "    GuangYaConfigUiV1100Mixin,\n"
     "    GuangYaConsoleUiV1100Mixin,\n"
+    "    GuangYaDiagnosticsV1100Mixin,\n"
     "    GuangYaProviderReliabilityV1100Mixin,\n"
     "    GuangYaXunleiReliabilityV1100Mixin,\n"
     "    GuangYaConfigUiMixin,",
@@ -32,18 +34,33 @@ if "v1.10.0 重构首页/配置页" not in entry:
     marker = "v1.9.4 收口 IDN 节点身份、Cookie 域边界、搜索降级、迅雷 captcha/device、GCID 回退和配置/状态页信息层级；v1.9.5 迁移 PluginManager 到 MoviePilot V3 稳定 SDK。"
     entry = entry.replace(
         marker,
-        marker + "\nv1.9.6 兼容 MoviePilot 最新订阅合同；v1.10.0 重构首页/配置页，并修复统一观影/磁力搜索与迅雷 Range 秒传边界。",
+        marker + "\nv1.9.6 兼容 MoviePilot 最新订阅合同；v1.10.0 重构首页/配置页，并修复统一观影/磁力搜索、迅雷 Range 秒传边界与完整诊断。",
     )
 entry_path.write_text(entry, encoding="utf-8")
+
+# 控制台追加真正的一键完整诊断，并在最近搜索区显示最近一次诊断结论。
+console_path = plugin / "console_ui_v1100.py"
+console = console_path.read_text(encoding="utf-8")
+if "一键完整诊断" not in console:
+    console = console.replace(
+        '                    self._action("运行自检", "mdi-stethoscope", "/selfcheck", color="secondary", variant="text"),',
+        '                    self._action("运行自检", "mdi-stethoscope", "/selfcheck", color="secondary", variant="text"),\n'
+        '                    self._action("一键完整诊断", "mdi-clipboard-pulse-outline", "/diagnostics/full", color="warning", variant="tonal"),',
+    )
+if 'full_diagnostics_last' not in console:
+    marker = '        search_report = self._surface(\n'
+    inject = '''        diagnostics_last = self.get_data("full_diagnostics_last") or {}\n        if isinstance(diagnostics_last, dict) and diagnostics_last.get("updated_at"):\n            issue_count = len(list(diagnostics_last.get("issues") or []))\n            search_content.append({"component": "VAlert", "props": {\n                "type": "success" if diagnostics_last.get("success") else "warning",\n                "variant": "tonal",\n                "density": "compact",\n                "class": "mt-3",\n                "style": "border-radius:14px;",\n                "text": f"完整诊断：{diagnostics_last.get('message') or '-'} · 问题 {issue_count} · {diagnostics_last.get('updated_at')}",\n            }})\n\n'''
+    console = console.replace(marker, inject + marker)
+console_path.write_text(console, encoding="utf-8")
 
 package_path = root / "package.v3.json"
 package = json.loads(package_path.read_text(encoding="utf-8"))
 item = package["GuangYaTransferAssistant"]
 item["version"] = "1.10.0"
-item["description"] = "固定分流与多来源订阅助手：新版控制台直接提供观影/迅雷/Magnet/ED2K 统一搜索和秒传预检；观影 GYING 支持节点发现、IDN 归一、自动切换、浏览器计算验证、真实登录/搜索/downurl；迅雷分享最高优先级走光鸭 userres 秒传，后续为光鸭直接转存 > Magnet > ED2K，Magnet/ED2K 继续走光鸭原生云添加。"
+item["description"] = "固定分流与多来源订阅助手：新版控制台直接提供观影/迅雷/Magnet/ED2K 统一搜索、资源来源检测、秒传预检与一键完整诊断；观影 GYING 支持节点发现、IDN 归一、自动切换、浏览器计算验证、真实登录/搜索/downurl；迅雷分享最高优先级走光鸭 userres 秒传，后续为光鸭直接转存 > Magnet > ED2K，Magnet/ED2K 继续走光鸭原生云添加。"
 history = dict(item.get("history") or {})
 item["history"] = {
-    "v1.10.0": "重构配置页与状态控制台为响应式卡片工作台，首页新增资源来源健康、统一搜索、秒传预检和最近命中表；修复观影手动搜索只返回 Magnet/ED2K 而看不到迅雷分享的问题；通用 Magnet/ED2K API 自动兼容 q/kw/keyword/search 与 Bearer/X-API-Key；迅雷 CID 改为严格 stream=True 的 3×20KiB 有界 Range 采样，服务器忽略中/尾 Range 时立即放弃，绝不整文件读取。",
+    "v1.10.0": "重构配置页与状态控制台为响应式卡片工作台，首页新增资源来源健康、统一搜索、秒传预检、一键完整诊断和最近命中表；修复观影手动搜索只返回 Magnet/ED2K 而看不到迅雷分享的问题；通用 Magnet/ED2K API 自动兼容 q/kw/keyword/search 与 Bearer/X-API-Key；迅雷 CID 改为严格 stream=True 的 3×20KiB 有界 Range 采样，服务器忽略中/尾 Range 时立即放弃，绝不整文件读取；新增行为级 dry-run 测试覆盖真实合并搜索和 Range 边界。",
     **history,
 }
 package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -51,7 +68,7 @@ package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + "\n"
 plugin_json_path = plugin / "plugin.json"
 local = json.loads(plugin_json_path.read_text(encoding="utf-8"))
 local["version"] = "1.10.0"
-local["description"] = "MoviePilot V3 固定分流与多来源订阅助手：新版响应式控制台提供观影/迅雷/Magnet/ED2K 统一搜索、资源来源健康检测与秒传预检；固定优先级“观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K”，Magnet/ED2K 继续走光鸭原生云添加。"
+local["description"] = "MoviePilot V3 固定分流与多来源订阅助手：新版响应式控制台提供观影/迅雷/Magnet/ED2K 统一搜索、资源来源健康检测、秒传预检与一键完整诊断；固定优先级“观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K”，Magnet/ED2K 继续走光鸭原生云添加。"
 plugin_json_path.write_text(json.dumps(local, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 readme_path = plugin / "README.md"
@@ -59,17 +76,25 @@ readme = readme_path.read_text(encoding="utf-8")
 section = """
 ## v1.10.0：控制台、统一搜索与秒传可靠性
 
-- 首页重构为响应式控制台：资源来源健康、固定优先级、搜索缺失资源、秒传预检、最近搜索结果和异常/在途任务同屏展示。
+- 首页重构为响应式控制台：资源来源健康、固定优先级、搜索缺失资源、秒传预检、一键完整诊断、最近搜索结果和异常/在途任务同屏展示。
 - 配置页按“接管与保存 / 资源来源 / 观影与迅雷秒传 / 高级设置”重排，协议细节默认折叠，不改变任何已有配置键。
 - `/providers/search` 现在统一返回观影迅雷、Magnet 与 ED2K；`/providers/search/selected` 可直接搜索已选择的固定转存订阅。
 - Magnet/ED2K API 自动兼容 `q` / `kw` / `keyword` / `search`，并修正 token 认证头；命中后仍由光鸭原生云添加执行，不经过 MoviePilot 下载器。
 - 新增 `/xunlei/flash/preflight`，非破坏性检查观影会话、迅雷 captcha/device/client 与光鸭 userres 运行时。
+- 新增 `/diagnostics/full`，一次完成资源来源、固定订阅统一搜索和秒传链路诊断，只返回脱敏状态，不创建文件或下载任务。
 - 迅雷 CID 样本严格使用 `stream=True`，单段最多 20KiB；中/尾 Range 被服务器忽略时立即放弃，不下载整文件。
+- v1.10.0 增加行为级 dry-run：模拟外部搜索接口参数回退、观影迅雷+Magnet+ED2K 合并、3×20KiB Range 采样和 Range 忽略场景，避免只做字符串合同测试。
 
 """
 if "## v1.10.0：控制台、统一搜索与秒传可靠性" not in readme:
     first_break = readme.find("\n")
     readme = readme[: first_break + 1] + section + readme[first_break + 1 :]
+else:
+    start = readme.index("## v1.10.0：控制台、统一搜索与秒传可靠性")
+    next_heading = readme.find("\n## ", start + 4)
+    if next_heading < 0:
+        next_heading = len(readme)
+    readme = readme[:start] + section.lstrip("\n") + readme[next_heading:]
 readme_path.write_text(readme, encoding="utf-8")
 
 tests_dir = root / "tests" / "v3" / "guangyatransferassistant"
@@ -92,11 +117,12 @@ v1100_test.write_text(textwrap.dedent(r'''
     ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
     PROVIDER = (PLUGIN / "provider_reliability_v1100.py").read_text(encoding="utf-8")
     XUNLEI = (PLUGIN / "xunlei_reliability_v1100.py").read_text(encoding="utf-8")
+    DIAGNOSTICS = (PLUGIN / "diagnostics_v1100.py").read_text(encoding="utf-8")
     CONSOLE = (PLUGIN / "console_ui_v1100.py").read_text(encoding="utf-8")
     CONFIG = (PLUGIN / "config_ui_v1100.py").read_text(encoding="utf-8")
 
     def test_v1100_files_parse_and_publish_current_release():
-        for path in (PLUGIN / "provider_reliability_v1100.py", PLUGIN / "xunlei_reliability_v1100.py", PLUGIN / "console_ui_v1100.py", PLUGIN / "config_ui_v1100.py", PLUGIN / "__init__.py"):
+        for path in (PLUGIN / "provider_reliability_v1100.py", PLUGIN / "xunlei_reliability_v1100.py", PLUGIN / "diagnostics_v1100.py", PLUGIN / "console_ui_v1100.py", PLUGIN / "config_ui_v1100.py", PLUGIN / "__init__.py"):
             ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
         local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
@@ -106,7 +132,7 @@ v1100_test.write_text(textwrap.dedent(r'''
 
     def test_v1100_mro_installs_final_layers_before_old_layers():
         start = ENTRY.index("class GuangYaTransferAssistant")
-        for token in ("GuangYaConfigUiV1100Mixin,", "GuangYaConsoleUiV1100Mixin,", "GuangYaProviderReliabilityV1100Mixin,", "GuangYaXunleiReliabilityV1100Mixin,"):
+        for token in ("GuangYaConfigUiV1100Mixin,", "GuangYaConsoleUiV1100Mixin,", "GuangYaDiagnosticsV1100Mixin,", "GuangYaProviderReliabilityV1100Mixin,", "GuangYaXunleiReliabilityV1100Mixin,"):
             assert token in ENTRY[start:]
         assert ENTRY.index("GuangYaConfigUiV1100Mixin,", start) < ENTRY.index("GuangYaConfigUiMixin,", start)
         assert ENTRY.index("GuangYaConsoleUiV1100Mixin,", start) < ENTRY.index("GuangYaStatusHardeningMixin,", start)
@@ -130,10 +156,20 @@ v1100_test.write_text(textwrap.dedent(r'''
         assert '"/xunlei/flash/preflight"' in XUNLEI
         assert "_get_guangya_runtime" in XUNLEI
 
+    def test_full_diagnostics_is_non_destructive_and_exposed_on_console():
+        assert '"/diagnostics/full"' in DIAGNOSTICS
+        assert "api_provider_test" in DIAGNOSTICS
+        assert "api_provider_search_selected" in DIAGNOSTICS
+        assert "api_xunlei_preflight" in DIAGNOSTICS
+        for forbidden in ("create_transfer", "flash_upload", "download_task", "add_download"):
+            assert forbidden not in DIAGNOSTICS
+        assert "一键完整诊断" in CONSOLE and "/diagnostics/full" in CONSOLE
+        assert "full_diagnostics_last" in CONSOLE
+
     def test_console_is_responsive_and_has_real_actions():
         for token in ("border-radius:18px", '"sm": 6', '"md": 3', "VDataTable", "搜索缺失资源", "秒传预检", "检测资源来源", "刷新观影节点"):
             assert token in CONSOLE
-        for endpoint in ("/providers/search/selected", "/providers/test", "/xunlei/flash/preflight", "/viewing/nodes/refresh"):
+        for endpoint in ("/providers/search/selected", "/providers/test", "/xunlei/flash/preflight", "/viewing/nodes/refresh", "/diagnostics/full"):
             assert endpoint in CONSOLE
         priority = ["① 迅雷秒传", "② 光鸭直存", "③ Magnet", "④ ED2K"]
         positions = [CONSOLE.index(value) for value in priority]
