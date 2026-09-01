@@ -1,9 +1,13 @@
-"""光鸭转存助手 v1.9.0 运行入口。
+"""光鸭转存助手 v1.9.1 运行入口。
 
 v1.9.0 在 v1.8.0 光鸭原生 Magnet/ED2K 云添加之上增加 ResourceGroup 决策层：
 同一频道消息中的光鸭分享、Magnet、ED2K 作为同一资源的候选方式；先按 MoviePilot
 真实缺集确定目标，再按“光鸭直接转存 > Magnet > ED2K”唯一执行，并使用统一高置信
 Episode Resolver 做文件级拆包。无法可靠识别集号时不整包误存。
+
+v1.9.1 重构状态页：不再把 legacy/routing/experience/reliability/multisource/planner
+各层诊断卡逐层叠加到首页，只保留总览、关键指标、需要处理、正在处理和系统状态。
+完整诊断能力继续由既有 API 与自检提供。
 
 routing_v170 保留全入口 search 硬分流与消息直订，experience_v170 增加非阻塞后台检查、
 消息管理、自检、原因诊断和路线崩溃恢复；reliability_v170 负责高频并发合并、热重载
@@ -54,8 +58,8 @@ class GuangYaTransferAssistant(
 ):
     """完整硬分流 + ResourceGroup 决策 + 光鸭原生多来源云添加运行时。"""
 
-    plugin_version = "1.9.0"
-    build_id = "20260901-r2"
+    plugin_version = "1.9.1"
+    build_id = "20260901-r3"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为状态页按钮安装非阻塞/标准响应适配。"""
@@ -240,32 +244,9 @@ class GuangYaTransferAssistant(
         return match_guard, download_guard
 
     def get_page(self):
+        """最终状态页由 PlannerSafety -> StatusUi 生成；这里只做鉴权参数清理。"""
         pages = super().get_page() or []
         strip_page_api_secrets(pages)
-        match_guard, download_guard = self._native_guard_status()
-
-        health_card = None
-        for page in pages:
-            if not isinstance(page, dict):
-                continue
-            props = page.get("props") or {}
-            if str(props.get("title") or "") == "固定分流路由健康":
-                health_card = page
-                break
-        if health_card is None and pages and isinstance(pages[0], dict):
-            health_card = pages[0]
-
-        if health_card is not None:
-            props = health_card.get("props") or {}
-            old_text = str(props.get("text") or "")
-            props["text"] = (
-                f"{old_text} · RSS匹配门禁：{'已接管' if match_guard else '未接管'}"
-                f" · 最终下载断路器：{'已接管' if download_guard else '未接管'}"
-                " · 资源决策：光鸭分享 > Magnet > ED2K · Magnet/ED2K：光鸭原生云添加"
-            )
-            if not (match_guard and download_guard):
-                props["type"] = "warning"
-            health_card["props"] = props
         return pages
 
 

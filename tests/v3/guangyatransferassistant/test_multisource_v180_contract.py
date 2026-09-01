@@ -40,8 +40,8 @@ def test_v180_files_parse_as_python():
 def test_v180_contract_is_retained_by_current_runtime():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.9.0"
-    assert 'plugin_version = "1.9.0"' in entry_text
+    assert package["version"] == local["version"] == "1.9.1"
+    assert 'plugin_version = "1.9.1"' in entry_text
     assert "GuangYaOfflineSafetyMixin" in entry_text
     assert "GuangYaMultiSourceMixin" in entry_text
     assert entry_text.index("GuangYaOfflineSafetyMixin,", entry_text.index("class GuangYaTransferAssistant")) < entry_text.index(
@@ -144,7 +144,7 @@ def test_viewing_ingest_is_subscription_source_extension():
     assert '"/viewing/ingest"' in multi_text
 
 
-def test_status_page_surfaces_native_offline_tasks_first():
+def test_v180_status_page_implementation_is_retained_but_final_ui_can_replace_it():
     page = multi_text.split("    def get_page(self):", 1)[1].split("    def _build_selfcheck", 1)[0]
     assert "光鸭转存 · 多来源控制台" in page
     assert "Magnet / ED2K 云添加任务" in page
