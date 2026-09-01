@@ -1,4 +1,9 @@
-"""多来源订阅的配置与持久化。"""
+"""多来源订阅的配置与持久化。
+
+Magnet/ED2K 不是交给 MoviePilot 下载器的下载任务，而是光鸭云盘原生“云添加”来源。
+本层只负责绑定、去重、状态持久化和用户配置；具体 resolve/create/list 调度由
+multisource_v180 执行。
+"""
 
 from __future__ import annotations
 
@@ -19,9 +24,9 @@ class GuangYaSourceStoreMixin:
 
     _external_auto_dispatch = True
     _source_priority = ("magnet", "ed2k", "guangya")
-    _ed2k_dispatch_url = ""
-    _ed2k_dispatch_token = ""
-    _ed2k_dispatch_timeout = 15
+    _offline_poll_minutes = 2
+    _offline_retry_minutes = 15
+    _offline_max_attempts = 3
 
     def init_plugin(self, config: dict = None) -> None:
         config = dict(config or {})
@@ -41,10 +46,14 @@ class GuangYaSourceStoreMixin:
                 ordered.append(value)
         self._source_priority = tuple(ordered or ("magnet", "ed2k", "guangya"))
 
-        self._ed2k_dispatch_url = str(config.get("ed2k_dispatch_url") or "").strip()
-        self._ed2k_dispatch_token = str(config.get("ed2k_dispatch_token") or "").strip()
-        self._ed2k_dispatch_timeout = max(
-            3, min(safe_int(config.get("ed2k_dispatch_timeout"), 15, 3), 60)
+        self._offline_poll_minutes = max(
+            1, min(safe_int(config.get("offline_poll_minutes"), 2, 1), 60)
+        )
+        self._offline_retry_minutes = max(
+            1, min(safe_int(config.get("offline_retry_minutes"), 15, 1), 720)
+        )
+        self._offline_max_attempts = max(
+            1, min(safe_int(config.get("offline_max_attempts"), 3, 1), 20)
         )
         self._ensure_source_store()
         super().init_plugin(config)
@@ -141,7 +150,14 @@ class GuangYaSourceStoreMixin:
             "created_at": str(previous.get("created_at") or now),
             "updated_at": now,
             "last_error": str(previous.get("last_error") or ""),
-            "task_hash": str(previous.get("task_hash") or ""),
+            "task_id": str(previous.get("task_id") or ""),
+            "task_status": previous.get("task_status"),
+            "progress": int(previous.get("progress") or 0),
+            "file_id": str(previous.get("file_id") or ""),
+            "resolved_name": str(previous.get("resolved_name") or ""),
+            "resolved_url": str(previous.get("resolved_url") or ""),
+            "selected_indexes": list(previous.get("selected_indexes") or []),
+            "next_retry_at": float(previous.get("next_retry_at") or 0),
             "auto_dispatch": (
                 self._external_auto_dispatch
                 if auto_dispatch is None
@@ -183,7 +199,7 @@ class GuangYaSourceStoreMixin:
         if not row:
             return False
         self._save_source_store(store)
-        # 不自动移除固定路线：该订阅可能原本就是光鸭路线。
+        # 不自动移除固定路线：该订阅可能原本就是光鸭频道路线。
         self._record_route_health(
             last_source_deleted_at=self._now_text(),
             last_source_deleted_id=source_id,
@@ -201,13 +217,14 @@ class GuangYaSourceStoreMixin:
                     "content": [
                         {
                             "component": "VCardTitle",
-                            "text": "多来源订阅 · Magnet / ED2K / 观影接入",
+                            "text": "多来源订阅 · 光鸭原生云添加",
                         },
                         {
                             "component": "VCardText",
                             "text": (
-                                "Magnet 直接提交 MoviePilot 下载器；ED2K 通过可选 HTTP Bridge。"
-                                "观影/第三方可调用 /viewing/ingest 创建或复用订阅并绑定来源。"
+                                "Magnet 与 ED2K 都直接提交光鸭云盘自带的云添加/离线任务，"
+                                "不会经过 qBittorrent、Transmission、Aria2 或任何外部 Bridge。"
+                                "来源绑定后继续使用固定分流门禁，避免 MoviePilot 原生下载重复获取。"
                             ),
                         },
                         {
@@ -215,66 +232,48 @@ class GuangYaSourceStoreMixin:
                             "content": [
                                 {
                                     "component": "VCol",
-                                    "props": {"cols": 12, "md": 4},
+                                    "props": {"cols": 12, "md": 3},
                                     "content": [{
                                         "component": "VSwitch",
                                         "props": {
                                             "model": "external_auto_dispatch",
-                                            "label": "外部来源自动提交",
+                                            "label": "新增来源自动云添加",
                                         },
                                     }],
                                 },
                                 {
                                     "component": "VCol",
-                                    "props": {"cols": 12, "md": 8},
+                                    "props": {"cols": 12, "md": 5},
                                     "content": [{
                                         "component": "VTextField",
                                         "props": {
                                             "model": "source_priority",
                                             "label": "来源优先级",
-                                            "hint": "逗号分隔，如 magnet,ed2k,guangya；删除 guangya 即关闭失败后光鸭后备",
-                                            "persistent-hint": True,
-                                        },
-                                    }],
-                                },
-                            ],
-                        },
-                        {
-                            "component": "VRow",
-                            "content": [
-                                {
-                                    "component": "VCol",
-                                    "props": {"cols": 12, "md": 7},
-                                    "content": [{
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "ed2k_dispatch_url",
-                                            "label": "ED2K HTTP Bridge URL",
-                                            "hint": "留空时 ED2K 安全进入 waiting，不消耗重试次数",
+                                            "hint": "逗号分隔，如 magnet,ed2k,guangya",
                                             "persistent-hint": True,
                                         },
                                     }],
                                 },
                                 {
                                     "component": "VCol",
-                                    "props": {"cols": 12, "md": 3},
+                                    "props": {"cols": 6, "md": 2},
                                     "content": [{
                                         "component": "VTextField",
                                         "props": {
-                                            "model": "ed2k_dispatch_token",
-                                            "label": "Bridge Bearer Token",
-                                            "type": "password",
+                                            "model": "offline_poll_minutes",
+                                            "label": "任务轮询(分钟)",
+                                            "type": "number",
                                         },
                                     }],
                                 },
                                 {
                                     "component": "VCol",
-                                    "props": {"cols": 12, "md": 2},
+                                    "props": {"cols": 6, "md": 2},
                                     "content": [{
                                         "component": "VTextField",
                                         "props": {
-                                            "model": "ed2k_dispatch_timeout",
-                                            "label": "超时(秒)",
+                                            "model": "offline_retry_minutes",
+                                            "label": "失败重试(分钟)",
                                             "type": "number",
                                         },
                                     }],
@@ -289,9 +288,9 @@ class GuangYaSourceStoreMixin:
         defaults.update({
             "external_auto_dispatch": self._external_auto_dispatch,
             "source_priority": ",".join(self._source_priority),
-            "ed2k_dispatch_url": self._ed2k_dispatch_url,
-            "ed2k_dispatch_token": self._ed2k_dispatch_token,
-            "ed2k_dispatch_timeout": self._ed2k_dispatch_timeout,
+            "offline_poll_minutes": self._offline_poll_minutes,
+            "offline_retry_minutes": self._offline_retry_minutes,
+            "offline_max_attempts": self._offline_max_attempts,
         })
         return form, defaults
 
