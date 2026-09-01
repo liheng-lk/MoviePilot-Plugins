@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "MoviePilot V3 固定分流与多来源订阅助手：响应式控制台支持频道资源索引、观影/迅雷/Magnet/ED2K 统一搜索、秒传预检与完整诊断；v1.10.4 增加观影 GYING 节点、PoW、登录、搜索、downurl 与候选提取全过程日志，便于直接判断观影是否真实可用；同时包含 v1.10.3 Provider 解析器修复。固定优先级“观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K”，Magnet/ED2K 继续走光鸭原生云添加。",
-  "version": "1.10.4",
+  "description": "MoviePilot V3 固定分流与多来源订阅助手：响应式控制台支持频道资源索引、观影/迅雷/Magnet/ED2K 统一搜索、秒传预检与完整诊断；v1.10.5 修复追更分享文件集数高于 MoviePilot 当前目标时被误判范围外、片头片尾阻塞整条分享、历史已处理分享在目标增长后不再复查；同时保留 v1.10.4 观影全链路日志与主动测试。固定优先级“观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K”，Magnet/ED2K 继续走光鸭原生云添加。",
+  "version": "1.10.5",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
