@@ -5,15 +5,18 @@ ROOT = Path(__file__).resolve().parents[3]
 ENTRY = ROOT / "plugins.v3" / "guangyatransferassistant" / "__init__.py"
 RUNTIME = ROOT / "plugins.v3" / "guangyatransferassistant" / "runtime_v170.py"
 ROUTING = ROOT / "plugins.v3" / "guangyatransferassistant" / "routing_v170.py"
+STATUS_UI = ROOT / "plugins.v3" / "guangyatransferassistant" / "status_ui_v191.py"
 
 entry_text = ENTRY.read_text(encoding="utf-8")
 runtime_text = RUNTIME.read_text(encoding="utf-8")
 routing_text = ROUTING.read_text(encoding="utf-8")
+status_ui_text = STATUS_UI.read_text(encoding="utf-8")
 
 
 def test_runtime_finalizer_is_wired_first_and_syntax_valid():
     ast.parse(entry_text)
     ast.parse(runtime_text)
+    ast.parse(status_ui_text)
     assert "from .runtime_v170 import GuangYaRuntimeFinalizerMixin" in entry_text
     assert "GuangYaRuntimeFinalizerMixin," in entry_text
     assert 'build_id = "20260824-r9"' in runtime_text
@@ -120,9 +123,18 @@ def test_route_removal_still_uses_delayed_persistence_not_inline_reload():
     assert "_save_config()" not in routing
 
 
-def test_guard_health_is_attached_by_title_not_blind_first_card():
-    page = entry_text.split("    def get_page", 1)[1]
-    assert 'str(props.get("title") or "") == "固定分流路由健康"' in page
-    assert "health_card = page" in page
-    assert "health_card[\"props\"] = props" in page
-    assert "pages[0][\"props\"] = props" not in page
+def test_guard_health_is_summarized_by_final_compact_status_layer():
+    # v1.9.0 曾在 __init__.get_page 中定位“固定分流路由健康”卡并追加文本；
+    # v1.9.1 首页不再依赖旧卡位置，而由最终状态层直接汇总五项关键状态。
+    page = status_ui_text.split("    def get_page", 1)[1]
+    for token in (
+        "guangya_runtime",
+        "search_guard",
+        "match_guard",
+        "download_guard",
+        "native_offline",
+        "系统状态",
+    ):
+        assert token in page
+    assert 'str(props.get("title") or "") == "固定分流路由健康"' not in entry_text
+    assert "health_card = page" not in entry_text
