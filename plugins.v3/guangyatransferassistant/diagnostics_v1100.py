@@ -28,15 +28,23 @@ class GuangYaDiagnosticsV1100Mixin:
             row["data"] = data
         return row
 
+    @staticmethod
+    def _diag_int(value: Any, default: int = 0) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return default
+
     def api_full_diagnostics(self) -> Dict[str, Any]:
         checks: List[Dict[str, Any]] = []
         issues: List[str] = []
 
         # 1) 资源来源：观影会话 + 外部 Magnet/ED2K API。
         try:
+            provider_defs = list(self._parse_provider_defs())
             provider = dict(self.api_provider_test() or {})
             provider_states = list(provider.get("providers") or [])
-            configured_external = bool(list(self._parse_provider_defs()))
+            configured_external = bool(provider_defs)
             viewing_enabled = bool(getattr(self, "_viewing_enabled", False))
             required_states = [
                 row for row in provider_states
@@ -56,7 +64,7 @@ class GuangYaDiagnosticsV1100Mixin:
                 skipped=not viewing_enabled and not configured_external,
                 data={
                     "viewing_enabled": viewing_enabled,
-                    "external_count": len(list(self._parse_provider_defs())),
+                    "external_count": len(provider_defs),
                     "providers": [
                         {
                             "provider": str(row.get("provider") or ""),
@@ -76,7 +84,11 @@ class GuangYaDiagnosticsV1100Mixin:
             checks.append(self._diag_row("providers", "资源来源", False, str(err)))
 
         # 2) 固定订阅统一搜索：真正走与自动处理相同的观影迅雷 + Magnet + ED2K 汇总逻辑。
-        selected = [int(value) for value in (getattr(self, "_selected_subscriptions", []) or []) if int(value or 0) > 0]
+        selected: List[int] = []
+        for value in (getattr(self, "_selected_subscriptions", []) or []):
+            sid = self._diag_int(value, 0)
+            if sid > 0 and sid not in selected:
+                selected.append(sid)
         if selected:
             try:
                 search = dict(self.api_provider_search_selected() or {})
@@ -92,12 +104,12 @@ class GuangYaDiagnosticsV1100Mixin:
                     str(search.get("message") or "搜索完成"),
                     data={
                         "subscriptions": len(items),
-                        "xunlei": int(counts.get("xunlei") or 0),
-                        "magnet": int(counts.get("magnet") or 0),
-                        "ed2k": int(counts.get("ed2k") or 0),
+                        "xunlei": self._diag_int(counts.get("xunlei"), 0),
+                        "magnet": self._diag_int(counts.get("magnet"), 0),
+                        "ed2k": self._diag_int(counts.get("ed2k"), 0),
                         "items": [
                             {
-                                "subscribe_id": int(item.get("subscribe_id") or 0),
+                                "subscribe_id": self._diag_int(item.get("subscribe_id"), 0),
                                 "name": str(item.get("name") or "")[:120],
                                 "success": bool(item.get("success")),
                                 "message": str(item.get("message") or "")[:240],
