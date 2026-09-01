@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "MoviePilot V3 固定分流与多来源订阅助手：同一频道消息按 ResourceGroup 聚合光鸭分享、Magnet、ED2K；按真实缺集唯一决策“光鸭直接转存 > Magnet > ED2K”；Magnet/ED2K 直接使用光鸭原生云添加，并以高置信 Episode Resolver 文件级拆包，无法可靠识别时不整包误存。支持观影来源接入、任务轮询、失败回退、自检与状态控制台。",
-  "version": "1.9.0",
+  "description": "MoviePilot V3 固定分流与多来源订阅助手：同一频道消息按 ResourceGroup 聚合光鸭分享、Magnet、ED2K；按真实缺集唯一决策“光鸭直接转存 > Magnet > ED2K”；Magnet/ED2K 直接使用光鸭原生云添加，并以高置信 Episode Resolver 文件级拆包。v1.9.1 重构紧凑状态页，只显示总览、需要处理、正在处理和系统状态，不再堆叠长诊断卡。",
+  "version": "1.9.1",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
