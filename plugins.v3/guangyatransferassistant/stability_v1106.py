@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -41,9 +42,10 @@ def safe_int_v1106(value: Any, default: int = 0, minimum: Optional[int] = None, 
 
 def safe_float_v1106(value: Any, default: float = 0.0) -> float:
     try:
-        return float(value)
+        result = float(value)
     except (TypeError, ValueError):
         return float(default)
+    return result if math.isfinite(result) else float(default)
 
 
 def selected_ids_v1106(value: Any) -> List[int]:
@@ -95,13 +97,16 @@ class GuangYaStabilityV1106Mixin:
 
     def init_plugin(self, config: dict = None) -> None:
         clean = dict(config or {})
-        clean["selected_subscriptions"] = selected_ids_v1106(clean.get("selected_subscriptions"))
+        # MoviePilot 热更新/局部保存时 config 可能不是完整配置；缺失字段必须交给下层保留，
+        # 不能因为稳定层清洗而把用户现有固定转存订阅清空。
+        if "selected_subscriptions" in clean:
+            clean["selected_subscriptions"] = selected_ids_v1106(clean.get("selected_subscriptions"))
         for key, (default, minimum, maximum) in _INT_CONFIGS.items():
             if key in clean:
                 clean[key] = safe_int_v1106(clean.get(key), default, minimum, maximum)
         super().init_plugin(clean)
         self._selected_subscriptions = selected_ids_v1106(
-            getattr(self, "_selected_subscriptions", clean.get("selected_subscriptions"))
+            getattr(self, "_selected_subscriptions", [])
         )
 
     def _heal_selected_subscriptions_v1106(self) -> List[int]:
