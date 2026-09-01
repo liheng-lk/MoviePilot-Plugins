@@ -142,10 +142,10 @@ def test_v364_does_not_reimplement_moviepilot_media_business_rules():
 def test_v364_release_metadata_is_consistent():
     plugin_meta = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     package_meta = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
-    assert plugin_meta["version"] == "3.6.4"
-    assert package_meta["ShukGuangYaDisk"]["version"] == "3.6.4"
-    assert 'plugin_version = "3.6.4"' in ENTRY
-    assert '?v=3.6.4' in REMOTE
+    assert plugin_meta["version"] == "3.6.5"
+    assert package_meta["ShukGuangYaDisk"]["version"] == "3.6.5"
+    assert 'plugin_version = "3.6.5"' in ENTRY
+    assert '?v=3.6.5' in REMOTE
     assert "v3.6.4" in plugin_meta["history"]
 
 

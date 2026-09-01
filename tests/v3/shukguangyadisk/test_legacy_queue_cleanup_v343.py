@@ -17,6 +17,12 @@ def test_v343_legacy_queue_recheck_survives_without_running_on_every_init():
     assert "每次初始化都会重新检查" not in PATCH
 
 
+def test_v365_uses_moviepilot_supported_transferpending_compat_abi():
+    assert "from app.db.transferpending_oper import TransferPendingOper" in PATCH
+    assert "TransferPendingOper()" in PATCH
+    assert "app.application.chain.data" not in PATCH
+
+
 def test_waiting_legacy_tasks_are_removed_with_public_moviepilot_api():
     assert 'remove = state == "waiting"' in PATCH
     assert "chain.remove_from_queue(fileitem)" in PATCH
