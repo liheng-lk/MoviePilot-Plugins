@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
   "description": "MoviePilot V3 固定分流与多来源订阅助手：观影 GYING 支持发布页节点发现、IDN节点归一、自动切换、浏览器计算验证、真实登录/搜索/downurl；观影迅雷分享最高优先级走光鸭 userres 秒传，并补齐 captcha/device 自动初始化与分享 hash 回退。固定优先级“观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K”，Magnet/ED2K 继续使用光鸭原生 cloudcollection，不经过 MoviePilot 下载器。",
-  "version": "1.9.4",
+  "version": "1.9.5",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,

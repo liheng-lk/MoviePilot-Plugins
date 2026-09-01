@@ -20,7 +20,7 @@ from app.chain.download import DownloadChain
 from app.db.oper.subscribe import SubscribeOper
 from app.plugins import _PluginBase
 from app.schemas import NotificationType
-from app.runtime.extensions.plugin_manager import PluginManager
+from app.sdk.plugins import PluginManager
 from app.sdk.config import settings
 from app.sdk.logging import logger
 from app.sdk.network import RequestUtils
@@ -3169,10 +3169,25 @@ class GuangYaTransferAssistant(_PluginBase):
         self._save_config()
 
     def _get_guangya_runtime(self) -> Tuple[Any, Any]:
+        """通过 V3 SDK 读取光鸭云盘助手运行实例，不依赖已迁移的 Runtime 内部模块。"""
         manager = PluginManager()
-        client = manager.get_plugin_attr("ShukGuangYaDisk", "_client")
-        api = manager.get_plugin_attr("ShukGuangYaDisk", "_guangya_api")
-        return client, api
+        running = getattr(manager, "running_plugins", None) or {}
+        plugin = running.get("ShukGuangYaDisk") if isinstance(running, dict) else None
+        if plugin is not None:
+            return getattr(plugin, "_client", None), getattr(plugin, "_guangya_api", None)
+
+        # 兼容 SDK 包装器仍暴露旧 helper 的 MoviePilot V3 小版本；这里只调用方法，
+        # 不再导入 app.runtime.extensions.plugin_manager。
+        getter = getattr(manager, "get_plugin_attr", None)
+        if callable(getter):
+            try:
+                return (
+                    getter("ShukGuangYaDisk", "_client"),
+                    getter("ShukGuangYaDisk", "_guangya_api"),
+                )
+            except Exception:
+                pass
+        return None, None
 
     @staticmethod
     def _is_success(response: Any) -> bool:
