@@ -1,0 +1,127 @@
+name: One-shot GuangYaTransferAssistant v1.9.5 MoviePilot SDK compatibility
+on:
+  push:
+    branches: [fix/guangyatransferassistant-mp-sdk-v195]
+permissions:
+  contents: write
+jobs:
+  fix-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/guangyatransferassistant-mp-sdk-v195
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply MoviePilot PluginManager SDK compatibility
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          root = Path('.')
+          plugin = root / 'plugins.v3' / 'guangyatransferassistant'
+          legacy = plugin / 'legacy.py'
+          text = legacy.read_text(encoding='utf-8')
+          old = 'from app.runtime.extensions.plugin_manager import PluginManager\n'
+          new = 'from app.sdk.plugins import PluginManager\n'
+          if old not in text:
+              raise SystemExit('legacy PluginManager import not found')
+          text = text.replace(old, new, 1)
+
+          old_runtime = '''    def _get_guangya_runtime(self) -> Tuple[Any, Any]:\n        manager = PluginManager()\n        client = manager.get_plugin_attr("ShukGuangYaDisk", "_client")\n        api = manager.get_plugin_attr("ShukGuangYaDisk", "_guangya_api")\n        return client, api\n'''
+          new_runtime = '''    def _get_guangya_runtime(self) -> Tuple[Any, Any]:\n        \"\"\"通过 V3 SDK 读取光鸭云盘助手运行实例，不依赖已迁移的 Runtime 内部模块。\"\"\"\n        manager = PluginManager()\n        running = getattr(manager, "running_plugins", None) or {}\n        plugin = running.get("ShukGuangYaDisk") if isinstance(running, dict) else None\n        if plugin is not None:\n            return getattr(plugin, "_client", None), getattr(plugin, "_guangya_api", None)\n\n        # 兼容 SDK 包装器仍暴露旧 helper 的 MoviePilot V3 小版本；这里只调用方法，\n        # 不再导入 app.runtime.extensions.plugin_manager。\n        getter = getattr(manager, "get_plugin_attr", None)\n        if callable(getter):\n            try:\n                return (\n                    getter("ShukGuangYaDisk", "_client"),\n                    getter("ShukGuangYaDisk", "_guangya_api"),\n                )\n            except Exception:\n                pass\n        return None, None\n'''
+          if old_runtime not in text:
+              raise SystemExit('_get_guangya_runtime block not found')
+          legacy.write_text(text.replace(old_runtime, new_runtime, 1), encoding='utf-8')
+
+          entry = plugin / '__init__.py'
+          entry_text = entry.read_text(encoding='utf-8')
+          entry_text = entry_text.replace('光鸭转存助手 v1.9.4 运行入口。', '光鸭转存助手 v1.9.5 运行入口。', 1)
+          entry_text = entry_text.replace('v1.9.4 收口 IDN 节点身份、Cookie 域边界、搜索降级、迅雷 captcha/device、GCID 回退和配置/状态页信息层级。', 'v1.9.4 收口 IDN 节点身份、Cookie 域边界、搜索降级、迅雷 captcha/device、GCID 回退和配置/状态页信息层级；v1.9.5 迁移 PluginManager 到 MoviePilot V3 稳定 SDK。', 1)
+          entry_text = entry_text.replace('plugin_version = "1.9.4"', 'plugin_version = "1.9.5"', 1)
+          entry_text = entry_text.replace('build_id = "20260901-r8"', 'build_id = "20260901-r9"', 1)
+          entry.write_text(entry_text, encoding='utf-8')
+
+          history = (
+              '兼容新版 MoviePilot 插件管理 SDK：移除对 app.runtime.extensions.plugin_manager 的安装期硬依赖，'
+              '统一改用 app.sdk.plugins.PluginManager，并优先从 running_plugins 读取已运行的 ShukGuangYaDisk 实例；'
+              '保留旧 helper 方法作为运行期兼容，不修改光鸭云盘助手代码与转存优先级。'
+          )
+
+          local_path = plugin / 'plugin.json'
+          local = json.loads(local_path.read_text(encoding='utf-8'))
+          local['version'] = '1.9.5'
+          local_path.write_text(json.dumps(local, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          package_path = root / 'package.v3.json'
+          package = json.loads(package_path.read_text(encoding='utf-8'))
+          meta = package['GuangYaTransferAssistant']
+          meta['version'] = '1.9.5'
+          meta['history'] = {'v1.9.5': history, **dict(meta.get('history') or {})}
+          package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          tests = root / 'tests' / 'v3' / 'guangyatransferassistant'
+          for path in tests.glob('test_*.py'):
+              body = path.read_text(encoding='utf-8')
+              if '1.9.4' in body or '20260901-r8' in body:
+                  path.write_text(body.replace('1.9.4', '1.9.5').replace('20260901-r8', '20260901-r9'), encoding='utf-8')
+
+          compat = tests / 'test_mp_sdk_compat_v195.py'
+          compat.write_text('''from pathlib import Path\n\nROOT = Path(__file__).resolve().parents[3]\nPLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"\nLEGACY = (PLUGIN / "legacy.py").read_text(encoding="utf-8")\nENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")\n\n\ndef test_v195_uses_public_plugin_manager_sdk():\n    assert "from app.sdk.plugins import PluginManager" in LEGACY\n    assert "from app.runtime.extensions.plugin_manager import PluginManager" not in LEGACY\n    assert 'running.get("ShukGuangYaDisk")' in LEGACY\n    assert 'getattr(plugin, "_client", None)' in LEGACY\n    assert 'getattr(plugin, "_guangya_api", None)' in LEGACY\n\n\ndef test_v195_keeps_runtime_fallback_without_internal_import():\n    assert 'getattr(manager, "get_plugin_attr", None)' in LEGACY\n    assert 'getter("ShukGuangYaDisk", "_client")' in LEGACY\n    assert 'getter("ShukGuangYaDisk", "_guangya_api")' in LEGACY\n\n\ndef test_v195_release_marker():\n    assert 'plugin_version = "1.9.5"' in ENTRY\n    assert 'build_id = "20260901-r9"' in ENTRY\n''', encoding='utf-8')
+
+          readme = plugin / 'README.md'
+          readme_text = readme.read_text(encoding='utf-8')
+          marker = '\n## v1.9.4：观影与迅雷生产完整性收口\n'
+          section = '''\n## v1.9.5：MoviePilot V3 插件管理 SDK 兼容\n\n- `PluginManager` 改用 MoviePilot V3 稳定入口 `app.sdk.plugins`，不再在插件加载期依赖 `app.runtime.extensions.plugin_manager`。\n- 光鸭云盘助手运行态优先从 `running_plugins` 取得；旧 `get_plugin_attr` 仅作为 SDK 对象仍提供时的运行期兼容。\n- 本次只修改光鸭转存助手，不改光鸭云盘助手；资源优先级和 GYING/迅雷/光鸭原生云添加逻辑不变。\n'''
+          if section not in readme_text:
+              if marker in readme_text:
+                  readme_text = readme_text.replace(marker, section + marker, 1)
+              else:
+                  readme_text = section + readme_text
+          readme.write_text(readme_text, encoding='utf-8')
+
+          forbidden = 'from app.runtime.extensions.plugin_manager import PluginManager'
+          offenders = []
+          for path in plugin.rglob('*.py'):
+              if forbidden in path.read_text(encoding='utf-8'):
+                  offenders.append(str(path))
+          if offenders:
+              raise SystemExit(f'retired PluginManager import remains: {offenders}')
+          PY
+      - name: Python syntax
+        run: |
+          python -m compileall -q plugins.v3/guangyatransferassistant
+          find plugins.v3/guangyatransferassistant -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v3/guangyatransferassistant -type f -name '*.pyc' -delete
+      - name: GuangYaTransferAssistant tests
+        run: |
+          python -m unittest discover -s tests/v3/guangyatransferassistant -p 'test_*.py' -v
+          if [ -f tests/v3/guangyatransferassistant/run_contract_tests.py ]; then python tests/v3/guangyatransferassistant/run_contract_tests.py; fi
+      - name: Repository validation
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('.')
+          package = json.loads((root/'package.v3.json').read_text(encoding='utf-8'))['GuangYaTransferAssistant']
+          local = json.loads((root/'plugins.v3/guangyatransferassistant/plugin.json').read_text(encoding='utf-8'))
+          entry = (root/'plugins.v3/guangyatransferassistant/__init__.py').read_text(encoding='utf-8')
+          legacy = (root/'plugins.v3/guangyatransferassistant/legacy.py').read_text(encoding='utf-8')
+          assert package['version'] == local['version'] == '1.9.5'
+          assert 'v1.9.5' in package['history']
+          assert 'plugin_version = "1.9.5"' in entry
+          assert 'build_id = "20260901-r9"' in entry
+          assert 'from app.sdk.plugins import PluginManager' in legacy
+          assert 'from app.runtime.extensions.plugin_manager import PluginManager' not in legacy
+          PY
+      - name: Commit fix and remove one-shot workflow
+        run: |
+          rm -f .github/workflows/one-shot-guangya-transfer-v195.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: migrate GuangYaTransferAssistant to MoviePilot PluginManager SDK'
+          git push origin HEAD:fix/guangyatransferassistant-mp-sdk-v195
