@@ -66,14 +66,15 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "固定分流与多来源订阅助手：新版控制台直接提供观影/迅雷/Magnet/ED2K 统一搜索、资源来源检测、秒传预检与一键完整诊断；v1.10.5 修复追更分享文件集数高于 MoviePilot 当前目标时被误判范围外、片头片尾阻塞整条分享、历史已处理分享在目标增长后不再复查；同时保留 v1.10.4 观影 GYING 全链路日志和主动测试。迅雷分享最高优先级走光鸭 userres 秒传，后续为光鸭直接转存 > Magnet > ED2K，Magnet/ED2K 继续走光鸭原生云添加。",
+    "description": "固定分流与多来源订阅助手：v1.10.6 按真实浏览器 HAR 对齐观影 GYING 搜索、登录态和 downurl 资源结构；一次响应同时解析迅雷/网盘与 downlist Magnet，保留 panlist 提取码，并对 Cookie 复用、网页图形验证码和 JSON refresh 验证做明确状态处理；同时修复 selected_subscriptions、source store 与 Provider 历史脏值导致的崩溃。迅雷分享最高优先级走光鸭 userres 秒传，后续为光鸭直接转存 > Magnet > ED2K，Magnet/ED2K 继续走光鸭原生云添加。",
     "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流",
-    "version": "1.10.5",
+    "version": "1.10.6",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v1.10.6": "按真实浏览器 HAR 收口观影协议与稳定性：搜索优先对齐 /search?q=...&type=&mode=1；downurl 同时解析 panlist 与 downlist，k=0 直接用 BTIH 构造 Magnet，无需模拟 /bt 新窗口；保留 panlist.p 迅雷提取码；区分 Cookie 复用、登录失效、网页图形验证码和 JSON refresh 验证；并修复 selected_subscriptions、subscription_sources 与 Provider 历史脏值造成的 ValueError/状态页崩溃。",
       "v1.10.5": "修复追更分享的三个漏转存边界：分享文件明确出现高于 MoviePilot 当前 total_episode 的剧集时只向上扩展目标；片头/片尾/OP/ED/Trailer/Sample 等辅助视频不再作为未知集号阻塞整条分享；processed_entries 保存处理时 target_total，旧记录在仍缺集时升级后重新检查一次，后续目标增长可自动重新开放。",
       "v1.10.4": "补齐观影 GYING 可观测性：节点发现/刷新、浏览器 PoW、登录模式与结果、会话选择、搜索、downurl、Magnet/ED2K/迅雷候选提取和人工会话测试均写入插件持久日志；公开日志和状态不记录 Cookie、密码、Token、PoW 参数或迅雷提取码。",
       "v1.10.3": "修复 v1.10.0 重构后 `_parse_provider_defs` 与既有 `_provider_api_defs` 方法名不一致，导致资源来源运行态、资源来源检测和统一搜索触发 AttributeError；新增兼容桥接并复用唯一 Provider 配置解析入口。",
