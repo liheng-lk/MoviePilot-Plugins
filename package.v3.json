@@ -66,14 +66,15 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "固定分流与多来源订阅助手：v1.10.6 按真实浏览器 HAR 对齐观影 GYING 搜索、登录态和 downurl 资源结构；一次响应同时解析迅雷/网盘与 downlist Magnet，保留 panlist 提取码，并对 Cookie 复用、网页图形验证码和 JSON refresh 验证做明确状态处理；同时修复 selected_subscriptions、source store 与 Provider 历史脏值导致的崩溃。迅雷分享最高优先级走光鸭 userres 秒传，后续为光鸭直接转存 > Magnet > ED2K，Magnet/ED2K 继续走光鸭原生云添加。",
-    "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流",
-    "version": "1.10.6",
+    "description": "固定分流与多来源订阅助手：v1.10.7 按观影真实 captcha 前端实现新增人工汉字点击认证，验证码回传至 MoviePilot，由用户本人点击；校验成功后复用同一 Session 自动登录，并以受限搜索二次验真。浏览器 PoW 最多连续恢复 3 次，只有原请求恢复正常才判定通过；节点发现补充 /urlop/ 与当前内容域名。延续 v1.10.6 的 search/downurl、迅雷/网盘与 downlist Magnet 解析。迅雷分享最高优先级走光鸭 userres 秒传，后续为光鸭直接转存 > Magnet > ED2K，Magnet/ED2K 继续走光鸭原生云添加。",
+    "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流",
+    "version": "1.10.7",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v1.10.7": "按观影真实 captcha 前端协议补齐人工汉字点击登录：POST /res/captcha/2 webp=1 读取 type/img/text，MoviePilot 页面由用户本人按提示点击，do=check 返回 code=200 后把同一 captchainfo 作为 /user/login 的 code；PoW、验证码、登录、受限搜索始终复用同一 Session。浏览器计算验证改为最多连续恢复 3 次，仅当原请求真正恢复正常才记录通过；节点发现补充 /urlop/ 与当前前端公布域名；登录成功后再用受限搜索确认，最新网址/公告弹窗只作非阻塞提示，不伪造确认 API。",
       "v1.10.6": "按真实浏览器 HAR 收口观影协议与稳定性：搜索优先对齐 /search?q=...&type=&mode=1；downurl 同时解析 panlist 与 downlist，k=0 直接用 BTIH 构造 Magnet，无需模拟 /bt 新窗口；保留 panlist.p 迅雷提取码；区分 Cookie 复用、登录失效、网页图形验证码和 JSON refresh 验证；并修复 selected_subscriptions、subscription_sources 与 Provider 历史脏值造成的 ValueError/状态页崩溃。",
       "v1.10.5": "修复追更分享的三个漏转存边界：分享文件明确出现高于 MoviePilot 当前 total_episode 的剧集时只向上扩展目标；片头/片尾/OP/ED/Trailer/Sample 等辅助视频不再作为未知集号阻塞整条分享；processed_entries 保存处理时 target_total，旧记录在仍缺集时升级后重新检查一次，后续目标增长可自动重新开放。",
       "v1.10.4": "补齐观影 GYING 可观测性：节点发现/刷新、浏览器 PoW、登录模式与结果、会话选择、搜索、downurl、Magnet/ED2K/迅雷候选提取和人工会话测试均写入插件持久日志；公开日志和状态不记录 Cookie、密码、Token、PoW 参数或迅雷提取码。",
