@@ -6,6 +6,7 @@
 
 v1.9.1 把最终状态页展示权收口到 GuangYaStatusUiMixin。
 v1.9.2 同步持久化观影与 Magnet API 搜索提供器配置。
+v1.9.3 同步持久化观影迅雷秒传、device/captcha 配置。
 """
 
 from __future__ import annotations
@@ -66,6 +67,13 @@ class GuangYaPlannerSafetyMixin(GuangYaStatusUiMixin):
             "viewing_password": self._viewing_password,
             "viewing_cookie": self._viewing_cookie,
             "magnet_api_sources": self._magnet_api_sources,
+            # v1.9.3 观影迅雷分享秒传。
+            "xunlei_flash_enabled": bool(getattr(self, "_xunlei_flash_enabled", True)),
+            "xunlei_flash_max_files": int(getattr(self, "_xunlei_flash_max_files", 80) or 80),
+            "xunlei_client_id": str(getattr(self, "_xunlei_client_id", "") or ""),
+            "xunlei_device_id": str(getattr(self, "_xunlei_device_id", "") or ""),
+            "xunlei_captcha_token": str(getattr(self, "_xunlei_captcha_token", "") or ""),
+            "xunlei_captcha_init_json": str(getattr(self, "_xunlei_captcha_init_json", "") or ""),
         })
 
     def _external_resource_allowed(
