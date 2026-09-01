@@ -26,9 +26,9 @@ def test_all_v190_files_parse_and_publish_current_version():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.9.0"
-    assert 'plugin_version = "1.9.0"' in texts[ENTRY]
-    assert 'build_id = "20260901-r2"' in texts[ENTRY]
+    assert package["version"] == local["version"] == "1.9.1"
+    assert 'plugin_version = "1.9.1"' in texts[ENTRY]
+    assert 'build_id = "20260901-r3"' in texts[ENTRY]
 
 
 def test_runtime_mro_puts_planner_safety_and_planner_before_native_offline_layers():
@@ -58,7 +58,7 @@ def test_same_channel_message_is_a_resource_group_not_independent_jobs():
     ):
         assert token in channel
     assert 'entry["candidate_types"] = ["guangya"' in channel
-    assert '"share_url": ""' in channel  # external-only message must still enter the index.
+    assert '"share_url": ""' in channel
 
 
 def test_decision_order_is_direct_share_then_magnet_then_ed2k():
@@ -90,7 +90,6 @@ def test_magnet_file_selection_is_high_confidence_and_never_appends_weak_unknown
     assert 'state="needs_review"' in planner
     assert "绝不把 A.mkv/B.mkv 按顺序猜成集号" in planner
     assert "selected_videos" in planner
-    # v1.8 曾把 weak 文件顺带加入 fileIndexes；v1.9 planner 不允许该模式。
     selection = planner.split("    def _planner_file_selection(", 1)[1].split("    def _resolve_offline_source(", 1)[0]
     assert "weak.append" not in selection
     assert "selected_videos.append(row)" in selection
@@ -110,7 +109,6 @@ def test_resource_rules_are_checked_after_cloud_resolve_before_create_task():
     assert "super()._resolve_offline_source(source, subscribe)" in resolve
     assert "_subscription_resource_allowed" in resolve
     assert "RESOURCE_RULE_MISMATCH" in safety
-    # create_task 仍只在 v1.8 MultiSource 提交层发生，因此校验天然位于 create 前。
     assert '"/cloudcollection/v1/create_task"' in texts[MULTI]
     assert '"/cloudcollection/v1/create_task"' not in safety
 
@@ -151,7 +149,6 @@ def test_no_moviepilot_downloader_is_reintroduced_for_magnet_or_ed2k():
         "aria2",
         "bridge_url",
     ):
-        # explanatory UI strings may mention downloader brands in source_store, but no executable imports/calls are allowed.
         if forbidden in {"qbittorrent", "transmission", "aria2"}:
             continue
         assert forbidden not in combined
@@ -165,4 +162,6 @@ def test_resource_plan_api_and_review_status_are_exposed():
     assert '"/resource/plan"' in planner
     assert "resource_plans" in planner
     assert "资源组决策 · 缺集拆包" in planner
-    assert "有资源需要人工确认" in safety
+    # v1.9.1 最终首页不再逐层插入 review 卡，PlannerSafety 直接交给紧凑 UI 汇总。
+    assert "GuangYaStatusUiMixin" in safety
+    assert "return GuangYaStatusUiMixin.get_page(self)" in safety
