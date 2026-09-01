@@ -80,7 +80,7 @@ def gying_keyword_variants(keyword: str) -> List[str]:
 class GuangYaGyingHardeningMixin:
     """最终 GYING 节点身份、Cookie 边界和搜索降级策略。"""
 
-    build_id = "20260901-r7"
+    build_id = "20260901-r8"
 
     def init_plugin(self, config: dict = None) -> None:
         config = dict(config or {})

@@ -2,6 +2,25 @@
 
 MoviePilot V3 固定分流与多来源订阅插件。Telegram 频道、观影 GYING、Magnet/ED2K 搜索接口发现的候选都绑定同一个 MoviePilot 订阅状态，不建立第二套追剧进度。Magnet/ED2K 始终交给光鸭原生 cloudcollection，不经过 MoviePilot 下载器。
 
+## v1.9.4：观影与迅雷生产完整性收口
+
+v1.9.4 不改变资源优先级，继续固定为：
+
+`观影迅雷秒传 > 光鸭直接转存 > Magnet 光鸭云添加 > ED2K 光鸭云添加`
+
+本版重点处理真实站点与会话的边界，而不是继续增加一套下载路径：
+
+- 中文观影域名与 punycode 统一为同一个节点身份，避免重复验证、重复冷却；
+- `星际穿越.com` 等内容节点只作为节点池种子，不写死为唯一地址；旧 `gying.org` 固定默认在自动切换模式下迁移为空，由发布页、备用节点和最近成功节点共同决策；
+- 手工观影 Cookie 仅发送给用户绑定的首选节点，自动切换到其他域名不会跨域携带；各节点自己的验证/登录 Cookie 仍独立持久化；
+- GYING 搜索只有在零结果时才按 `标题+年份+季 -> 标题+年份 -> 标题` 逐级降级，并在候选同时提供年份时做二次校验；
+- Angie/伪 404 等出口阻断会被识别为节点故障并进入 failover，而不是误报“没有资源”；
+- 迅雷运行时 Device ID 持久化；captcha_token 与 client/device 作为同一身份维护；没有可复用 token 时可自动调用 `shield/captcha/init`；
+- 匿名迅雷分享请求不会携带用户账号 Authorization；`share/file_info` 没拿到 GCID 时，按同 parent_id 再请求 `share/detail?with_audit=false` 精确补 hash；
+- 配置页继续保持四区结构，PoW、发布页、备用节点、代理、Device ID、captcha 等协议级参数统一下沉“高级”；状态页继续保持五区紧凑总览。
+
+新增运行诊断：`GET /api/v1/plugin/GuangYaTransferAssistant/xunlei/runtime/status`。公开状态只返回布尔状态与模式，不返回 captcha token、device id、观影 Cookie 或密码。
+
 ## v1.9.3：完整观影会话 + 迅雷最高优先级秒传
 
 最终资源优先级固定为：

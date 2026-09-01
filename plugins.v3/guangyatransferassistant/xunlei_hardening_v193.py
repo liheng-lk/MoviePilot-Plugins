@@ -54,7 +54,7 @@ def build_xunlei_captcha_signature(
 class GuangYaXunleiHardeningMixin:
     """最终迅雷分享身份、captcha 初始化与 hash 回退层。"""
 
-    build_id = "20260901-r7"
+    build_id = "20260901-r8"
     _xunlei_runtime_client_id = ""
     _xunlei_runtime_device_id = ""
     _xunlei_captcha_status: Dict[str, Any] = {}

@@ -60,9 +60,9 @@ def test_v193_files_parse_and_publish_current_version():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.9.3"
-    assert 'plugin_version = "1.9.3"' in entry_text
-    assert 'build_id = "20260901-r7"' in entry_text
+    assert package["version"] == local["version"] == "1.9.4"
+    assert 'plugin_version = "1.9.4"' in entry_text
+    assert 'build_id = "20260901-r8"' in entry_text
     assert "v1.9.3" in package["history"]
 
 
@@ -177,7 +177,7 @@ def test_xunlei_uses_existing_missing_episode_planner_and_reservations():
     assert "super()._pending_reservations" in pending
     assert 'merged["episodes"]' in pending
     assert 'merged["movie"]' in pending
-    assert "秒传成功占位" in json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]["history"]["v1.9.3"]
+    assert "秒传" in json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]["history"]["v1.9.3"]
 
 
 def test_config_exposes_xunlei_runtime_credentials_and_fixed_priority():

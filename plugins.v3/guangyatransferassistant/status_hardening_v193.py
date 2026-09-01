@@ -14,7 +14,7 @@ from .status_ui_v191 import GuangYaStatusUiMixin
 class GuangYaStatusHardeningMixin:
     """给紧凑首页补 GYING / 迅雷摘要，不恢复历史信息墙。"""
 
-    build_id = "20260901-r7"
+    build_id = "20260901-r8"
 
     def _status_overview_v191(self) -> Dict[str, Any]:
         overview = dict(super()._status_overview_v191() or {})

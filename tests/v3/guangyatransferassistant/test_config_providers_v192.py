@@ -37,9 +37,9 @@ def test_v192_files_parse_and_release_metadata_is_consistent():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.9.3"
-    assert 'plugin_version = "1.9.3"' in entry_text
-    assert 'build_id = "20260901-r7"' in entry_text
+    assert package["version"] == local["version"] == "1.9.4"
+    assert 'plugin_version = "1.9.4"' in entry_text
+    assert 'build_id = "20260901-r8"' in entry_text
     assert "v1.9.2" in package["history"]
 
 
