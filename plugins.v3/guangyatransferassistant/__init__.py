@@ -3,7 +3,7 @@
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
 地址/登录配置及通用 Magnet/ED2K 搜索 API；v1.9.3 把观影中的迅雷分享接入
-光鸭 userres 秒传链路，并设为全局最高优先级。
+光鸭 userres 秒传链路，并补齐观影多节点、浏览器 PoW 验证、真实登录/搜索/downurl 会话。
 
 最终优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。
 后续 ResourceGroup 内部仍保持：光鸭直接转存 > Magnet > ED2K。
@@ -27,6 +27,7 @@ from .channel_sources_v190 import install_channel_multisource_compat
 from .config_ui_v192 import GuangYaConfigUiMixin
 from .episode_compat_v171 import collapse_unparsed_failure_notice, install_episode_filename_compat
 from .experience_v170 import GuangYaExperienceMixin
+from .gying_runtime_v193 import GuangYaGyingRuntimeMixin
 from .multisource_v180 import GuangYaMultiSourceMixin
 from .offline_safety_v180 import GuangYaOfflineSafetyMixin
 from .page_auth_v172 import force_bear_auth, strip_page_api_secrets
@@ -45,6 +46,7 @@ install_channel_multisource_compat(_legacy_module)
 
 class GuangYaTransferAssistant(
     GuangYaConfigUiMixin,
+    GuangYaGyingRuntimeMixin,
     GuangYaXunleiFlashMixin,
     GuangYaProviderSourcesMixin,
     GuangYaPlannerSafetyMixin,
@@ -56,10 +58,10 @@ class GuangYaTransferAssistant(
     GuangYaExperienceMixin,
     _RoutingV170Assistant,
 ):
-    """固定分流 + 迅雷秒传 + ResourceGroup + 光鸭原生云添加运行时。"""
+    """固定分流 + 完整观影会话 + 迅雷秒传 + ResourceGroup + 光鸭原生云添加运行时。"""
 
     plugin_version = "1.9.3"
-    build_id = "20260901-r5"
+    build_id = "20260901-r6"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
