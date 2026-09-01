@@ -297,5 +297,16 @@ class FunctionalDryRunTests(unittest.TestCase):
             self.assertNotIn(forbidden, rendered)
 
 
+def test_v1100_behavioral_dryrun_suite():
+    """让仓库的轻量函数合同 runner 也真正执行这组行为级 dry-run。"""
+    suite = unittest.defaultTestLoader.loadTestsFromTestCase(FunctionalDryRunTests)
+    result = unittest.TestResult()
+    suite.run(result)
+    if result.failures or result.errors:
+        details = [text for _, text in [*result.failures, *result.errors]]
+        raise AssertionError("v1.10.0 behavioral dry-run failed:\n" + "\n".join(details))
+    assert result.testsRun == 6
+
+
 if __name__ == "__main__":
     unittest.main()
