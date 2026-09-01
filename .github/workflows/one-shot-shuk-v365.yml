@@ -115,6 +115,23 @@ jobs:
               legacy_test = legacy_test.replace(marker, compat_test + marker)
           legacy_test_path.write_text(legacy_test, encoding='utf-8')
 
+          v364_test_path = root / 'tests' / 'v3' / 'shukguangyadisk' / 'test_move_transaction_guard_v364.py'
+          v364_test = v364_test_path.read_text(encoding='utf-8')
+          replacements = {
+              'assert plugin_meta["version"] == "3.6.4"': 'assert plugin_meta["version"] == "3.6.5"',
+              'assert package_meta["ShukGuangYaDisk"]["version"] == "3.6.4"': 'assert package_meta["ShukGuangYaDisk"]["version"] == "3.6.5"',
+              'assert \'plugin_version = "3.6.4"\' in ENTRY': 'assert \'plugin_version = "3.6.5"\' in ENTRY',
+              'assert \'?v=3.6.4\' in REMOTE': 'assert \'?v=3.6.5\' in REMOTE',
+          }
+          for old, new in replacements.items():
+              if old not in v364_test:
+                  raise SystemExit(f'v3.6.4 release assertion missing: {old}')
+              v364_test = v364_test.replace(old, new, 1)
+          # v3.6.4 feature history must remain even though current release is v3.6.5.
+          if 'assert "v3.6.4" in plugin_meta["history"]' not in v364_test:
+              raise SystemExit('v3.6.4 history assertion missing')
+          v364_test_path.write_text(v364_test, encoding='utf-8')
+
           forbidden = 'app.application.chain.data'
           offenders = []
           for path in plugin.rglob('*.py'):
