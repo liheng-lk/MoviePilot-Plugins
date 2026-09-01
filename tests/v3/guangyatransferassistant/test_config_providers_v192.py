@@ -23,9 +23,9 @@ def test_v192_files_parse_and_release_metadata_is_consistent():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.9.2"
-    assert 'plugin_version = "1.9.2"' in entry_text
-    assert 'build_id = "20260901-r4"' in entry_text
+    assert package["version"] == local["version"] == "1.9.3"
+    assert 'plugin_version = "1.9.3"' in entry_text
+    assert 'build_id = "20260901-r5"' in entry_text
     assert "v1.9.2" in package["history"]
 
 
@@ -35,7 +35,6 @@ def test_final_config_ui_replaces_stacked_legacy_cards():
     assert 'return [{"component": "VForm", "content": [basic, sources, decision, advanced]}], defaults' in method
     for title in ("基础", "资源来源", "资源决策与云添加", "高级"):
         assert f'"{title}"' in method
-    # 新的最终配置层只借用旧表单的动态 items/defaults，不把旧 content 再 append 回去。
     assert "old_form[0]" not in method
     assert "content.append" not in method
 
@@ -67,11 +66,9 @@ def test_config_exposes_multiple_magnet_ed2k_api_sources():
 
 
 def test_provider_search_has_real_viewing_and_api_paths():
-    # GYING 搜索与 downurl 取资源链路。
     assert '/s/1---1/' in provider_text
     assert 'res/downurl' in provider_text
     assert "panlist" in provider_text
-    # 通用 API 与 Torznab。
     assert 'params = {"t": "search", "q": keyword}' in provider_text
     assert 'headers["X-API-Key"] = token' in provider_text
     assert "ElementTree.fromstring" in provider_text
