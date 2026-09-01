@@ -14,11 +14,13 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 ENTRY = PLUGIN / "__init__.py"
 GYING = PLUGIN / "gying_runtime_v193.py"
+FAILOVER = PLUGIN / "gying_failover_v193.py"
 CONFIG = PLUGIN / "config_ui_v192.py"
 SAFETY = PLUGIN / "planner_safety_v190.py"
 
 entry_text = ENTRY.read_text(encoding="utf-8")
 gying_text = GYING.read_text(encoding="utf-8")
+failover_text = FAILOVER.read_text(encoding="utf-8")
 config_text = CONFIG.read_text(encoding="utf-8")
 safety_text = SAFETY.read_text(encoding="utf-8")
 
@@ -69,12 +71,15 @@ def _pure_namespace():
     return ns
 
 
-def test_gying_runtime_parses_as_python_and_is_in_mro_before_xunlei_provider():
+def test_gying_runtime_and_failover_parse_and_precede_xunlei_provider():
     ast.parse(gying_text, filename=str(GYING))
+    ast.parse(failover_text, filename=str(FAILOVER))
     assert "GuangYaGyingRuntimeMixin" in entry_text
+    assert "GuangYaGyingFailoverMixin" in entry_text
     start = entry_text.index("class GuangYaTransferAssistant")
     order = [
         "GuangYaConfigUiMixin,",
+        "GuangYaGyingFailoverMixin,",
         "GuangYaGyingRuntimeMixin,",
         "GuangYaXunleiFlashMixin,",
         "GuangYaProviderSourcesMixin,",
@@ -134,17 +139,16 @@ def test_legacy_challenge_solver_preserves_challenge_order():
 
 def test_real_gying_endpoints_replace_old_s_path_contract():
     for token in (
-        '"/user/login"',
-        '"/res/pow"',
-        '"/search?q="',
-        '"/res/downurl/"',
-        "_obj\\s*\\.\\s*search",
-        "code not in (200, \"200\")",
+        "/user/login",
+        "/res/pow",
+        "/search?q=",
+        "/res/downurl/",
+        "_GYING_SEARCH_RE",
+        'code not in (200, "200")',
         '"siteid": "1"',
         '"cookietime": "10506240"',
     ):
         assert token in gying_text
-    # 最终运行时不再依赖旧 /s/1---1 搜索路径。
     runtime_search = gying_text.split("    def _gying_raw_results(", 1)[1].split("    def _search_viewing(", 1)[0]
     assert "/s/1---1/" not in runtime_search
 
@@ -180,7 +184,24 @@ def test_gying_search_is_shared_by_magnet_provider_and_xunlei_priority_path():
     search_xunlei = gying_text.split("    def _search_viewing_xunlei(", 1)[1].split("    # ------------------------------------------------------------------\n    # 对外诊断 API", 1)[0]
     assert "_gying_raw_results(keyword)" in search_provider
     assert "_gying_raw_results(keyword)" in search_xunlei
-    assert "pan.xunlei.com/s/" in gying_text
+    assert "_XUNLEI_URL_RE" in search_xunlei
+    assert '"type": "xunlei"' in search_xunlei
+
+
+def test_failover_rejects_landing_pages_cools_bad_nodes_and_retries_search():
+    for token in (
+        "_BAD_NODE_STATES",
+        "_gying_node_cooldown_seconds = 600",
+        "当前网址将在不久后失效",
+        "获取新网址",
+        '"landing"',
+        "for attempt in range(3)",
+        'store["active_node"] = ""',
+        "_gying_search_cache.pop",
+    ):
+        assert token in failover_text
+    start = entry_text.index("class GuangYaTransferAssistant")
+    assert entry_text.index("GuangYaGyingFailoverMixin,", start) < entry_text.index("GuangYaGyingRuntimeMixin,", start)
 
 
 def test_complete_gying_config_survives_async_route_persistence():
