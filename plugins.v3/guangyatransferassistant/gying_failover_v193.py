@@ -29,8 +29,20 @@ class GuangYaGyingFailoverMixin:
 
     @staticmethod
     def _gying_bad_credentials(message: str) -> bool:
+        """认证类失败不能通过切节点解决；图形验证码同样应停在当前有效节点。"""
         text = str(message or "").lower()
-        return any(token in text for token in ("用户名或密码", "密码错误", "账号密码错误", "user or password", "invalid password"))
+        return any(token in text for token in (
+            "用户名或密码",
+            "密码错误",
+            "账号密码错误",
+            "user or password",
+            "invalid password",
+            "captcha_required",
+            "captcha",
+            "图形验证码",
+            "网页验证码",
+            "验证码",
+        ))
 
     def _gying_node_order(self) -> List[str]:
         state = self._gying_state()
