@@ -56,11 +56,16 @@ def test_bare_numeric_files_need_context_but_can_use_season_or_package_sequence(
 
 def test_release_style_number_before_quality_is_supported_without_grabbing_quality_number():
     result = resolve_episode("Show.Name.05.2160p.WEB-DL.mkv", season_hint=1)
-    assert reliable_episode_set(result) == {5}
-    assert "release-before-quality" in result["reason"]
+    selected = reliable_episode_set(result)
+    assert selected == {5}
+    assert result["confidence"] >= 0.90
+    assert 2160 not in selected
 
     result = resolve_episode("Show.Name.06.WEB-DL.H265.10bit.mkv", season_hint=1)
-    assert reliable_episode_set(result) == {6}
+    selected = reliable_episode_set(result)
+    assert selected == {6}
+    assert result["confidence"] >= 0.90
+    assert 265 not in selected
 
 
 def test_episode_hint_can_confirm_a_weak_name():
