@@ -196,8 +196,10 @@ def test_config_exposes_xunlei_runtime_credentials_and_fixed_priority():
 
 def test_public_xunlei_state_and_test_api_do_not_return_secret_config():
     api = xunlei_text.split("    def api_xunlei_flash_test", 1)[1].split("    def get_api", 1)[0]
-    assert "_xunlei_captcha_token" not in api
-    assert "_xunlei_captcha_init_json" not in api
-    assert "xunlei_device_id" not in api
+    # API may expose only a readiness boolean (with_captcha); never return credential values or config fields.
+    assert '"xunlei_captcha_token"' not in api
+    assert '"xunlei_captcha_init_json"' not in api
+    assert '"xunlei_device_id"' not in api
+    assert '"with_captcha"' in api
     assert '"/xunlei/flash/test"' in xunlei_text
     assert '"/xunlei/flash/state"' in xunlei_text
