@@ -11,8 +11,9 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 SOURCE_TYPES = ("guangya", "magnet", "ed2k")
 SOURCE_SCHEMA_VERSION = 1
-SOURCE_PENDING_STATES = {"new", "queued", "retry"}
-SOURCE_INFLIGHT_STATES = {"dispatching", "submitted", "waiting"}
+# queued 已经对应服务端 taskId，必须继续轮询而不是再次 create_task。
+SOURCE_PENDING_STATES = {"new", "retry"}
+SOURCE_INFLIGHT_STATES = {"dispatching", "submitted", "queued", "waiting"}
 SOURCE_TERMINAL_STATES = {"completed", "failed", "disabled"}
 
 _BTih_RE = re.compile(r"^(?:[0-9a-fA-F]{40}|[A-Z2-7a-z2-7]{32})$")
