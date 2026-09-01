@@ -174,7 +174,8 @@ def test_xunlei_uses_existing_missing_episode_planner_and_reservations():
     assert "super()._pending_reservations" in pending
     assert 'merged["episodes"]' in pending
     assert 'merged["movie"]' in pending
-    assert "秒传成功占位" in json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]["history"]["v1.9.3"]
+    history = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]["history"]["v1.9.3"]
+    assert "占位" in history and "防重复" in history
 
 
 def test_config_exposes_xunlei_runtime_credentials_and_fixed_priority():
