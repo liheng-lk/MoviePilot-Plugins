@@ -36,11 +36,11 @@ def test_v362_never_touches_moviepilot_queue_while_private_worker_is_alive():
     assert 'skipped="isolated_worker_active"' in CLEANUP
 
 
-def test_v362_retained_running_is_low_frequency_and_never_force_deleted():
+def test_v362_retained_running_is_low_frequency_and_existing_source_is_not_force_deleted():
     assert "_V362_RETAINED_LOG_SECONDS = 300.0" in CLEANUP
-    assert "只有 MoviePilot 整理历史已经确认成功时才判定为僵尸任务并移除" in CLEANUP
+    assert "源文件仍存在" in CLEANUP
     assert "每 60 秒安全复查一次" in CLEANUP
-    assert "不会强制删除" in CLEANUP
+    assert "不会强制删除仍存在的源文件" in CLEANUP
     assert "仅低频复查" in CLEANUP
 
 
