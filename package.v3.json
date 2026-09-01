@@ -65,14 +65,15 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "固定分流与多来源订阅助手：观影 GYING 支持发布页节点发现、自动切换、浏览器计算验证和真实登录/搜索/downurl；迅雷分享最高优先级走光鸭秒传，后续为光鸭直接转存 > Magnet > ED2K，Magnet/ED2K 继续使用光鸭原生云添加。",
+    "description": "固定分流与多来源订阅助手：观影 GYING 支持发布页节点发现、IDN 节点归一、自动切换、浏览器计算验证和真实登录/搜索/downurl；迅雷分享最高优先级走光鸭秒传并自动维护 captcha/device，后续为光鸭直接转存 > Magnet > ED2K，Magnet/ED2K 继续使用光鸭原生云添加。",
     "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流",
-    "version": "1.9.3",
+    "version": "1.9.4",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v1.9.4": "完整性收口：中文观影域名与 punycode 统一节点身份，星际穿越等当前内容节点仅作为自动节点池种子，旧 gying.org 默认自动迁移；手工 Cookie 只绑定首选节点，防止自动切换时跨域携带；观影零结果按 标题+年份+季 → 标题+年份 → 纯标题 降级，并增加年份二次校验与 Angie/伪404切换；迅雷秒传补稳定 device、captcha/init 自动初始化、匿名分享 Authorization 隔离和 share/detail(with_audit=false) GCID 回退；配置页把 PoW/captcha/device 等协议项下沉高级区，状态页仍保持五区紧凑结构。",
       "v1.9.3": "完整接入观影 GYING 与迅雷最高优先级秒传：新增发布页/备用节点池、失效自动切换、远程/内嵌 PoW 与旧版 challenge 计算验证，使用真实 /user/login、/search、/res/downurl 会话；从 panlist 提取迅雷分享，按缺集与订阅规则筛选后调用光鸭 userres 秒传，CID 缺失仅读取 3×20KB 样本；成功占位防重复，未命中回退光鸭分享、Magnet、ED2K；不经过 MoviePilot 下载器，也不做本地/OSS 中转。",
       "v1.9.2": "重构插件配置页为基础、资源来源、资源决策与云添加、高级四个区域；新增观影 GYING 地址、用户名/密码、Cookie 配置和 tg-search/Limitless/通用 JSON/Torznab Magnet/ED2K 搜索接口，并在频道候选未覆盖时安全补充外部候选。",
       "v1.9.1": "重构状态页为单一紧凑总览：移除 legacy/routing/experience/reliability/multisource/planner 多层卡片堆叠，首页仅保留总览、关键指标、需要处理、正在处理和系统状态；正常订阅、完成历史和长诊断不再铺满首页，新增 /status/overview 汇总 API。",
