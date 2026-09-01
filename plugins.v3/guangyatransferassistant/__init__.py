@@ -30,6 +30,7 @@ from .experience_v170 import GuangYaExperienceMixin
 from .multisource_v180 import GuangYaMultiSourceMixin
 from .offline_safety_v180 import GuangYaOfflineSafetyMixin
 from .page_auth_v172 import force_bear_auth, strip_page_api_secrets
+from .planner_safety_v190 import GuangYaPlannerSafetyMixin
 from .reliability_v170 import GuangYaReliabilityMixin
 from .resource_planner_v190 import GuangYaResourcePlannerMixin
 from .runtime_v170 import GuangYaRuntimeFinalizerMixin
@@ -42,6 +43,7 @@ install_channel_multisource_compat(_legacy_module)
 
 
 class GuangYaTransferAssistant(
+    GuangYaPlannerSafetyMixin,
     GuangYaResourcePlannerMixin,
     GuangYaOfflineSafetyMixin,
     GuangYaMultiSourceMixin,
