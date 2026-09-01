@@ -70,6 +70,7 @@ class GuangYaTransferAssistant(
 
     @eventmanager.register(EventType.PluginAction)
     def experience_action_event_handler(self, event: Event) -> None:
+        """把 experience mixin 的 PluginAction 处理器绑定到真正插件类。"""
         return super().experience_action_event_handler(event)
 
     def _schedule_pending_route_recovery(self, token: str) -> None:
@@ -135,6 +136,7 @@ class GuangYaTransferAssistant(
         self._plugin_log("INFO", "【光鸭转存助手】【RSS硬分流】已接管 SubscribeChain.match；全光鸭路线时跳过原生 RSS 匹配")
 
     def _install_download_circuit_breaker(self) -> None:
+        """安装订阅最终下载断路器，混合路线也不能误进 MoviePilot 本地下载。"""
         method_name = "_SubscribeChain__download_best_version_with_full_pack_first"
         current = getattr(SubscribeChain, method_name, None)
         if not current:
