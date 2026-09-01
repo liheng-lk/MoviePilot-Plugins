@@ -14,7 +14,7 @@ import time
 from typing import Any, Dict, List, Tuple
 from urllib.parse import urlparse
 
-from .gying_runtime_v193 import _extract_panlist
+from .gying_protocol_v1106 import extract_downlist_v1106, extract_panlist_v1106
 
 
 class GuangYaGyingObservabilityV1104Mixin:
@@ -65,7 +65,7 @@ class GuangYaGyingObservabilityV1104Mixin:
                 "updated_at": self._now_text(),
                 "updated_ts": time.time(),
             })
-            for key in ("mode", "cards", "resources", "magnet", "ed2k", "xunlei", "nodes"):
+            for key in ("mode", "cards", "resources", "pan", "magnet", "ed2k", "xunlei", "nodes"):
                 if key in extra:
                     value = extra.get(key)
                     if isinstance(value, (str, int, float, bool)) or value is None:
@@ -232,14 +232,38 @@ class GuangYaGyingObservabilityV1104Mixin:
                 str(err)[:220],
             )
             raise
-        panlist = _extract_panlist(payload)
-        count = len(list(panlist.get("url") or []))
+        panlist = extract_panlist_v1106(payload)
+        downlist = extract_downlist_v1106(payload)
+        pan_urls = list(panlist.get("url") or [])
+        kinds = list(downlist.get("k") or [])
+        hashes = list(downlist.get("m") or [])
+        magnet = 0
+        for index, value in enumerate(hashes):
+            try:
+                kind = int(kinds[index]) if index < len(kinds) else -1
+            except (TypeError, ValueError):
+                kind = -1
+            if kind == 0 and str(value or "").strip():
+                magnet += 1
+        xunlei = sum(1 for value in pan_urls if "pan.xunlei.com/s/" in str(value or "").lower())
+        pan = len(pan_urls)
         self._gying_obs_log(
             "INFO",
-            "downurl成功：节点=%s 类型=%s 资源链接=%s",
+            "downurl成功：节点=%s 类型=%s 网盘=%s 迅雷=%s Magnet=%s",
             self._gying_node_label(node),
             str(resource_type or "-")[:24],
-            count,
+            pan,
+            xunlei,
+            magnet,
+        )
+        self._gying_obs_record(
+            "downurl",
+            success=True,
+            node=node,
+            message=f"网盘 {pan} · 迅雷 {xunlei} · Magnet {magnet}",
+            pan=pan,
+            xunlei=xunlei,
+            magnet=magnet,
         )
         return payload
 
