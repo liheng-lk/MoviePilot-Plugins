@@ -6,7 +6,7 @@
 
 v1.9.1 把最终状态页展示权收口到 GuangYaStatusUiMixin。
 v1.9.2 同步持久化观影与 Magnet API 搜索提供器配置。
-v1.9.3 同步持久化观影迅雷秒传、device/captcha 配置。
+v1.9.3 同步持久化观影多节点/PoW 会话与迅雷秒传 device/captcha 配置。
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ class GuangYaPlannerSafetyMixin(GuangYaStatusUiMixin):
             # v1.9 ResourceGroup / Episode Resolver。
             "channel_external_auto_dispatch": self._channel_external_auto_dispatch,
             "episode_auto_confidence": self._episode_auto_confidence,
-            # v1.9.2 外部搜索提供器。
+            # v1.9.2/1.9.3 外部搜索与完整观影会话。
             "provider_auto_search": self._provider_auto_search,
             "provider_timeout": self._provider_timeout,
             "provider_result_limit": self._provider_result_limit,
@@ -66,6 +66,11 @@ class GuangYaPlannerSafetyMixin(GuangYaStatusUiMixin):
             "viewing_username": self._viewing_username,
             "viewing_password": self._viewing_password,
             "viewing_cookie": self._viewing_cookie,
+            "viewing_registry_urls": str(getattr(self, "_viewing_registry_urls", "") or ""),
+            "viewing_node_urls": str(getattr(self, "_viewing_node_urls", "") or ""),
+            "viewing_auto_switch": bool(getattr(self, "_viewing_auto_switch", True)),
+            "viewing_auto_challenge": bool(getattr(self, "_viewing_auto_challenge", True)),
+            "viewing_node_cache_minutes": int(getattr(self, "_viewing_node_cache_minutes", 360) or 360),
             "magnet_api_sources": self._magnet_api_sources,
             # v1.9.3 观影迅雷分享秒传。
             "xunlei_flash_enabled": bool(getattr(self, "_xunlei_flash_enabled", True)),
