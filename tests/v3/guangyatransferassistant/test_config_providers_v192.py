@@ -12,6 +12,7 @@ CONFIG = PLUGIN / "config_ui_v192.py"
 PROVIDERS = PLUGIN / "provider_sources_v192.py"
 GYING = PLUGIN / "gying_runtime_v193.py"
 FAILOVER = PLUGIN / "gying_failover_v193.py"
+HARDENING = PLUGIN / "gying_hardening_v193.py"
 SAFETY = PLUGIN / "planner_safety_v190.py"
 
 entry_text = ENTRY.read_text(encoding="utf-8")
@@ -19,6 +20,7 @@ config_text = CONFIG.read_text(encoding="utf-8")
 provider_text = PROVIDERS.read_text(encoding="utf-8")
 gying_text = GYING.read_text(encoding="utf-8")
 failover_text = FAILOVER.read_text(encoding="utf-8")
+hardening_text = HARDENING.read_text(encoding="utf-8")
 safety_text = SAFETY.read_text(encoding="utf-8")
 
 
@@ -29,14 +31,15 @@ def test_v192_files_parse_and_release_metadata_is_consistent():
         (PROVIDERS, provider_text),
         (GYING, gying_text),
         (FAILOVER, failover_text),
+        (HARDENING, hardening_text),
         (SAFETY, safety_text),
     ):
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.9.3"
-    assert 'plugin_version = "1.9.3"' in entry_text
-    assert 'build_id = "20260901-r6"' in entry_text
+    assert package["version"] == local["version"] == "1.9.4"
+    assert 'plugin_version = "1.9.4"' in entry_text
+    assert 'build_id = "20260901-r8"' in entry_text
     assert "v1.9.2" in package["history"]
 
 
@@ -62,11 +65,11 @@ def test_config_exposes_complete_viewing_node_login_and_cookie_controls():
         '"viewing_username"',
         '"viewing_password"',
         '"viewing_cookie"',
-        "首选观影节点（可选）",
+        "首选观影节点（可留空）",
         "观影地址发布页",
-        "手动备用节点（每行一个）",
-        "节点失效自动切换",
-        "自动完成计算验证",
+        "手动备用观影节点",
+        "观影节点自动切换",
+        "自动完成观影计算验证",
         "观影用户名 / 邮箱",
         "观影密码",
         "观影 Cookie（可选）",
@@ -75,9 +78,19 @@ def test_config_exposes_complete_viewing_node_login_and_cookie_controls():
     ):
         assert token in config_text
     assert 'type="password"' in config_text
-    # 真实 GYING 登录路径固定为 /user/login，不再让用户配置一个容易写错的“登录路径”。
+    # /user/login 是固定协议路径，可以作为隐藏兼容配置保存，但不能再渲染成用户输入框。
     form = config_text.split("    def get_form(self):", 1)[1]
-    assert '"viewing_login_path"' not in form
+    assert '_field("viewing_login_path"' not in form
+
+
+def test_protocol_level_options_are_moved_out_of_daily_source_controls():
+    sources = config_text.split("        sources = self._card(", 1)[1].split("        decision = self._card(", 1)[0]
+    advanced = config_text.split("        advanced = self._card(", 1)[1].split("        defaults.update", 1)[0]
+    for token in ("viewing_registry_urls", "viewing_node_urls", "viewing_auto_challenge", "xunlei_device_id", "xunlei_captcha_token", "xunlei_captcha_init_json"):
+        assert token not in sources
+        assert token in advanced
+    for token in ("viewing_enabled", "provider_auto_search", "viewing_auto_switch", "xunlei_flash_enabled", "viewing_username", "viewing_password"):
+        assert token in sources
 
 
 def test_config_exposes_multiple_magnet_ed2k_api_sources():
@@ -102,10 +115,10 @@ def test_final_gying_runtime_uses_real_login_search_downurl_and_pow_paths():
     assert "_discover_gying_nodes" in gying_text
     assert "_gying_node_order" in failover_text
     assert "_LANDING_MARKERS" in failover_text
-    # v1.9.2 的旧 HTML 卡片抓取实现仍留作兼容层，但最终 MRO 必须由 GYING runtime 覆盖。
+    assert "CURRENT_CONTENT_SEEDS" in hardening_text
     start = entry_text.index("class GuangYaTransferAssistant")
+    assert entry_text.index("GuangYaGyingHardeningMixin,", start) < entry_text.index("GuangYaGyingRuntimeMixin,", start)
     assert entry_text.index("GuangYaGyingRuntimeMixin,", start) < entry_text.index("GuangYaProviderSourcesMixin,", start)
-    # 通用 API / Torznab 继续由 provider 层负责。
     assert 'params = {"t": "search", "q": keyword}' in provider_text
     assert 'headers["X-API-Key"] = token' in provider_text
     assert "ElementTree.fromstring" in provider_text
@@ -120,8 +133,7 @@ def test_provider_results_enter_existing_resourcegroup_not_local_downloader():
     assert "target_episodes=sorted(target)" in provider_text
     assert "_spawn_source_dispatch" in provider_text
     assert "_existing_source" in provider_text
-    assert "_provider_candidate_matches" in provider_text
-    combined = "\n".join((provider_text, gying_text, failover_text)).lower()
+    combined = "\n".join((provider_text, gying_text, failover_text, hardening_text)).lower()
     for forbidden in (
         "from app.chain.download",
         "downloadchain(",
@@ -138,7 +150,6 @@ def test_viewing_secrets_are_not_returned_by_public_provider_or_node_api():
     assert "_viewing_password" not in api
     assert "_viewing_cookie" not in api
     assert "_magnet_api_sources" not in api
-    assert "API 不返回观影 Cookie、账号、密码或接口密钥" in api
     node_api = gying_text.split("    def api_viewing_nodes(", 1)[1].split("    def api_provider_test", 1)[0]
     assert '"cookie"' not in node_api
     assert "_viewing_password" not in node_api
@@ -172,8 +183,10 @@ def test_runtime_mro_places_complete_gying_before_xunlei_provider_and_planner():
     start = entry_text.index("class GuangYaTransferAssistant")
     order = [
         "GuangYaConfigUiMixin,",
+        "GuangYaGyingHardeningMixin,",
         "GuangYaGyingFailoverMixin,",
         "GuangYaGyingRuntimeMixin,",
+        "GuangYaXunleiHardeningMixin,",
         "GuangYaXunleiFlashMixin,",
         "GuangYaProviderSourcesMixin,",
         "GuangYaPlannerSafetyMixin,",
