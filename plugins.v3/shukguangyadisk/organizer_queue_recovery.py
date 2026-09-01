@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from app.application.chain.data import get_chain_transfer_pending_port
+from app.db.transferpending_oper import TransferPendingOper
 from app.chain.transfer import TransferChain
 from app.runtime.config import global_vars
 from app.sdk.logging import logger
@@ -67,7 +67,7 @@ class GuangYaQueueRecoveryMixin:
 
     def _quarantine_legacy_pending(self) -> Dict[str, Any]:
         """只清理旧光鸭自动监控留下的 TransferPending 登记。"""
-        pending_oper = get_chain_transfer_pending_port()
+        pending_oper = TransferPendingOper()
         storage_names = self._queue_guard_storage_names()
         quarantined: List[str] = []
         errors: List[str] = []

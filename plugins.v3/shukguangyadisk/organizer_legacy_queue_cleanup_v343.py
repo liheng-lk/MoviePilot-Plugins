@@ -15,7 +15,7 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Set, Tuple
 
-from app.application.chain.data import get_chain_transfer_pending_port
+from app.db.transferpending_oper import TransferPendingOper
 from app.chain.transfer import TransferChain
 from app.runtime.config import global_vars
 from app.sdk.logging import logger
@@ -86,7 +86,7 @@ def _cleanup_legacy_global_tasks(self) -> Dict[str, Any]:
         return result
 
     try:
-        pending_oper = get_chain_transfer_pending_port()
+        pending_oper = TransferPendingOper()
     except Exception:
         pending_oper = None
 

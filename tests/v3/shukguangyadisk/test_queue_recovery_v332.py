@@ -17,7 +17,7 @@ def test_queue_recovery_mixin_precedes_organizer_submission_mixin():
 
 def test_legacy_recovery_only_targets_guangya_monitor_pending_rows():
     for token in (
-        "get_chain_transfer_pending_port",
+        "TransferPendingOper",
         ".list_all()",
         "_queue_guard_storage_names",
         "_queue_guard_path_matches",
@@ -25,6 +25,8 @@ def test_legacy_recovery_only_targets_guangya_monitor_pending_rows():
         "global_vars.stop_transfer",
     ):
         assert token in RECOVERY, token
+    assert "from app.db.transferpending_oper import TransferPendingOper" in RECOVERY
+    assert "app.application.chain.data" not in RECOVERY
     assert 'str(storage or "") not in storage_names' in RECOVERY
     assert "not self._queue_guard_path_matches(src_path)" in RECOVERY
 
