@@ -38,6 +38,7 @@ from .experience_v170 import GuangYaExperienceMixin
 from .gying_failover_v193 import GuangYaGyingFailoverMixin
 from .gying_hardening_v193 import GuangYaGyingHardeningMixin
 from .gying_observability_v1104 import GuangYaGyingObservabilityV1104Mixin
+from .gying_protocol_v1106 import GuangYaGyingProtocolV1106Mixin
 from .gying_runtime_v193 import GuangYaGyingRuntimeMixin
 from .multisource_v180 import GuangYaMultiSourceMixin
 from .offline_safety_v180 import GuangYaOfflineSafetyMixin
@@ -48,6 +49,7 @@ from .reliability_v170 import GuangYaReliabilityMixin
 from .resource_planner_v190 import GuangYaResourcePlannerMixin
 from .runtime_v170 import GuangYaRuntimeFinalizerMixin
 from .routing_v170 import GuangYaTransferAssistant as _RoutingV170Assistant
+from .stability_v1106 import GuangYaStabilityV1106Mixin
 from .status_hardening_v193 import GuangYaStatusHardeningMixin
 from .xunlei_flash_v193 import GuangYaXunleiFlashMixin
 from .xunlei_hardening_v193 import GuangYaXunleiHardeningMixin
@@ -58,6 +60,7 @@ install_channel_multisource_compat(_legacy_module)
 
 
 class GuangYaTransferAssistant(
+    GuangYaStabilityV1106Mixin,
     GuangYaContentResilienceV1105Mixin,
     GuangYaGyingObservabilityV1104Mixin,
     GuangYaChannelUiV1101Mixin,
@@ -69,6 +72,7 @@ class GuangYaTransferAssistant(
     GuangYaConfigUiMixin,
     GuangYaGyingHardeningMixin,
     GuangYaGyingFailoverMixin,
+    GuangYaGyingProtocolV1106Mixin,
     GuangYaGyingRuntimeMixin,
     GuangYaXunleiHardeningMixin,
     GuangYaXunleiFlashMixin,
