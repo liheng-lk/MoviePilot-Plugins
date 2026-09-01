@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
   "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
-  "version": "3.6.5",
+  "version": "3.6.6",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v3.6.6": "修复已整理完成的旧 running 任务因源路径已移走、MoviePilot 历史无法按旧路径确认而永久复查的问题；远端成功确认源路径不存在时只清理旧队列壳和插件瞬态状态，不伪造 completed、不删除媒体；网络/DNS 查询失败继续保留复查。",
     "v3.6.5": "修复新版 MoviePilot 移除 app.application.chain.data 后插件无法加载的问题；旧全局队列迁移改用宿主保留的 app.db.transferpending_oper 兼容 ABI，继续只清理未执行的历史光鸭 pending，不绕过新版持久准入与租约 fencing。",
     "v3.6.4": "修复同盘 move 已发生但后续确认失败时，MoviePilot 失败清理可能把文件送入回收站并永久删除；失败改为目标自愈/安全回滚/删除保护，未确认文件禁止永久清理。",
     "v3.6.3": "新增 TV→MOVIE 安全消歧：当 MoviePilot 先命中电视剧但单主视频无集号、非 Season 目录且无剧集上下文时，再由 MoviePilot 强制电影复核；仅标题一致且年份不冲突时切换为电影。",
