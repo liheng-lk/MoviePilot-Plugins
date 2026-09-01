@@ -1,15 +1,13 @@
-"""光鸭转存助手 v1.7.3 运行入口。
+"""光鸭转存助手 v1.8.0 运行入口。
+
+v1.8.0 在既有固定分流、频道转存、可靠性与状态诊断之上增加多来源订阅：
+Magnet/ED2K 直接调用光鸭云盘自带 cloudcollection 云添加，不经过 MoviePilot 下载器；
+“观影”按 MoviePilot 订阅模式把资源链接绑定到现有订阅，并继续复用固定分流门禁。
 
 routing_v170 保留全入口 search 硬分流与消息直订，experience_v170 增加非阻塞后台检查、
 消息管理、自检、原因诊断和路线崩溃恢复；reliability_v170 负责高频并发合并、热重载
 唯一实例所有权以及频道源故障缓存降级/自动恢复；runtime_v170 负责宿主调度器最终非阻塞
-分流、旧实例失效和诊断校正；本层再增加 MoviePilot RSS/缓存匹配链的最终下载断路器，
-确保固定转存订阅不仅“不搜索”，也绝不会从 SubscribeChain.match 路径落到本地下载器。
-
-MoviePilot V3 的事件绑定解析器按“声明处理器的类名”查找真实插件实例。experience/reliability
-属于 mixin，类名不是 GuangYaTransferAssistant，因此体验层消息 action 不能只依赖 mixin 上的
-装饰器；运行入口显式注册一个真实插件类的事件桥，保证 /gyroute、/gycheck、/gywhy、
-/gyselfcheck 在正式 MoviePilot 运行时可被正确投递。
+分流、旧实例失效和诊断校正；本层保留 MoviePilot RSS/缓存匹配链最终下载断路器。
 """
 
 from __future__ import annotations
@@ -27,6 +25,8 @@ from app.sdk.events import Event, eventmanager
 from . import legacy as _legacy_module
 from .episode_compat_v171 import collapse_unparsed_failure_notice, install_episode_filename_compat
 from .experience_v170 import GuangYaExperienceMixin
+from .multisource_v180 import GuangYaMultiSourceMixin
+from .offline_safety_v180 import GuangYaOfflineSafetyMixin
 from .page_auth_v172 import force_bear_auth, strip_page_api_secrets
 from .reliability_v170 import GuangYaReliabilityMixin
 from .runtime_v170 import GuangYaRuntimeFinalizerMixin
@@ -38,15 +38,17 @@ install_episode_filename_compat(_legacy_module)
 
 
 class GuangYaTransferAssistant(
+    GuangYaOfflineSafetyMixin,
+    GuangYaMultiSourceMixin,
     GuangYaRuntimeFinalizerMixin,
     GuangYaReliabilityMixin,
     GuangYaExperienceMixin,
     _RoutingV170Assistant,
 ):
-    """完整硬分流：搜索 + RSS + 下载门禁 + 体验 + 可靠性 + 最终运行编排。"""
+    """完整硬分流 + 光鸭原生多来源云添加运行时。"""
 
-    plugin_version = "1.7.3"
-    build_id = "20260825-r15"
+    plugin_version = "1.8.0"
+    build_id = "20260901-r1"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为状态页按钮安装非阻塞/标准响应适配。"""
@@ -73,8 +75,6 @@ class GuangYaTransferAssistant(
         token = str(token or "")
         if not token:
             return
-        # 同一运行实例只挂一次。持久化 marker 只能说明“上一个进程曾计划过”，不能证明
-        # 当前进程仍有对应 Timer；否则进程在 60 秒窗口内崩溃重启会留下永远等不到的假 scheduled。
         if str(getattr(self, "_route_recovery_runtime_token", "") or "") == token:
             return
         marker = dict(self.get_data("route_recovery_marker") or {})
@@ -173,7 +173,7 @@ class GuangYaTransferAssistant(
                 sid = int(getattr(subscribe, "id", 0) or 0)
                 plugin._plugin_log(
                     "WARNING",
-                    "【光鸭转存助手】【下载断路器】阻断 MoviePilot 原生下载提交 #%s %s；固定转存路线只允许光鸭转存",
+                    "【光鸭转存助手】【下载断路器】阻断 MoviePilot 原生下载提交 #%s %s；固定转存路线只允许光鸭转存/原生云添加",
                     sid,
                     getattr(subscribe, "name", ""),
                 )
@@ -234,7 +234,6 @@ class GuangYaTransferAssistant(
 
     def get_page(self):
         pages = super().get_page() or []
-        # 最终再做一次页面动作清洗，覆盖 legacy/routing/mixin 任何层生成的按钮。
         strip_page_api_secrets(pages)
         match_guard, download_guard = self._native_guard_status()
 
@@ -255,6 +254,7 @@ class GuangYaTransferAssistant(
             props["text"] = (
                 f"{old_text} · RSS匹配门禁：{'已接管' if match_guard else '未接管'}"
                 f" · 最终下载断路器：{'已接管' if download_guard else '未接管'}"
+                " · Magnet/ED2K：光鸭原生云添加"
             )
             if not (match_guard and download_guard):
                 props["type"] = "warning"
