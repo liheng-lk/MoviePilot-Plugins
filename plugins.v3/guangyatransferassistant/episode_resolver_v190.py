@@ -90,7 +90,6 @@ def _strict_parse(value: Any, season_hint: Optional[int] = None) -> Optional[Dic
             episodes.update(values)
             reasons.append("E/EP")
 
-    # 覆盖 S01E05E06 这种没有分隔符的连续 E 标记。
     for raw in re.findall(r"(?i)E(?:P(?:ISODE)?)?[\s._-]*0*(\d{1,4})", text):
         value_int = int(raw)
         if 0 < value_int <= MAX_EXPLICIT_EPISODE:
@@ -153,7 +152,6 @@ def _weak_numeric_candidate(value: Any) -> Optional[Tuple[int, str]]:
         if _valid_weak_number(candidate):
             return candidate, "quality-suffix"
 
-    # Show.Name.05.2160p / Show.Name.05.WEB-DL 这类发布名，数字必须紧贴已知质量标签。
     release_quality = list(_RELEASE_EP_BEFORE_QUALITY_RE.finditer(stem))
     if release_quality:
         candidate = int(release_quality[-1].group(1))
@@ -165,6 +163,7 @@ def _weak_numeric_candidate(value: Any) -> Optional[Tuple[int, str]]:
         (r"(?:^|[\s._])[-–—][\s._-]*0*(\d{1,4})(?:v\d+)?(?=\s|[._\[(（]|$)", "dash-number"),
         (r"^\s*0*(\d{1,4})(?:v\d+)?$", "bare-number"),
         (r"^\s*0*(\d{1,4})(?:v\d+)?(?=[\s._\-\[(（])", "leading-number"),
+        (r"(?:^|[\s._-])0*(\d{1,4})(?:v\d+)?$", "trailing-number"),
     )
     for pattern, reason in patterns:
         matched = re.search(pattern, stem, re.I)
@@ -199,7 +198,6 @@ def _is_coherent_sequence(values: Sequence[int]) -> bool:
         return False
     ordered = sorted(set(int(v) for v in values))
     span = ordered[-1] - ordered[0] + 1
-    # 允许一个缺口，适配包里恰好缺一集的情况；跨度过大不做序列推断。
     return span <= len(ordered) + 1 and span <= 500
 
 
@@ -210,10 +208,7 @@ def resolve_episode(
     season_hint: Optional[int] = None,
     episode_hint: Any = "",
 ) -> Dict[str, Any]:
-    """返回可解释的剧集识别结果。
-
-    confidence >= AUTO_SELECT_CONFIDENCE 才允许自动文件级选择；低置信结果只用于诊断。
-    """
+    """返回可解释的剧集识别结果；低于阈值只诊断，不自动拆包。"""
     strict = _strict_parse(path, season_hint=season_hint)
     if strict:
         return strict
@@ -234,7 +229,6 @@ def resolve_episode(
     confidence = 0.65
     reason = weak_reason
 
-    # 频道/资源标题里有明确集号时可作为外部证据，但必须与候选一致。
     hinted = _strict_parse(episode_hint, season_hint=season) if episode_hint else None
     if hinted and candidate in set(hinted.get("episodes") or []):
         confidence = max(confidence, 0.96)
@@ -247,9 +241,8 @@ def resolve_episode(
         confidence = max(confidence, 0.92)
         reason += "+package-sequence"
 
-    # 明确位于 Season/Sxx 目录/订阅季上下文中的弱数字，是常见而可靠的剧集命名。
     if season is not None and weak_reason in {
-        "bare-number", "leading-number", "bracket-number", "dash-number",
+        "bare-number", "leading-number", "trailing-number", "bracket-number", "dash-number",
         "quality-suffix", "release-before-quality",
     }:
         confidence = max(confidence, 0.90)
