@@ -15,7 +15,6 @@ PLANNER_SAFETY = PLUGIN / "planner_safety_v190.py"
 ENTRY = PLUGIN / "__init__.py"
 
 
-# 建立最小包环境，让 status_ui_v191 的相对导入可在不安装 MoviePilot 的 CI 中运行。
 pkg_name = "_guangya_status_ui_testpkg"
 pkg = types.ModuleType(pkg_name)
 pkg.__path__ = [str(PLUGIN)]
@@ -150,7 +149,6 @@ def test_status_ui_only_surfaces_real_attention_and_active_work():
     assert "45%" in text
     assert "E05, E06" in text
     assert "光鸭转存 · 示例剧 A" in text
-    # 缺少候选资源是正常等待，只显示计数，不再生成一条黄色异常卡。
     assert "资源暂未覆盖" not in text
     assert "E04, E05" not in text
     assert "等待资源" in text
@@ -160,7 +158,6 @@ def test_status_ui_only_surfaces_real_attention_and_active_work():
 def test_status_overview_counts_waiting_separately_from_attention():
     overview = FakeStatus().api_status_overview()["data"]
     assert overview["waiting_resource_count"] == 1
-    # 需要处理 = needs_review ED2K + 失败的直接光鸭转存，不包含 waiting resource。
     assert overview["attention_count"] == 2
     assert len(overview["active_transfer_rows"]) == 1
     assert len(overview["active_sources"]) == 1
@@ -196,11 +193,12 @@ def test_status_ui_exposes_overview_api_and_planner_is_final_display_owner():
     assert "super().get_page" not in page_method
 
 
-def test_status_ui_release_metadata_is_v191():
+def test_status_ui_v191_is_retained_by_current_release():
     entry = ENTRY.read_text(encoding="utf-8")
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.9.1"
-    assert 'plugin_version = "1.9.1"' in entry
-    assert 'build_id = "20260901-r3"' in entry
+    assert package["version"] == local["version"] == "1.9.2"
+    assert 'plugin_version = "1.9.2"' in entry
+    assert 'build_id = "20260901-r4"' in entry
     assert "v1.9.1" in package.get("history", {})
+    assert "紧凑" in package["history"]["v1.9.1"]

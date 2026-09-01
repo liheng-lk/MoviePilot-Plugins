@@ -1,18 +1,10 @@
-"""光鸭转存助手 v1.9.1 运行入口。
+"""光鸭转存助手 v1.9.2 运行入口。
 
-v1.9.0 在 v1.8.0 光鸭原生 Magnet/ED2K 云添加之上增加 ResourceGroup 决策层：
-同一频道消息中的光鸭分享、Magnet、ED2K 作为同一资源的候选方式；先按 MoviePilot
-真实缺集确定目标，再按“光鸭直接转存 > Magnet > ED2K”唯一执行，并使用统一高置信
-Episode Resolver 做文件级拆包。无法可靠识别集号时不整包误存。
-
-v1.9.1 重构状态页：不再把 legacy/routing/experience/reliability/multisource/planner
-各层诊断卡逐层叠加到首页，只保留总览、关键指标、需要处理、正在处理和系统状态。
-完整诊断能力继续由既有 API 与自检提供。
-
-routing_v170 保留全入口 search 硬分流与消息直订，experience_v170 增加非阻塞后台检查、
-消息管理、自检、原因诊断和路线崩溃恢复；reliability_v170 负责高频并发合并、热重载
-唯一实例所有权以及频道源故障缓存降级/自动恢复；runtime_v170 负责宿主调度器最终非阻塞
-分流、旧实例失效和诊断校正；本层保留 MoviePilot RSS/缓存匹配链最终下载断路器。
+v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
+v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
+地址/登录配置及通用 Magnet/ED2K 搜索 API，外部搜索结果继续进入同一 ResourceGroup
+与光鸭原生 cloudcollection，不经过 MoviePilot 下载器。
+资源决策保持：光鸭直接转存 > Magnet > ED2K。
 """
 
 from __future__ import annotations
@@ -29,24 +21,27 @@ from app.sdk.events import Event, eventmanager
 
 from . import legacy as _legacy_module
 from .channel_sources_v190 import install_channel_multisource_compat
+from .config_ui_v192 import GuangYaConfigUiMixin
 from .episode_compat_v171 import collapse_unparsed_failure_notice, install_episode_filename_compat
 from .experience_v170 import GuangYaExperienceMixin
 from .multisource_v180 import GuangYaMultiSourceMixin
 from .offline_safety_v180 import GuangYaOfflineSafetyMixin
 from .page_auth_v172 import force_bear_auth, strip_page_api_secrets
 from .planner_safety_v190 import GuangYaPlannerSafetyMixin
+from .provider_sources_v192 import GuangYaProviderSourcesMixin
 from .reliability_v170 import GuangYaReliabilityMixin
 from .resource_planner_v190 import GuangYaResourcePlannerMixin
 from .runtime_v170 import GuangYaRuntimeFinalizerMixin
 from .routing_v170 import GuangYaTransferAssistant as _RoutingV170Assistant
 
 
-# legacy.py 保留成熟转存状态机；以热重载安全方式补充弱命名与多来源频道消息。
 install_episode_filename_compat(_legacy_module)
 install_channel_multisource_compat(_legacy_module)
 
 
 class GuangYaTransferAssistant(
+    GuangYaConfigUiMixin,
+    GuangYaProviderSourcesMixin,
     GuangYaPlannerSafetyMixin,
     GuangYaResourcePlannerMixin,
     GuangYaOfflineSafetyMixin,
@@ -56,33 +51,30 @@ class GuangYaTransferAssistant(
     GuangYaExperienceMixin,
     _RoutingV170Assistant,
 ):
-    """完整硬分流 + ResourceGroup 决策 + 光鸭原生多来源云添加运行时。"""
+    """固定分流 + ResourceGroup + 外部资源提供器 + 光鸭原生云添加运行时。"""
 
-    plugin_version = "1.9.1"
-    build_id = "20260901-r3"
+    plugin_version = "1.9.2"
+    build_id = "20260901-r4"
 
     def get_api(self):
-        """统一 Bearer 鉴权，并为状态页按钮安装非阻塞/标准响应适配。"""
+        """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
         return force_bear_auth(super().get_api())
 
     @staticmethod
     def _normalize_page_api_auth(node: Any) -> None:
-        """状态页按钮只传业务参数，不再向前端暴露或依赖 API_TOKEN。"""
         strip_page_api_secrets(node)
 
     def post_message(self, *args, **kwargs):
-        """发送前合并同一通知里的重复“无法解析集号”诊断，避免同批文件重复告警。"""
         if str(kwargs.get("title") or "") == "⚠️ 光鸭转存失败" and kwargs.get("text"):
             kwargs["text"] = collapse_unparsed_failure_notice(kwargs.get("text"))
         return super().post_message(*args, **kwargs)
 
     @eventmanager.register(EventType.PluginAction)
     def experience_action_event_handler(self, event: Event) -> None:
-        """把体验层消息 action 绑定到真实插件类，避免 mixin 事件处理器无法被 V3 resolver 解析。"""
+        """把 experience mixin 的 PluginAction 处理器绑定到真正插件类。"""
         return super().experience_action_event_handler(event)
 
     def _schedule_pending_route_recovery(self, token: str) -> None:
-        """进程重启后重新挂起未确认的路线写盘，不把旧进程的 scheduled 标记当成活定时器。"""
         token = str(token or "")
         if not token:
             return
@@ -105,7 +97,6 @@ class GuangYaTransferAssistant(
         self._install_download_circuit_breaker()
 
     def _install_match_guard(self) -> None:
-        """当所有可匹配订阅均为光鸭路线时，RSS 缓存匹配整轮直接跳过。"""
         current = SubscribeChain.match
         if getattr(current, "_guangya_match_guard", False):
             current._guangya_plugin_ref = weakref.ref(self)
@@ -119,7 +110,6 @@ class GuangYaTransferAssistant(
             plugin = plugin_ref() if callable(plugin_ref) else None
             if not plugin or not plugin._enabled:
                 return original(chain_self, torrents, progress_callback=progress_callback)
-
             try:
                 active = list(plugin._list_subscriptions("R") or [])
                 if active and all(plugin._is_guangya_route(item) for item in active):
@@ -147,7 +137,7 @@ class GuangYaTransferAssistant(
         self._plugin_log("INFO", "【光鸭转存助手】【RSS硬分流】已接管 SubscribeChain.match；全光鸭路线时跳过原生 RSS 匹配")
 
     def _install_download_circuit_breaker(self) -> None:
-        """在订阅最终提交 DownloadChain 前做第二道硬门禁，混合路线也不会误下载。"""
+        """安装订阅最终下载断路器，混合路线也不能误进 MoviePilot 本地下载。"""
         method_name = "_SubscribeChain__download_best_version_with_full_pack_first"
         current = getattr(SubscribeChain, method_name, None)
         if not current:
@@ -244,7 +234,6 @@ class GuangYaTransferAssistant(
         return match_guard, download_guard
 
     def get_page(self):
-        """最终状态页由 PlannerSafety -> StatusUi 生成；这里只做鉴权参数清理。"""
         pages = super().get_page() or []
         strip_page_api_secrets(pages)
         return pages

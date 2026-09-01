@@ -1,13 +1,11 @@
 """v1.9.0 ResourceGroup 运行安全收口。
 
 补足两类容易在真实环境中出现的问题：
-- 路由名单异步持久化会调用 legacy._save_config，因此必须把 v1.8/v1.9 新配置一起写回，
-  否则绑定 Magnet/ED2K 后热重载可能丢失多来源设置；
-- Magnet 的真实画质/发布名通常只有 resolve_res 后才能确认，不能仅凭帖子文本在 resolve 前
-  判定“不满足订阅规则”。规则校验延后到解析文件列表之后、create_task 之前执行。
+- 路由名单异步持久化会调用 legacy._save_config，因此必须把后续版本新增配置一起写回；
+- Magnet 的真实画质/发布名通常只有 resolve_res 后才能确认，不能仅凭帖子文本提前淘汰。
 
-v1.9.1 同时把最终状态页展示权收口到 GuangYaStatusUiMixin，避免历史多层 get_page
-逐层叠加卡片造成页面冗长和重复。
+v1.9.1 把最终状态页展示权收口到 GuangYaStatusUiMixin。
+v1.9.2 同步持久化观影与 Magnet API 搜索提供器配置。
 """
 
 from __future__ import annotations
@@ -21,10 +19,10 @@ _RULE_MISMATCH_PREFIX = "RESOURCE_RULE_MISMATCH:"
 
 
 class GuangYaPlannerSafetyMixin(GuangYaStatusUiMixin):
-    """放在 ResourcePlannerMixin 之前，负责配置完整持久化、解析后规则校验与最终状态页。"""
+    """负责完整配置持久化、解析后规则校验与最终状态页。"""
 
     def _save_config(self) -> None:
-        """一次性保存完整配置，避免 legacy 延迟写盘覆盖 v1.8/v1.9 字段。"""
+        """一次性保存完整配置，避免 legacy 延迟写盘覆盖新版本字段。"""
         self.update_config({
             "enabled": self._enabled,
             "channel_urls": self._channel_urls,
@@ -56,6 +54,18 @@ class GuangYaPlannerSafetyMixin(GuangYaStatusUiMixin):
             # v1.9 ResourceGroup / Episode Resolver。
             "channel_external_auto_dispatch": self._channel_external_auto_dispatch,
             "episode_auto_confidence": self._episode_auto_confidence,
+            # v1.9.2 外部搜索提供器。
+            "provider_auto_search": self._provider_auto_search,
+            "provider_timeout": self._provider_timeout,
+            "provider_result_limit": self._provider_result_limit,
+            "provider_proxy": self._provider_proxy,
+            "viewing_enabled": self._viewing_enabled,
+            "viewing_base_url": self._viewing_base_url,
+            "viewing_login_path": self._viewing_login_path,
+            "viewing_username": self._viewing_username,
+            "viewing_password": self._viewing_password,
+            "viewing_cookie": self._viewing_cookie,
+            "magnet_api_sources": self._magnet_api_sources,
         })
 
     def _external_resource_allowed(

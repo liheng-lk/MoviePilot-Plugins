@@ -26,9 +26,9 @@ def test_all_v190_files_parse_and_publish_current_version():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.9.1"
-    assert 'plugin_version = "1.9.1"' in texts[ENTRY]
-    assert 'build_id = "20260901-r3"' in texts[ENTRY]
+    assert package["version"] == local["version"] == "1.9.2"
+    assert 'plugin_version = "1.9.2"' in texts[ENTRY]
+    assert 'build_id = "20260901-r4"' in texts[ENTRY]
 
 
 def test_runtime_mro_puts_planner_safety_and_planner_before_native_offline_layers():
@@ -123,7 +123,7 @@ def test_low_confidence_and_rule_mismatch_do_not_retry_as_whole_pack():
     assert "转向下一候选" in safety
 
 
-def test_complete_v180_and_v190_config_survives_async_route_persistence():
+def test_complete_config_survives_async_route_persistence():
     safety = texts[PLANNER_SAFETY]
     save = safety.split("    def _save_config(self)", 1)[1].split("    def _external_resource_allowed", 1)[0]
     for key in (
@@ -135,6 +135,10 @@ def test_complete_v180_and_v190_config_survives_async_route_persistence():
         "offline_max_attempts",
         "channel_external_auto_dispatch",
         "episode_auto_confidence",
+        "provider_auto_search",
+        "viewing_base_url",
+        "viewing_cookie",
+        "magnet_api_sources",
     ):
         assert f'"{key}"' in save
 
@@ -162,6 +166,5 @@ def test_resource_plan_api_and_review_status_are_exposed():
     assert '"/resource/plan"' in planner
     assert "resource_plans" in planner
     assert "资源组决策 · 缺集拆包" in planner
-    # v1.9.1 最终首页不再逐层插入 review 卡，PlannerSafety 直接交给紧凑 UI 汇总。
     assert "GuangYaStatusUiMixin" in safety
     assert "return GuangYaStatusUiMixin.get_page(self)" in safety
