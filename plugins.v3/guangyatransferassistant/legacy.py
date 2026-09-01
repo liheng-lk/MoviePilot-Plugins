@@ -14,7 +14,13 @@ from urllib.parse import parse_qs, urlencode, unquote, urljoin, urlsplit, urluns
 
 from apscheduler.triggers.cron import CronTrigger
 
-from app.chain.subscribe import SubscribeChain, build_subscribe_meta
+from app.chain.subscribe import SubscribeChain
+
+try:
+    # MoviePilot V3 当前订阅合同：build_subscribe_meta 已从 Chain 根入口迁移到 application contract。
+    from app.application.subscription.contract import build_subscribe_meta
+except ImportError:  # 兼容仍从 app.chain.subscribe 导出的早期 V3 小版本
+    from app.chain.subscribe import build_subscribe_meta
 from app.chain.media import MediaChain
 from app.chain.download import DownloadChain
 from app.db.oper.subscribe import SubscribeOper
