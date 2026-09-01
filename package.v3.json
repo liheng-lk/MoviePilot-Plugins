@@ -65,14 +65,15 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "固定分流与多来源订阅助手：频道、观影 GYING、Magnet/ED2K 搜索 API 统一进入 ResourceGroup，按真实缺集唯一决策并安全拆包；Magnet/ED2K 直接使用光鸭原生云添加；状态页与配置页均采用紧凑分组。",
-    "labels": "光鸭云盘,转存,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流",
-    "version": "1.9.2",
+    "description": "固定分流与多来源订阅助手：观影 GYING 迅雷分享优先走光鸭秒传，按真实缺集安全选择；固定优先级为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K，Magnet/ED2K 继续使用光鸭原生云添加。",
+    "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流",
+    "version": "1.9.3",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v1.9.3": "新增观影迅雷分享最高优先级秒传：从观影资源提取迅雷分享，获取 pass_code_token、文件 GCID/CID 后调用光鸭 userres 秒传；按缺集/订阅规则筛选，秒传成功占位阻止后续重复获取，未命中自动回退光鸭分享、Magnet、ED2K；不经过 MoviePilot 下载器，也不做本地/OSS 中转。",
       "v1.9.2": "重构插件配置页为基础、资源来源、资源决策与云添加、高级四个区域；新增观影 GYING 地址、用户名/密码、Cookie、登录路径配置，新增 tg-search/Limitless/通用 JSON/Torznab Magnet/ED2K 搜索接口，并在频道候选未覆盖时安全补充外部候选。",
       "v1.9.1": "重构状态页为单一紧凑总览：移除 legacy/routing/experience/reliability/multisource/planner 多层卡片堆叠，首页仅保留总览、关键指标、需要处理、正在处理和系统状态；正常订阅、完成历史和长诊断不再铺满首页，新增 /status/overview 汇总 API。",
       "v1.9.0": "新增 ResourceGroup 候选决策和统一 Episode Resolver：同一频道消息中的光鸭分享、Magnet、ED2K 不再并行重复执行；同等条件按光鸭直接转存 > Magnet > ED2K，按 MoviePilot 真实缺集文件级拆包，支持多集文件、弱命名序列、字幕跟随、在途占位和失败回退；低置信集号进入 needs_review，不整包误存。",
