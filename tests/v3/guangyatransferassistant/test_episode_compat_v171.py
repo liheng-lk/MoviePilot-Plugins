@@ -51,7 +51,6 @@ def test_install_patch_only_falls_back_after_legacy_parser_fails():
     assert legacy._episode_numbers("Show.S01E03.mkv") == (1, [3])
     assert legacy._episode_numbers("04~4K.mp4") == (None, [4])
     assert legacy._episode_numbers("05~06.mp4") == (None, [])
-    # 热重载重复安装必须幂等，不能形成多层包装。
     assert compat.install_episode_filename_compat(legacy) is patched
     assert calls == ["Show.S01E03.mkv", "04~4K.mp4", "05~06.mp4"]
 
@@ -77,4 +76,4 @@ def test_runtime_entry_installs_compat_patch_and_new_build():
     text = ENTRY.read_text(encoding="utf-8")
     assert "install_episode_filename_compat(_legacy_module)" in text
     assert "collapse_unparsed_failure_notice" in text
-    assert 'build_id = "20260901-r1"' in text
+    assert 'build_id = "20260901-r2"' in text
