@@ -5,18 +5,23 @@
   否则绑定 Magnet/ED2K 后热重载可能丢失多来源设置；
 - Magnet 的真实画质/发布名通常只有 resolve_res 后才能确认，不能仅凭帖子文本在 resolve 前
   判定“不满足订阅规则”。规则校验延后到解析文件列表之后、create_task 之前执行。
+
+v1.9.1 同时把最终状态页展示权收口到 GuangYaStatusUiMixin，避免历史多层 get_page
+逐层叠加卡片造成页面冗长和重复。
 """
 
 from __future__ import annotations
 
 from typing import Any, Dict, Tuple
 
+from .status_ui_v191 import GuangYaStatusUiMixin
+
 
 _RULE_MISMATCH_PREFIX = "RESOURCE_RULE_MISMATCH:"
 
 
-class GuangYaPlannerSafetyMixin:
-    """放在 ResourcePlannerMixin 之前，负责配置完整持久化和解析后规则校验。"""
+class GuangYaPlannerSafetyMixin(GuangYaStatusUiMixin):
+    """放在 ResourcePlannerMixin 之前，负责配置完整持久化、解析后规则校验与最终状态页。"""
 
     def _save_config(self) -> None:
         """一次性保存完整配置，避免 legacy 延迟写盘覆盖 v1.8/v1.9 字段。"""
@@ -130,22 +135,8 @@ class GuangYaPlannerSafetyMixin:
         )
 
     def get_page(self):
-        pages = list(super().get_page() or [])
-        review = sum(
-            1 for row in self._source_store()["items"].values()
-            if isinstance(row, dict) and str(row.get("state") or "") == "needs_review"
-        )
-        if review:
-            pages.insert(0, {
-                "component": "VAlert",
-                "props": {
-                    "type": "warning",
-                    "variant": "tonal",
-                    "title": "有资源需要人工确认",
-                    "text": f"{review} 个 Magnet/ED2K 候选因集号置信度不足未创建云添加任务；不会整包误存。",
-                },
-            })
-        return pages
+        """状态页不再叠加旧诊断卡，统一由 v1.9.1 紧凑展示层生成。"""
+        return GuangYaStatusUiMixin.get_page(self)
 
 
 __all__ = ["GuangYaPlannerSafetyMixin"]
