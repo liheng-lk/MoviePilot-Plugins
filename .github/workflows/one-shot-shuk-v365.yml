@@ -52,6 +52,15 @@ jobs:
               encoding='utf-8',
           )
 
+          remote_entry = plugin / 'dist' / 'assets' / 'remoteEntry.js'
+          remote_text = remote_entry.read_text(encoding='utf-8')
+          if '?v=3.6.4' not in remote_text:
+              raise SystemExit('unexpected ShukGuangYaDisk remoteEntry version')
+          remote_entry.write_text(
+              remote_text.replace('?v=3.6.4', '?v=3.6.5'),
+              encoding='utf-8',
+          )
+
           history_text = (
               '修复新版 MoviePilot 移除 app.application.chain.data 后插件无法加载的问题；'
               '旧全局队列迁移改用宿主保留的 app.db.transferpending_oper 兼容 ABI，'
@@ -131,9 +140,11 @@ jobs:
           package = json.loads(Path('package.v3.json').read_text(encoding='utf-8'))
           plugin = json.loads(Path('plugins.v3/shukguangyadisk/plugin.json').read_text(encoding='utf-8'))
           entry = Path('plugins.v3/shukguangyadisk/__init__.py').read_text(encoding='utf-8')
+          remote = Path('plugins.v3/shukguangyadisk/dist/assets/remoteEntry.js').read_text(encoding='utf-8')
           assert package['ShukGuangYaDisk']['version'] == '3.6.5'
           assert plugin['version'] == '3.6.5'
           assert 'plugin_version = "3.6.5"' in entry
+          assert '?v=3.6.5' in remote
           assert 'v3.6.5' in package['ShukGuangYaDisk']['history']
           assert 'v3.6.5' in plugin['history']
           PY
