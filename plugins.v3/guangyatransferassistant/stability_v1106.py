@@ -17,7 +17,7 @@ import math
 import re
 from typing import Any, Dict, Iterable, List, Optional
 
-from .gying_auth_v1107 import GuangYaGyingAuthV1107Mixin
+from .gying_auth_verified_v1107 import GuangYaGyingAuthVerifiedV1107Mixin
 
 
 _INT_CONFIGS = {
@@ -93,7 +93,7 @@ def sanitize_source_row_v1106(raw: Any) -> Dict[str, Any]:
     return row
 
 
-class GuangYaStabilityV1106Mixin(GuangYaGyingAuthV1107Mixin):
+class GuangYaStabilityV1106Mixin(GuangYaGyingAuthVerifiedV1107Mixin):
     """放在插件 MRO 最外层的脏状态修复与 v1.10.7 观影认证门禁。"""
 
     build_id = "20260902-r18"
