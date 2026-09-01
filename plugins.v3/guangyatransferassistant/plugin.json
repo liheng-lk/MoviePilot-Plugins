@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "MoviePilot V3 固定分流与多来源订阅助手：频道、观影 GYING、Magnet/ED2K 搜索 API 统一进入 ResourceGroup；按真实缺集唯一决策“光鸭直接转存 > Magnet > ED2K”，Magnet/ED2K 直接使用光鸭原生云添加。v1.9.2 重构插件配置页并补齐观影地址/登录、磁力搜索接口配置。",
-  "version": "1.9.2",
+  "description": "MoviePilot V3 固定分流与多来源订阅助手：观影 GYING 中的迅雷分享优先走光鸭 userres 秒传，秒传命中后不再触发其它来源；固定优先级“观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K”。Magnet/ED2K 仍直接使用光鸭原生 cloudcollection，不经过 MoviePilot 下载器。",
+  "version": "1.9.3",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
