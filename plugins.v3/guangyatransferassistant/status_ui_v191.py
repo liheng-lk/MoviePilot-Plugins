@@ -1,14 +1,11 @@
 """光鸭转存助手 v1.9.1 紧凑状态页。
 
-旧版状态页由 legacy/routing/experience/reliability/multisource/planner 多层 get_page 逐层
-prepend 卡片，功能完整但信息重复、层级过深。本层作为最终展示层，不再拼接旧页面，而是把
-底层已有状态汇总成 5 个固定区域：总览、关键指标、需要处理、正在处理、系统状态。
+旧版状态页由多个历史 mixin 的 get_page 逐层叠加，结果是正常订阅、诊断、来源任务、
+路由健康和高级信息全部铺在同一页。本层作为最终展示层，不再拼接旧页面。
 
-原则：
-- 首页只显示“现在怎么样、哪里有问题、正在做什么”；
-- 正常诊断不逐条铺开，只有异常才展开；
-- 历史、ResourceGroup 细节、自检明细继续通过现有 API 提供，不塞进首页；
-- 不展示原始 Magnet/ED2K URI、tracker、长日志或完整 task 历史。
+首页固定为 5 个区域：总览、关键指标、需要处理、正在处理、系统状态。
+“等待新资源”属于正常状态，只统计数量，不进入“需要处理”；完成历史、长日志和正常订阅
+也不在首页逐条展示。详细数据继续由既有 API、自检和 resource plan 提供。
 """
 
 from __future__ import annotations
@@ -20,7 +17,7 @@ from .source_types_v180 import SOURCE_INFLIGHT_STATES, SOURCE_PENDING_STATES
 
 _SOURCE_STATE_TEXT = {
     "new": "待处理",
-    "retry": "等待重试",
+    "retry": "自动重试中",
     "dispatching": "正在解析",
     "submitted": "已提交",
     "queued": "排队中",
@@ -31,9 +28,11 @@ _SOURCE_STATE_TEXT = {
     "disabled": "已停用",
 }
 
+_TRANSFER_ACTIVE_STATES = {"submitting", "submitted", "task_confirmed", "verifying"}
+
 
 class GuangYaStatusUiMixin:
-    """最终状态页展示层；必须位于插件 MRO 第一位。"""
+    """最终状态页展示层；由 PlannerSafety 置于运行 MRO 最前端。"""
 
     build_id = "20260901-r3"
 
@@ -49,32 +48,24 @@ class GuangYaStatusUiMixin:
         rows.sort(key=lambda row: str(row.get("updated_at") or ""), reverse=True)
         return rows
 
-    def _status_diagnosis_rows_v191(self) -> List[Dict[str, Any]]:
-        selected_ids = set(self._selected_subscriptions)
-        rows: List[Dict[str, Any]] = []
-        for subscribe in self._list_subscriptions(None):
-            sid = self._safe_int(getattr(subscribe, "id", 0))
-            if not sid or sid not in selected_ids:
+    def _status_transfer_rows_v191(self) -> List[Dict[str, Any]]:
+        rows = []
+        for key, raw in (self.get_data("transfer_jobs") or {}).items():
+            if not isinstance(raw, dict):
                 continue
-            try:
-                row = dict(self._diagnose_subscription(subscribe) or {})
-            except Exception as err:
-                row = {
-                    "id": sid,
-                    "name": str(getattr(subscribe, "name", "") or "未命名订阅"),
-                    "severity": "warning",
-                    "reason": f"状态诊断暂不可用：{err}",
-                    "done": 0,
-                    "total": 0,
-                    "lack": 0,
-                }
+            row = dict(raw)
+            row["_key"] = str(key)
             rows.append(row)
+        rows.sort(
+            key=lambda row: str(row.get("updated_at") or row.get("time") or row.get("submitted_at") or ""),
+            reverse=True,
+        )
         return rows
 
     def _status_overview_v191(self) -> Dict[str, Any]:
         report = dict(self._build_selfcheck() or {})
         sources = self._status_source_rows_v191()
-        diagnoses = self._status_diagnosis_rows_v191()
+        transfer_rows = self._status_transfer_rows_v191()
         index = self.get_data("channel_index") or {}
         last_run = self.get_data("last_run") or {}
         plans = list((self.api_resource_plan().get("data") or []))
@@ -116,24 +107,23 @@ class GuangYaStatusUiMixin:
 
         attention_sources = [
             row for row in sources
-            if str(row.get("state") or "") in {"failed", "needs_review", "retry"}
-        ]
-        attention_subscriptions = [
-            row for row in diagnoses
-            if str(row.get("severity") or "").lower() in {"warning", "error"}
+            if str(row.get("state") or "") in {"failed", "needs_review"}
         ]
         active_sources = [
             row for row in sources
             if str(row.get("state") or "new") in SOURCE_PENDING_STATES | SOURCE_INFLIGHT_STATES
         ]
-
+        active_transfer_rows = [
+            row for row in transfer_rows
+            if str(row.get("status") or "") in _TRANSFER_ACTIVE_STATES
+        ]
+        failed_transfer_rows = [
+            row for row in transfer_rows
+            if str(row.get("status") or "") == "failed"
+        ]
         unresolved_plans = [row for row in plans if row.get("uncovered")]
-        attention_count = (
-            len(critical_checks)
-            + len(attention_sources)
-            + len(attention_subscriptions)
-            + len(unresolved_plans)
-        )
+
+        attention_count = len(critical_checks) + len(attention_sources) + len(failed_transfer_rows)
         overall = "healthy"
         if critical_checks:
             overall = "error"
@@ -148,23 +138,22 @@ class GuangYaStatusUiMixin:
             "channel_count": len(index.get("items") or []),
             "channel_updated": str(index.get("time") or last_run.get("time") or "-"),
             "channel_errors": len(index.get("errors") or []),
-            "pending_transfer_jobs": self._safe_int(report.get("pending_jobs")),
-            "failed_transfer_jobs": self._safe_int(report.get("failed_jobs")),
             "sources": source_summary,
             "critical_checks": critical_checks,
             "warning_checks": warning_checks,
             "attention_sources": attention_sources[:8],
-            "attention_subscriptions": attention_subscriptions[:8],
+            "failed_transfer_rows": failed_transfer_rows[:8],
             "active_sources": active_sources[:8],
-            "unresolved_plans": unresolved_plans[:8],
+            "active_transfer_rows": active_transfer_rows[:8],
+            "waiting_resource_count": len(unresolved_plans),
             "resource_plan_count": len(plans),
             "version": str(getattr(self, "plugin_version", "")),
             "build": str(getattr(self, "build_id", "")),
         }
 
     def api_status_overview(self) -> Dict[str, Any]:
-        data = self._status_overview_v191()
-        return {"success": True, "data": data}
+        """返回首页使用的轻量汇总，供后续独立前端复用。"""
+        return {"success": True, "data": self._status_overview_v191()}
 
     def get_api(self) -> List[Dict[str, Any]]:
         apis = list(super().get_api() or [])
@@ -178,7 +167,7 @@ class GuangYaStatusUiMixin:
         return apis
 
     @staticmethod
-    def _status_metric_v191(title: str, value: str, *, alert_type: str = "info", subtitle: str = "") -> Dict[str, Any]:
+    def _metric(title: str, value: str, *, alert_type: str = "info", subtitle: str = "") -> Dict[str, Any]:
         text = str(value)
         if subtitle:
             text += f"\n{subtitle}"
@@ -190,16 +179,28 @@ class GuangYaStatusUiMixin:
                 "props": {
                     "type": alert_type,
                     "variant": "tonal",
+                    "density": "compact",
                     "title": title,
                     "text": text,
-                    "density": "compact",
                 },
             }],
         }
 
-    def _status_attention_cards_v191(self, overview: Dict[str, Any]) -> List[Dict[str, Any]]:
-        cards: List[Dict[str, Any]] = []
+    def _source_title(self, row: Dict[str, Any]) -> str:
+        sid = self._safe_int(row.get("subscribe_id"))
+        subscribe = self._find_subscription(sid) if sid else None
+        name = str(getattr(subscribe, "name", "") or row.get("resolved_name") or row.get("name") or "未命名资源")
+        source_type = str(row.get("type") or "source").upper()
+        return f"{source_type} · {name}"
 
+    def _transfer_title(self, row: Dict[str, Any]) -> str:
+        sid = self._safe_int(row.get("subscribe_id") or row.get("sid"))
+        subscribe = self._find_subscription(sid) if sid else None
+        name = str(getattr(subscribe, "name", "") or row.get("name") or "光鸭转存任务")
+        return f"光鸭转存 · {name}"
+
+    def _attention_cards(self, overview: Dict[str, Any]) -> List[Dict[str, Any]]:
+        cards: List[Dict[str, Any]] = []
         for item in overview.get("critical_checks") or []:
             cards.append({
                 "component": "VAlert",
@@ -215,76 +216,57 @@ class GuangYaStatusUiMixin:
 
         for row in overview.get("attention_sources") or []:
             state = str(row.get("state") or "")
-            sid = self._safe_int(row.get("subscribe_id"))
-            subscribe = self._find_subscription(sid) if sid else None
-            name = str(getattr(subscribe, "name", "") or row.get("resolved_name") or row.get("name") or "未命名资源")
-            source_type = str(row.get("type") or "source").upper()
             error = str(row.get("last_error") or "")
-            if state == "needs_review":
-                detail = error or "集号置信度不足，已停止自动拆包"
-            elif state == "retry":
-                detail = error or "上次处理失败，等待自动重试"
-            else:
-                detail = error or "云添加任务失败"
+            detail = error or ("集号置信度不足，已停止自动拆包" if state == "needs_review" else "云添加任务失败")
             cards.append({
                 "component": "VAlert",
                 "props": {
-                    "type": "warning" if state in {"needs_review", "retry"} else "error",
+                    "type": "warning" if state == "needs_review" else "error",
                     "variant": "tonal",
                     "density": "compact",
                     "class": "mb-2",
-                    "title": f"{source_type} · {name}",
+                    "title": self._source_title(row),
                     "text": f"{_SOURCE_STATE_TEXT.get(state, state)} · {detail}",
                 },
             })
 
-        for row in overview.get("attention_subscriptions") or []:
+        for row in overview.get("failed_transfer_rows") or []:
             if len(cards) >= 8:
                 break
-            done = self._safe_int(row.get("done"))
-            total = self._safe_int(row.get("total"))
-            lack = self._safe_int(row.get("lack"))
-            progress = f"{done}/{total}，缺 {lack} 集" if total else "进度待确认"
+            error = str(row.get("error") or row.get("message") or "转存任务失败")[:300]
             cards.append({
                 "component": "VAlert",
                 "props": {
-                    "type": "warning" if str(row.get("severity") or "") != "error" else "error",
+                    "type": "error",
                     "variant": "tonal",
                     "density": "compact",
                     "class": "mb-2",
-                    "title": f"#{row.get('id')} {row.get('name') or '未命名订阅'}",
-                    "text": f"{row.get('reason') or '需要检查'} · {progress}",
+                    "title": self._transfer_title(row),
+                    "text": error,
                 },
             })
-
-        for row in overview.get("unresolved_plans") or []:
-            if len(cards) >= 8:
-                break
-            name = str(row.get("name") or row.get("title") or f"订阅 #{row.get('subscribe_id') or '-'}")
-            uncovered = row.get("uncovered") or []
-            episodes = ", ".join(f"E{self._safe_int(value):02d}" for value in uncovered[:16])
-            cards.append({
-                "component": "VAlert",
-                "props": {
-                    "type": "warning",
-                    "variant": "tonal",
-                    "density": "compact",
-                    "class": "mb-2",
-                    "title": f"资源暂未覆盖 · {name}",
-                    "text": f"仍缺：{episodes or '待确认'}；会继续等待光鸭 / Magnet / ED2K 后续候选。",
-                },
-            })
-
         return cards[:8]
 
-    def _status_active_cards_v191(self, overview: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _active_cards(self, overview: Dict[str, Any]) -> List[Dict[str, Any]]:
         cards: List[Dict[str, Any]] = []
+
+        for row in overview.get("active_transfer_rows") or []:
+            cards.append({
+                "component": "VAlert",
+                "props": {
+                    "type": "info",
+                    "variant": "tonal",
+                    "density": "compact",
+                    "class": "mb-2",
+                    "title": self._transfer_title(row),
+                    "text": "已提交到光鸭，等待目标文件落盘确认",
+                },
+            })
+            if len(cards) >= 6:
+                return cards
+
         for row in overview.get("active_sources") or []:
-            sid = self._safe_int(row.get("subscribe_id"))
-            subscribe = self._find_subscription(sid) if sid else None
-            name = str(getattr(subscribe, "name", "") or row.get("resolved_name") or row.get("name") or "未命名资源")
             state = str(row.get("state") or "new")
-            source_type = str(row.get("type") or "source").upper()
             progress = max(0, min(100, self._safe_int(row.get("progress"))))
             episodes = row.get("resolved_episodes") or row.get("target_episodes") or []
             episode_text = ", ".join(f"E{self._safe_int(value):02d}" for value in episodes[:12])
@@ -298,18 +280,30 @@ class GuangYaStatusUiMixin:
                     "variant": "tonal",
                     "density": "compact",
                     "class": "mb-2",
-                    "title": f"{source_type} · {name}",
+                    "title": self._source_title(row),
                     "text": detail,
                 },
             })
-        return cards[:6]
+            if len(cards) >= 6:
+                break
+        return cards
 
     def get_page(self):
-        """返回新的单屏状态页，不再拼接旧版逐层诊断卡。"""
+        """返回单屏状态页，不再调用 super().get_page 拼接历史诊断卡。"""
         overview = self._status_overview_v191()
-        source_summary = overview["sources"]
-        overall_type = "success" if overview["overall"] == "healthy" else ("error" if overview["overall"] == "error" else "warning")
-        overall_title = "运行正常" if overview["overall"] == "healthy" else ("存在关键异常" if overview["overall"] == "error" else "有待处理事项")
+        sources = overview["sources"]
+        attention_cards = self._attention_cards(overview)
+        active_cards = self._active_cards(overview)
+
+        if overview["overall"] == "healthy":
+            overall_title = "运行正常"
+            overall_type = "success"
+        elif overview["overall"] == "error":
+            overall_title = "存在关键异常"
+            overall_type = "error"
+        else:
+            overall_title = "有待处理事项"
+            overall_type = "warning"
 
         hero = {
             "component": "VCard",
@@ -319,8 +313,7 @@ class GuangYaStatusUiMixin:
                 {
                     "component": "VCardText",
                     "text": (
-                        f"{overall_title} · 固定转存 {overview['selected']} 个 · "
-                        f"频道最近刷新 {overview['channel_updated']}。"
+                        f"{overall_title} · 频道最近刷新 {overview['channel_updated']}。"
                         " 资源策略：光鸭直接转存 > Magnet > ED2K；Magnet/ED2K 使用光鸭原生云添加。"
                     ),
                 },
@@ -359,36 +352,30 @@ class GuangYaStatusUiMixin:
                     "component": "VRow",
                     "props": {"class": "px-2 pb-2"},
                     "content": [
-                        self._status_metric_v191(
-                            "需要处理",
-                            str(overview["attention_count"]),
-                            alert_type="warning" if overview["attention_count"] else "success",
-                            subtitle="只统计需要你关注的事项",
-                        ),
-                        self._status_metric_v191(
+                        self._metric("固定转存", str(overview["selected"]), alert_type="info", subtitle="MoviePilot 订阅"),
+                        self._metric(
                             "正在处理",
-                            str(source_summary["pending"] + source_summary["running"] + overview["pending_transfer_jobs"]),
+                            str(len(overview["active_transfer_rows"]) + len(overview["active_sources"])),
                             alert_type="info",
                             subtitle="转存 + 云添加",
                         ),
-                        self._status_metric_v191(
-                            "来源",
-                            str(source_summary["total"]),
-                            alert_type="info",
-                            subtitle=f"Magnet {source_summary['magnet']} · ED2K {source_summary['ed2k']}",
+                        self._metric(
+                            "需要处理",
+                            str(overview["attention_count"]),
+                            alert_type="warning" if overview["attention_count"] else "success",
+                            subtitle="失败 / 待确认",
                         ),
-                        self._status_metric_v191(
-                            "频道索引",
-                            str(overview["channel_count"]),
-                            alert_type="warning" if overview["channel_errors"] else "success",
-                            subtitle=f"最近错误 {overview['channel_errors']} 个",
+                        self._metric(
+                            "等待资源",
+                            str(overview["waiting_resource_count"]),
+                            alert_type="info",
+                            subtitle="正常等待，不算异常",
                         ),
                     ],
                 },
             ],
         }
 
-        attention_cards = self._status_attention_cards_v191(overview)
         attention = {
             "component": "VCard",
             "props": {"variant": "flat", "class": "mb-3"},
@@ -397,8 +384,8 @@ class GuangYaStatusUiMixin:
                 {
                     "component": "VCardText",
                     "text": (
-                        "这里只显示异常、待确认和未覆盖资源；正常订阅不会占页面。"
-                        if attention_cards else "当前没有需要人工处理的异常。"
+                        "这里只显示真正需要干预的异常；自动重试、等待新资源和正常订阅不会占页面。"
+                        if attention_cards else "当前没有需要人工处理的事项。"
                     ),
                 },
                 *(
@@ -410,14 +397,13 @@ class GuangYaStatusUiMixin:
                             "type": "success",
                             "variant": "tonal",
                             "density": "compact",
-                            "text": "所有关键检查正常，当前没有失败或待确认来源。",
+                            "text": "关键检查正常，没有失败或低置信待确认任务。",
                         },
                     }]
                 ),
             ],
         }
 
-        active_cards = self._status_active_cards_v191(overview)
         active = {
             "component": "VCard",
             "props": {"variant": "flat", "class": "mb-3"},
@@ -426,8 +412,8 @@ class GuangYaStatusUiMixin:
                 {
                     "component": "VCardText",
                     "text": (
-                        "只保留当前在途的 Magnet/ED2K 云添加；完成历史不在首页重复铺开。"
-                        if active_cards else "当前没有正在运行的 Magnet/ED2K 云添加任务。"
+                        "只显示当前在途任务，最多 6 条；完成历史不再重复铺在首页。"
+                        if active_cards else "当前没有正在处理的转存或云添加任务。"
                     ),
                 },
                 *active_cards,
@@ -436,9 +422,9 @@ class GuangYaStatusUiMixin:
 
         checks = list(self._build_selfcheck().get("checks") or [])
         check_map = {str(item.get("key") or ""): item for item in checks if isinstance(item, dict)}
+
         def flag(key: str) -> str:
-            item = check_map.get(key) or {}
-            return "正常" if item.get("ok") else "异常"
+            return "正常" if (check_map.get(key) or {}).get("ok") else "异常"
 
         system = {
             "component": "VCard",
@@ -448,15 +434,13 @@ class GuangYaStatusUiMixin:
                 {
                     "component": "VCardText",
                     "text": (
-                        f"光鸭登录：{flag('guangya_runtime')} · "
-                        f"搜索分流：{flag('search_guard')} · "
-                        f"RSS 门禁：{flag('match_guard')} · "
-                        f"下载断路器：{flag('download_guard')} · "
+                        f"光鸭登录：{flag('guangya_runtime')} · 搜索分流：{flag('search_guard')} · "
+                        f"RSS 门禁：{flag('match_guard')} · 下载断路器：{flag('download_guard')} · "
                         f"原生云添加：{flag('native_offline')}。\n"
-                        f"ResourceGroup 计划 {overview['resource_plan_count']} 个 · "
-                        f"低置信待确认 {source_summary['review']} 个 · "
-                        f"云添加失败 {source_summary['failed']} 个。\n"
-                        "详细检查继续通过“运行自检”和 /resource/plan、/status/overview API 获取，首页不再展示长日志。"
+                        f"频道索引 {overview['channel_count']} 条 · 最近错误 {overview['channel_errors']} 个 · "
+                        f"Magnet {sources['magnet']} · ED2K {sources['ed2k']} · "
+                        f"ResourceGroup 计划 {overview['resource_plan_count']} 个。\n"
+                        "详细诊断通过“运行自检”、/resource/plan 和 /status/overview 查看，首页不再展示长日志。"
                     ),
                 },
                 {
