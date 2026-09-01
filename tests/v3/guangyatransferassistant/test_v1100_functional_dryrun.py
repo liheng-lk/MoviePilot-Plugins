@@ -16,6 +16,22 @@ def _load_v1100_modules():
     pkg.__path__ = [str(PLUGIN)]
     sys.modules[package_name] = pkg
 
+    # 仓库官方 CI 不安装插件运行依赖。这里提供最小 requests 壳，只为加载待测模块；
+    # 所有网络行为均由下方 FakeSession 接管，测试不会访问互联网。
+    if "requests" not in sys.modules:
+        requests_stub = types.ModuleType("requests")
+
+        class Response:
+            pass
+
+        class Session:
+            def __init__(self):
+                self.proxies = {}
+
+        requests_stub.Response = Response
+        requests_stub.Session = Session
+        sys.modules["requests"] = requests_stub
+
     helper = types.ModuleType(f"{package_name}.provider_sources_v192")
 
     def proxy_dict(_enabled):
