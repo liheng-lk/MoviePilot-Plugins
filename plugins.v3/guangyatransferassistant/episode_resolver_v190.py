@@ -25,11 +25,16 @@ _SPECIAL_RE = re.compile(
     r"(?i)(?:^|[^A-Za-z0-9])(?:SP|SPECIAL|OVA|OAD)[\s._-]*0*(\d{1,4})(?=[^0-9]|$)"
 )
 _CHINESE_SPECIAL_RE = re.compile(r"(?:特别篇|番外|特典)\s*0*(\d{1,4})(?=[^0-9]|$)")
-_QUALITY_SUFFIX_RE = re.compile(
-    r"(?ix)^\s*0*(\d{1,4})\s*[~～]\s*[\[【(（]?\s*"
+_QUALITY_TOKEN = (
     r"(?:4K|8K|2160P?|1080P?|720P?|480P?|UHD|FHD|HD|HDR(?:10\+?)?|DV|DOVI|"
     r"WEB(?:-?DL)?|BLU-?RAY|BDREMUX|REMUX|HEVC|AVC|AV1|H\.?26[45]|X26[45])"
+)
+_QUALITY_SUFFIX_RE = re.compile(
+    rf"(?ix)^\s*0*(\d{{1,4}})\s*[~～]\s*[\[【(（]?\s*{_QUALITY_TOKEN}"
     r"(?=$|[\s._\-\[\]【】()（）])"
+)
+_RELEASE_EP_BEFORE_QUALITY_RE = re.compile(
+    rf"(?ix)(?:^|[\s._\-])0*(\d{{1,4}})(?:v\d+)?(?=[\s._\-]+{_QUALITY_TOKEN}(?:$|[\s._\-\[\]【】()（）]))"
 )
 
 
@@ -131,14 +136,29 @@ def _looks_like_year(value: int) -> bool:
     return 1900 <= int(value) <= 2099
 
 
+def _valid_weak_number(candidate: int) -> bool:
+    return bool(
+        0 < int(candidate) <= MAX_EXPLICIT_EPISODE
+        and int(candidate) not in _COMMON_NOISE_NUMBERS
+        and not _looks_like_year(int(candidate))
+    )
+
+
 def _weak_numeric_candidate(value: Any) -> Optional[Tuple[int, str]]:
     """只返回位置语义明确的弱数字；不会从 1080p/H265/2026 中间硬抓数字。"""
     stem = _stem(value)
     quality = _QUALITY_SUFFIX_RE.search(stem)
     if quality:
         candidate = int(quality.group(1))
-        if 0 < candidate <= MAX_EXPLICIT_EPISODE and candidate not in _COMMON_NOISE_NUMBERS:
+        if _valid_weak_number(candidate):
             return candidate, "quality-suffix"
+
+    # Show.Name.05.2160p / Show.Name.05.WEB-DL 这类发布名，数字必须紧贴已知质量标签。
+    release_quality = list(_RELEASE_EP_BEFORE_QUALITY_RE.finditer(stem))
+    if release_quality:
+        candidate = int(release_quality[-1].group(1))
+        if _valid_weak_number(candidate):
+            return candidate, "release-before-quality"
 
     patterns: Sequence[Tuple[str, str]] = (
         (r"[\[【(（]\s*0*(\d{1,4})(?:v\d+)?\s*[\]】)）]", "bracket-number"),
@@ -151,9 +171,7 @@ def _weak_numeric_candidate(value: Any) -> Optional[Tuple[int, str]]:
         if not matched:
             continue
         candidate = int(matched.group(1))
-        if candidate <= 0 or candidate > MAX_EXPLICIT_EPISODE:
-            continue
-        if candidate in _COMMON_NOISE_NUMBERS or _looks_like_year(candidate):
+        if not _valid_weak_number(candidate):
             continue
         return candidate, reason
     return None
@@ -229,8 +247,11 @@ def resolve_episode(
         confidence = max(confidence, 0.92)
         reason += "+package-sequence"
 
-    # 明确位于 Season/Sxx 目录下的裸数字，是常见而可靠的剧集命名。
-    if season is not None and weak_reason in {"bare-number", "leading-number", "bracket-number", "dash-number", "quality-suffix"}:
+    # 明确位于 Season/Sxx 目录/订阅季上下文中的弱数字，是常见而可靠的剧集命名。
+    if season is not None and weak_reason in {
+        "bare-number", "leading-number", "bracket-number", "dash-number",
+        "quality-suffix", "release-before-quality",
+    }:
         confidence = max(confidence, 0.90)
         reason += "+season-context"
 
