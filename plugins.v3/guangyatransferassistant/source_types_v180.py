@@ -10,11 +10,12 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 
 SOURCE_TYPES = ("guangya", "magnet", "ed2k")
-SOURCE_SCHEMA_VERSION = 1
+SOURCE_SCHEMA_VERSION = 2
 # queued 已经对应服务端 taskId，必须继续轮询而不是再次 create_task。
 SOURCE_PENDING_STATES = {"new", "retry"}
 SOURCE_INFLIGHT_STATES = {"dispatching", "submitted", "queued", "waiting"}
-SOURCE_TERMINAL_STATES = {"completed", "failed", "disabled"}
+# needs_review 表示已解析资源，但集号置信度不足；必须人工确认或换候选，不能自动重试整包。
+SOURCE_TERMINAL_STATES = {"completed", "failed", "disabled", "needs_review"}
 
 _BTih_RE = re.compile(r"^(?:[0-9a-fA-F]{40}|[A-Z2-7a-z2-7]{32})$")
 _ED2K_HASH_RE = re.compile(r"^[0-9a-fA-F]{32}$")

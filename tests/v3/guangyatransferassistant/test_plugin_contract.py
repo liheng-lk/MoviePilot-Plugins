@@ -73,13 +73,16 @@ exec(compile(routing_mod, str(ROUTING), "exec"), routing_ns)
 def test_versions_and_layered_legacy_contract():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.8.0"
-    assert local["version"] == "1.8.0"
-    assert 'plugin_version = "1.8.0"' in entry_text
+    assert package["version"] == "1.9.0"
+    assert local["version"] == "1.9.0"
+    assert 'plugin_version = "1.9.0"' in entry_text
+    assert 'build_id = "20260901-r2"' in entry_text
     assert 'plugin_version = "1.7.0"' in routing_text
     assert 'plugin_version = "1.6.5"' in legacy_text
     assert "from .routing_v170 import GuangYaTransferAssistant as _RoutingV170Assistant" in entry_text
     assert "from .legacy import GuangYaTransferAssistant as _LegacyGuangYaTransferAssistant" in routing_text
+    assert "GuangYaPlannerSafetyMixin" in entry_text
+    assert "GuangYaResourcePlannerMixin" in entry_text
 
 
 def test_legacy_channel_hidden_visible_and_exact_tmdb_matching():
@@ -167,7 +170,6 @@ def test_rss_match_guard_and_final_download_circuit_breaker():
         "固定转存路线只允许光鸭转存",
     ):
         assert token in entry_text, token
-    # RSS 全为光鸭路线时整轮跳过；混合路线即使继续匹配，最终下载提交仍会被单订阅门禁阻断。
     assert "all(plugin._is_guangya_route(item) for item in active)" in entry_text
     assert "subscribe is not None and plugin._is_guangya_route(subscribe)" in entry_text
 
@@ -221,6 +223,7 @@ def test_route_status_and_health_are_visible():
     assert "最近结果" in routing_text
     assert "RSS匹配门禁" in entry_text
     assert "最终下载断路器" in entry_text
+    assert "资源决策：光鸭分享 > Magnet > ED2K" in entry_text
 
 
 def test_no_silent_native_fallback_for_selected_search_route():

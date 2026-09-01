@@ -65,14 +65,15 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "固定分流与多来源订阅助手，支持 Telegram 光鸭分享、Magnet、ED2K、观影来源接入；Magnet/ED2K 直接使用光鸭原生云添加。",
-    "labels": "光鸭云盘,转存,订阅,Telegram,Magnet,ED2K,云添加,离线下载,观影,缺集,追更,固定分流,硬分流",
-    "version": "1.8.0",
+    "description": "固定分流与多来源订阅助手：频道消息按 ResourceGroup 聚合光鸭分享、Magnet、ED2K，按真实缺集唯一决策并安全拆包；Magnet/ED2K 直接使用光鸭原生云添加。",
+    "labels": "光鸭云盘,转存,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,缺集,拆包,追更,固定分流,硬分流",
+    "version": "1.9.0",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v1.9.0": "新增 ResourceGroup 候选决策和统一 Episode Resolver：同一频道消息中的光鸭分享、Magnet、ED2K 不再并行重复执行；同等条件按光鸭直接转存 > Magnet > ED2K，按 MoviePilot 真实缺集文件级拆包，支持多集文件、弱命名序列、字幕跟随、在途占位和失败回退；低置信集号进入 needs_review，不整包误存。",
       "v1.8.0": "新增 Magnet/ED2K 多来源订阅与观影来源接入；两类链接直接调用光鸭 cloudcollection 原生云添加，支持文件筛选、taskId 持久化轮询、原生重试、状态控制台与隐私脱敏，不经过 MoviePilot 下载器。",
       "v1.7.3": "修复状态页操作阻塞服务，耗时任务改为后台执行。",
       "v1.7.2": "修复状态页操作跳转登录页，统一使用 MoviePilot 登录会话。",

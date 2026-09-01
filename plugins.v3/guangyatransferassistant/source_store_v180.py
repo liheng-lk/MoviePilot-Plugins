@@ -2,7 +2,7 @@
 
 Magnet/ED2K 不是交给 MoviePilot 下载器的下载任务，而是光鸭云盘原生“云添加”来源。
 本层只负责绑定、去重、状态持久化和用户配置；具体 resolve/create/list 调度由
-multisource_v180 执行。
+multisource_v180 执行，v1.9.0 ResourceGroup 层负责同资源候选决策。
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ class GuangYaSourceStoreMixin:
     """保存 Magnet/ED2K 与 MoviePilot 订阅的绑定关系。"""
 
     _external_auto_dispatch = True
-    _source_priority = ("magnet", "ed2k", "guangya")
+    _source_priority = ("guangya", "magnet", "ed2k")
     _offline_poll_minutes = 2
     _offline_retry_minutes = 15
     _offline_max_attempts = 3
@@ -32,7 +32,7 @@ class GuangYaSourceStoreMixin:
         config = dict(config or {})
         self._external_auto_dispatch = bool(config.get("external_auto_dispatch", True))
 
-        raw_priority = config.get("source_priority") or "magnet,ed2k,guangya"
+        raw_priority = config.get("source_priority") or "guangya,magnet,ed2k"
         if isinstance(raw_priority, (list, tuple)):
             tokens = [str(value).strip().lower() for value in raw_priority]
         else:
@@ -44,7 +44,7 @@ class GuangYaSourceStoreMixin:
         for value in tokens:
             if value in SOURCE_TYPES and value not in ordered:
                 ordered.append(value)
-        self._source_priority = tuple(ordered or ("magnet", "ed2k", "guangya"))
+        self._source_priority = tuple(ordered or ("guangya", "magnet", "ed2k"))
 
         self._offline_poll_minutes = max(
             1, min(safe_int(config.get("offline_poll_minutes"), 2, 1), 60)
@@ -224,7 +224,7 @@ class GuangYaSourceStoreMixin:
                             "text": (
                                 "Magnet 与 ED2K 都直接提交光鸭云盘自带的云添加/离线任务，"
                                 "不会经过 qBittorrent、Transmission、Aria2 或任何外部 Bridge。"
-                                "来源绑定后继续使用固定分流门禁，避免 MoviePilot 原生下载重复获取。"
+                                "同等满足订阅规则时默认光鸭直接转存优先，其次 Magnet，最后 ED2K。"
                             ),
                         },
                         {
@@ -249,7 +249,7 @@ class GuangYaSourceStoreMixin:
                                         "props": {
                                             "model": "source_priority",
                                             "label": "来源优先级",
-                                            "hint": "逗号分隔，如 magnet,ed2k,guangya",
+                                            "hint": "逗号分隔，默认 guangya,magnet,ed2k",
                                             "persistent-hint": True,
                                         },
                                     }],

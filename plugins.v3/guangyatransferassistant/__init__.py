@@ -1,8 +1,9 @@
-"""光鸭转存助手 v1.8.0 运行入口。
+"""光鸭转存助手 v1.9.0 运行入口。
 
-v1.8.0 在既有固定分流、频道转存、可靠性与状态诊断之上增加多来源订阅：
-Magnet/ED2K 直接调用光鸭云盘自带 cloudcollection 云添加，不经过 MoviePilot 下载器；
-“观影”按 MoviePilot 订阅模式把资源链接绑定到现有订阅，并继续复用固定分流门禁。
+v1.9.0 在 v1.8.0 光鸭原生 Magnet/ED2K 云添加之上增加 ResourceGroup 决策层：
+同一频道消息中的光鸭分享、Magnet、ED2K 作为同一资源的候选方式；先按 MoviePilot
+真实缺集确定目标，再按“光鸭直接转存 > Magnet > ED2K”唯一执行，并使用统一高置信
+Episode Resolver 做文件级拆包。无法可靠识别集号时不整包误存。
 
 routing_v170 保留全入口 search 硬分流与消息直订，experience_v170 增加非阻塞后台检查、
 消息管理、自检、原因诊断和路线崩溃恢复；reliability_v170 负责高频并发合并、热重载
@@ -23,21 +24,27 @@ from app.schemas.types import EventType
 from app.sdk.events import Event, eventmanager
 
 from . import legacy as _legacy_module
+from .channel_sources_v190 import install_channel_multisource_compat
 from .episode_compat_v171 import collapse_unparsed_failure_notice, install_episode_filename_compat
 from .experience_v170 import GuangYaExperienceMixin
 from .multisource_v180 import GuangYaMultiSourceMixin
 from .offline_safety_v180 import GuangYaOfflineSafetyMixin
 from .page_auth_v172 import force_bear_auth, strip_page_api_secrets
+from .planner_safety_v190 import GuangYaPlannerSafetyMixin
 from .reliability_v170 import GuangYaReliabilityMixin
+from .resource_planner_v190 import GuangYaResourcePlannerMixin
 from .runtime_v170 import GuangYaRuntimeFinalizerMixin
 from .routing_v170 import GuangYaTransferAssistant as _RoutingV170Assistant
 
 
-# legacy.py 保留成熟转存状态机；这里以热重载安全方式补充新出现的云盘弱命名格式。
+# legacy.py 保留成熟转存状态机；以热重载安全方式补充弱命名与多来源频道消息。
 install_episode_filename_compat(_legacy_module)
+install_channel_multisource_compat(_legacy_module)
 
 
 class GuangYaTransferAssistant(
+    GuangYaPlannerSafetyMixin,
+    GuangYaResourcePlannerMixin,
     GuangYaOfflineSafetyMixin,
     GuangYaMultiSourceMixin,
     GuangYaRuntimeFinalizerMixin,
@@ -45,10 +52,10 @@ class GuangYaTransferAssistant(
     GuangYaExperienceMixin,
     _RoutingV170Assistant,
 ):
-    """完整硬分流 + 光鸭原生多来源云添加运行时。"""
+    """完整硬分流 + ResourceGroup 决策 + 光鸭原生多来源云添加运行时。"""
 
-    plugin_version = "1.8.0"
-    build_id = "20260901-r1"
+    plugin_version = "1.9.0"
+    build_id = "20260901-r2"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为状态页按钮安装非阻塞/标准响应适配。"""
@@ -254,7 +261,7 @@ class GuangYaTransferAssistant(
             props["text"] = (
                 f"{old_text} · RSS匹配门禁：{'已接管' if match_guard else '未接管'}"
                 f" · 最终下载断路器：{'已接管' if download_guard else '未接管'}"
-                " · Magnet/ED2K：光鸭原生云添加"
+                " · 资源决策：光鸭分享 > Magnet > ED2K · Magnet/ED2K：光鸭原生云添加"
             )
             if not (match_guard and download_guard):
                 props["type"] = "warning"
