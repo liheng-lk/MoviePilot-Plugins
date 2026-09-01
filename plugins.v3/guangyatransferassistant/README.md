@@ -1,5 +1,17 @@
 # 光鸭转存助手
 
+## v1.10.0：控制台、统一搜索与秒传可靠性
+
+- 首页重构为响应式控制台：资源来源健康、固定优先级、搜索缺失资源、秒传预检、一键完整诊断、最近搜索结果和异常/在途任务同屏展示。
+- 配置页按“接管与保存 / 资源来源 / 观影与迅雷秒传 / 高级设置”重排，协议细节默认折叠，不改变任何已有配置键。
+- `/providers/search` 现在统一返回观影迅雷、Magnet 与 ED2K；`/providers/search/selected` 可直接搜索已选择的固定转存订阅。
+- Magnet/ED2K API 自动兼容 `q` / `kw` / `keyword` / `search`，并修正 token 认证头；命中后仍由光鸭原生云添加执行，不经过 MoviePilot 下载器。
+- 新增 `/xunlei/flash/preflight`，非破坏性检查观影会话、迅雷 captcha/device/client 与光鸭 userres 运行时。
+- 新增 `/diagnostics/full`，一次完成资源来源、固定订阅统一搜索和秒传链路诊断，只返回脱敏状态，不创建文件或下载任务。
+- 迅雷 CID 样本严格使用 `stream=True`，单段最多 20KiB；中/尾 Range 被服务器忽略时立即放弃，不下载整文件。
+- v1.10.0 增加行为级 dry-run：模拟外部搜索接口参数回退、观影迅雷+Magnet+ED2K 合并、3×20KiB Range 采样和 Range 忽略场景，避免只做字符串合同测试。
+
+
 MoviePilot V3 固定分流与多来源订阅插件。Telegram 频道、观影 GYING、Magnet/ED2K 搜索接口发现的候选都绑定同一个 MoviePilot 订阅状态，不建立第二套追剧进度。Magnet/ED2K 始终交给光鸭原生 cloudcollection，不经过 MoviePilot 下载器。
 
 ## v1.9.6：MoviePilot 最新订阅合同兼容

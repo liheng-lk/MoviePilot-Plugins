@@ -236,6 +236,7 @@ class GuangYaConsoleUiV1100Mixin:
                     self._action("刷新观影节点", "mdi-server-network", "/viewing/nodes/refresh", color="info"),
                     self._action("刷新频道", "mdi-refresh", "/refresh", color="primary", variant="outlined"),
                     self._action("运行自检", "mdi-stethoscope", "/selfcheck", color="secondary", variant="text"),
+                    self._action("一键完整诊断", "mdi-clipboard-pulse-outline", "/diagnostics/full", color="warning", variant="tonal"),
                 ]},
             ],
             icon="mdi-radar",
@@ -284,6 +285,18 @@ class GuangYaConsoleUiV1100Mixin:
                 "style": "border-radius:14px;",
                 "text": f"秒传预检：{preflight_last.get('message') or '-'} · {preflight_last.get('updated_at')}",
             }})
+        diagnostics_last = self.get_data("full_diagnostics_last") or {}
+        if isinstance(diagnostics_last, dict) and diagnostics_last.get("updated_at"):
+            issue_count = len(list(diagnostics_last.get("issues") or []))
+            search_content.append({"component": "VAlert", "props": {
+                "type": "success" if diagnostics_last.get("success") else "warning",
+                "variant": "tonal",
+                "density": "compact",
+                "class": "mt-3",
+                "style": "border-radius:14px;",
+                "text": f"完整诊断：{diagnostics_last.get('message') or '-'} · 问题 {issue_count} · {diagnostics_last.get('updated_at')}",
+            }})
+
         search_report = self._surface(
             "最近搜索结果",
             str(search_last.get("message") or "仅展示最近一次手动搜索；自动订阅处理仍按后台优先级持续执行。") if isinstance(search_last, dict) else "暂无搜索记录",
