@@ -1,11 +1,12 @@
-"""v1.10.6 持久状态与配置稳定性门禁。
+"""v1.10.7 持久状态、配置稳定性与观影人工认证入口门禁。
 
 目的不是吞异常，而是在进入旧兼容层前先把 MoviePilot 历史配置/缓存中常见的脏值规范化：
 - selected_subscriptions 支持旧字符串、空值、undefined 等输入，Provider API 不再 ValueError；
 - provider_timeout/result_limit、观影节点 TTL、迅雷上限等数值配置先安全归一；
 - subscription_sources 中 subscribe_id/attempts/progress/next_retry_at/selected_indexes 统一清洗；
 - 离线失败处理收到旧坏状态时先修复再进入原有重试状态机；
-- provider_test_last 中非 dict 历史项自动剔除，状态页不再被坏缓存拖垮。
+- provider_test_last 中非 dict 历史项自动剔除，状态页不再被坏缓存拖垮；
+- v1.10.7 把观影人工汉字验证码/PoW 连续恢复层放到最终插件 MRO 最外侧，不改旧资源路由。
 
 所有修复只作用于插件自己的配置/持久数据，不改变 MoviePilot 下载器、光鸭转存优先级或资源规则。
 """
@@ -15,6 +16,8 @@ from __future__ import annotations
 import math
 import re
 from typing import Any, Dict, Iterable, List, Optional
+
+from .gying_auth_v1107 import GuangYaGyingAuthV1107Mixin
 
 
 _INT_CONFIGS = {
@@ -90,10 +93,10 @@ def sanitize_source_row_v1106(raw: Any) -> Dict[str, Any]:
     return row
 
 
-class GuangYaStabilityV1106Mixin:
-    """放在插件 MRO 最外层的脏状态修复门禁。"""
+class GuangYaStabilityV1106Mixin(GuangYaGyingAuthV1107Mixin):
+    """放在插件 MRO 最外层的脏状态修复与 v1.10.7 观影认证门禁。"""
 
-    build_id = "20260902-r17"
+    build_id = "20260902-r18"
 
     def init_plugin(self, config: dict = None) -> None:
         clean = dict(config or {})
