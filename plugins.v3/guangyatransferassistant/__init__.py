@@ -1,4 +1,4 @@
-"""光鸭转存助手 v1.9.6 运行入口。
+"""光鸭转存助手 v1.10.0 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
@@ -25,6 +25,11 @@ from app.sdk.events import Event, eventmanager
 
 from . import legacy as _legacy_module
 from .channel_sources_v190 import install_channel_multisource_compat
+from .config_ui_v1100 import GuangYaConfigUiV1100Mixin
+from .console_ui_v1100 import GuangYaConsoleUiV1100Mixin
+from .diagnostics_v1100 import GuangYaDiagnosticsV1100Mixin
+from .provider_reliability_v1100 import GuangYaProviderReliabilityV1100Mixin
+from .xunlei_reliability_v1100 import GuangYaXunleiReliabilityV1100Mixin
 from .config_ui_v192 import GuangYaConfigUiMixin
 from .episode_compat_v171 import collapse_unparsed_failure_notice, install_episode_filename_compat
 from .experience_v170 import GuangYaExperienceMixin
@@ -50,6 +55,11 @@ install_channel_multisource_compat(_legacy_module)
 
 
 class GuangYaTransferAssistant(
+    GuangYaConfigUiV1100Mixin,
+    GuangYaConsoleUiV1100Mixin,
+    GuangYaDiagnosticsV1100Mixin,
+    GuangYaProviderReliabilityV1100Mixin,
+    GuangYaXunleiReliabilityV1100Mixin,
     GuangYaConfigUiMixin,
     GuangYaGyingHardeningMixin,
     GuangYaGyingFailoverMixin,
@@ -69,8 +79,8 @@ class GuangYaTransferAssistant(
 ):
     """固定分流 + 完整观影会话 + 迅雷秒传 + ResourceGroup + 光鸭原生云添加运行时。"""
 
-    plugin_version = "1.9.6"
-    build_id = "20260901-r10"
+    plugin_version = "1.10.0"
+    build_id = "20260901-r11"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
