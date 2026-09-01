@@ -60,9 +60,9 @@ def test_v193_files_parse_and_publish_current_version():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.9.5"
-    assert 'plugin_version = "1.9.5"' in entry_text
-    assert 'build_id = "20260901-r9"' in entry_text
+    assert package["version"] == local["version"] == "1.9.6"
+    assert 'plugin_version = "1.9.6"' in entry_text
+    assert 'build_id = "20260901-r10"' in entry_text
     assert "v1.9.3" in package["history"]
 
 

@@ -45,7 +45,7 @@ def test_gying_hardening_parses_and_is_final_node_layer():
     ]
     positions = [entry_text.index(token, start) for token in order]
     assert positions == sorted(positions)
-    assert 'build_id = "20260901-r9"' in entry_text
+    assert 'build_id = "20260901-r10"' in entry_text
 
 
 def test_unicode_and_punycode_are_one_node_identity():

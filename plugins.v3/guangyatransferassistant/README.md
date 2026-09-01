@@ -2,6 +2,13 @@
 
 MoviePilot V3 固定分流与多来源订阅插件。Telegram 频道、观影 GYING、Magnet/ED2K 搜索接口发现的候选都绑定同一个 MoviePilot 订阅状态，不建立第二套追剧进度。Magnet/ED2K 始终交给光鸭原生 cloudcollection，不经过 MoviePilot 下载器。
 
+## v1.9.6：MoviePilot 最新订阅合同兼容
+
+- `SubscribeChain` 继续走 `app.chain.subscribe` 稳定公开入口。
+- `build_subscribe_meta` 按 MoviePilot 最新 V3 架构改从 `app.application.subscription.contract` 导入；早期 V3 保留兼容回退。
+- 修复新版 MoviePilot 的 `app.chain.subscribe` 只公开 `SubscribeChain` 后，转存助手在安装/加载阶段直接 `ImportError` 的问题。
+- 本次仍只修改光鸭转存助手，不修改光鸭云盘助手。
+
 ## v1.9.5：MoviePilot V3 插件管理 SDK 兼容
 
 - `PluginManager` 改用 MoviePilot V3 稳定入口 `app.sdk.plugins`，不再在插件加载期依赖 `app.runtime.extensions.plugin_manager`。
