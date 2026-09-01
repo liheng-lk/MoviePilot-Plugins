@@ -57,6 +57,7 @@ install_channel_multisource_compat(_legacy_module)
 
 
 class GuangYaTransferAssistant(
+    GuangYaGyingObservabilityV1104Mixin,
     GuangYaChannelUiV1101Mixin,
     GuangYaConfigUiV1100Mixin,
     GuangYaConsoleUiV1100Mixin,
@@ -64,7 +65,6 @@ class GuangYaTransferAssistant(
     GuangYaProviderReliabilityV1100Mixin,
     GuangYaXunleiReliabilityV1100Mixin,
     GuangYaConfigUiMixin,
-    GuangYaGyingObservabilityV1104Mixin,
     GuangYaGyingHardeningMixin,
     GuangYaGyingFailoverMixin,
     GuangYaGyingRuntimeMixin,
