@@ -1,4 +1,7 @@
-"""v1.8.0 Magnet/ED2K -> 光鸭原生云添加契约测试。"""
+"""v1.8.0 Magnet/ED2K -> 光鸭原生云添加契约测试。
+
+当前发布版本可以高于 1.8.0，但 v1.8 的原生云添加与 taskId 防重复契约必须继续成立。
+"""
 
 from __future__ import annotations
 
@@ -34,12 +37,11 @@ def test_v180_files_parse_as_python():
         ast.parse(text, filename=str(path))
 
 
-def test_v180_version_and_runtime_mro():
+def test_v180_contract_is_retained_by_current_runtime():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.8.0"
-    assert local["version"] == "1.8.0"
-    assert 'plugin_version = "1.8.0"' in entry_text
+    assert package["version"] == local["version"] == "1.9.0"
+    assert 'plugin_version = "1.9.0"' in entry_text
     assert "GuangYaOfflineSafetyMixin" in entry_text
     assert "GuangYaMultiSourceMixin" in entry_text
     assert entry_text.index("GuangYaOfflineSafetyMixin,", entry_text.index("class GuangYaTransferAssistant")) < entry_text.index(
@@ -68,15 +70,15 @@ def test_magnet_and_ed2k_normalization_and_stable_identity():
     assert identity("magnet", magnet["identity"], 7) != identity("magnet", magnet["identity"], 8)
 
 
-def test_queued_task_is_inflight_not_pending():
+def test_queued_task_is_inflight_not_pending_and_review_is_terminal():
     ns = runpy.run_path(str(TYPES))
     assert "queued" not in ns["SOURCE_PENDING_STATES"]
     assert "queued" in ns["SOURCE_INFLIGHT_STATES"]
+    assert "needs_review" in ns["SOURCE_TERMINAL_STATES"]
 
 
 def test_magnet_and_ed2k_have_no_moviepilot_downloader_or_bridge_code_path():
     combined = "\n".join([store_text, multi_text, safety_text]).lower()
-    # 文档/UI 可以解释“不经过 qBittorrent”等，但实现中不能导入或调用下载器/Bridge。
     forbidden_code = (
         "from app.chain.download",
         "import downloadchain",
