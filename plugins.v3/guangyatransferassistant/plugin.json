@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "MoviePilot V3 固定分流与多来源订阅助手：响应式控制台支持频道资源索引、观影/迅雷/Magnet/ED2K 统一搜索、秒传预检与完整诊断；v1.10.2 增加页面数据故障隔离，单个状态源异常不再导致整个插件页加载失败。固定优先级“观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K”，Magnet/ED2K 继续走光鸭原生云添加。",
-  "version": "1.10.2",
+  "description": "MoviePilot V3 固定分流与多来源订阅助手：响应式控制台支持频道资源索引、观影/迅雷/Magnet/ED2K 统一搜索、秒传预检与完整诊断；v1.10.3 修复 Provider 配置解析器命名漂移，恢复资源来源运行态、资源来源检测与统一搜索。固定优先级“观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K”，Magnet/ED2K 继续走光鸭原生云添加。",
+  "version": "1.10.3",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
