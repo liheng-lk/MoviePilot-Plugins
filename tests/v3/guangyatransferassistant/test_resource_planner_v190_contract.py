@@ -26,9 +26,9 @@ def test_all_v190_files_parse_and_publish_current_version():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.9.2"
-    assert 'plugin_version = "1.9.2"' in texts[ENTRY]
-    assert 'build_id = "20260901-r4"' in texts[ENTRY]
+    assert package["version"] == local["version"] == "1.9.3"
+    assert 'plugin_version = "1.9.3"' in texts[ENTRY]
+    assert 'build_id = "20260901-r6"' in texts[ENTRY]
 
 
 def test_runtime_mro_puts_planner_safety_and_planner_before_native_offline_layers():
@@ -138,7 +138,16 @@ def test_complete_config_survives_async_route_persistence():
         "provider_auto_search",
         "viewing_base_url",
         "viewing_cookie",
+        "viewing_registry_urls",
+        "viewing_node_urls",
+        "viewing_auto_switch",
+        "viewing_auto_challenge",
+        "viewing_node_cache_minutes",
         "magnet_api_sources",
+        "xunlei_flash_enabled",
+        "xunlei_device_id",
+        "xunlei_captcha_token",
+        "xunlei_captcha_init_json",
     ):
         assert f'"{key}"' in save
 

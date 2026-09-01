@@ -70,15 +70,18 @@ exec(compile(routing_mod, str(ROUTING), "exec"), routing_ns)
 def test_versions_and_layered_legacy_contract():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.9.2"
-    assert local["version"] == "1.9.2"
-    assert 'plugin_version = "1.9.2"' in entry_text
-    assert 'build_id = "20260901-r4"' in entry_text
+    assert package["version"] == "1.9.3"
+    assert local["version"] == "1.9.3"
+    assert 'plugin_version = "1.9.3"' in entry_text
+    assert 'build_id = "20260901-r6"' in entry_text
     assert 'plugin_version = "1.7.0"' in routing_text
     assert 'plugin_version = "1.6.5"' in legacy_text
     assert "from .routing_v170 import GuangYaTransferAssistant as _RoutingV170Assistant" in entry_text
     assert "from .legacy import GuangYaTransferAssistant as _LegacyGuangYaTransferAssistant" in routing_text
     assert "GuangYaConfigUiMixin" in entry_text
+    assert "GuangYaGyingFailoverMixin" in entry_text
+    assert "GuangYaGyingRuntimeMixin" in entry_text
+    assert "GuangYaXunleiFlashMixin" in entry_text
     assert "GuangYaProviderSourcesMixin" in entry_text
     assert "GuangYaPlannerSafetyMixin" in entry_text
     assert "GuangYaResourcePlannerMixin" in entry_text
@@ -223,6 +226,7 @@ def test_route_guards_and_health_contract_remain_active():
     assert "_guangya_match_guard" in entry_text
     assert "最终下载断路器" in entry_text
     assert "光鸭直接转存 > Magnet > ED2K" in entry_text
+    assert "观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K" in entry_text
 
 
 def test_no_silent_native_fallback_for_selected_search_route():

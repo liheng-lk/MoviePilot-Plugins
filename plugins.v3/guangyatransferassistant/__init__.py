@@ -1,10 +1,13 @@
-"""光鸭转存助手 v1.9.2 运行入口。
+"""光鸭转存助手 v1.9.3 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
-地址/登录配置及通用 Magnet/ED2K 搜索 API，外部搜索结果继续进入同一 ResourceGroup
-与光鸭原生 cloudcollection，不经过 MoviePilot 下载器。
-资源决策保持：光鸭直接转存 > Magnet > ED2K。
+地址/登录配置及通用 Magnet/ED2K 搜索 API；v1.9.3 把观影中的迅雷分享接入
+光鸭 userres 秒传链路，并补齐观影多节点、浏览器 PoW 验证、真实登录/搜索/downurl 会话。
+
+最终优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。
+后续 ResourceGroup 内部仍保持：光鸭直接转存 > Magnet > ED2K。
+Magnet/ED2K 继续使用光鸭原生 cloudcollection，不经过 MoviePilot 下载器。
 """
 
 from __future__ import annotations
@@ -24,6 +27,8 @@ from .channel_sources_v190 import install_channel_multisource_compat
 from .config_ui_v192 import GuangYaConfigUiMixin
 from .episode_compat_v171 import collapse_unparsed_failure_notice, install_episode_filename_compat
 from .experience_v170 import GuangYaExperienceMixin
+from .gying_failover_v193 import GuangYaGyingFailoverMixin
+from .gying_runtime_v193 import GuangYaGyingRuntimeMixin
 from .multisource_v180 import GuangYaMultiSourceMixin
 from .offline_safety_v180 import GuangYaOfflineSafetyMixin
 from .page_auth_v172 import force_bear_auth, strip_page_api_secrets
@@ -33,6 +38,7 @@ from .reliability_v170 import GuangYaReliabilityMixin
 from .resource_planner_v190 import GuangYaResourcePlannerMixin
 from .runtime_v170 import GuangYaRuntimeFinalizerMixin
 from .routing_v170 import GuangYaTransferAssistant as _RoutingV170Assistant
+from .xunlei_flash_v193 import GuangYaXunleiFlashMixin
 
 
 install_episode_filename_compat(_legacy_module)
@@ -41,6 +47,9 @@ install_channel_multisource_compat(_legacy_module)
 
 class GuangYaTransferAssistant(
     GuangYaConfigUiMixin,
+    GuangYaGyingFailoverMixin,
+    GuangYaGyingRuntimeMixin,
+    GuangYaXunleiFlashMixin,
     GuangYaProviderSourcesMixin,
     GuangYaPlannerSafetyMixin,
     GuangYaResourcePlannerMixin,
@@ -51,10 +60,10 @@ class GuangYaTransferAssistant(
     GuangYaExperienceMixin,
     _RoutingV170Assistant,
 ):
-    """固定分流 + ResourceGroup + 外部资源提供器 + 光鸭原生云添加运行时。"""
+    """固定分流 + 完整观影会话 + 迅雷秒传 + ResourceGroup + 光鸭原生云添加运行时。"""
 
-    plugin_version = "1.9.2"
-    build_id = "20260901-r4"
+    plugin_version = "1.9.3"
+    build_id = "20260901-r6"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
@@ -141,7 +150,7 @@ class GuangYaTransferAssistant(
         method_name = "_SubscribeChain__download_best_version_with_full_pack_first"
         current = getattr(SubscribeChain, method_name, None)
         if not current:
-            self._plugin_log("WARNING", "【光鸭转存助手】【下载断路器】当前 MoviePilot 未找到订阅下载提交方法；search 硬分流仍有效")
+            self._plugin_log("WARNING", "【光鸭转存助手】【最终下载断路器】当前 MoviePilot 未找到订阅下载提交方法；search 硬分流仍有效")
             self._record_route_health(download_guard=False)
             return
         if getattr(current, "_guangya_download_guard", False):
