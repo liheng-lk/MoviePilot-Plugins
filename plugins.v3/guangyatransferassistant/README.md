@@ -2,6 +2,12 @@
 
 MoviePilot V3 固定分流与多来源订阅插件。Telegram 频道、观影 GYING、Magnet/ED2K 搜索接口发现的候选都绑定同一个 MoviePilot 订阅状态，不建立第二套追剧进度。Magnet/ED2K 始终交给光鸭原生 cloudcollection，不经过 MoviePilot 下载器。
 
+## v1.9.5：MoviePilot V3 插件管理 SDK 兼容
+
+- `PluginManager` 改用 MoviePilot V3 稳定入口 `app.sdk.plugins`，不再在插件加载期依赖 `app.runtime.extensions.plugin_manager`。
+- 光鸭云盘助手运行态优先从 `running_plugins` 取得；旧 `get_plugin_attr` 仅作为 SDK 对象仍提供时的运行期兼容。
+- 本次只修改光鸭转存助手，不改光鸭云盘助手；资源优先级和 GYING/迅雷/光鸭原生云添加逻辑不变。
+
 ## v1.9.4：观影与迅雷生产完整性收口
 
 v1.9.4 不改变资源优先级，继续固定为：
