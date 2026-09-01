@@ -13,11 +13,13 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 ENTRY = PLUGIN / "__init__.py"
 XUNLEI = PLUGIN / "xunlei_flash_v193.py"
+GYING = PLUGIN / "gying_runtime_v193.py"
 CONFIG = PLUGIN / "config_ui_v192.py"
 SAFETY = PLUGIN / "planner_safety_v190.py"
 
 entry_text = ENTRY.read_text(encoding="utf-8")
 xunlei_text = XUNLEI.read_text(encoding="utf-8")
+gying_text = GYING.read_text(encoding="utf-8")
 config_text = CONFIG.read_text(encoding="utf-8")
 safety_text = SAFETY.read_text(encoding="utf-8")
 
@@ -52,20 +54,22 @@ def _parser_namespace():
 
 
 def test_v193_files_parse_and_publish_current_version():
-    for path, text in ((ENTRY, entry_text), (XUNLEI, xunlei_text), (CONFIG, config_text), (SAFETY, safety_text)):
+    for path, text in ((ENTRY, entry_text), (XUNLEI, xunlei_text), (GYING, gying_text), (CONFIG, config_text), (SAFETY, safety_text)):
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     assert package["version"] == local["version"] == "1.9.3"
     assert 'plugin_version = "1.9.3"' in entry_text
-    assert 'build_id = "20260901-r5"' in entry_text
+    assert 'build_id = "20260901-r6"' in entry_text
     assert "v1.9.3" in package["history"]
 
 
-def test_xunlei_is_first_runtime_source_before_resource_planner_and_provider():
+def test_xunlei_is_first_acquisition_source_after_complete_gying_session_layer():
     start = entry_text.index("class GuangYaTransferAssistant")
     order = [
         "GuangYaConfigUiMixin,",
+        "GuangYaGyingFailoverMixin,",
+        "GuangYaGyingRuntimeMixin,",
         "GuangYaXunleiFlashMixin,",
         "GuangYaProviderSourcesMixin,",
         "GuangYaPlannerSafetyMixin,",
@@ -95,13 +99,17 @@ def test_viewing_xunlei_parser_reads_share_id_and_passcode():
     assert rows[0]["passcode"] == "9xY"
 
 
-def test_viewing_search_extracts_xunlei_from_same_gying_downurl_chain():
-    search = xunlei_text.split("    def _search_viewing_xunlei(", 1)[1].split("    def _xunlei_session", 1)[0]
-    assert '/s/1---1/' in search
-    assert 'res/downurl' in search
-    assert "panlist" in search
-    assert "parse_xunlei_share" in search
-    assert "_viewing_session()" in search
+def test_final_viewing_search_extracts_xunlei_from_real_search_downurl_chain():
+    assert "def _search_viewing_xunlei" in gying_text
+    final_search = gying_text.split("    def _search_viewing_xunlei(", 1)[1].split("    # ------------------------------------------------------------------\n    # 对外诊断 API", 1)[0]
+    assert "_gying_raw_results(keyword)" in final_search
+    assert "_XUNLEI_URL_RE" in final_search
+    assert '"type": "xunlei"' in final_search
+    assert '"provider": "viewing"' in final_search
+    raw = gying_text.split("    def _gying_raw_results(", 1)[1].split("    def _search_viewing(", 1)[0]
+    assert "/search?q=" in raw
+    assert "_gying_detail" in raw
+    assert "/res/downurl/" in gying_text
     assert "_provider_candidate_matches" in xunlei_text
 
 
@@ -143,7 +151,7 @@ def test_guangya_flash_uses_userres_rapid_transfer_not_local_downloader_or_oss()
     assert 'code in (156, "156")' in rapid
     assert "/userres/v1/file/delete_upload_task" in rapid
     assert "不做 OSS/本地中转，回退下一来源" in rapid
-    combined = xunlei_text.lower()
+    combined = "\n".join((xunlei_text, gying_text)).lower()
     for forbidden in (
         "from app.chain.download",
         "downloadchain(",
@@ -196,7 +204,6 @@ def test_config_exposes_xunlei_runtime_credentials_and_fixed_priority():
 
 def test_public_xunlei_state_and_test_api_do_not_return_secret_config():
     api = xunlei_text.split("    def api_xunlei_flash_test", 1)[1].split("    def get_api", 1)[0]
-    # API may expose only a readiness boolean (with_captcha); never return credential values or config fields.
     assert '"xunlei_captcha_token"' not in api
     assert '"xunlei_captcha_init_json"' not in api
     assert '"xunlei_device_id"' not in api
