@@ -33,6 +33,27 @@ def _clean_external_uri(value: str) -> str:
     return value.rstrip(".,，。;；)）]】")
 
 
+def _better_episode_hint(text: Any, current: Any = "") -> str:
+    """补足 legacy 旧模板对四位绝对集号/“话”格式的覆盖。"""
+    current = str(current or "").strip()
+    raw = str(text or "")
+    patterns = (
+        r"(?i)S\d{1,2}\s*[._ -]*E\d{1,4}(?:\s*[-~～—至+]\s*E?\d{1,4})?",
+        r"(?i)(?:EP|Episode)[\s._-]*\d{1,4}(?:\s*[-~～—至+]\s*(?:EP|Episode)?\s*\d{1,4})?",
+        r"第\s*\d{1,4}\s*[-~～—至]\s*\d{1,4}\s*[集话]",
+        r"第\s*\d{1,4}\s*[集话]",
+        r"(?:更新至|更新到|更至)\s*(?:第\s*)?\d{1,4}\s*[集话]?",
+    )
+    for pattern in patterns:
+        matched = re.search(pattern, raw)
+        if matched:
+            candidate = matched.group(0).strip()
+            # legacy 已经给出更具体的 SxxExx 时继续保留；否则采用四位/话等增强结果。
+            if not current or len(re.findall(r"\d", candidate)) > len(re.findall(r"\d", current)) or "话" in candidate:
+                return candidate[:120]
+    return current[:120]
+
+
 def _external_sources_from_context(context_html: str) -> List[Dict[str, Any]]:
     decoded = html.unescape(str(context_html or "")).replace("\\/", "/")
     rows: List[Dict[str, Any]] = []
@@ -103,7 +124,8 @@ def install_channel_multisource_compat(legacy_module: Any):
             external = _external_sources_from_context(context_html)
             if not external:
                 continue
-            metadata = legacy_module._entry_metadata(context, context_html)
+            metadata = dict(legacy_module._entry_metadata(context, context_html) or {})
+            metadata["episode_hint"] = _better_episode_hint(context, metadata.get("episode_hint"))
             message_id = str(metadata.get("message_id") or "")
             group_id = _resource_group_id(source_url, message_id, context)
             row = groups.get(group_id)
@@ -127,9 +149,9 @@ def install_channel_multisource_compat(legacy_module: Any):
                     seen.add(key)
                     row["external_sources"].append(item)
 
-        # 同消息已有光鸭分享时，只给原 entry 挂候选，不新增一条重复 UI/匹配记录。
         attached_groups = set()
         for entry in base_entries:
+            entry["episode_hint"] = _better_episode_hint(entry.get("text"), entry.get("episode_hint"))
             message_id = str(entry.get("message_id") or "")
             candidates = []
             for group_id, group in groups.items():
@@ -145,7 +167,6 @@ def install_channel_multisource_compat(legacy_module: Any):
                 candidates = entry["external_sources"]
                 break
             if not candidates:
-                # 光鸭-only 消息也建立 ResourceGroup，便于状态页和后续决策统一展示。
                 group_id = _resource_group_id(source_url, message_id, str(entry.get("text") or ""))
                 entry["resource_group_id"] = group_id
                 entry.setdefault("external_sources", [])
