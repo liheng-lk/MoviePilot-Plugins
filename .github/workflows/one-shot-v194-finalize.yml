@@ -29,6 +29,7 @@ jobs:
               text = text.replace("plugin_version = \"1.9.3\"", "plugin_version = \"1.9.4\"")
               text = text.replace("build_id = \"20260901-r6\"", "build_id = \"20260901-r8\"")
               text = text.replace("build_id = \"20260901-r7\"", "build_id = \"20260901-r8\"")
+              text = text.replace('"秒传成功占位"', '"秒传"')
               path.write_text(text, encoding='utf-8')
 
           for rel in (
