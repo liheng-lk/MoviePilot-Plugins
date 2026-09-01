@@ -74,21 +74,22 @@ def test_queued_task_is_inflight_not_pending():
     assert "queued" in ns["SOURCE_INFLIGHT_STATES"]
 
 
-def test_magnet_and_ed2k_never_use_moviepilot_downloader_or_bridge():
+def test_magnet_and_ed2k_have_no_moviepilot_downloader_or_bridge_code_path():
     combined = "\n".join([store_text, multi_text, safety_text]).lower()
-    forbidden = (
-        "downloadchain",
-        "downloaderhelper",
-        "qbittorrent",
-        "transmission",
-        "aria2",
+    # 文档/UI 可以解释“不经过 qBittorrent”等，但实现中不能导入或调用下载器/Bridge。
+    forbidden_code = (
+        "from app.chain.download",
+        "import downloadchain",
+        "downloadchain(",
+        "downloaderhelper(",
         "ed2k_dispatch_url",
         "ed2k_dispatch_token",
-        "http bridge",
-        "bearer token",
+        "bridge_url",
+        "bridge_token",
     )
-    for token in forbidden:
+    for token in forbidden_code:
         assert token not in combined, token
+    assert '"/cloudcollection/v1/create_task"' in multi_text
 
 
 def test_native_guangya_cloudcollection_endpoints_are_complete():
