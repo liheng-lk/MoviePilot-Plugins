@@ -63,39 +63,13 @@ class FakeStatus(GuangYaStatusUiMixin):
     def _source_store(self):
         return {"items": self._sources}
 
-    def _list_subscriptions(self, _state):
-        return list(self._subs.values())
-
     def _find_subscription(self, sid):
         return self._subs.get(int(sid or 0))
-
-    def _diagnose_subscription(self, subscribe):
-        if int(subscribe.id) == 1:
-            return {
-                "id": 1,
-                "name": "示例剧 A",
-                "severity": "info",
-                "reason": "等待云添加",
-                "done": 4,
-                "total": 8,
-                "lack": 4,
-            }
-        return {
-            "id": 2,
-            "name": "示例剧 B",
-            "severity": "warning",
-            "reason": "当前资源需要人工确认",
-            "done": 2,
-            "total": 6,
-            "lack": 4,
-        }
 
     def _build_selfcheck(self):
         return {
             "healthy": True,
             "selected": 2,
-            "pending_jobs": 1,
-            "failed_jobs": 0,
             "checks": [
                 {"key": "guangya_runtime", "label": "光鸭登录/运行时", "ok": True, "critical": True},
                 {"key": "search_guard", "label": "原生搜索硬分流", "ok": True, "critical": True},
@@ -127,6 +101,20 @@ class FakeStatus(GuangYaStatusUiMixin):
             }
         if key == "last_run":
             return {"time": "2026-09-01 10:01:00"}
+        if key == "transfer_jobs":
+            return {
+                "j1": {
+                    "subscribe_id": 1,
+                    "status": "verifying",
+                    "updated_at": "2026-09-01 10:00:30",
+                },
+                "j2": {
+                    "subscribe_id": 2,
+                    "status": "failed",
+                    "error": "目标目录确认失败",
+                    "updated_at": "2026-09-01 09:58:00",
+                },
+            }
         return {}
 
 
@@ -141,7 +129,6 @@ def test_status_ui_is_single_compact_five_section_page():
     text = _page_text(pages)
     for title in ("光鸭转存助手", "当前状态", "需要处理", "正在处理", "系统状态"):
         assert title in text
-    # 旧版逐层堆叠的长诊断区不应再进入最终首页。
     for legacy_title in (
         "高级诊断",
         "为什么还没转存",
@@ -153,16 +140,30 @@ def test_status_ui_is_single_compact_five_section_page():
         assert legacy_title not in text
 
 
-def test_status_ui_only_surfaces_attention_and_active_not_full_history():
+def test_status_ui_only_surfaces_real_attention_and_active_work():
     pages = FakeStatus().get_page()
     text = _page_text(pages)
     assert "ED2K · 示例剧 B" in text
     assert "文件集号无法可靠识别" in text
+    assert "目标目录确认失败" in text
     assert "MAGNET · 示例剧 A" in text
     assert "45%" in text
     assert "E05, E06" in text
-    assert "资源暂未覆盖 · 示例剧 B" in text
-    assert "E04, E05" in text
+    assert "光鸭转存 · 示例剧 A" in text
+    # 缺少候选资源是正常等待，只显示计数，不再生成一条黄色异常卡。
+    assert "资源暂未覆盖" not in text
+    assert "E04, E05" not in text
+    assert "等待资源" in text
+    assert "正常等待，不算异常" in text
+
+
+def test_status_overview_counts_waiting_separately_from_attention():
+    overview = FakeStatus().api_status_overview()["data"]
+    assert overview["waiting_resource_count"] == 1
+    # 需要处理 = needs_review ED2K + 失败的直接光鸭转存，不包含 waiting resource。
+    assert overview["attention_count"] == 2
+    assert len(overview["active_transfer_rows"]) == 1
+    assert len(overview["active_sources"]) == 1
 
 
 def test_status_ui_never_leaks_raw_source_uri_or_tracker():
@@ -191,7 +192,6 @@ def test_status_ui_exposes_overview_api_and_planner_is_final_display_owner():
     assert '"/status/overview"' in status
     assert "class GuangYaPlannerSafetyMixin(GuangYaStatusUiMixin)" in safety
     assert "return GuangYaStatusUiMixin.get_page(self)" in safety
-    # 旧层可以继续保留自己的诊断实现供 API/回归使用，但最终 PlannerSafety 不应再 super 拼页。
     page_method = safety.split("    def get_page(self):", 1)[1].split("\n\n\n__all__", 1)[0]
     assert "super().get_page" not in page_method
 
