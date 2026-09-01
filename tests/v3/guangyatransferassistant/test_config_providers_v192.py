@@ -37,9 +37,9 @@ def test_v192_files_parse_and_release_metadata_is_consistent():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.10.1"
-    assert 'plugin_version = "1.10.1"' in entry_text
-    assert 'build_id = "20260901-r12"' in entry_text
+    assert package["version"] == local["version"] == "1.10.2"
+    assert 'plugin_version = "1.10.2"' in entry_text
+    assert 'build_id = "20260901-r13"' in entry_text
     assert "v1.9.2" in package["history"]
 
 
@@ -78,7 +78,6 @@ def test_config_exposes_complete_viewing_node_login_and_cookie_controls():
     ):
         assert token in config_text
     assert 'type="password"' in config_text
-    # /user/login 是固定协议路径，可以作为隐藏兼容配置保存，但不能再渲染成用户输入框。
     form = config_text.split("    def get_form(self):", 1)[1]
     assert '_field("viewing_login_path"' not in form
 
