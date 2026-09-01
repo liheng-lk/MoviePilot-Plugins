@@ -73,10 +73,10 @@ exec(compile(routing_mod, str(ROUTING), "exec"), routing_ns)
 def test_versions_and_layered_legacy_contract():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.9.0"
-    assert local["version"] == "1.9.0"
-    assert 'plugin_version = "1.9.0"' in entry_text
-    assert 'build_id = "20260901-r2"' in entry_text
+    assert package["version"] == "1.9.1"
+    assert local["version"] == "1.9.1"
+    assert 'plugin_version = "1.9.1"' in entry_text
+    assert 'build_id = "20260901-r3"' in entry_text
     assert 'plugin_version = "1.7.0"' in routing_text
     assert 'plugin_version = "1.6.5"' in legacy_text
     assert "from .routing_v170 import GuangYaTransferAssistant as _RoutingV170Assistant" in entry_text
@@ -223,7 +223,7 @@ def test_route_status_and_health_are_visible():
     assert "最近结果" in routing_text
     assert "RSS匹配门禁" in entry_text
     assert "最终下载断路器" in entry_text
-    assert "资源决策：光鸭分享 > Magnet > ED2K" in entry_text
+    assert "光鸭直接转存 > Magnet > ED2K" in entry_text
 
 
 def test_no_silent_native_fallback_for_selected_search_route():
