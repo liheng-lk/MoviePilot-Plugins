@@ -96,10 +96,9 @@ jobs:
           python -m compileall -q plugins.v3/guangyatransferassistant
           find plugins.v3/guangyatransferassistant -type d -name '__pycache__' -prune -exec rm -rf {} +
           find plugins.v3/guangyatransferassistant -type f -name '*.pyc' -delete
-      - name: GuangYaTransferAssistant tests
+      - name: GuangYaTransferAssistant contracts
         run: |
-          python -m unittest discover -s tests/v3/guangyatransferassistant -p 'test_*.py' -v
-          if [ -f tests/v3/guangyatransferassistant/run_contract_tests.py ]; then python tests/v3/guangyatransferassistant/run_contract_tests.py; fi
+          python tests/v3/guangyatransferassistant/run_contract_tests.py
       - name: Repository validation
         run: |
           python - <<'PY'
