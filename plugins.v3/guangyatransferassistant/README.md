@@ -1,82 +1,102 @@
 # 光鸭转存助手
 
-MoviePilot V3 专用固定分流与多来源订阅插件。Telegram 频道中的光鸭分享、Magnet、ED2K，以及“观影”转入的 Magnet/ED2K，最终都绑定到同一个 MoviePilot 订阅状态，不建立第二套追剧进度。
+MoviePilot V3 固定分流与多来源订阅插件。Telegram 频道、观影 GYING、Magnet/ED2K 搜索接口发现的候选最终都绑定到同一个 MoviePilot 订阅状态，不建立第二套追剧进度；Magnet/ED2K 始终交给光鸭原生 cloudcollection，不经过 MoviePilot 下载器。
+
+## v1.9.2：配置页与外部资源提供器
+
+v1.9.2 不再把 legacy、固定分流、多来源、ResourceGroup 各层配置逐层追加到一个长表单。最终配置页固定为四个区域：
+
+- **基础**：插件开关、固定光鸭订阅、目标目录、媒体文件限制、进度同步、通知等；
+- **资源来源**：频道地址、观影 GYING、Magnet/ED2K 搜索 API；
+- **资源决策与云添加**：来源优先级、自动候选、Episode Resolver 置信度、光鸭云任务轮询与重试；
+- **高级**：历史页数、扫描上限、频道刷新、连载保护等低频参数。
+
+旧表单仍用于取得 MoviePilot 动态订阅列表和光鸭目录选项，但旧卡片和重复提示不会再返回前端。
+
+### 观影 GYING
+
+配置页新增：
+
+- `观影地址`，默认 `https://www.gying.org`，域名变化时可以直接修改；
+- `登录路径`，默认 `/login`；
+- `用户名 / 邮箱`；
+- `密码`；
+- `Cookie`。
+
+如果配置 Cookie，插件优先使用 Cookie。没有 Cookie、但填写用户名和密码时，会尝试识别标准 HTML 登录表单并登录；若站点存在验证码、滑块或非标准登录流程，则不会尝试绕过验证，而是提示使用已正常登录浏览器取得的 Cookie。
+
+观影搜索流程：
+
+`MoviePilot 缺集 -> GYING 搜索 -> downurl 资源 -> Magnet/ED2K 候选 -> ResourceGroup -> 光鸭云添加`
+
+观影用户名、密码、Cookie 不会出现在状态页和 `/providers/search`、`/providers/test` 返回中。
+
+### Magnet / ED2K 搜索接口
+
+配置项“磁力 / ED2K 搜索接口”支持多行，每行格式：
+
+`名称|类型|地址|密钥`
+
+支持类型：
+
+- `tgsearch`：tg-search 风格 JSON 搜索接口；
+- `limitless`：Limitless/相似 `kw` 参数 JSON 接口；
+- `json`：通用 `q` 参数 JSON 接口；
+- `torznab`：Torznab `t=search&q=` XML 接口。
+
+插件只从返回内容中提取合法 `magnet:?xt=urn:btih:...` 和 `ed2k://|file|...|/`，随后进行去重、媒体标题匹配和订阅绑定。API Token 只作为请求凭据使用，不会回显到资源状态 API。
+
+频道候选优先执行；只有频道没有产生可安全执行的候选、且订阅仍存在缺集时，才会自动调用已启用的外部搜索提供器补充候选。外部搜索不会绕过 ResourceGroup、订阅质量规则、缺集拆包或 taskId 防重复保护。
+
+提供两个诊断 API：
+
+- `GET /api/v1/plugin/GuangYaTransferAssistant/providers/search?keyword=...`
+- `POST /api/v1/plugin/GuangYaTransferAssistant/providers/test`
 
 ## v1.9.1：状态页重构
 
-旧状态页的问题不是缺信息，而是信息太多：legacy、固定分流、自检、多来源云添加、ResourceGroup 等不同层都在 `get_page()` 中追加自己的卡片，导致正常状态、异常、任务、历史和调试信息混在一起。
-
-v1.9.1 把最终状态页收口成单一展示层，不再拼接旧版多层诊断卡。首页固定只有 5 个区域：
-
-1. **光鸭转存助手总览**：只告诉当前是否正常、最近频道刷新时间和资源策略；
-2. **当前状态**：固定转存、正在处理、需要处理、等待资源四个数字；
-3. **需要处理**：只显示真正需要人工干预的关键异常、云添加失败、低置信 `needs_review` 和失败的光鸭转存任务；
-4. **正在处理**：只显示当前在途的光鸭转存和 Magnet/ED2K 云添加，最多 6 条；
-5. **系统状态**：汇总光鸭登录、搜索分流、RSS 门禁、最终下载断路器、原生云添加和频道索引状态。
-
-“频道暂时没有资源”“ResourceGroup 尚未覆盖缺集”“自动重试中”都属于正常等待，不再显示成一串黄色警告；完成历史、正常订阅和长日志也不会铺在首页。
+最终状态页不再拼接 legacy、固定分流、自检、多来源云添加和 ResourceGroup 的多层诊断卡。首页只有总览、当前状态、需要处理、正在处理、系统状态五个区域；等待新资源、ResourceGroup 尚未覆盖和自动重试属于正常等待，不再堆成黄色警告。
 
 首页只保留三个操作：**刷新频道、刷新云任务、运行自检**。
 
-新增轻量汇总接口：
+轻量汇总接口：
 
 `GET /api/v1/plugin/GuangYaTransferAssistant/status/overview`
 
-完整 ResourceGroup 计划仍可通过：
+完整 ResourceGroup 计划：
 
 `GET /api/v1/plugin/GuangYaTransferAssistant/resource/plan`
 
-需要更详细的运行状态时使用“运行自检”，而不是把全部诊断常驻首页。
+## ResourceGroup 决策
 
-## v1.9.0：ResourceGroup 决策
-
-频道里一条消息可能同时出现光鸭分享链接、Magnet 和 ED2K。v1.9.0 不再把它们视为三个互不相关的任务，而是先合并为一个 `ResourceGroup`：
-
-```text
-MoviePilot 订阅真实缺集
-        ↓
-Telegram 消息 / 观影来源
-        ↓
-ResourceGroup
-├─ GuangYa Share
-├─ Magnet
-└─ ED2K
-        ↓
-候选决策
-        ↓
-唯一执行路径
-```
-
-同等满足订阅规则时默认优先级：
+同一频道消息中的光鸭分享、Magnet 和 ED2K 作为一个 `ResourceGroup`。MoviePilot 先给出真实缺集，再按以下优先级选择唯一执行路径：
 
 `光鸭直接转存 > Magnet 光鸭云添加 > ED2K 光鸭云添加`
 
-光鸭分享已经提交并等待落盘的剧集会进入 reservation；同一集不会同时再启动 Magnet/ED2K。光鸭分享没有覆盖当前缺集或不可用后，剩余缺集才交给后续候选。
+光鸭分享已经提交、等待落盘的剧集会进入 reservation；同一集不会同时再启动 Magnet/ED2K。外部云任务的 `target_episodes` / `resolved_episodes` 也会占位，防止其它来源重复执行。
 
 ## 只保存真正缺少的剧集
 
-电视剧先读取 MoviePilot 当前真实缺集，再在资源内部做文件级选择：
+电视剧先读取 MoviePilot 当前真实缺集：
 
-- 光鸭分享使用 `fileIds` 增量转存，只转需要的文件；
-- Magnet 先调用 `resolve_res` 获取种子文件列表，再把高置信匹配缺集的 `fileIndexes` 传给 `create_task`；
-- ED2K 通常一个链接对应一个文件，只提交能映射到缺集的链接；
-- 同一个 Magnet 同时覆盖 E05/E06 时创建一个云添加任务并选择两个文件，而不是每集创建一个任务；
-- sample、花絮和无法确认集号的视频不会因为与正确剧集处于同一包就顺带保存；
-- 多集封装文件（例如 `S01E05E06.mkv`）作为一个不可物理拆分的文件处理。
+- 光鸭分享用 `fileIds` 做文件级增量转存；
+- Magnet 先 `resolve_res` 获取种子文件列表，只把目标缺集对应的 `fileIndexes` 传给 `create_task`；
+- ED2K 通常一条链接对应一个文件，只提交可映射到缺集的链接；
+- 一个 Magnet 同时覆盖 E05/E06 时创建一个云添加任务并选择两个文件；
+- sample、花絮、无法确认集号的视频不会顺带保存；
+- `S01E05E06.mkv` 等多集封装按一个不可物理拆分文件处理。
 
 ## Episode Resolver
 
-统一剧集识别器综合明确格式、Season 上下文、整包连续序列和频道集数提示，而不是简单从文件名抓数字。
+解析器支持 `S01E05`、`S01EP05`、`1x05`、`EP05`、`E05-E06`、`E05E06`、`第5集`、`第5话`、SP/OVA/OAD，以及具有足够上下文的 `05.mkv`、`05~4K`、`Show.Name.05.2160p` 等弱命名。
 
-支持 `S01E05`、`S01EP05`、`1x05`、`EP05`、`E05-E06`、`E05E06`、`第5集`、`第5话`、SP/OVA/OAD 等。`05.mkv`、`[05].mkv`、`Show - 05`、`05~4K`、`Show.Name.05.2160p` 等弱命名只有获得 Season、连续包或明确频道提示等额外证据后才允许自动选择。
+年份、分辨率、编码数字如 `2026`、`1080`、`2160`、`264`、`265`、`266` 会被排除。`A.mkv / B.mkv / C.mkv` 不按文件顺序猜集。
 
-解析器排除年份、分辨率和编码等噪声数字，例如 `2026`、`1080`、`2160`、`264`、`265`、`266`。`A.mkv / B.mkv / C.mkv` 不按文件顺序猜成 E01/E02/E03。
-
-自动拆包默认置信度阈值为 `0.90`。低于阈值的来源进入 `needs_review`，不会为了“尽量下载”而整包误存。
+自动拆包默认置信度为 `0.90`。低于阈值进入 `needs_review`，不会为了尽量保存而整包误存。
 
 ## Magnet / ED2K 使用光鸭原生云添加
 
-Magnet 与 ED2K **不交给 MoviePilot 下载器**。插件复用 `光鸭云盘助手 (ShukGuangYaDisk)` 的登录态和目标目录，直接调用光鸭云盘自带 cloudcollection：
+Magnet 与 ED2K **不交给 MoviePilot 下载器**。插件复用 `光鸭云盘助手 (ShukGuangYaDisk)` 的登录态和目标目录，调用：
 
 `resolve_res -> create_task -> list_task -> 完成/原生重试`
 
@@ -87,38 +107,32 @@ Magnet 与 ED2K **不交给 MoviePilot 下载器**。插件复用 `光鸭云盘�
 - `/cloudcollection/v1/list_task`
 - `/cloudcollection/v2/retry_task`
 
-因此不需要 qBittorrent、Transmission、Aria2，也不需要 ED2K Bridge。来源已经获得 `taskId` 后只轮询或原生重试现有任务，进程重启也不会重复 `create_task`。
+不需要 qBittorrent、Transmission、Aria2 或 ED2K Bridge。已有 `taskId` 的来源只轮询/原生重试现有任务，重启后也不会重复 `create_task`。
 
-## 订阅规则
+## 订阅规则与固定分流
 
-Magnet/ED2K 的真实发布名、分辨率等信息可能只有 `resolve_res` 后才能确认，因此外部候选在光鸭解析文件列表以后、创建云添加任务以前再执行 MoviePilot 订阅的 include/exclude、分辨率、质量、特效等规则。解析后不匹配就转向下一候选，不创建云添加任务。
+Magnet/ED2K 的真实发布名、分辨率可能只有 `resolve_res` 后才能确认，因此会在光鸭解析文件列表以后、`create_task` 以前重新执行 MoviePilot 的 include/exclude、分辨率、质量、特效等规则。
 
-## 固定分流与防重复
+未接管订阅仍使用 MoviePilot 原生路线；已接管或绑定外部来源的订阅，MoviePilot 原生搜索、RSS 匹配和最终下载提交由硬门禁阻断。网络异常或资源暂缺时也不会静默回退本地下载器。
 
-未接管的订阅完全保持 MoviePilot 原生订阅路线。已接管或绑定外部来源的订阅，MoviePilot 原生搜索、RSS 匹配和最终下载提交都由硬门禁阻断；Telegram 暂时不可用、光鸭云添加等待中或网络异常时也不会静默回退本地下载器。
-
-除光鸭分享 pending reservation 外，Magnet/ED2K 的 `target_episodes` / `resolved_episodes` 也作为在途占位，同一订阅不会为同一缺集反复创建其它外部任务。
-
-## 频道资源
+## 频道与手动观影接入口
 
 默认频道：
 
 - `https://tgm.li668.asia/regengguangya`
 - `https://tgm.li668.asia/yunpanguangya`
 
-频道消息可以是“光鸭分享 + Magnet + ED2K”，也可以只有 Magnet/ED2K。只含外部链接的消息同样进入频道索引。
+频道消息可以只有光鸭分享、只有 Magnet/ED2K，或三类来源同时存在。
 
-## 观影接入
-
-现有来源接入口：
+已有手动来源入口继续保留：
 
 `POST /api/v1/plugin/GuangYaTransferAssistant/viewing/ingest`
 
-推荐传 `subscribe_id` + `uri`；没有订阅 ID 时可用 `title/year` 唯一定位现有 MoviePilot 订阅。该接口把已经取得的 Magnet/ED2K 送入统一来源状态机。
+用于把已经取得的 Magnet/ED2K 直接绑定到已有 MoviePilot 订阅。
 
 ## 配置持久化
 
-固定路线异步写盘时会同时保存 v1.8 原生云添加配置和 v1.9 ResourceGroup/Episode Resolver 配置，避免热重载后恢复成默认值。
+固定路线异步写盘时会同时保存原生云添加、ResourceGroup/Episode Resolver、观影和 Magnet API 配置，避免热重载后被 legacy 配置覆盖。
 
 ## 依赖
 
