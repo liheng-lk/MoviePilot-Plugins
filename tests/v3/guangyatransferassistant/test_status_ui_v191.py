@@ -11,6 +11,7 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 STATUS = PLUGIN / "status_ui_v191.py"
+STATUS_HARDENING = PLUGIN / "status_hardening_v193.py"
 PLANNER_SAFETY = PLUGIN / "planner_safety_v190.py"
 ENTRY = PLUGIN / "__init__.py"
 
@@ -81,38 +82,18 @@ class FakeStatus(GuangYaStatusUiMixin):
     def api_resource_plan(self):
         return {
             "success": True,
-            "data": [
-                {
-                    "subscribe_id": 2,
-                    "name": "示例剧 B",
-                    "uncovered": [4, 5],
-                    "updated_at": "2026-09-01 10:00:00",
-                }
-            ],
+            "data": [{"subscribe_id": 2, "name": "示例剧 B", "uncovered": [4, 5], "updated_at": "2026-09-01 10:00:00"}],
         }
 
     def get_data(self, key):
         if key == "channel_index":
-            return {
-                "time": "2026-09-01 10:01:00",
-                "items": [{"id": 1}, {"id": 2}, {"id": 3}],
-                "errors": [],
-            }
+            return {"time": "2026-09-01 10:01:00", "items": [{"id": 1}, {"id": 2}, {"id": 3}], "errors": []}
         if key == "last_run":
             return {"time": "2026-09-01 10:01:00"}
         if key == "transfer_jobs":
             return {
-                "j1": {
-                    "subscribe_id": 1,
-                    "status": "verifying",
-                    "updated_at": "2026-09-01 10:00:30",
-                },
-                "j2": {
-                    "subscribe_id": 2,
-                    "status": "failed",
-                    "error": "目标目录确认失败",
-                    "updated_at": "2026-09-01 09:58:00",
-                },
+                "j1": {"subscribe_id": 1, "status": "verifying", "updated_at": "2026-09-01 10:00:30"},
+                "j2": {"subscribe_id": 2, "status": "failed", "error": "目标目录确认失败", "updated_at": "2026-09-01 09:58:00"},
             }
         return {}
 
@@ -183,14 +164,20 @@ def test_status_ui_primary_actions_are_only_three_clear_operations():
     assert "GuangYaTransferAssistant/selfcheck" in text
 
 
-def test_status_ui_exposes_overview_api_and_planner_is_final_display_owner():
+def test_status_ui_exposes_overview_api_and_r7_keeps_single_display_owner():
     status = STATUS.read_text(encoding="utf-8")
+    hardening = STATUS_HARDENING.read_text(encoding="utf-8")
     safety = PLANNER_SAFETY.read_text(encoding="utf-8")
+    entry = ENTRY.read_text(encoding="utf-8")
     assert '"/status/overview"' in status
     assert "class GuangYaPlannerSafetyMixin(GuangYaStatusUiMixin)" in safety
     assert "return GuangYaStatusUiMixin.get_page(self)" in safety
-    page_method = safety.split("    def get_page(self):", 1)[1].split("\n\n\n__all__", 1)[0]
-    assert "super().get_page" not in page_method
+    assert "GuangYaStatusHardeningMixin" in hardening
+    start = entry.index("class GuangYaTransferAssistant")
+    assert entry.index("GuangYaStatusHardeningMixin,", start) < entry.index("GuangYaPlannerSafetyMixin,", start)
+    assert "资源策略：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K" in hardening
+    assert "viewing_session_state" in hardening
+    assert "xunlei_flash_state" in hardening
 
 
 def test_status_ui_v191_is_retained_by_current_release():
@@ -199,6 +186,6 @@ def test_status_ui_v191_is_retained_by_current_release():
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     assert package["version"] == local["version"] == "1.9.3"
     assert 'plugin_version = "1.9.3"' in entry
-    assert 'build_id = "20260901-r6"' in entry
+    assert 'build_id = "20260901-r7"' in entry
     assert "v1.9.1" in package.get("history", {})
     assert "紧凑" in package["history"]["v1.9.1"]

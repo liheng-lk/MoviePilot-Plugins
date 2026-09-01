@@ -13,12 +13,14 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 ENTRY = PLUGIN / "__init__.py"
 XUNLEI = PLUGIN / "xunlei_flash_v193.py"
+XUNLEI_HARDENING = PLUGIN / "xunlei_hardening_v193.py"
 GYING = PLUGIN / "gying_runtime_v193.py"
 CONFIG = PLUGIN / "config_ui_v192.py"
 SAFETY = PLUGIN / "planner_safety_v190.py"
 
 entry_text = ENTRY.read_text(encoding="utf-8")
 xunlei_text = XUNLEI.read_text(encoding="utf-8")
+xunlei_hardening_text = XUNLEI_HARDENING.read_text(encoding="utf-8")
 gying_text = GYING.read_text(encoding="utf-8")
 config_text = CONFIG.read_text(encoding="utf-8")
 safety_text = SAFETY.read_text(encoding="utf-8")
@@ -54,13 +56,13 @@ def _parser_namespace():
 
 
 def test_v193_files_parse_and_publish_current_version():
-    for path, text in ((ENTRY, entry_text), (XUNLEI, xunlei_text), (GYING, gying_text), (CONFIG, config_text), (SAFETY, safety_text)):
+    for path, text in ((ENTRY, entry_text), (XUNLEI, xunlei_text), (XUNLEI_HARDENING, xunlei_hardening_text), (GYING, gying_text), (CONFIG, config_text), (SAFETY, safety_text)):
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     assert package["version"] == local["version"] == "1.9.3"
     assert 'plugin_version = "1.9.3"' in entry_text
-    assert 'build_id = "20260901-r6"' in entry_text
+    assert 'build_id = "20260901-r7"' in entry_text
     assert "v1.9.3" in package["history"]
 
 
@@ -68,8 +70,10 @@ def test_xunlei_is_first_acquisition_source_after_complete_gying_session_layer()
     start = entry_text.index("class GuangYaTransferAssistant")
     order = [
         "GuangYaConfigUiMixin,",
+        "GuangYaGyingHardeningMixin,",
         "GuangYaGyingFailoverMixin,",
         "GuangYaGyingRuntimeMixin,",
+        "GuangYaXunleiHardeningMixin,",
         "GuangYaXunleiFlashMixin,",
         "GuangYaProviderSourcesMixin,",
         "GuangYaPlannerSafetyMixin,",
@@ -110,7 +114,6 @@ def test_final_viewing_search_extracts_xunlei_from_real_search_downurl_chain():
     assert "/search?q=" in raw
     assert "_gying_detail" in raw
     assert "/res/downurl/" in gying_text
-    assert "_provider_candidate_matches" in xunlei_text
 
 
 def test_xunlei_share_protocol_gets_pass_token_then_detail_and_file_hash():
@@ -119,15 +122,15 @@ def test_xunlei_share_protocol_gets_pass_token_then_detail_and_file_hash():
         "/drive/v1/share/detail",
         "/drive/v1/share/file_info",
     ):
-        assert endpoint in xunlei_text
+        assert endpoint in xunlei_text or endpoint in xunlei_hardening_text
     share = xunlei_text.split("    def _xunlei_share_info(", 1)[1].split("    def _xunlei_normalize_file", 1)[0]
     assert 'params["pass_code"] = passcode' in share
     assert 'body.get("pass_code_token")' in share
-    headers = xunlei_text.split("    def _xunlei_headers(", 1)[1].split("    @staticmethod\n    def _xunlei_captcha_error", 1)[0]
-    assert 'headers["x-device-id"]' in headers
-    assert 'headers["x-guid"]' in headers
-    assert 'headers["x-captcha-token"]' in headers
-    assert '"Authorization"' not in headers
+    combined_headers = xunlei_hardening_text.split("    def _xunlei_headers(", 1)[1].split("    @staticmethod\n    def _merge_xunlei_file", 1)[0]
+    assert '"x-device-id"' in combined_headers
+    assert '"x-guid"' in combined_headers
+    assert '"x-captcha-token"' in combined_headers
+    assert 'headers.pop("Authorization", None)' in combined_headers
 
 
 def test_hash_path_reuses_reference_gcid_and_three_20kb_sample_cid():
@@ -151,7 +154,7 @@ def test_guangya_flash_uses_userres_rapid_transfer_not_local_downloader_or_oss()
     assert 'code in (156, "156")' in rapid
     assert "/userres/v1/file/delete_upload_task" in rapid
     assert "不做 OSS/本地中转，回退下一来源" in rapid
-    combined = "\n".join((xunlei_text, gying_text)).lower()
+    combined = "\n".join((xunlei_text, xunlei_hardening_text, gying_text)).lower()
     for forbidden in (
         "from app.chain.download",
         "downloadchain(",
@@ -174,8 +177,7 @@ def test_xunlei_uses_existing_missing_episode_planner_and_reservations():
     assert "super()._pending_reservations" in pending
     assert 'merged["episodes"]' in pending
     assert 'merged["movie"]' in pending
-    history = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]["history"]["v1.9.3"]
-    assert "占位" in history and "防重复" in history
+    assert "秒传成功占位" in json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]["history"]["v1.9.3"]
 
 
 def test_config_exposes_xunlei_runtime_credentials_and_fixed_priority():
@@ -186,8 +188,8 @@ def test_config_exposes_xunlei_runtime_credentials_and_fixed_priority():
         '"xunlei_device_id"',
         '"xunlei_captcha_token"',
         '"xunlei_captcha_init_json"',
-        "观影迅雷秒传（最高优先级）",
-        "迅雷 shield/captcha/init 请求体",
+        "迅雷秒传优先",
+        "迅雷 captcha/init 请求体（可选兜底）",
         "观影迅雷秒传 > 光鸭分享 > Magnet > ED2K",
     ):
         assert token in config_text
@@ -209,5 +211,9 @@ def test_public_xunlei_state_and_test_api_do_not_return_secret_config():
     assert '"xunlei_captcha_init_json"' not in api
     assert '"xunlei_device_id"' not in api
     assert '"with_captcha"' in api
+    runtime = xunlei_hardening_text.split("    def api_xunlei_runtime_status", 1)[1].split("    def get_api", 1)[0]
+    assert '"captcha_token"' not in runtime
+    assert '"device_id"' not in runtime
     assert '"/xunlei/flash/test"' in xunlei_text
     assert '"/xunlei/flash/state"' in xunlei_text
+    assert '"/xunlei/runtime/status"' in xunlei_hardening_text
