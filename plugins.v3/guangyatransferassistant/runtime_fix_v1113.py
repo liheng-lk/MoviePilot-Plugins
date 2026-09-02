@@ -18,9 +18,10 @@ from typing import Any, Dict, Iterable
 
 from app.schemas.types import NotificationType
 
-from .xunlei_flash_v193 import XUNLEI_API_BASE
+from .gying_browser_profile_v1112 import GuangYaGyingBrowserProfileV1112Mixin
 
 
+_XUNLEI_API_BASE_V1113 = "https://api-pan.xunlei.com"
 _CAPTCHA_INVALID_RE_V1113 = re.compile(
     r"captcha|captcha[_ -]?token|验证码(?:无效|失效|错误|过期)?|"
     r"验证(?:码)?(?:无效|失效|错误|过期)|device.*match|device[_ -]?id.*empty",
@@ -28,8 +29,8 @@ _CAPTCHA_INVALID_RE_V1113 = re.compile(
 )
 
 
-class GuangYaRuntimeFixV1113Mixin:
-    """最终运行时修复层；放在完整插件 MRO 最外侧。"""
+class GuangYaRuntimeFixV1113Mixin(GuangYaGyingBrowserProfileV1112Mixin):
+    """观影 UI 链中的最终运行时修复层。"""
 
     build_id = "20260902-r24"
 
@@ -58,14 +59,12 @@ class GuangYaRuntimeFixV1113Mixin:
     def _xunlei_get(self, endpoint: str, params: Dict[str, Any], *, action: str) -> Dict[str, Any]:
         """迅雷 GET：captcha 失效时无条件尝试一次既有刷新能力，不要求 init JSON。"""
         session = self._xunlei_session()
-        url = f"{XUNLEI_API_BASE}{endpoint}"
+        url = f"{_XUNLEI_API_BASE_V1113}{endpoint}"
         last_error = ""
         for attempt in range(2):
             headers = self._xunlei_headers(action, refresh=False)
             if not headers.get("x-captcha-token"):
-                raise RuntimeError(
-                    "迅雷 captcha_token 不可用；自动初始化未取得有效 token"
-                )
+                raise RuntimeError("迅雷 captcha_token 不可用；自动初始化未取得有效 token")
             response = session.get(
                 url,
                 params=params,
