@@ -59,10 +59,12 @@ def test_business_failover_excludes_registry_landing_domains():
     assert "_MAX_CONTENT_NODES_V1111 = 10" in PATCH
 
 
-def test_proxy_hint_is_actionable_without_leaking_proxy_or_secrets():
+def test_pow_does_not_require_or_recommend_proxy():
     request = PATCH.split("    def _gying_request(", 1)[1].split("\n\n\n__all__", 1)[0]
-    assert "观影/外部搜索使用代理" in request
-    assert 'not bool(getattr(session, "proxies", {}) or {})' in request
+    assert "观影/外部搜索使用代理" not in PATCH
+    assert "session.proxies" not in PATCH
+    assert "getattr(session, \"proxies\"" not in PATCH
+    assert "return super()._gying_request(" in request
     lowered = PATCH.lower()
     for forbidden in (
         "pytesseract",
