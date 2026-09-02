@@ -24,18 +24,20 @@ def test_v1109_files_parse_and_release_metadata_are_aligned():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.10.11"
-    assert 'plugin_version = "1.10.11"' in entry_text
-    assert 'build_id = "20260902-r22"' in entry_text
+    assert package["version"] == local["version"] == "1.10.12"
+    assert 'plugin_version = "1.10.12"' in entry_text
+    assert 'build_id = "20260902-r23"' in entry_text
     assert "v1.10.10" in package.get("history", {})
     assert "v1.10.9" in package.get("history", {})
 
 
 def test_auto_login_is_outermost_before_transport_and_old_auth_layers():
-    assert "from .gying_autologin_v1109 import GuangYaGyingAutoLoginV1109Mixin" in entry_text
+    assert "from .gying_session_v1112 import GuangYaGyingSessionV1112Mixin" in entry_text
     start = entry_text.index("class GuangYaTransferAssistant")
-    assert entry_text.index("GuangYaGyingAutoLoginV1109Mixin,", start) < entry_text.index("GuangYaGyingTransportV1108Mixin,", start)
+    assert entry_text.index("GuangYaGyingSessionV1112Mixin,", start) < entry_text.index("GuangYaGyingTransportV1108Mixin,", start)
     assert entry_text.index("GuangYaGyingTransportV1108Mixin,", start) < entry_text.index("GuangYaStabilityV1106Mixin,", start)
+    session_text = (PLUGIN / "gying_session_v1112.py").read_text(encoding="utf-8")
+    assert "class GuangYaGyingSessionV1112Mixin(GuangYaGyingAutoLoginV1109Mixin)" in session_text
 
 
 def test_password_login_uses_empty_code_before_any_manual_captcha():
