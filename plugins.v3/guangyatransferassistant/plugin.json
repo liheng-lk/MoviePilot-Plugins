@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.8 重构观影传输层，人工认证改为后台异步任务，点击开始后立即返回 auth_id，避免多节点探测和 PoW 阻塞前端；PoW 判定改为 _obj. 正常页优先、code=419/refresh 验证语义精确触发，远程 /res/pow 必须 success=true 才接受；8 个确认中文镜像仅在白名单内部共享运行时 Cookie，并统一移动端请求指纹。人工汉字验证码仍由用户本人点击。固定优先级“观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K”，Magnet/ED2K 继续走光鸭原生云添加。",
-  "version": "1.10.8",
+  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.9 修正观影登录策略，默认先按站点实际可用协议自动账号密码登录（code 为空），只有服务端明确返回 captcha/点击验证要求时才进入人工汉字点选兜底；登录成功后继续暖机并以受限搜索二次验真。会话启动 API 继续后台执行并把异常转换为结构化 JSON，避免前端只显示服务器无响应。固定优先级“观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K”，Magnet/ED2K 继续走光鸭原生云添加。",
+  "version": "1.10.9",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
