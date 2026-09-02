@@ -225,10 +225,19 @@ class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin):
                 "message": "迅雷外部检索处于冷却期，本轮不访问观影/迅雷接口",
             }
         result = dict(super()._dispatch_xunlei_flash(subscribe) or {})
+        if self._is_movie_subscription(subscribe) and bool(result.get("movie")):
+            self._remember_verified_movie_v1121(subscribe, "xunlei_flash", f"{getattr(subscribe, 'name', 'movie')}.mkv")
         if result.get("success") or result.get("episodes"):
             if self._finish_subscription_if_complete(subscribe):
                 result["subscription_completed"] = True
                 result["handled"] = True
+                notify = getattr(self, "_notify_acquisition_v1113", None)
+                if callable(notify) and self._is_movie_subscription(subscribe):
+                    notify("✅ 电影订阅已完成", [
+                        f"媒体：{getattr(subscribe, 'name', '')}",
+                        "依据：迅雷正片已确认秒传或已存在",
+                        "状态：已触发 MoviePilot 官方完成流程并移出活动订阅",
+                    ])
         return result
 
     def _dispatch_viewing_external_v1113(self, subscribe: Any) -> Dict[str, Any]:
@@ -244,6 +253,30 @@ class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin):
     # ------------------------------------------------------------------
     # 完成闭环：cloudcollection 完成后主动触发 MoviePilot 完成订阅
     # ------------------------------------------------------------------
+    def _remember_verified_movie_v1121(self, subscribe: Any, origin: str, path: str) -> bool:
+        """仅在真实完成回执后写入电影事实，提交/等待状态绝不调用。"""
+        if not subscribe or not self._is_movie_subscription(subscribe):
+            return False
+        movie_path = str(path or "").strip() or f"{getattr(subscribe, 'name', 'movie')}.mkv"
+        if not _is_video(movie_path):
+            movie_path = f"{movie_path}.mkv"
+        changed = self._remember_media_facts(
+            subscribe,
+            [{"path": movie_path, "size": 0, "digest": ""}],
+            origin=origin,
+        )
+        confirmed = bool(self._movie_transfer_confirmed(subscribe))
+        self._plugin_log(
+            "INFO",
+            "【光鸭转存助手】【电影事实】#%s %s 完成回执已记录：origin=%s changed=%s confirmed=%s",
+            int(getattr(subscribe, "id", 0) or 0),
+            str(getattr(subscribe, "name", "") or ""),
+            origin,
+            changed,
+            confirmed,
+        )
+        return confirmed
+
     def _poll_offline_source(self, source: Dict[str, Any]) -> Dict[str, Any]:
         result = dict(super()._poll_offline_source(source) or {})
         data = result.get("data") if isinstance(result.get("data"), dict) else {}
@@ -254,12 +287,29 @@ class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin):
         sid = int(latest.get("subscribe_id") or 0)
         subscribe = self._find_subscription(sid) if sid else None
         if subscribe:
+            if self._is_movie_subscription(subscribe):
+                movie_path = str(
+                    latest.get("renamed_name")
+                    or latest.get("requested_name")
+                    or latest.get("resolved_name")
+                    or latest.get("label")
+                    or getattr(subscribe, "name", "movie")
+                )
+                self._remember_verified_movie_v1121(subscribe, "guangya_offline", movie_path)
             try:
                 self._sync_media_facts_progress(subscribe)
             except Exception:
                 pass
             if self._finish_subscription_if_complete(subscribe):
                 result["subscription_completed"] = True
+                if not latest.get("subscription_completed_notified_at"):
+                    notify = getattr(self, "_notify_acquisition_v1113", None)
+                    if callable(notify) and notify("✅ 电影订阅已完成" if self._is_movie_subscription(subscribe) else "✅ 剧集订阅已完成", [
+                        f"媒体：{getattr(subscribe, 'name', '')}",
+                        "依据：光鸭云添加完成回执已核验",
+                        "状态：已触发 MoviePilot 官方完成流程并移出活动订阅",
+                    ]):
+                        self._update_source(source_id, subscription_completed_notified_at=self._now_text())
                 self._plugin_log(
                     "INFO",
                     "【光鸭转存助手】【完成闭环】#%s %s 云添加完成后已触发 MoviePilot 订阅完成流程",
