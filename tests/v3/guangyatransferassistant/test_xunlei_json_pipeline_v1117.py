@@ -45,6 +45,9 @@ def test_stage_a_keeps_user_script_json_contract():
     assert "1.1.3-mp-compatible" not in make_json
     assert "md5 = gcid[:32]" in make_json
     assert '.strip().lower()' in make_json
+    entry_line = next(line for line in make_json.splitlines() if "entry: Dict[str, Any]" in line)
+    assert '"sourceXunlei": True' in entry_line
+    assert '"sourceTag"' not in entry_line
 
 
 def test_share_rows_are_annotated_before_import_even_when_file_info_is_skipped():
