@@ -9,12 +9,14 @@ PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 BROWSER = PLUGIN / "gying_browser_v1112.py"
 VERIFIED = PLUGIN / "gying_browser_verified_v1112.py"
 PROFILE = PLUGIN / "gying_browser_profile_v1112.py"
+FALLBACK = PLUGIN / "gying_fallback_reuse_v1113.py"
 UI = PLUGIN / "gying_ui_v1109.py"
 
 
 browser_text = BROWSER.read_text(encoding="utf-8")
 verified_text = VERIFIED.read_text(encoding="utf-8")
 profile_text = PROFILE.read_text(encoding="utf-8")
+fallback_text = FALLBACK.read_text(encoding="utf-8")
 ui_text = UI.read_text(encoding="utf-8")
 
 
@@ -23,6 +25,7 @@ def test_v1112_browser_files_parse():
         (BROWSER, browser_text),
         (VERIFIED, verified_text),
         (PROFILE, profile_text),
+        (FALLBACK, fallback_text),
         (UI, ui_text),
     ):
         ast.parse(text, filename=str(path))
@@ -73,12 +76,14 @@ def test_v1112_remote_pow_get_and_post_share_browser_fetch():
     assert "session.post(" not in solver
 
 
-def test_v1112_browser_bound_antibot_cookies_are_not_shared_or_restored():
+def test_v1112_browser_bound_antibot_cookies_are_not_shared_or_restored_into_new_browser_context():
     for name in ("browser_pow", "browser_verified", "vrg_sc", "vrg_go"):
         assert f'"{name}"' in browser_text
     assert "_cookie_seed_v1112" in browser_text
     assert "_cookie_header_without_browser_state_v1112" in browser_text
     assert "self._gying_shared_cookie_v1108 = header" in browser_text
+    assert "_restore_fallback_node_cookies_v1113(session, saved_cookie)" in fallback_text
+    assert 'getattr(self, "_gying_browser_fallback_logged_v1112", False)' in fallback_text
 
 
 def test_v1112_only_sdk_or_launch_unavailability_falls_back_to_requests_chain():
@@ -96,10 +101,11 @@ def test_v1112_browser_verified_wins_over_stale_challenge_dom():
     assert "_response_v1112(" in verified_text
 
 
-def test_ui_chain_wires_profile_and_verified_browser_layers_before_old_pow_layers():
+def test_ui_chain_wires_fallback_profile_verified_browser_layers_before_old_pow_layers():
     assert (
-        "from .gying_browser_profile_v1112 import GuangYaGyingBrowserProfileV1112Mixin"
+        "from .gying_fallback_reuse_v1113 import GuangYaGyingFallbackReuseV1113Mixin"
         in ui_text
     )
-    assert "class GuangYaGyingUiV1109Mixin(GuangYaGyingBrowserProfileV1112Mixin):" in ui_text
+    assert "class GuangYaGyingUiV1109Mixin(GuangYaGyingFallbackReuseV1113Mixin):" in ui_text
+    assert "class GuangYaGyingFallbackReuseV1113Mixin(GuangYaGyingBrowserProfileV1112Mixin):" in fallback_text
     assert "class GuangYaGyingBrowserProfileV1112Mixin(GuangYaGyingBrowserVerifiedV1112Mixin):" in profile_text
