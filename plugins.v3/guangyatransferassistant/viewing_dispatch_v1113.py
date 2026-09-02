@@ -491,6 +491,18 @@ class GuangYaViewingDispatchV1113Mixin:
                 "resource_name": name,
             }
             actions.append(action)
+            notify_selected = getattr(self, "_notify_acquisition_v1113", None)
+            if callable(notify_selected) and not updated.get("selection_notified_at"):
+                planned = ", ".join(f"E{value:02d}" for value in sorted(target)) or "电影正片"
+                lines = [
+                    f"媒体：{getattr(subscribe, 'name', '')}",
+                    f"来源：{source_type.upper()} → 光鸭原生云添加",
+                    f"已选资源：{(name or search_title)[:180]}",
+                    f"计划补充：{planned}",
+                    "状态：等待光鸭任务完成后核验；期间不会并行提交相似资源",
+                ]
+                if notify_selected("🎯 已选择光鸭云资源", lines):
+                    self._update_source(source_id, selection_notified_at=self._now_text())
             self._plugin_log(
                 "INFO",
                 "【光鸭转存助手】【观影执行】#%s 已绑定并提交：type=%s source=%s target=%s 搜索标题=%s 资源名=%s；执行器=光鸭cloudcollection",
