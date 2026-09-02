@@ -61,13 +61,14 @@ def test_v1110_release_and_layer_parse():
     ast.parse(POW)
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.10.11"
-    assert 'plugin_version = "1.10.11"' in ENTRY
-    assert 'build_id = "20260902-r22"' in ENTRY
+    assert package["version"] == local["version"] == "1.10.12"
+    assert 'plugin_version = "1.10.12"' in ENTRY
+    assert 'build_id = "20260902-r23"' in ENTRY
+    assert "v1.10.12" in package.get("history", {})
     assert "v1.10.10" in package.get("history", {})
     assert "GuangYaGyingPanSouV1110Mixin" in POW
     assert "class GuangYaGyingPowV1111Mixin(GuangYaGyingPanSouV1110Mixin)" in POW
-    assert "class GuangYaGyingUiV1109Mixin(GuangYaGyingPowV1111Mixin)" in UI
+    assert "class GuangYaGyingUiV1109Mixin(GuangYaGyingBrowserVerifiedV1112Mixin)" in UI
 
 
 def test_challenge_detection_matches_pansou_and_does_not_confuse_refresh_with_remote_pow():
