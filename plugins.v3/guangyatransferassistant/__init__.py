@@ -1,10 +1,10 @@
-"""光鸭转存助手 v1.10.11 运行入口。
+"""光鸭转存助手 v1.10.12 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
 地址/登录配置及通用 Magnet/ED2K 搜索 API；v1.9.3 把观影中的迅雷分享接入
 光鸭 userres 秒传链路，并补齐观影多节点、浏览器 PoW 验证、真实登录/搜索/downurl 会话；
-v1.9.4 收口 IDN 节点身份、Cookie 域边界、搜索降级、迅雷 captcha/device、GCID 回退和配置/状态页信息层级；v1.9.5 迁移 PluginManager 到 MoviePilot V3 稳定 SDK；v1.9.6 兼容 MoviePilot 最新订阅合同拆分，修复安装期 build_subscribe_meta 导入失败；v1.10.2 隔离状态汇总、Provider、频道卡片和控制台页面异常，单个状态源损坏不再导致整个插件页加载失败；v1.10.3 修复 v1.10.0 Provider 解析器方法名漂移，恢复资源来源运行态、资源来源检测和统一搜索；v1.10.4 增加观影节点、PoW、登录、搜索、downurl、迅雷/Magnet/ED2K 候选全过程日志，并在控制台提供主动测试入口；v1.10.5 修复分享文件集数高于 MoviePilot 当前目标时被误判范围外、片头片尾阻塞转存，以及历史已处理分享在追更目标增长后不再复查的问题；v1.10.6 依据真实浏览器 HAR 对齐观影搜索/downurl/登录态协议，补齐 downlist Magnet、panlist 提取码、Cookie 复用、验证码状态和历史脏配置自愈；v1.10.7 根据观影真实 captcha 前端实现增加人工汉字点击认证、同 Session 登录、连续 PoW 恢复和受限搜索二次验真；v1.10.8 参考近期仍在维护的观影接入实现重构传输层：人工认证改后台异步、精确 PoW 判定、8 个确认镜像受控共享运行时 Cookie，并统一移动端请求指纹；v1.10.9 恢复观影自动账号密码登录优先：先按站点实际可用协议 POST code 为空完成登录，仅当服务端明确要求点击验证码时才进入人工点选兜底，并为会话启动 API 增加结构化失败返回；v1.10.10 对齐 PanSou 当前公开 GYING 实现的 challenge→solve→retry 链：只把真实挑战页送入 /res/pow，refresh=1 不再误当远程 PoW，而是先回根页建立 browser_pow，再按同 Session 求解并以原请求重试成功验真；v1.10.11 针对真实环境 /res/pow HTTP 200 仍不确认的问题，改用 MoviePilot 官方 CloakBrowser 保持挑战、验证、登录、搜索和 downurl 的浏览器请求指纹，站点 refresh overlay 由其自身脚本执行，同时恢复 browser_pow 节点隔离并移除发布页参与业务 failover。
+v1.9.4 收口 IDN 节点身份、Cookie 域边界、搜索降级、迅雷 captcha/device、GCID 回退和配置/状态页信息层级；v1.9.5 迁移 PluginManager 到 MoviePilot V3 稳定 SDK；v1.9.6 兼容 MoviePilot 最新订阅合同拆分，修复安装期 build_subscribe_meta 导入失败；v1.10.2 隔离状态汇总、Provider、频道卡片和控制台页面异常，单个状态源损坏不再导致整个插件页加载失败；v1.10.3 修复 v1.10.0 Provider 解析器方法名漂移，恢复资源来源运行态、资源来源检测和统一搜索；v1.10.4 增加观影节点、PoW、登录、搜索、downurl、迅雷/Magnet/ED2K 候选全过程日志，并在控制台提供主动测试入口；v1.10.5 修复分享文件集数高于 MoviePilot 当前目标时被误判范围外、片头片尾阻塞转存，以及历史已处理分享在追更目标增长后不再复查的问题；v1.10.6 依据真实浏览器 HAR 对齐观影搜索/downurl/登录态协议，补齐 downlist Magnet、panlist 提取码、Cookie 复用、验证码状态和历史脏配置自愈；v1.10.7 根据观影真实 captcha 前端实现增加人工汉字点击认证、同 Session 登录、连续 PoW 恢复和受限搜索二次验真；v1.10.8 参考近期仍在维护的观影接入实现重构传输层：人工认证改后台异步、精确 PoW 判定、8 个确认镜像受控共享运行时 Cookie，并统一移动端请求指纹；v1.10.9 恢复观影自动账号密码登录优先：先按站点实际可用协议 POST code 为空完成登录，仅当服务端明确要求点击验证码时才进入人工点选兜底，并为会话启动 API 增加结构化失败返回；v1.10.10 对齐 PanSou 当前公开 GYING 实现的 challenge→solve→retry 链：只把真实挑战页送入 /res/pow，refresh=1 不再误当远程 PoW，而是先回根页建立 browser_pow，再按同 Session 求解并以原请求重试成功验真；v1.10.11 修正远程 PoW 计时窗口和 HTTP 200 后原请求验真；v1.10.12 根据实机日志进一步隔离 browser_pow/browser_verified、封死旧 solver、过滤业务发布页并给观影后台线程增加热更新所有权门禁，算法 PoW 反复挑战时再调用 MoviePilot 官方 CloakBrowser 执行站点自身验证脚本。
 
 最终优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。
 后续 ResourceGroup 内部仍保持：光鸭直接转存 > Magnet > ED2K。
@@ -35,12 +35,12 @@ from .xunlei_reliability_v1100 import GuangYaXunleiReliabilityV1100Mixin
 from .config_ui_v192 import GuangYaConfigUiMixin
 from .episode_compat_v171 import collapse_unparsed_failure_notice, install_episode_filename_compat
 from .experience_v170 import GuangYaExperienceMixin
-from .gying_autologin_v1109 import GuangYaGyingAutoLoginV1109Mixin
 from .gying_failover_v193 import GuangYaGyingFailoverMixin
 from .gying_hardening_v193 import GuangYaGyingHardeningMixin
 from .gying_observability_v1104 import GuangYaGyingObservabilityV1104Mixin
 from .gying_protocol_v1106 import GuangYaGyingProtocolV1106Mixin
 from .gying_runtime_v193 import GuangYaGyingRuntimeMixin
+from .gying_session_v1112 import GuangYaGyingSessionV1112Mixin
 from .gying_transport_v1108 import GuangYaGyingTransportV1108Mixin
 from .multisource_v180 import GuangYaMultiSourceMixin
 from .offline_safety_v180 import GuangYaOfflineSafetyMixin
@@ -62,7 +62,7 @@ install_channel_multisource_compat(_legacy_module)
 
 
 class GuangYaTransferAssistant(
-    GuangYaGyingAutoLoginV1109Mixin,
+    GuangYaGyingSessionV1112Mixin,
     GuangYaGyingTransportV1108Mixin,
     GuangYaStabilityV1106Mixin,
     GuangYaContentResilienceV1105Mixin,
@@ -91,10 +91,10 @@ class GuangYaTransferAssistant(
     GuangYaExperienceMixin,
     _RoutingV170Assistant,
 ):
-    """固定分流 + CloakBrowser 观影验证/自动登录/人工验证码兜底 + 迅雷秒传 + 原生云添加。"""
+    """固定分流 + 节点隔离/CloakBrowser 观影验证 + 迅雷秒传 + 原生云添加。"""
 
-    plugin_version = "1.10.11"
-    build_id = "20260902-r22"
+    plugin_version = "1.10.12"
+    build_id = "20260902-r23"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
