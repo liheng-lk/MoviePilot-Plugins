@@ -228,5 +228,10 @@ def test_json_batch_is_full_share_not_pruned_by_episode_confidence():
     )[0]
     assert "_is_video(path) or _is_subtitle(path)" in batch
     assert "indexes = self._xunlei_json_batch_indexes_v1118(enriched)" in dispatch
+    assert "batch_template = self._xunlei_make_json_v1117(batch_rows)" in dispatch
+    assert 'import_row["_xunlei_json_template"] = batch_template' in dispatch
+    assert 'import_row["_xunlei_json_index"] = batch_index' in dispatch
     assert 'if not indexes or bool(selection.get("ambiguous"))' not in dispatch
     assert "缺集规划仅用于覆盖判断，不裁剪 JSON 文件" in dispatch
+    assert 'if not row.get("gcid") or _safe_int(row.get("size"), 0) <= 0:' in dispatch
+    assert 'not row.get("cid") and not row.get("download_url")' not in dispatch
