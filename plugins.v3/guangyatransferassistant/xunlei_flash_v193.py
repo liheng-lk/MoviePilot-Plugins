@@ -505,11 +505,25 @@ class GuangYaXunleiFlashMixin:
         raw = f"{int(subscribe_id or 0)}|{share_id}|{row.get('id') or ''}|{row.get('gcid') or ''}|{row.get('path') or ''}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
-    def _xunlei_file_episodes(self, subscribe: Any, row: Dict[str, Any]) -> set[int]:
+    def _xunlei_file_episodes(self, subscribe: Any, row: Dict[str, Any], package_paths: Optional[Iterable[str]] = None) -> set[int]:
         if self._is_movie_subscription(subscribe) or not _is_video(str(row.get("path") or row.get("name") or "")):
             return set()
-        result = resolve_episode(str(row.get("path") or row.get("name") or ""), season_hint=getattr(subscribe, "season", None))
+        result = resolve_episode(
+            str(row.get("path") or row.get("name") or ""),
+            package_paths=package_paths,
+            season_hint=getattr(subscribe, "season", None),
+        )
         return reliable_episode_set(result, float(getattr(self, "_episode_auto_confidence", AUTO_SELECT_CONFIDENCE) or AUTO_SELECT_CONFIDENCE))
+
+    @staticmethod
+    def _xunlei_movie_primary_index_v1119(files: List[Dict[str, Any]], indexes: Iterable[int]) -> Optional[int]:
+        """电影以分享内最大的有效视频作为正片，花絮失败不能触发 Magnet 回退。"""
+        videos = [
+            int(index) for index in indexes
+            if 0 <= int(index) < len(files)
+            and _is_video(str(files[int(index)].get("path") or files[int(index)].get("name") or ""))
+        ]
+        return max(videos, key=lambda index: _safe_int(files[index].get("size"), 0)) if videos else None
 
     def _select_xunlei_files(self, subscribe: Any, files: List[Dict[str, Any]], target_episodes: Iterable[int]) -> Dict[str, Any]:
         fake_subfiles = [{"fileIndex": index, "fileName": str(row.get("path") or row.get("name") or ""), "fileSize": _safe_int(row.get("size"), 0)} for index, row in enumerate(files)]
@@ -605,6 +619,9 @@ class GuangYaXunleiFlashMixin:
                     errors.append(f"{share_id}: 迅雷完整分享 JSON 生成不完整")
                     continue
                 selected_videos = [idx for idx in indexes if 0 <= idx < len(enriched) and _is_video(str(enriched[idx].get("path") or enriched[idx].get("name") or ""))]
+                package_paths = [str(enriched[idx].get("path") or enriched[idx].get("name") or "") for idx in selected_videos]
+                movie_primary = self._xunlei_movie_primary_index_v1119(enriched, indexes) if is_movie else None
+                successful_indexes: set[int] = set()
                 video_success = 0
                 for batch_index, index in enumerate(indexes):
                     if index < 0 or index >= len(enriched):
@@ -612,11 +629,12 @@ class GuangYaXunleiFlashMixin:
                     row = enriched[index]
                     item_key = self._xunlei_item_key(sid, share_id, row)
                     previous = dict(saved_items.get(item_key) or {})
-                    row_episodes = self._xunlei_file_episodes(subscribe, row)
+                    row_episodes = self._xunlei_file_episodes(subscribe, row, package_paths=package_paths)
                     if str(previous.get("state") or "") == "completed":
                         successful_files += 1
                         if _is_video(str(row.get("path") or row.get("name") or "")):
                             video_success += 1
+                            successful_indexes.add(index)
                             runtime["episodes"] = set(runtime.get("episodes") or set()).union(row_episodes)
                         continue
                     attempted_files += 1
@@ -633,10 +651,11 @@ class GuangYaXunleiFlashMixin:
                         successful_files += 1
                         if _is_video(str(row.get("path") or row.get("name") or "")):
                             video_success += 1
+                            successful_indexes.add(index)
                             runtime["episodes"] = set(runtime.get("episodes") or set()).union(row_episodes)
                     else:
                         errors.append(f"{row.get('path')}: {result.get('reason')}")
-                if is_movie and selected_videos and video_success == len(selected_videos):
+                if is_movie and movie_primary is not None and movie_primary in successful_indexes:
                     runtime["movie"] = True
                     break
                 if not is_movie and missing and missing.issubset(set(runtime.get("episodes") or set())):
