@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.13 在 v1.10.12 CloakBrowser 同会话观影链基础上，把 GYING 搜索得到的 Magnet/ED2K 正式接入 ResourcePlanner 与光鸭 cloudcollection 原生云添加，不再只搜索不执行；修复 downlist.list.k 字段漂移误丢合法 BTIH。迅雷分享仍严格只走光鸭 userres 秒传，绝不转为 MoviePilot 本地/OSS 下载。观影来源创建远端资源时保留原始名称并追加搜索资源/影视名称，任务完成后再用光鸭云盘助手 rename 核对远端名称，同时补齐秒传、候选规划、云添加、命名和失败回退日志。",
-  "version": "1.10.13",
+  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.14 优先修复迅雷秒传，按真实 Web 请求同时绑定 captcha/client/device，并为 api-pan.xunlei.com 补齐 device_id/did/guid query；验证码失效只允许一次刷新重试，随后整批熔断并立即回退下一来源。自动外部检索增加单订阅冷却和执行中去重，避免一轮结束马上再开一轮；迅雷秒传和 Magnet/ED2K 云添加完成后主动走 MoviePilot 订阅完成闭环。新增资源质量门禁，固定过滤 BPHDTV 广告伪视频、CAM/TC/SCR 与显式低分辨率资源，并支持字幕要求、最小视频大小和自定义排除词。",
+  "version": "1.10.14",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
