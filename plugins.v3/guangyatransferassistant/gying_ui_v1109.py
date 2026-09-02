@@ -4,16 +4,16 @@ v1.10.9 默认自动登录，人工汉字验证码只在站点明确要求时出
 “人工认证/开始人工认证”文案会造成误导。本层只改展示文字，不改变 API 或会话协议。
 
 v1.10.10 继承 PanSou challenge 层；v1.10.11 修正远程 PoW 计时与验真；
-v1.10.12 再由 ``GuangYaGyingBrowserVerifiedV1112Mixin`` 把 challenge、PoW、登录、
-搜索和 downurl 收口到同一个 MoviePilot CloakBrowser 上下文，并处理
-``browser_verified`` 已写入但旧挑战 DOM 尚未刷新的竞态。
+v1.10.12 再由 ``GuangYaGyingBrowserProfileV1112Mixin`` 把 challenge、PoW、登录、
+搜索和 downurl 收口到同一个 MoviePilot CloakBrowser 上下文；同时继承
+``browser_verified`` 竞态保护，并对齐 MoviePilot 宿主的 viewport/humanize 配置。
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from .gying_browser_verified_v1112 import GuangYaGyingBrowserVerifiedV1112Mixin
+from .gying_browser_profile_v1112 import GuangYaGyingBrowserProfileV1112Mixin
 
 
 _REPLACEMENTS_V1109 = {
@@ -44,8 +44,8 @@ def _rewrite_text_v1109(value: Any) -> Any:
     return value
 
 
-class GuangYaGyingUiV1109Mixin(GuangYaGyingBrowserVerifiedV1112Mixin):
-    """自动登录优先 UI，并启用 v1.10.12 CloakBrowser 同会话链。"""
+class GuangYaGyingUiV1109Mixin(GuangYaGyingBrowserProfileV1112Mixin):
+    """自动登录优先 UI，并启用 v1.10.12 CloakBrowser 同会话/宿主指纹链。"""
 
     build_id = "20260902-r23"
 
