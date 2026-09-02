@@ -294,7 +294,8 @@ class GuangYaXunleiJsonPipelineV1117Mixin:
             pass_token = str(row.get("passCodeToken") or "").strip()
             top_share = top_share or share_id
             top_pass = top_pass or pass_token
-            entry: Dict[str, Any] = {"size": str(size), "path": path, "cid": cid, "parentId": parent_id, "downloadUrl": download_url, "sourceXunlei": True, "sourceTag": "xunlei"}
+            # 与 v1.1.3 makeJson 完全一致：行级只写 sourceXunlei，sourceTag 仅写顶层。
+            entry: Dict[str, Any] = {"size": str(size), "path": path, "cid": cid, "parentId": parent_id, "downloadUrl": download_url, "sourceXunlei": True}
             if _HEX40_RE.fullmatch(gcid):
                 entry["gcid"] = gcid
             if _HEX32_RE.fullmatch(md5):
