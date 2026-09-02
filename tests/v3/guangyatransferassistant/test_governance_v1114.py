@@ -7,8 +7,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 GOV = PLUGIN / "governance_v1114.py"
+FINAL = PLUGIN / "xunlei_final_v1114.py"
 UI = PLUGIN / "gying_ui_v1109.py"
 TEXT = GOV.read_text(encoding="utf-8")
+FINAL_TEXT = FINAL.read_text(encoding="utf-8")
 UI_TEXT = UI.read_text(encoding="utf-8")
 
 
@@ -16,12 +18,14 @@ def _method(name: str, next_name: str) -> str:
     return TEXT.split(f"    def {name}(", 1)[1].split(f"    def {next_name}(", 1)[0]
 
 
-def test_governance_layer_parses_and_is_final_gying_ui_parent():
+def test_governance_layer_parses_and_is_retained_beneath_final_xunlei_layer():
     ast.parse(TEXT, filename=str(GOV))
+    ast.parse(FINAL_TEXT, filename=str(FINAL))
     ast.parse(UI_TEXT, filename=str(UI))
     assert "class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin):" in TEXT
-    assert "from .governance_v1114 import GuangYaGovernanceV1114Mixin" in UI_TEXT
-    assert "class GuangYaGyingUiV1109Mixin(GuangYaGovernanceV1114Mixin):" in UI_TEXT
+    assert "class GuangYaXunleiFinalV1114Mixin(GuangYaGovernanceV1114Mixin):" in FINAL_TEXT
+    assert "from .xunlei_final_v1114 import GuangYaXunleiFinalV1114Mixin" in UI_TEXT
+    assert "class GuangYaGyingUiV1109Mixin(GuangYaXunleiFinalV1114Mixin):" in UI_TEXT
     assert 'build_id = "20260902-r25"' in UI_TEXT
 
 
