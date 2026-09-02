@@ -8,24 +8,42 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 BROWSER = PLUGIN / "gying_browser_v1112.py"
 VERIFIED = PLUGIN / "gying_browser_verified_v1112.py"
+PROFILE = PLUGIN / "gying_browser_profile_v1112.py"
 UI = PLUGIN / "gying_ui_v1109.py"
 
 
 browser_text = BROWSER.read_text(encoding="utf-8")
 verified_text = VERIFIED.read_text(encoding="utf-8")
+profile_text = PROFILE.read_text(encoding="utf-8")
 ui_text = UI.read_text(encoding="utf-8")
 
 
 def test_v1112_browser_files_parse():
-    for path, text in ((BROWSER, browser_text), (VERIFIED, verified_text), (UI, ui_text)):
+    for path, text in (
+        (BROWSER, browser_text),
+        (VERIFIED, verified_text),
+        (PROFILE, profile_text),
+        (UI, ui_text),
+    ):
         ast.parse(text, filename=str(path))
 
 
 def test_v1112_uses_moviepilot_public_browser_sdk_and_fixed_single_thread_context():
     assert "from app.sdk.browser import launch_browser_context" in browser_text
+    assert "from app.sdk.browser import launch_browser_context" in profile_text
     assert "ThreadPoolExecutor(" in browser_text
     assert "max_workers=1" in browser_text
     assert 'thread_name_prefix="gying-cloakbrowser"' in browser_text
+
+
+def test_v1112_profile_matches_moviepilot_browser_defaults_without_internal_helper_dependency():
+    assert '_DEFAULT_VIEWPORT_V1112 = {"width": 1280, "height": 720}' in profile_text
+    assert 'get_runtime_setting("CLOAKBROWSER_HUMANIZE")' in profile_text
+    assert 'get_runtime_setting("CLOAKBROWSER_HUMAN_PRESET")' in profile_text
+    assert 'context_kwargs["humanize"] = humanize' in profile_text
+    assert 'context_kwargs["human_preset"] = human_preset' in profile_text
+    assert "BrowserSessionHelper" not in profile_text
+    assert "app.adapters.network.browser" not in profile_text
 
 
 def test_v1112_keeps_business_requests_inside_browser_context():
@@ -72,9 +90,10 @@ def test_v1112_browser_verified_wins_over_stale_challenge_dom():
     assert "_response_v1112(" in verified_text
 
 
-def test_ui_chain_wires_verified_browser_layer_before_old_pow_layers():
+def test_ui_chain_wires_profile_and_verified_browser_layers_before_old_pow_layers():
     assert (
-        "from .gying_browser_verified_v1112 import GuangYaGyingBrowserVerifiedV1112Mixin"
+        "from .gying_browser_profile_v1112 import GuangYaGyingBrowserProfileV1112Mixin"
         in ui_text
     )
-    assert "class GuangYaGyingUiV1109Mixin(GuangYaGyingBrowserVerifiedV1112Mixin):" in ui_text
+    assert "class GuangYaGyingUiV1109Mixin(GuangYaGyingBrowserProfileV1112Mixin):" in ui_text
+    assert "class GuangYaGyingBrowserProfileV1112Mixin(GuangYaGyingBrowserVerifiedV1112Mixin):" in profile_text
