@@ -30,7 +30,7 @@ _QUALITY_TOKEN = (
     r"WEB(?:-?DL)?|BLU-?RAY|BDREMUX|REMUX|HEVC|AVC|AV1|H\.?26[45]|X26[45])"
 )
 _QUALITY_SUFFIX_RE = re.compile(
-    rf"(?ix)^\s*0*(\d{{1,4}})\s*[~～]\s*[\[【(（]?\s*{_QUALITY_TOKEN}"
+    rf"(?ix)^\s*0*(\d{{1,4}})\s*[~～丨|｜]\s*[\[【(（]?\s*{_QUALITY_TOKEN}"
     r"(?=$|[\s._\-\[\]【】()（）])"
 )
 _RELEASE_EP_BEFORE_QUALITY_RE = re.compile(
