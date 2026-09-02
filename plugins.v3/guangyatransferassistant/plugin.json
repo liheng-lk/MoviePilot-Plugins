@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.14 优先修复迅雷秒传，按真实 Web 请求同时绑定 captcha/client/device，并为 api-pan.xunlei.com 补齐 device_id/did/guid query；验证码失效只允许一次刷新重试，随后整批熔断并立即回退下一来源。自动外部检索增加单订阅冷却和执行中去重，避免一轮结束马上再开一轮；迅雷秒传和 Magnet/ED2K 云添加完成后主动走 MoviePilot 订阅完成闭环。新增资源质量门禁，固定过滤 BPHDTV 广告伪视频、CAM/TC/SCR 与显式低分辨率资源，并支持字幕要求、最小视频大小和自定义排除词。",
-  "version": "1.10.14",
+  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.15 将频道与观影拆成两套触发模型。频道保持 5 分钟游标增量刷新，只有本轮新增资源命中活跃订阅且可能覆盖缺集时才执行；频道 ResourceGroup/分享链接本地保留 7 天，新订阅优先直接匹配缓存，不为单个订阅重复刷新频道。观影改为独立冷却轮询，仅处理仍缺资源且达到搜索周期的订阅；同一轮频道命中时观影顺延一个 tick，减少重复搜索。继续保留 v1.10.14 迅雷真实 captcha/device 合同、批次熔断、订阅完成闭环及 BPHDTV/低质/字幕质量门禁。",
+  "version": "1.10.15",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
