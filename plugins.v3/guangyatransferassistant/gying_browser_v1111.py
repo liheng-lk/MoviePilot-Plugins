@@ -19,7 +19,6 @@ User-Agent 同步回 requests.Session。这样不需要继续猜服务端对 TLS
 
 from __future__ import annotations
 
-import json
 import time
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode, urlparse
@@ -36,8 +35,8 @@ try:
 except Exception:  # pragma: no cover
     settings = None
 
-from .gying_hardening_v193 import GuangYaGyingHardeningMixin, canonical_gying_node
-from .gying_pansou_v1110 import _challenge_kind_v1110
+from .gying_hardening_v193 import canonical_gying_node
+from .gying_pansou_v1110 import GuangYaGyingPanSouV1110Mixin, _challenge_kind_v1110
 from .gying_runtime_v193 import _apply_cookie_header
 from .provider_sources_v192 import _proxy_dict
 
@@ -52,6 +51,17 @@ _BROWSER_CHALLENGE_MARKERS_V1111 = (
 )
 _BLOCK_MARKERS_V1111 = ("angie", "request forbidden", "access denied")
 _EPHEMERAL_COOKIE_NAMES_V1111 = frozenset({"browser_pow"})
+_REGISTRY_ONLY_HOSTS_V1111 = frozenset({
+    "www.gying.page", "gying.page",
+    "www.gying.si", "gying.si",
+    "www.gying.org", "gying.org",
+    "www.gying.net", "gying.net",
+    "www.gying.in", "gying.in",
+    "www.gying.st", "gying.st",
+    "www.gyg.la", "gyg.la",
+    "www.gyg.si", "gyg.si",
+    "www.gyg.st", "gyg.st",
+})
 
 
 class _GyingBrowserSessionV1111(requests.Session):
@@ -82,17 +92,17 @@ class _GyingBrowserSessionV1111(requests.Session):
         super().close()
 
 
-def _cookie_header_stable_v1111(session: requests.Session) -> str:
-    rows: List[str] = []
-    seen = set()
+def _clear_ephemeral_cookies_v1111(session: requests.Session) -> None:
     for cookie in list(session.cookies):
-        name = str(getattr(cookie, "name", "") or "").strip()
-        value = str(getattr(cookie, "value", "") or "").strip()
-        if not name or not value or name.lower() in _EPHEMERAL_COOKIE_NAMES_V1111 or name in seen:
+        if str(getattr(cookie, "name", "") or "").lower() not in _EPHEMERAL_COOKIE_NAMES_V1111:
             continue
-        seen.add(name)
-        rows.append(f"{name}={value}")
-    return "; ".join(rows)
+        try:
+            session.cookies.clear(cookie.domain, cookie.path, cookie.name)
+        except Exception:
+            try:
+                session.cookies.set(cookie.name, None)
+            except Exception:
+                pass
 
 
 def _browser_cookie_seed_v1111(session: requests.Session, node: str) -> List[Dict[str, Any]]:
@@ -112,10 +122,11 @@ def _browser_cookie_seed_v1111(session: requests.Session, node: str) -> List[Dic
 
 
 def _sync_browser_cookies_v1111(session: requests.Session, cookies: Any, node: str) -> None:
-    """把浏览器当前节点 Cookie 同步回 requests；不复制其它域名 Cookie。"""
+    """把浏览器当前节点 Cookie 同步回 requests，并清掉旧 challenge cookie。"""
     host = str(urlparse(canonical_gying_node(node)).hostname or "").lower()
     if not host:
         return
+    _clear_ephemeral_cookies_v1111(session)
     for row in list(cookies or []):
         if not isinstance(row, dict):
             continue
@@ -126,7 +137,6 @@ def _sync_browser_cookies_v1111(session: requests.Session, cookies: Any, node: s
             continue
         if domain and domain != host and not host.endswith("." + domain):
             continue
-        # challenge cookie 由浏览器自己维护；浏览器验证结束后不把 browser_pow 带回 requests。
         if name.lower() in _EPHEMERAL_COOKIE_NAMES_V1111:
             continue
         try:
@@ -152,14 +162,36 @@ def _response_from_browser_v1111(result: Dict[str, Any], method: str, url: str) 
     return response
 
 
-class GuangYaGyingBrowserV1111Mixin:
+class GuangYaGyingBrowserV1111Mixin(GuangYaGyingPanSouV1110Mixin):
     """最外层 GYING 传输：浏览器验证优先，算法求解只作无浏览器环境回退。"""
 
     build_id = "20260902-r22"
 
     # ------------------------------------------------------------------
-    # Cookie：恢复节点隔离，禁止把 browser_pow 搬到其它镜像
+    # 节点 / Cookie：注册页不再参与每次业务 failover，browser_pow 严格节点隔离
     # ------------------------------------------------------------------
+    @staticmethod
+    def _gying_registry_only_v1111(node: str) -> bool:
+        host = str(urlparse(canonical_gying_node(node)).hostname or "").lower()
+        return host in _REGISTRY_ONLY_HOSTS_V1111
+
+    def _discover_gying_nodes(self, force: bool = False) -> List[str]:
+        rows = list(super()._discover_gying_nodes(force=force) or [])
+        preferred = canonical_gying_node(str(getattr(self, "_viewing_base_url", "") or ""))
+        state = self._gying_state()
+        active = canonical_gying_node(str(state.get("active_node") or ""))
+        manual = [
+            canonical_gying_node(value)
+            for value in str(getattr(self, "_viewing_node_urls", "") or "").splitlines()
+        ]
+        ordered: List[str] = []
+        for node in [active, preferred, *manual, *rows]:
+            node = canonical_gying_node(node)
+            if not node or self._gying_registry_only_v1111(node) or node in ordered:
+                continue
+            ordered.append(node)
+        return ordered[:24]
+
     def _gying_group_cookie_seed_v1108(self) -> str:
         return ""
 
@@ -195,17 +227,7 @@ class GuangYaGyingBrowserV1111Mixin:
         preferred = canonical_gying_node(str(getattr(self, "_viewing_base_url", "") or ""))
         if configured_cookie and preferred and node == preferred:
             _apply_cookie_header(session, configured_cookie)
-        # 清理可能由旧 v1.10.8 跨镜像持久化留下的短期 challenge Cookie。
-        for cookie in list(session.cookies):
-            if str(getattr(cookie, "name", "") or "").lower() not in _EPHEMERAL_COOKIE_NAMES_V1111:
-                continue
-            try:
-                session.cookies.clear(cookie.domain, cookie.path, cookie.name)
-            except Exception:
-                try:
-                    session.cookies.set(cookie.name, None)
-                except Exception:
-                    pass
+        _clear_ephemeral_cookies_v1111(session)
         return session
 
     # ------------------------------------------------------------------
@@ -237,7 +259,6 @@ class GuangYaGyingBrowserV1111Mixin:
         if current_context is not None and current_page is not None and current_node == node:
             return current_page
 
-        # 切换节点时关闭旧上下文，确保 TLS/验证态和节点一一对应。
         try:
             if current_page is not None:
                 current_page.close()
@@ -265,15 +286,38 @@ class GuangYaGyingBrowserV1111Mixin:
         setattr(session, "_gying_browser_node_v1111", node)
         return page
 
+    @staticmethod
+    def _gying_browser_verified_v1111(page: Any) -> bool:
+        try:
+            cookies = list(page.context.cookies() or [])
+        except Exception:
+            cookies = []
+        return any(
+            str(row.get("name") or "") == "browser_verified" and bool(str(row.get("value") or ""))
+            for row in cookies if isinstance(row, dict)
+        )
+
     def _gying_browser_bootstrap_v1111(
         self,
         session: requests.Session,
         node: str,
         timeout: int,
+        *,
+        force: bool = False,
     ) -> Any:
         """让站点自己的页面脚本完成 PoW/overlay，再同步验证态和 UA。"""
         page = self._gying_browser_ensure_v1111(session, node, timeout)
         node = canonical_gying_node(node)
+
+        # 已经在同一浏览器上下文拿到验证态时不要重复导航；后续登录/search/downurl
+        # 全部继续走这个页面上下文，保持与 PanSou cloudscraper 同样的浏览器指纹连续性。
+        if not force and self._gying_browser_verified_v1111(page):
+            try:
+                _sync_browser_cookies_v1111(session, page.context.cookies(), node)
+            except Exception:
+                pass
+            return page
+
         self._gying_auth_log("INFO", "浏览器验证：节点=%s，交由 MoviePilot CloakBrowser 建立验证态", node)
         page.goto(node.rstrip("/") + "/", wait_until="domcontentloaded", timeout=max(20, timeout) * 1000)
 
@@ -281,14 +325,7 @@ class GuangYaGyingBrowserV1111Mixin:
         verified = False
         normal_page = False
         while time.monotonic() < deadline:
-            try:
-                cookies = list(page.context.cookies() or [])
-            except Exception:
-                cookies = []
-            verified = any(
-                str(row.get("name") or "") == "browser_verified" and bool(str(row.get("value") or ""))
-                for row in cookies if isinstance(row, dict)
-            )
+            verified = self._gying_browser_verified_v1111(page)
             try:
                 body = str(page.content() or "")
             except Exception:
@@ -317,7 +354,7 @@ class GuangYaGyingBrowserV1111Mixin:
             raise RuntimeError("观影 CloakBrowser 等待验证态超时")
         self._gying_auth_log(
             "INFO",
-            "浏览器验证完成：节点=%s browser_verified=%s，将复用同节点会话",
+            "浏览器验证完成：节点=%s browser_verified=%s，将复用同节点浏览器请求链",
             node,
             bool(verified),
         )
@@ -334,7 +371,7 @@ class GuangYaGyingBrowserV1111Mixin:
         headers: Optional[Dict[str, Any]] = None,
         data: Any = None,
     ) -> requests.Response:
-        """在已通过验证的真实浏览器上下文中执行同源请求，并返回 requests.Response 兼容对象。"""
+        """在同一真实浏览器上下文执行请求，必要时运行站点 refresh overlay。"""
         page = self._gying_browser_bootstrap_v1111(session, node, timeout)
         method = str(method or "GET").upper()
         safe_headers: Dict[str, str] = {}
@@ -382,11 +419,12 @@ class GuangYaGyingBrowserV1111Mixin:
           if (payload && Number(payload.refresh || 0) === 1) {
             const overlay = String(payload.overlay || '');
             if (overlay) {
-              const existing = Array.from(document.scripts).some(s => s.src === overlay);
+              const absoluteOverlay = new URL(overlay, window.location.href).href;
+              const existing = Array.from(document.scripts).some(s => s.src === absoluteOverlay);
               if (!existing) {
                 await new Promise((resolve, reject) => {
                   const script = document.createElement('script');
-                  script.src = overlay;
+                  script.src = absoluteOverlay;
                   script.onload = resolve;
                   script.onerror = reject;
                   document.head.appendChild(script);
@@ -401,25 +439,35 @@ class GuangYaGyingBrowserV1111Mixin:
           return result;
         }
         """
-        result = page.evaluate(
-            js,
-            {"url": url, "method": method, "headers": safe_headers, "body": body},
-        )
-        if not isinstance(result, dict):
-            raise RuntimeError("观影浏览器请求未返回有效结果")
-        try:
-            cookies = list(page.context.cookies() or [])
-        except Exception:
-            cookies = []
-        _sync_browser_cookies_v1111(session, cookies, node)
-        response = _response_from_browser_v1111(result, method, url)
+
+        def evaluate_once() -> requests.Response:
+            result = page.evaluate(
+                js,
+                {"url": url, "method": method, "headers": safe_headers, "body": body},
+            )
+            if not isinstance(result, dict):
+                raise RuntimeError("观影浏览器请求未返回有效结果")
+            try:
+                cookies = list(page.context.cookies() or [])
+            except Exception:
+                cookies = []
+            _sync_browser_cookies_v1111(session, cookies, node)
+            return _response_from_browser_v1111(result, method, url)
+
+        response = evaluate_once()
         kind = _challenge_kind_v1110(response)
+        if kind:
+            # 验证态可能刚过期。让浏览器真正重新导航根页运行 challenge JS，再重放一次业务请求。
+            self._gying_auth_log("INFO", "浏览器验证态需要刷新：节点=%s 类型=%s", canonical_gying_node(node), kind)
+            self._gying_browser_bootstrap_v1111(session, node, timeout, force=True)
+            response = evaluate_once()
+            kind = _challenge_kind_v1110(response)
         if kind:
             raise RuntimeError(f"观影浏览器请求后仍要求验证：{kind}")
         return response
 
     # ------------------------------------------------------------------
-    # 统一请求：先轻量 requests，挑战时切宿主浏览器；无浏览器才回落 PanSou 算法
+    # 统一请求：一旦建立浏览器上下文，登录/search/downurl 全部继续走浏览器指纹
     # ------------------------------------------------------------------
     def _gying_request(
         self,
@@ -433,6 +481,20 @@ class GuangYaGyingBrowserV1111Mixin:
     ) -> requests.Response:
         timeout = int(kwargs.pop("timeout", int(getattr(self, "_provider_timeout", 15) or 15)) or 15)
         request_kwargs = dict(kwargs)
+        current_page = getattr(session, "_gying_browser_page_v1111", None)
+        current_node = str(getattr(session, "_gying_browser_node_v1111", "") or "")
+        canonical = canonical_gying_node(node)
+        if current_page is not None and current_node == canonical:
+            return self._gying_browser_fetch_v1111(
+                session,
+                node,
+                method,
+                url,
+                timeout=max(timeout, 20),
+                headers=request_kwargs.get("headers"),
+                data=request_kwargs.get("data"),
+            )
+
         response = session.request(
             str(method or "GET").upper(),
             url,
@@ -456,8 +518,8 @@ class GuangYaGyingBrowserV1111Mixin:
         if self._gying_browser_available_v1111():
             self._gying_auth_log(
                 "INFO",
-                "观影挑战：节点=%s 类型=%s，切换 MoviePilot 官方浏览器传输",
-                canonical_gying_node(node) or str(node or ""),
+                "观影挑战：节点=%s 类型=%s，切换 MoviePilot 官方 CloakBrowser 请求链",
+                canonical or str(node or ""),
                 kind,
             )
             try:
@@ -474,11 +536,10 @@ class GuangYaGyingBrowserV1111Mixin:
                 self._gying_auth_log(
                     "WARNING",
                     "浏览器验证请求失败：节点=%s 类型=%s；回退 PanSou 算法链",
-                    canonical_gying_node(node) or str(node or ""),
+                    canonical or str(node or ""),
                     type(err).__name__,
                 )
 
-        # 宿主浏览器不可用或浏览器执行失败时，保留 v1.10.10 的纯算法回退。
         return super()._gying_request(
             session,
             node,
@@ -495,13 +556,14 @@ class GuangYaGyingBrowserV1111Mixin:
         node: str,
         response: requests.Response,
     ) -> Dict[str, Any]:
-        """兼容旧层直接调用 self._gying_solve_challenge，避免再掉到 v1.10.8 旧 solver。"""
+        """兼容旧层直接调用，禁止再次解析到 v1.10.8 旧 remote solver。"""
         if self._gying_browser_available_v1111():
             try:
                 self._gying_browser_bootstrap_v1111(
                     session,
                     node,
                     max(20, int(getattr(self, "_provider_timeout", 15) or 15)),
+                    force=True,
                 )
                 return {"mode": "cloakbrowser", "success": True}
             except Exception as err:
@@ -513,7 +575,7 @@ class GuangYaGyingBrowserV1111Mixin:
                 )
         kind = _challenge_kind_v1110(response)
         if kind == "refresh_overlay":
-            raise RuntimeError("观影动态 refresh 验证需要浏览器运行时")
+            raise RuntimeError("观影动态 refresh 验证需要 MoviePilot 浏览器运行时")
         return dict(self._gying_solve_challenge_v1110(session, node, response, kind=kind or None) or {})
 
 
