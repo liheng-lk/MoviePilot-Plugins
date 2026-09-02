@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.22 修复全季迅雷分享只读取第一个文件；恢复完整目录递归和整批 JSON 导入。",
-  "version": "1.10.22",
+  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.23 完整生成迅雷 JSON，但只导入媒体库核验后仍缺失且能确认集号的文件。",
+  "version": "1.10.23",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
