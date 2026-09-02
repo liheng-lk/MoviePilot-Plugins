@@ -60,9 +60,9 @@ def test_v193_files_parse_and_publish_current_version():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.10.20"
-    assert 'plugin_version = "1.10.20"' in entry_text
-    assert 'build_id = "20260902-r35"' in entry_text
+    assert package["version"] == local["version"] == "1.10.21"
+    assert 'plugin_version = "1.10.21"' in entry_text
+    assert 'build_id = "20260902-r36"' in entry_text
     assert "v1.9.3" in package["history"]
 
 
@@ -229,8 +229,9 @@ def test_json_batch_is_full_share_not_pruned_by_episode_confidence():
     assert "_is_video(path) or _is_subtitle(path)" in batch
     assert "indexes = self._xunlei_json_batch_indexes_v1118(enriched)" in dispatch
     assert "batch_template = self._xunlei_make_json_v1117(batch_rows)" in dispatch
-    assert 'import_row["_xunlei_json_template"] = batch_template' in dispatch
-    assert 'import_row["_xunlei_json_index"] = batch_index' in dispatch
+    assert "_xunlei_json_identity_matches_v1123" in dispatch
+    assert "_xunlei_import_json_batch_v1123" in dispatch
+    assert "batch_results" in dispatch
     assert 'if not indexes or bool(selection.get("ambiguous"))' not in dispatch
     assert "缺集规划仅用于覆盖判断，不裁剪 JSON 文件" in dispatch
     assert 'if not row.get("gcid") or _safe_int(row.get("size"), 0) <= 0:' in dispatch
@@ -326,3 +327,20 @@ def test_any_verified_non_auxiliary_movie_video_completes_xunlei():
     assert "is_auxiliary_media_v1105" in helper
     assert "movie_features.intersection(successful_indexes)" in dispatch
     assert "电影正片已确认成功/已存在" in dispatch
+
+
+def test_xunlei_json_real_identity_blocks_cross_media_import():
+    helper = xunlei_text.split("    def _xunlei_json_identity_matches_v1123(", 1)[1].split(
+        "    def _select_xunlei_files", 1
+    )[0]
+    dispatch = xunlei_text.split("    def _dispatch_xunlei_flash(", 1)[1].split(
+        "    def _try_transfer_subscription_inner", 1
+    )[0]
+    assert 'info.get("title")' in helper
+    assert 'template.get("files")' in helper
+    assert "expected_cjk and actual_cjk and not direct_match" in helper
+    assert "迅雷 JSON 实际媒体不匹配" in helper
+    assert "迅雷 JSON 年份不匹配" in helper
+    assert "迅雷 JSON 季号不匹配" in helper
+    assert dispatch.index("_xunlei_json_identity_matches_v1123") < dispatch.index("_xunlei_import_json_batch_v1123")
+    assert "整批拒绝导入" in dispatch

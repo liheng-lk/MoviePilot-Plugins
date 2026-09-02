@@ -102,3 +102,16 @@ def test_runtime_logs_explicit_json_generation_then_import():
     assert "len(full_files)" in transfer
     assert "按光鸭 importMd5Json 合同导入" in transfer
     assert "_xunlei_import_json_file_v1117" in transfer
+
+
+def test_full_json_is_received_once_by_batch_importer_before_per_file_contract():
+    batch = pipeline.split("    def _xunlei_import_json_batch_v1123(", 1)[1].split(
+        "\n\n__all__", 1
+    )[0]
+    assert 'files = list(template.get("files") or [])' in batch
+    assert "len(files) != len(rows)" in batch
+    assert "严格按脚本 JSON files 顺序导入" in batch
+    assert "for index, (entry, source_row) in enumerate(zip(files, rows))" in batch
+    assert "_xunlei_import_json_file_v1117" in batch
+    assert "批次文件结果" in batch
+    assert "批次导入结束" in batch
