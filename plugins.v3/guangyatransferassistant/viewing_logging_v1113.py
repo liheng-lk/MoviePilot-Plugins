@@ -1,7 +1,9 @@
 """v1.10.13 观影执行完整日志与剩余缺集收口层。
 
-v1.10.16 追加迅雷秒传完整性层：秒传成功必须验证真实文件大小，失败任务会清理
-本轮新生成的空/尺寸异常占位，避免 upload task 残留被当成有效资源。
+迅雷秒传现在严格分成两阶段：
+- 迅雷分享生成与稳定脚本兼容的 JSON 模板；
+- 光鸭按 importMd5Json 的纯秒传子集消费该 JSON。
+完整性层继续负责 fileSize 校验与异常占位清理。
 """
 
 from __future__ import annotations
@@ -9,16 +11,18 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from .viewing_dispatch_v1113 import GuangYaViewingDispatchV1113Mixin
+from .xunlei_json_pipeline_v1117 import GuangYaXunleiJsonPipelineV1117Mixin
 from .xunlei_integrity_v1116 import GuangYaXunleiIntegrityV1116Mixin
 
 
 class GuangYaViewingLoggingV1113Mixin(
     GuangYaViewingDispatchV1113Mixin,
+    GuangYaXunleiJsonPipelineV1117Mixin,
     GuangYaXunleiIntegrityV1116Mixin,
 ):
     """记录完整 cloudcollection 生命周期，并防止部分成功提前截断观影回退。"""
 
-    build_id = "20260902-r28"
+    build_id = "20260902-r29"
 
     def _submit_offline_source(self, source_id: str) -> Dict[str, Any]:
         source_id = str(source_id or "").strip()
@@ -121,7 +125,6 @@ class GuangYaViewingLoggingV1113Mixin(
             refresh_channel=refresh_channel,
         ) or {})
 
-        # ViewingDispatch 已经执行过时禁止重复规划。
         existing_viewing = result.get("viewing_external") if isinstance(result.get("viewing_external"), dict) else {}
         if existing_viewing:
             return result
