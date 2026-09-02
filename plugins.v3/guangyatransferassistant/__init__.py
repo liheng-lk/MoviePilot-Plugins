@@ -1,10 +1,10 @@
-"""光鸭转存助手 v1.10.16 运行入口。
+"""光鸭转存助手 v1.10.17 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
 地址/登录配置及通用 Magnet/ED2K 搜索 API；v1.9.3 把观影中的迅雷分享接入
 光鸭 userres 秒传链路，并补齐观影多节点、浏览器 PoW 验证、真实登录/搜索/downurl 会话；
-v1.10.16 修复缺集规划器在生成 JSON 前裁掉同分享文件或因低置信结果使 attempted=0；分享通过订阅匹配后，按脚本将全部视频/字幕写入 JSON 并逐项导入光鸭，缺集只用于完成覆盖判断。
+v1.10.17 修复迅雷已秒传后仍回退 Magnet：剧集用完整包序列识别纯数字文件名，电影以最大视频正片成功作为完成条件。
 
 最终优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。
 后续 ResourceGroup 内部仍保持：光鸭直接转存 > Magnet > ED2K。
@@ -95,8 +95,8 @@ class GuangYaTransferAssistant(
 ):
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
 
-    plugin_version = "1.10.16"
-    build_id = "20260902-r31"
+    plugin_version = "1.10.17"
+    build_id = "20260902-r32"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""

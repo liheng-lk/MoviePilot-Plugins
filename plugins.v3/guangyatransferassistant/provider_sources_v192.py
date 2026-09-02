@@ -399,10 +399,37 @@ class GuangYaProviderSourcesMixin:
     @staticmethod
     def _provider_candidate_matches(subscribe: Any, row: Dict[str, Any]) -> bool:
         expected = _normalize_media_text(getattr(subscribe, "name", ""))
-        actual = _normalize_media_text(row.get("search_title") or row.get("name") or "")
+        raw_actual = " ".join(
+            str(value or "").strip()
+            for value in (row.get("search_title"), row.get("name"), row.get("label"))
+            if str(value or "").strip()
+        )
+        actual = _normalize_media_text(raw_actual)
         if not expected or not actual:
             return False
-        return expected in actual or actual in expected
+        if not (expected in actual or actual in expected):
+            return False
+
+        expected_year = str(getattr(subscribe, "year", "") or "").strip()
+        actual_years = set(re.findall(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)", raw_actual))
+        if expected_year and actual_years and expected_year not in actual_years:
+            return False
+
+        seasons = {
+            int(value)
+            for pair in re.findall(r"(?i)(?:\bS(?:eason)?\s*0*(\d{1,2})\b|第\s*0*(\d{1,2})\s*季)", raw_actual)
+            for value in pair if value
+        }
+        is_movie = "movie" in str(getattr(subscribe, "type", "") or "").lower() or "电影" in str(getattr(subscribe, "type", "") or "")
+        if is_movie and seasons:
+            return False
+        try:
+            expected_season = int(getattr(subscribe, "season", 0) or 0)
+        except (TypeError, ValueError):
+            expected_season = 0
+        if not is_movie and expected_season > 0 and seasons and expected_season not in seasons:
+            return False
+        return True
 
     def _provider_keyword(self, subscribe: Any) -> str:
         parts = [str(getattr(subscribe, "name", "") or "").strip()]

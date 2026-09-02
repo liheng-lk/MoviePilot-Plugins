@@ -382,6 +382,20 @@ class GuangYaViewingDispatchV1113Mixin:
 
         if is_movie and bool(reservations.get("movie")):
             return {"success": True, "actions": [], "message": "已有光鸭/迅雷任务覆盖电影目标"}
+        if is_movie:
+            prior_movie_sources = [
+                row for row in (self._source_store().get("items") or {}).values()
+                if isinstance(row, dict)
+                and int(row.get("subscribe_id") or 0) == sid
+                and str(row.get("origin") or "") == "viewing_auto"
+                and str(row.get("state") or "new") in _ACTIVE_VIEWING_SOURCE_STATES_V1113
+            ]
+            if prior_movie_sources:
+                return {
+                    "success": True,
+                    "actions": [],
+                    "message": "电影已有观影云添加候选，等待成功/失败核验后再决定是否回退",
+                }
         if not is_movie and not uncovered:
             return {"success": True, "actions": [], "message": "当前缺集已被已完成/在途任务覆盖"}
 

@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.16 修复迅雷分享在生成 JSON 前被缺集规划器裁剪的问题；分享匹配订阅后，将全部视频和字幕按 v1.1.3 合同写入 JSON 并逐项导入光鸭。",
-  "version": "1.10.16",
+  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.17 修复迅雷已秒传后仍执行 Magnet；剧集支持完整包纯数字文件名覆盖判定，电影正片成功即阻断后续来源。",
+  "version": "1.10.17",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
