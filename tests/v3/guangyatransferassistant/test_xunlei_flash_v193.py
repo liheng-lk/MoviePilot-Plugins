@@ -60,9 +60,9 @@ def test_v193_files_parse_and_publish_current_version():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.10.19"
-    assert 'plugin_version = "1.10.19"' in entry_text
-    assert 'build_id = "20260902-r34"' in entry_text
+    assert package["version"] == local["version"] == "1.10.20"
+    assert 'plugin_version = "1.10.20"' in entry_text
+    assert 'build_id = "20260902-r35"' in entry_text
     assert "v1.9.3" in package["history"]
 
 
@@ -249,7 +249,7 @@ def test_successful_xunlei_batch_blocks_fallback_for_tv_and_movie():
     )[0]
     assert "package_paths=package_paths" in episode_method
     assert "max(videos, key=" in movie_method
-    assert "movie_primary in successful_indexes" in dispatch
+    assert "movie_features.intersection(successful_indexes)" in dispatch
     assert "video_success == len(selected_videos)" not in dispatch
 
 
@@ -302,3 +302,27 @@ def test_verified_movie_receipt_records_fact_and_finishes_subscription():
     assert "subscription_completed_notified_at" in poll
     assert "✅ 电影订阅已完成" in poll
     assert '_remember_verified_movie_v1121(subscribe, "xunlei_flash"' in dispatch
+
+
+def test_handled_result_hard_stops_viewing_magnet_fallback():
+    viewing = (PLUGIN / "viewing_logging_v1113.py").read_text(encoding="utf-8")
+    method = viewing.split("    def _try_transfer_subscription_inner(", 1)[1].split(
+        "\n\n__all__", 1
+    )[0]
+    handled = method.index('if bool(result.get("handled")):')
+    gap = method.index("gap = self._viewing_gap_v1113(subscribe)")
+    dispatch = method.index("_dispatch_viewing_external_v1113(subscribe)")
+    assert handled < gap < dispatch
+    assert "前序结果 handled=True，硬阻断观影 Magnet/ED2K" in method
+
+
+def test_any_verified_non_auxiliary_movie_video_completes_xunlei():
+    helper = xunlei_text.split("    def _xunlei_movie_feature_indexes_v1122(", 1)[1].split(
+        "    def _select_xunlei_files", 1
+    )[0]
+    dispatch = xunlei_text.split("    def _dispatch_xunlei_flash(", 1)[1].split(
+        "    def _try_transfer_subscription_inner", 1
+    )[0]
+    assert "is_auxiliary_media_v1105" in helper
+    assert "movie_features.intersection(successful_indexes)" in dispatch
+    assert "电影正片已确认成功/已存在" in dispatch
