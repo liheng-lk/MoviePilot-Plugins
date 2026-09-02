@@ -60,9 +60,9 @@ def test_v193_files_parse_and_publish_current_version():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.10.13"
-    assert 'plugin_version = "1.10.13"' in entry_text
-    assert 'build_id = "20260902-r24"' in entry_text
+    assert package["version"] == local["version"] == "1.10.16"
+    assert 'plugin_version = "1.10.16"' in entry_text
+    assert 'build_id = "20260902-r31"' in entry_text
     assert "v1.9.3" in package["history"]
 
 
@@ -217,3 +217,16 @@ def test_public_xunlei_state_and_test_api_do_not_return_secret_config():
     assert '"/xunlei/flash/test"' in xunlei_text
     assert '"/xunlei/flash/state"' in xunlei_text
     assert '"/xunlei/runtime/status"' in xunlei_hardening_text
+
+
+def test_json_batch_is_full_share_not_pruned_by_episode_confidence():
+    batch = xunlei_text.split("    def _xunlei_json_batch_indexes_v1118(", 1)[1].split(
+        "    def _xunlei_reservation(", 1
+    )[0]
+    dispatch = xunlei_text.split("    def _dispatch_xunlei_flash(", 1)[1].split(
+        "    def _try_transfer_subscription_inner(", 1
+    )[0]
+    assert "_is_video(path) or _is_subtitle(path)" in batch
+    assert "indexes = self._xunlei_json_batch_indexes_v1118(enriched)" in dispatch
+    assert 'if not indexes or bool(selection.get("ambiguous"))' not in dispatch
+    assert "缺集规划仅用于覆盖判断，不裁剪 JSON 文件" in dispatch
