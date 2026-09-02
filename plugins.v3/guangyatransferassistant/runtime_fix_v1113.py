@@ -1,12 +1,11 @@
-"""v1.10.13 运行时收口：迅雷 captcha 自愈与外部获取成功通知。
+"""v1.10.13 运行时收口：迅雷真实设备合同、captcha 熔断与外部获取成功通知。
 
-修复两个真实运行问题：
-- 迅雷匿名分享接口返回“验证码无效”等中文错误时，旧逻辑没有识别为 captcha 失效；
-  并且只有配置了 captcha/init JSON 才会重试，导致一批候选连续失败。现在首次失效会
-  清空运行时 token，调用既有 signed-init / configured-init 刷新一次并重试，同批后续
-  请求复用新的 client/device/token 组合。
-- 光鸭直接转存已有成功通知，但迅雷秒传与 Magnet/ED2K cloudcollection 完成没有通知。
-  本层只对“本次新完成”发送一次插件通知，历史 completed 状态不会重复推送。
+本层处理真实运行中暴露的三个边界：
+- 迅雷匿名分享请求对 device/client/captcha 绑定敏感。除 x-device-id/x-guid 外，
+  api-pan.xunlei.com 请求同步补 device_id/did/guid query，与已验证可工作的浏览器脚本一致；
+- captcha 失效最多刷新并重试一次；再次失败后本轮直接熔断，剩余候选只在本地跳过，
+  避免一个坏 token 对迅雷分享接口形成连续请求；
+- 光鸭直接转存已有成功通知，迅雷秒传与 Magnet/ED2K cloudcollection 完成也发送一次通知。
 
 不会记录 captcha_token、Device ID、磁力 URI 或其它密钥。
 """
@@ -46,6 +45,12 @@ class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin):
                     fields.append(str(value))
                     if key in {"error", "error_description"}:
                         has_error_field = True
+            details = payload.get("error_details")
+            if isinstance(details, list):
+                for row in details:
+                    if isinstance(row, dict) and row.get("detail"):
+                        fields.append(str(row.get("detail")))
+                        has_error_field = True
         text = " ".join(fields).strip()
         if not text:
             text = str(getattr(response, "text", "") or "")[:1200]
@@ -56,18 +61,40 @@ class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin):
         invalid_hint = bool(_CAPTCHA_INVALID_RE_V1113.search(text))
         return invalid_hint and (status >= 400 or has_error_field)
 
+    def _xunlei_device_params_v1113(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """按迅雷 Web 请求合同给 api-pan 请求同步补齐三个 device query。"""
+        output = dict(params or {})
+        device_id = str(
+            getattr(self, "_xunlei_runtime_device_id", "")
+            or getattr(self, "_xunlei_device_id", "")
+            or ""
+        ).strip()
+        if device_id:
+            output.setdefault("device_id", device_id)
+            output.setdefault("did", device_id)
+            output.setdefault("guid", device_id)
+        return output
+
     def _xunlei_get(self, endpoint: str, params: Dict[str, Any], *, action: str) -> Dict[str, Any]:
-        """迅雷 GET：captcha 失效时无条件尝试一次既有刷新能力，不要求 init JSON。"""
+        """迅雷 GET：真实设备 query + 一次 captcha 恢复 + 本轮熔断。"""
+        if bool(getattr(self, "_xunlei_captcha_circuit_open_v1113", False)):
+            raise RuntimeError("迅雷 captcha 本轮已熔断；已停止继续请求分享接口，等待下轮或更新真实 captcha/device")
+
         session = self._xunlei_session()
         url = f"{_XUNLEI_API_BASE_V1113}{endpoint}"
+        request_params = self._xunlei_device_params_v1113(params)
         last_error = ""
+
         for attempt in range(2):
             headers = self._xunlei_headers(action, refresh=False)
-            if not headers.get("x-captcha-token"):
-                raise RuntimeError("迅雷 captcha_token 不可用；自动初始化未取得有效 token")
+            token_before = str(headers.get("x-captcha-token") or "").strip()
+            if not token_before:
+                self._xunlei_captcha_circuit_open_v1113 = True
+                raise RuntimeError("迅雷 captcha_token 不可用；本轮已熔断分享接口")
+
             response = session.get(
                 url,
-                params=params,
+                params=request_params,
                 headers=headers,
                 timeout=int(getattr(self, "_provider_timeout", 15) or 15),
             )
@@ -89,20 +116,33 @@ class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin):
                 or f"HTTP {getattr(response, 'status_code', 0)}"
             )[:300]
 
-            if attempt == 0 and captcha_invalid:
+            if attempt == 0 and captcha_invalid and not bool(
+                getattr(self, "_xunlei_captcha_refresh_used_v1113", False)
+            ):
+                self._xunlei_captcha_refresh_used_v1113 = True
                 self._xunlei_runtime_captcha_token = ""
                 refreshed = str(self._refresh_xunlei_captcha(action) or "").strip()
-                if refreshed:
+                if refreshed and refreshed != token_before:
                     self._plugin_log(
                         "INFO",
-                        "【光鸭转存助手】【迅雷秒传】检测到 captcha 失效，已自动刷新运行时验证并重试当前分享",
+                        "【光鸭转存助手】【迅雷秒传】检测到 captcha 失效，已刷新运行时验证并仅重试当前分享一次",
                     )
                     continue
+                self._xunlei_captcha_circuit_open_v1113 = True
                 self._plugin_log(
                     "WARNING",
-                    "【光鸭转存助手】【迅雷秒传】检测到 captcha 失效，但自动刷新未取得新 token；继续回退后续来源",
+                    "【光鸭转存助手】【迅雷秒传】captcha 失效且未取得新的有效验证态；本轮已熔断迅雷分享接口，避免连续请求",
+                )
+                break
+
+            if captcha_invalid:
+                self._xunlei_captcha_circuit_open_v1113 = True
+                self._plugin_log(
+                    "WARNING",
+                    "【光鸭转存助手】【迅雷秒传】captcha 重试仍无效；本轮已熔断迅雷分享接口，请更新真实 captcha_token + Device ID",
                 )
             break
+
         raise RuntimeError(f"迅雷分享接口失败：{last_error or 'unknown error'}")
 
     def _notify_acquisition_v1113(self, title: str, lines: Iterable[str]) -> bool:
@@ -135,7 +175,10 @@ class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin):
         return ", ".join(f"E{value:02d}" for value in sorted(episodes))
 
     def _dispatch_xunlei_flash(self, subscribe: Any) -> Dict[str, Any]:
-        """仅通知本次新完成的迅雷秒传文件，历史 completed 不重复推送。"""
+        """每轮重置 captcha 熔断；仅通知本次新完成的迅雷秒传文件。"""
+        self._xunlei_captcha_circuit_open_v1113 = False
+        self._xunlei_captcha_refresh_used_v1113 = False
+
         sid = int(getattr(subscribe, "id", 0) or 0)
         before_state = self._xunlei_state()
         before_items = dict(before_state.get("items") or {}) if isinstance(before_state, dict) else {}
@@ -148,6 +191,9 @@ class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin):
         }
 
         result = dict(super()._dispatch_xunlei_flash(subscribe) or {})
+        result["captcha_circuit_open"] = bool(
+            getattr(self, "_xunlei_captcha_circuit_open_v1113", False)
+        )
 
         after_state = self._xunlei_state()
         after_items = dict(after_state.get("items") or {}) if isinstance(after_state, dict) else {}
