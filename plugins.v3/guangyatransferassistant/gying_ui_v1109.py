@@ -12,13 +12,14 @@ v1.10.13 在宿主 CloakBrowser 确认不可用、稳定回退 PanSou requests �
 设备合同、自愈熔断与迅雷秒传/Magnet/ED2K 云添加成功通知层。
 v1.10.14 增加迅雷最终真实设备合同、自动检索冷却/去自激、云添加完成闭环和外部资源质量/字幕门禁。
 v1.10.15 把频道改为真正的增量事件驱动：频道资源保留 7 天缓存，数字 message_id 严格以刷新前游标判定新增，仅新增资源命中订阅时执行；观影与通用 Provider 改为独立冷却轮询。
+控制台真实交互层补齐按钮→API→后台任务→操作回执闭环，并为失败/待确认来源提供可执行处理动作。
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from .channel_cursor_event_v1115 import GuangYaChannelCursorEventV1115Mixin
+from .console_control_cursor_v1116 import GuangYaConsoleControlCursorV1116Mixin
 
 
 _REPLACEMENTS_V1109 = {
@@ -49,10 +50,10 @@ def _rewrite_text_v1109(value: Any) -> Any:
     return value
 
 
-class GuangYaGyingUiV1109Mixin(GuangYaChannelCursorEventV1115Mixin):
-    """自动登录优先 UI，并启用最终迅雷/检索/质量/频道游标事件/完成治理链。"""
+class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlCursorV1116Mixin):
+    """自动登录优先 UI，并启用最终迅雷/检索/质量/频道游标事件/真实控制台/完成治理链。"""
 
-    build_id = "20260902-r26"
+    build_id = "20260902-r27"
 
     def _gying_auth_panel(self):
         return _rewrite_text_v1109(super()._gying_auth_panel())
