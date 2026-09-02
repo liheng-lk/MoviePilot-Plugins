@@ -60,9 +60,9 @@ def test_v193_files_parse_and_publish_current_version():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.10.16"
-    assert 'plugin_version = "1.10.16"' in entry_text
-    assert 'build_id = "20260902-r31"' in entry_text
+    assert package["version"] == local["version"] == "1.10.17"
+    assert 'plugin_version = "1.10.17"' in entry_text
+    assert 'build_id = "20260902-r32"' in entry_text
     assert "v1.9.3" in package["history"]
 
 
@@ -235,3 +235,36 @@ def test_json_batch_is_full_share_not_pruned_by_episode_confidence():
     assert "缺集规划仅用于覆盖判断，不裁剪 JSON 文件" in dispatch
     assert 'if not row.get("gcid") or _safe_int(row.get("size"), 0) <= 0:' in dispatch
     assert 'not row.get("cid") and not row.get("download_url")' not in dispatch
+
+
+def test_successful_xunlei_batch_blocks_fallback_for_tv_and_movie():
+    episode_method = xunlei_text.split("    def _xunlei_file_episodes(", 1)[1].split(
+        "    @staticmethod\n    def _xunlei_movie_primary_index_v1119", 1
+    )[0]
+    movie_method = xunlei_text.split("    def _xunlei_movie_primary_index_v1119(", 1)[1].split(
+        "    def _select_xunlei_files", 1
+    )[0]
+    dispatch = xunlei_text.split("    def _dispatch_xunlei_flash(", 1)[1].split(
+        "    def _try_transfer_subscription_inner", 1
+    )[0]
+    assert "package_paths=package_paths" in episode_method
+    assert "max(videos, key=" in movie_method
+    assert "movie_primary in successful_indexes" in dispatch
+    assert "video_success == len(selected_videos)" not in dispatch
+
+
+def test_provider_match_rejects_wrong_year_and_season_before_cloud_add():
+    provider = (PLUGIN / "provider_sources_v192.py").read_text(encoding="utf-8")
+    matcher = provider.split("    def _provider_candidate_matches(", 1)[1].split(
+        "    def _provider_keyword", 1
+    )[0]
+    viewing = (PLUGIN / "viewing_dispatch_v1113.py").read_text(encoding="utf-8")
+    dispatch = viewing.split("    def _dispatch_viewing_external_v1113(", 1)[1].split(
+        "    def ", 1
+    )[0]
+    assert "actual_years" in matcher
+    assert "expected_year not in actual_years" in matcher
+    assert "expected_season not in seasons" in matcher
+    assert "is_movie and seasons" in matcher
+    assert "prior_movie_sources" in dispatch
+    assert "等待成功/失败核验后再决定是否回退" in dispatch
