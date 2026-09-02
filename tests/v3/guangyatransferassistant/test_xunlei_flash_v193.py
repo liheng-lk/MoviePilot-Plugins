@@ -60,9 +60,9 @@ def test_v193_files_parse_and_publish_current_version():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.10.18"
-    assert 'plugin_version = "1.10.18"' in entry_text
-    assert 'build_id = "20260902-r33"' in entry_text
+    assert package["version"] == local["version"] == "1.10.19"
+    assert 'plugin_version = "1.10.19"' in entry_text
+    assert 'build_id = "20260902-r34"' in entry_text
     assert "v1.9.3" in package["history"]
 
 
@@ -281,3 +281,24 @@ def test_cloud_candidate_and_verified_gap_are_reported_before_supplement():
     assert "只会从其它来源补充上述缺集" in runtime
     assert "⚠️ 光鸭云添加未完成" in runtime
     assert "这些集仍保持缺失，只允许下一个来源补充这些集" in runtime
+
+
+def test_verified_movie_receipt_records_fact_and_finishes_subscription():
+    governance = (PLUGIN / "governance_v1114.py").read_text(encoding="utf-8")
+    helper = governance.split("    def _remember_verified_movie_v1121(", 1)[1].split(
+        "    def _poll_offline_source", 1
+    )[0]
+    poll = governance.split("    def _poll_offline_source(", 1)[1].split(
+        "    # ------------------------------------------------------------------\n    # 质量门禁", 1
+    )[0]
+    dispatch = governance.split("    def _dispatch_xunlei_flash(", 1)[1].split(
+        "    def _dispatch_viewing_external_v1113", 1
+    )[0]
+    assert "_remember_media_facts" in helper
+    assert "_movie_transfer_confirmed" in helper
+    assert "真实完成回执" in helper
+    assert '_remember_verified_movie_v1121(subscribe, "guangya_offline"' in poll
+    assert "_finish_subscription_if_complete(subscribe)" in poll
+    assert "subscription_completed_notified_at" in poll
+    assert "✅ 电影订阅已完成" in poll
+    assert '_remember_verified_movie_v1121(subscribe, "xunlei_flash"' in dispatch
