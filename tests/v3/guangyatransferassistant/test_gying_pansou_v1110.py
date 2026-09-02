@@ -13,7 +13,6 @@ ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 PATCH_PATH = PLUGIN / "gying_pansou_v1110.py"
 PATCH = PATCH_PATH.read_text(encoding="utf-8")
 UI = (PLUGIN / "gying_ui_v1109.py").read_text(encoding="utf-8")
-BROWSER = (PLUGIN / "gying_browser_v1111.py").read_text(encoding="utf-8")
 POW = (PLUGIN / "gying_pow_v1111.py").read_text(encoding="utf-8")
 
 
@@ -59,7 +58,6 @@ def test_v1110_release_and_layer_parse():
     ast.parse(PATCH, filename=str(PATCH_PATH))
     ast.parse(ENTRY)
     ast.parse(UI)
-    ast.parse(BROWSER)
     ast.parse(POW)
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
@@ -69,8 +67,7 @@ def test_v1110_release_and_layer_parse():
     assert "v1.10.10" in package.get("history", {})
     assert "GuangYaGyingPanSouV1110Mixin" in POW
     assert "class GuangYaGyingPowV1111Mixin(GuangYaGyingPanSouV1110Mixin)" in POW
-    assert "class GuangYaGyingBrowserV1111Mixin(GuangYaGyingPowV1111Mixin)" in BROWSER
-    assert "class GuangYaGyingUiV1109Mixin(GuangYaGyingBrowserV1111Mixin)" in UI
+    assert "class GuangYaGyingUiV1109Mixin(GuangYaGyingPowV1111Mixin)" in UI
 
 
 def test_challenge_detection_matches_pansou_and_does_not_confuse_refresh_with_remote_pow():
