@@ -278,8 +278,12 @@ class GuangYaXunleiJsonPipelineV1117Mixin:
             if not path:
                 continue
             size = _safe_int(row.get("size") or row.get("fileSize"), 0)
-            gcid = str(row.get("gcid") or "").strip().upper()
+            gcid = str(row.get("gcid") or "").strip().lower()
             md5 = str(row.get("md5") or "").strip().lower()
+            # v1.1.3 脚本在迅雷极速 JSON 中使用 gcid 前 32 位作为 md5 兜底；
+            # 用户实测 cid/downloadUrl 为空时，光鸭仍可据此全部瞬时命中。
+            if not _HEX32_RE.fullmatch(md5) and _HEX40_RE.fullmatch(gcid):
+                md5 = gcid[:32]
             file_id = str(row.get("fileId") or row.get("id") or "").strip()
             cid = str(row.get("cid") or "").strip()
             triple = str(row.get("tripleCid") or "").strip()
@@ -548,15 +552,24 @@ class GuangYaXunleiJsonPipelineV1117Mixin:
         }
 
     def _rapid_transfer_xunlei_file(self, subscribe: Any, row: Dict[str, Any]) -> Dict[str, Any]:
-        # 明确做成两阶段，即使目前每次只消费被 planner 选中的一个文件。
-        template = self._xunlei_make_json_v1117([row])
+        # 先按脚本生成整份分享 JSON；导入阶段再取当前文件，避免 planner 裁剪模板。
+        full_template = row.get("_xunlei_json_template") if isinstance(row, dict) else None
+        if not isinstance(full_template, dict):
+            full_template = self._xunlei_make_json_v1117([row])
+        full_files = full_template.get("files") or []
+        batch_index = _safe_int(row.get("_xunlei_json_index"), 0)
+        if batch_index < 0 or batch_index >= len(full_files):
+            return {"success": False, "reason": "迅雷 JSON 批次索引无效"}
+        template = dict(full_template)
+        template["files"] = [dict(full_files[batch_index] or {})]
         files = template.get("files") or []
         if not files:
             return {"success": False, "reason": "迅雷 JSON 模板生成失败"}
         preview = dict(files[0] or {})
         self._plugin_log(
             "INFO",
-            "【光鸭转存助手】【迅雷JSON】模板已生成：files=1 path=%s size=%s gcid=%s md5=%s cid=%s dl=%s share=%s；下一步按光鸭 importMd5Json 合同导入",
+            "【光鸭转存助手】【迅雷JSON】整批模板已生成：total=%s current=%s path=%s size=%s gcid=%s md5=%s cid=%s dl=%s share=%s；下一步按光鸭 importMd5Json 合同导入",
+            len(full_files), batch_index + 1,
             str(preview.get("path") or "")[:180],
             _safe_int(preview.get("size"), 0),
             "yes" if preview.get("gcid") else "no",
