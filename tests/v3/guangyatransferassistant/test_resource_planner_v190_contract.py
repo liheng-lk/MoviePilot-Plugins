@@ -26,9 +26,9 @@ def test_all_v190_files_parse_and_publish_current_version():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.10.11"
-    assert 'plugin_version = "1.10.11"' in texts[ENTRY]
-    assert 'build_id = "20260902-r22"' in texts[ENTRY]
+    assert package["version"] == local["version"] == "1.10.12"
+    assert 'plugin_version = "1.10.12"' in texts[ENTRY]
+    assert 'build_id = "20260902-r23"' in texts[ENTRY]
 
 
 def test_runtime_mro_puts_planner_safety_and_planner_before_native_offline_layers():
