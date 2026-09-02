@@ -138,7 +138,13 @@ class GuangYaXunleiFlashMixin:
         self._xunlei_device_id = str(config.get("xunlei_device_id") or "").strip()
         self._xunlei_captcha_token = str(config.get("xunlei_captcha_token") or "").strip()
         self._xunlei_captcha_init_json = str(config.get("xunlei_captcha_init_json") or "").strip()
-        self._xunlei_flash_max_files = max(1, min(_safe_int(config.get("xunlei_flash_max_files"), 80), 500))
+        # 旧代码的 _safe_int(None, 80) 实际得到 0，再被 max(1, ...) 固化成 1，
+        # 导致“全38集”分享只读取 API 第一条 E38。脚本递归完整目录，这里同步放宽
+        # 到 5000；历史错误值 0/1 自动迁移为默认 500。
+        configured_max_files = _safe_int(config.get("xunlei_flash_max_files"), 0)
+        if configured_max_files <= 1:
+            configured_max_files = 500
+        self._xunlei_flash_max_files = max(10, min(configured_max_files, 5000))
         self._xunlei_runtime_captcha_token = self._xunlei_captcha_token
         self._xunlei_runtime_reservations = {}
         super().init_plugin(config)
@@ -325,6 +331,18 @@ class GuangYaXunleiFlashMixin:
                 page_token = str(body.get("next_page_token") or "").strip()
                 if not page_token:
                     break
+        if len(rows) >= self._xunlei_flash_max_files:
+            self._plugin_log(
+                "WARNING",
+                "【光鸭转存助手】【迅雷JSON】分享目录读取达到上限：share=%s files=%s limit=%s；JSON 可能被截断，请提高迅雷最大文件数",
+                str(share_id or "")[:24], len(rows), self._xunlei_flash_max_files,
+            )
+        else:
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【迅雷JSON】分享目录递归完成：share=%s files=%s folders=%s limit=%s",
+                str(share_id or "")[:24], len(rows), max(0, len(visited) - 1), self._xunlei_flash_max_files,
+            )
         return rows
 
     def _xunlei_file_info(self, share_id: str, pass_code_token: str, row: Dict[str, Any]) -> Dict[str, Any]:
