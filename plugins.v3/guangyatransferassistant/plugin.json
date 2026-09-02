@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.15 将观影迅雷分享严格按已验证的 v1.1.3 脚本执行，生成原始 JSON 合同并由光鸭导入，完整透传分享凭据、补齐多路径文件详情和任务回查，同时排除缩略图 CDN 误算 CID。",
-  "version": "1.10.15",
+  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.16 修复迅雷分享在生成 JSON 前被缺集规划器裁剪的问题；分享匹配订阅后，将全部视频和字幕按 v1.1.3 合同写入 JSON 并逐项导入光鸭。",
+  "version": "1.10.16",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
