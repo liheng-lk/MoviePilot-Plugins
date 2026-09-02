@@ -1,9 +1,10 @@
 """光鸭转存助手 v1.7.x 剧集弱命名兼容补丁。
 
 处理云盘分享中常见的“集号~画质”文件名，例如：
-01~4K.mp4、08～2160p.mkv、22~[4K][HEVC.AAC].mkv。
+01~4K.mp4、08～2160p.mkv、22~[4K][HEVC.AAC].mkv，以及
+01丨4K.mp4 / 01｜4K.mp4 / 01|4K.mp4 这类频道常见竖线分隔写法。
 
-补丁只在 legacy._episode_numbers 已完全无法识别时启用，并要求 ~ 后必须是明确的
+补丁只在 legacy._episode_numbers 已完全无法识别时启用，并要求分隔符后必须是明确的
 画质/编码标记，避免把 01~04.mp4 这类可能表示范围的名字误判为第 1 集。
 """
 
@@ -16,7 +17,7 @@ from typing import Any, Optional
 
 _QUALITY_SUFFIX_EPISODE_PATTERN = re.compile(
     r"""(?ix)
-    ^\s*0*(\d{1,3})\s*[~～]\s*
+    ^\s*0*(\d{1,3})\s*[~～丨|｜]\s*
     [\[【(（]?\s*
     (?:
         (?:4|8)K
@@ -38,7 +39,7 @@ _UNPARSED_FAILURE_PATTERN = re.compile(
 
 
 def extract_quality_suffix_episode(path: Any) -> Optional[int]:
-    """从“01~4K”一类弱文件名中提取集号；不接受纯数字范围。"""
+    """从“01~4K / 01丨4K”一类弱文件名中提取集号；不接受纯数字范围。"""
     basename = str(path or "").replace("\\", "/").rsplit("/", 1)[-1]
     matched = _QUALITY_SUFFIX_EPISODE_PATTERN.search(basename)
     if not matched:
