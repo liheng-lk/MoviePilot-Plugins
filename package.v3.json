@@ -66,14 +66,15 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "固定分流与多来源订阅助手：v1.10.9 修正观影登录策略。默认先自动完成浏览器计算验证和账号密码登录，POST /user/login 时使用站点目前实际可用的 code 空值路径；只有服务端明确返回 captcha/点击验证要求时才进入人工汉字点选兜底。登录成功后访问详情页暖机并通过受限搜索二次验真。会话启动 API 保持后台执行并把异常转换为结构化 JSON，避免 MoviePilot 只显示服务器无响应。迅雷分享最高优先级走光鸭 userres 秒传，后续为光鸭直接转存 > Magnet > ED2K，Magnet/ED2K 继续走光鸭原生云添加。",
-    "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,自动登录,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流",
-    "version": "1.10.9",
+    "description": "固定分流与多来源订阅助手：v1.10.10 对齐 PanSou 当前公开 GYING challenge→solve→retry 实现。只有真实挑战页才进入 /res/pow；网页 refresh=1 不再误投远程 PoW，而是先回根页建立 browser_pow，再使用同一 Session 计算并以原请求重试成功验真。自动账号密码登录、详情暖机、受限搜索验真和人工汉字验证码兜底继续保留。迅雷分享最高优先级走光鸭 userres 秒传，后续为光鸭直接转存 > Magnet > ED2K，Magnet/ED2K 继续走光鸭原生云添加。",
+    "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,PanSou,自动登录,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流",
+    "version": "1.10.10",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v1.10.10": "对齐 PanSou 当前公开 GYING 反爬实现：挑战识别恢复为验证文案 + powSolve/pow.worker/const jss//res/pow 的真实挑战页语义；远程 PoW 按 GET /res/pow → N/x/t → 至少 3 秒平方取模 → POST form y → success=true → 重试原请求执行；不再把所有 JSON refresh=1 直接当远程 PoW，refresh 中间件先回根页建立 browser_pow 再求解；不主动删除 browser_pow，Cookie 生命周期交由服务端 Set-Cookie/cookie jar。",
       "v1.10.9": "修正观影账号登录策略：不再把汉字点击验证码当成必经步骤。优先按公开维护实现和站点实际可用协议 GET 登录页后 POST code 为空的账号密码表单，成功后访问详情页暖机并用受限搜索二次验真；仅当服务端明确返回 captcha/验证码/点击验证提示时才进入既有 315x180 人工点选流程。人工会话按钮同样先后台自动登录；启动 API 发生内部异常时返回结构化 error，不再直接让 MoviePilot 前端落到‘服务器无响应’。",
       "v1.10.8": "重构观影传输稳定层：人工认证启动改为后台线程，API 立即返回 auth_id，避免串行探测多个镜像和 PoW 导致 MoviePilot 显示服务器无响应；PoW 检测移除宽泛“安全验证”匹配，正常 _obj. 数据页优先放行，仅 code=419、refresh=1 且消息明确要求验证或精确挑战标记才触发；远程 /res/pow 必须明确 success=true；内置 8 个确认中文镜像并仅在该白名单内部共享运行时 Cookie，发布/换址页不继承认证态；Session 统一移动端 UA，与 315x180 人工汉字验证码保持一致。",
       "v1.10.7": "按观影真实 captcha 前端协议补齐人工汉字点击登录：POST /res/captcha/2 webp=1 读取 type/img/text，MoviePilot 页面由用户本人按提示点击，do=check 返回 code=200 后把同一 captchainfo 作为 /user/login 的 code；PoW、验证码、登录、受限搜索始终复用同一 Session。浏览器计算验证改为最多连续恢复 3 次，仅当原请求真正恢复正常才记录通过；节点发现补充 /urlop/ 与当前前端公布域名；登录成功后再用受限搜索确认，最新网址/公告弹窗只作非阻塞提示，不伪造确认 API。",
