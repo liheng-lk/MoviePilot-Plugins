@@ -24,7 +24,7 @@ from .xunlei_flash_v193 import _HEX32_RE, _HEX40_RE, _pick_download_url, _safe_i
 class GuangYaXunleiJsonPipelineV1117Mixin:
     """复刻稳定脚本的 Xunlei JSON 生产/消费合同。"""
 
-    build_id = "20260902-r29"
+    build_id = "20260902-r30"
 
     # ------------------------------------------------------------------
     # Stage A: 迅雷分享 -> 标准 JSON 模板
@@ -163,6 +163,90 @@ class GuangYaXunleiJsonPipelineV1117Mixin:
                 except Exception:
                     continue
 
+        # 稳定脚本路径 4：files/{id} 同时尝试分享 query。该端点在部分账号/区域
+        # 才会返回 web_content_link，因此只作为兜底，且仍透传分享上下文。
+        if file_id and not str(merged.get("download_url") or merged.get("downloadUrl") or "").strip():
+            try:
+                detail = self._xunlei_get(
+                    f"/drive/v1/files/{file_id}",
+                    {
+                        "space": "",
+                        "usage": "CONSUME",
+                        "share_id": share_id,
+                        "pass_code_token": pass_code_token,
+                    },
+                    action=f"get:/drive/v1/files/{file_id}",
+                )
+                normalized = self._xunlei_normalize_file(
+                    dict(detail or {}),
+                    str(merged.get("path") or "").rsplit("/", 1)[0],
+                    parent_id,
+                )
+                for key in ("gcid", "md5", "cid", "download_url", "size"):
+                    if normalized.get(key):
+                        merged[key] = normalized[key]
+            except Exception:
+                pass
+
+        # 稳定脚本路径 5：最后才尝试 share/save。响应可能直接带文件信息，
+        # 也可能只给 task_id；后一种必须先回查任务，再读取新文件详情。
+        if file_id and share_id and pass_code_token and not str(
+            merged.get("download_url") or merged.get("downloadUrl") or ""
+        ).strip():
+            try:
+                saved = self._xunlei_post_json_v1117(
+                    "/drive/v1/share/save",
+                    {
+                        "share_id": share_id,
+                        "file_ids": [file_id],
+                        "pass_code_token": pass_code_token,
+                    },
+                    action="post:/drive/v1/share/save",
+                )
+                saved_data = saved.get("data") if isinstance(saved.get("data"), dict) else saved
+                saved_hit = saved_data.get("file") if isinstance(saved_data, dict) and isinstance(saved_data.get("file"), dict) else saved_data
+                task_id = str(
+                    (saved_data or {}).get("task_id")
+                    or (saved_data or {}).get("taskId")
+                    or saved.get("task_id")
+                    or saved.get("taskId")
+                    or ""
+                ).strip()
+                if task_id:
+                    for index in range(20):
+                        try:
+                            task = self._xunlei_get(
+                                f"/drive/v1/tasks/{task_id}",
+                                {},
+                                action=f"get:/drive/v1/tasks/{task_id}",
+                            )
+                            task_data = task.get("data") if isinstance(task.get("data"), dict) else task
+                            candidate = (
+                                task_data.get("file")
+                                or task_data.get("file_info")
+                                or task_data.get("files")
+                                or task_data.get("result")
+                            ) if isinstance(task_data, dict) else None
+                            if isinstance(candidate, list):
+                                candidate = candidate[0] if candidate else None
+                            if isinstance(candidate, dict):
+                                saved_hit = candidate
+                                break
+                        except Exception:
+                            pass
+                        time.sleep(0.2 if index < 4 else 0.4)
+                if isinstance(saved_hit, dict):
+                    normalized = self._xunlei_normalize_file(
+                        saved_hit,
+                        str(merged.get("path") or "").rsplit("/", 1)[0],
+                        parent_id,
+                    )
+                    for key in ("gcid", "md5", "cid", "download_url", "size"):
+                        if normalized.get(key):
+                            merged[key] = normalized[key]
+            except Exception:
+                pass
+
         # JSON 模板字段名与用户脚本对齐。
         if merged.get("download_url") and not merged.get("downloadUrl"):
             merged["downloadUrl"] = str(merged.get("download_url") or "")
@@ -225,8 +309,8 @@ class GuangYaXunleiJsonPipelineV1117Mixin:
 
         total_size = sum(_safe_int(row.get("size"), 0) for row in normalized)
         result: Dict[str, Any] = {
-            "scriptVersion": "1.1.3-mp-compatible",
-            "scriptAuthor": "MoviePilot",
+            "scriptVersion": "1.1.3",
+            "scriptAuthor": "sumuve",
             "totalFilesCount": len(normalized),
             "totalSize": total_size,
             "formattedTotalSize": self._xunlei_format_size_v1117(total_size),
