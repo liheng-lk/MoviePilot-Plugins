@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.9 修正观影登录策略，默认先按站点实际可用协议自动账号密码登录（code 为空），只有服务端明确返回 captcha/点击验证要求时才进入人工汉字点选兜底；登录成功后继续暖机并以受限搜索二次验真。会话启动 API 继续后台执行并把异常转换为结构化 JSON，避免前端只显示服务器无响应。固定优先级“观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K”，Magnet/ED2K 继续走光鸭原生云添加。",
-  "version": "1.10.9",
+  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.10 对齐 PanSou 当前公开 GYING 挑战链。真实挑战页按 challenge→solve→retry 处理；refresh=1 不再直接误投 /res/pow，而是先回同节点根页建立 browser_pow，再以同一 Session 计算并用原请求重试验真。自动账号密码登录和人工汉字验证码兜底保持不变。固定优先级“观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K”，Magnet/ED2K 继续走光鸭原生云添加。",
+  "version": "1.10.10",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
