@@ -635,6 +635,13 @@ class GuangYaXunleiFlashMixin:
         if not sid:
             return {"success": False, "handled": False, "message": "订阅 ID 无效"}
         is_movie = self._is_movie_subscription(subscribe)
+        if not is_movie:
+            # 迅雷位于 legacy 前序链，必须先同步媒体库，否则 note 尚未包含已有 E01-E03，
+            # planner 会把已入库集再次当作缺集。
+            try:
+                self._sync_media_library_progress(subscribe)
+            except Exception as err:
+                self._plugin_log("WARNING", "【光鸭转存助手】【迅雷JSON】导入前媒体库进度同步失败：%s", str(err)[:260])
         missing = set(int(v) for v in (self._subscription_missing_episodes(subscribe) or []) if int(v or 0) > 0)
         candidates, state = self._search_viewing_xunlei(self._provider_keyword(subscribe))
         if not candidates:
@@ -685,7 +692,7 @@ class GuangYaXunleiFlashMixin:
                     continue
                 self._plugin_log(
                     "INFO",
-                    "【光鸭转存助手】【迅雷JSON】完整分享批次：share=%s files=%s planner=%s ambiguous=%s；缺集规划仅用于覆盖判断，不裁剪 JSON 文件",
+                    "【光鸭转存助手】【迅雷JSON】完整分享批次：share=%s files=%s planner=%s ambiguous=%s；完整 JSON 不裁剪，planner 只控制实际导入索引",
                     share_id[:24], len(indexes), len(planned_indexes), bool(selection.get("ambiguous")),
                 )
                 batch_rows = [dict(enriched[idx] or {}) for idx in indexes]
@@ -709,10 +716,33 @@ class GuangYaXunleiFlashMixin:
                     "【光鸭转存助手】【迅雷JSON】整批身份校验通过：share=%s files=%s reason=%s",
                     share_id[:24], len(batch_rows), identity_reason,
                 )
-                selected_videos = [idx for idx in indexes if 0 <= idx < len(enriched) and _is_video(str(enriched[idx].get("path") or enriched[idx].get("name") or ""))]
+                if is_movie:
+                    primary = self._xunlei_movie_primary_index_v1119(enriched, indexes)
+                    import_indexes = [primary] if primary is not None else []
+                else:
+                    if bool(selection.get("ambiguous")) or not planned_indexes:
+                        reason = str(selection.get("message") or "分享文件无法高置信映射到当前真实缺集")
+                        errors.append(f"{share_id}: {reason}")
+                        self._plugin_log(
+                            "WARNING",
+                            "【光鸭转存助手】【迅雷JSON】完整模板已生成但不导入：share=%s total=%s missing=%s planner=%s ambiguous=%s reason=%s",
+                            share_id[:24], len(indexes), len(target), len(planned_indexes),
+                            bool(selection.get("ambiguous")), reason[:320],
+                        )
+                        continue
+                    planned_index_set = set(planned_indexes)
+                    import_indexes = [index for index in indexes if index in planned_index_set]
+                import_index_set = set(import_indexes)
+                import_positions = {
+                    position for position, original_index in enumerate(indexes)
+                    if original_index in import_index_set
+                }
+                if not import_positions:
+                    errors.append(f"{share_id}: 完整 JSON 中没有允许导入的真实缺集文件")
+                    continue
+                selected_videos = [idx for idx in import_indexes if 0 <= idx < len(enriched) and _is_video(str(enriched[idx].get("path") or enriched[idx].get("name") or ""))]
                 package_paths = [str(enriched[idx].get("path") or enriched[idx].get("name") or "") for idx in selected_videos]
-                movie_primary = self._xunlei_movie_primary_index_v1119(enriched, indexes) if is_movie else None
-                movie_features = self._xunlei_movie_feature_indexes_v1122(enriched, indexes) if is_movie else set()
+                movie_features = self._xunlei_movie_feature_indexes_v1122(enriched, import_indexes) if is_movie else set()
                 successful_indexes: set[int] = set()
                 video_success = 0
                 skip_batch_indexes: set[int] = set()
@@ -726,6 +756,7 @@ class GuangYaXunleiFlashMixin:
                     batch_template,
                     batch_rows,
                     skip_indexes=skip_batch_indexes,
+                    include_indexes=import_positions,
                 )
                 batch_results = {
                     int(item.get("index") or 0): dict(item.get("result") or {})
@@ -733,6 +764,8 @@ class GuangYaXunleiFlashMixin:
                     if isinstance(item, dict)
                 }
                 for batch_index, index in enumerate(indexes):
+                    if batch_index not in import_positions:
+                        continue
                     if index < 0 or index >= len(enriched):
                         continue
                     row = enriched[index]
