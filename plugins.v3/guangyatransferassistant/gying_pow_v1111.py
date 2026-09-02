@@ -12,6 +12,7 @@
 本层还把真正参与内容请求的节点收敛到已确认的 IDN 内容镜像，发布页/换址页仍可用于
 发现地址，但不再进入每次搜索的 12 节点慢轮询。
 
+本版本不要求、也不主动建议为观影配置代理；网络可直连时直接使用 MoviePilot 当前网络出口。
 不会记录 Cookie、N/x/y、账号密码或验证码坐标；人工汉字验证码行为保持不变。
 """
 
@@ -133,13 +134,11 @@ class GuangYaGyingPowV1111Mixin(GuangYaGyingPanSouV1110Mixin):
 
         timeout = min(max(int(getattr(self, "_provider_timeout", 15) or 15), 5), 20)
         pow_url = node.rstrip("/") + "/res/pow"
-        proxy_used = bool(getattr(session, "proxies", {}) or {})
         self._gying_auth_log(
             "INFO",
-            "PanSou PoW：节点=%s，挑战页已确认，browser_pow=%s，代理=%s，开始读取参数",
+            "PanSou PoW：节点=%s，挑战页已确认，browser_pow=%s，开始读取参数",
             node,
             _has_cookie_v1111(session, "browser_pow"),
-            proxy_used,
         )
 
         challenge = session.get(
@@ -237,26 +236,15 @@ class GuangYaGyingPowV1111Mixin(GuangYaGyingPanSouV1110Mixin):
         retry_challenge: bool = True,
         **kwargs: Any,
     ) -> requests.Response:
-        try:
-            return super()._gying_request(
-                session,
-                node,
-                method,
-                url,
-                retry_challenge=retry_challenge,
-                **kwargs,
-            )
-        except RuntimeError as err:
-            message = str(err or "")
-            if (
-                retry_challenge
-                and not bool(getattr(session, "proxies", {}) or {})
-                and any(token in message for token in ("验证", "challenge", "PoW", "refresh"))
-            ):
-                raise RuntimeError(
-                    message + "；当前观影请求未使用 MoviePilot 代理，目标站对网络出口敏感，可在插件高级设置开启“观影/外部搜索使用代理”"
-                ) from err
-            raise
+        """不改变网络出口；仅复用下层 PoW/原请求验真状态机。"""
+        return super()._gying_request(
+            session,
+            node,
+            method,
+            url,
+            retry_challenge=retry_challenge,
+            **kwargs,
+        )
 
 
 __all__ = ["GuangYaGyingPowV1111Mixin", "_has_cookie_v1111", "_is_content_candidate_v1111"]
