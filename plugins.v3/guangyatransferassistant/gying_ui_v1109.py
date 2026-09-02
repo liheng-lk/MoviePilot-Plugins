@@ -3,16 +3,16 @@
 v1.10.9 默认自动登录，人工汉字验证码只在站点明确要求时出现；因此旧版
 “人工认证/开始人工认证”文案会造成误导。本层只改展示文字，不改变 API 或会话协议。
 
-v1.10.10 通过继承 ``GuangYaGyingPanSouV1110Mixin`` 把 PanSou 已验证的 challenge
-识别、远程 PoW 与 refresh=1 回根页恢复逻辑插到现有 AutoLogin/Transport 之间；
-不改变本文件原有 UI 文案职责。
+v1.10.10 继承 PanSou challenge 层；v1.10.11 再由 ``GuangYaGyingBrowserV1111Mixin``
+包住该层。真实环境 PoW 如果依赖浏览器请求指纹，会优先使用 MoviePilot 官方
+CloakBrowser 完成站点自身验证；无浏览器时仍回退 PanSou 算法链。
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from .gying_pansou_v1110 import GuangYaGyingPanSouV1110Mixin
+from .gying_browser_v1111 import GuangYaGyingBrowserV1111Mixin
 
 
 _REPLACEMENTS_V1109 = {
@@ -43,10 +43,10 @@ def _rewrite_text_v1109(value: Any) -> Any:
     return value
 
 
-class GuangYaGyingUiV1109Mixin(GuangYaGyingPanSouV1110Mixin):
+class GuangYaGyingUiV1109Mixin(GuangYaGyingBrowserV1111Mixin):
     """把旧人工认证面板改成自动登录优先的真实状态说明。"""
 
-    build_id = "20260902-r21"
+    build_id = "20260902-r22"
 
     def _gying_auth_panel(self):
         return _rewrite_text_v1109(super()._gying_auth_panel())
