@@ -10,14 +10,14 @@ v1.10.12 再由 ``GuangYaGyingBrowserProfileV1112Mixin`` 把 challenge、PoW、�
 v1.10.13 在宿主 CloakBrowser 确认不可用、稳定回退 PanSou requests 后，保留当前
 节点自己的验证 Cookie，避免每次订阅搜索都重复执行远程 PoW；并接入迅雷 captcha
 设备合同、自愈熔断与迅雷秒传/Magnet/ED2K 云添加成功通知层。
-v1.10.14 增加自动检索冷却/去自激、云添加完成闭环和外部资源质量/字幕门禁。
+v1.10.14 增加迅雷最终真实设备合同、自动检索冷却/去自激、云添加完成闭环和外部资源质量/字幕门禁。
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from .governance_v1114 import GuangYaGovernanceV1114Mixin
+from .xunlei_final_v1114 import GuangYaXunleiFinalV1114Mixin
 
 
 _REPLACEMENTS_V1109 = {
@@ -48,8 +48,8 @@ def _rewrite_text_v1109(value: Any) -> Any:
     return value
 
 
-class GuangYaGyingUiV1109Mixin(GuangYaGovernanceV1114Mixin):
-    """自动登录优先 UI，并启用最终外部检索/质量/完成治理链。"""
+class GuangYaGyingUiV1109Mixin(GuangYaXunleiFinalV1114Mixin):
+    """自动登录优先 UI，并启用最终迅雷/检索/质量/完成治理链。"""
 
     build_id = "20260902-r25"
 
