@@ -58,6 +58,16 @@ def _pick_download_url(value: Any) -> str:
         text = node.strip().strip("`\"'")
         if not text.lower().startswith(("http://", "https://")):
             return
+        # 迅雷详情里会混入封面/缩略图 CDN。稳定脚本明确拒绝把这些 URL
+        # 当成文件下载地址，否则 Range 计算得到的是图片 CID，秒传必败。
+        parsed = urlparse(text)
+        host = str(parsed.hostname or "").lower()
+        path = str(parsed.path or "").lower()
+        if (
+            any(token in host for token in ("88cdn", "xlpan", "thumbnail", "image"))
+            and any(token in path for token in ("thumb", "image", "cover", "poster", "backstage"))
+        ) or any(token in text.lower() for token in ("backstage-img", "thumbnail_size=")):
+            return
         lowered = key.lower()
         if any(token in lowered for token in ("web_content_link", "download", "octet", "url")):
             preferred.append(text)
