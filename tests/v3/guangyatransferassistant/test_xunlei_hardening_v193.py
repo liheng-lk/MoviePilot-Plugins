@@ -41,7 +41,7 @@ def test_xunlei_hardening_parses_and_precedes_flash_layer():
     ast.parse(text, filename=str(HARDENING))
     start = entry_text.index("class GuangYaTransferAssistant")
     assert entry_text.index("GuangYaXunleiHardeningMixin,", start) < entry_text.index("GuangYaXunleiFlashMixin,", start)
-    assert 'build_id = "20260902-r22"' in entry_text
+    assert 'build_id = "20260902-r23"' in entry_text
 
 
 def test_signed_captcha_builder_matches_nine_round_reference():
