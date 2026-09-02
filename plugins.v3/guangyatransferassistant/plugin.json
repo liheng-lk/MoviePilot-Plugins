@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.17 修复迅雷已秒传后仍执行 Magnet；剧集支持完整包纯数字文件名覆盖判定，电影正片成功即阻断后续来源。",
-  "version": "1.10.17",
+  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.18 增加资源选择及成功/失败/剩余缺集反馈；其它来源只补充核验后仍缺失的集数。",
+  "version": "1.10.18",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
