@@ -21,6 +21,7 @@ import requests
 
 from .gying_auth_v1107 import _looks_like_content_node, _safe_json
 from .gying_hardening_v193 import canonical_gying_node
+from .gying_ui_v1109 import GuangYaGyingUiV1109Mixin
 
 
 _CAPTCHA_HINTS_V1109 = (
@@ -54,15 +55,11 @@ def _contains_hint_v1109(message: str, hints: tuple[str, ...]) -> bool:
     return any(str(token or "").lower() in lowered for token in hints)
 
 
-class GuangYaGyingAutoLoginV1109Mixin:
+class GuangYaGyingAutoLoginV1109Mixin(GuangYaGyingUiV1109Mixin):
     """最终 MRO 最外层：自动密码登录优先，人工验证码只做真实服务端回退。"""
 
     build_id = "20260902-r20"
 
-    # ------------------------------------------------------------------
-    # 自动密码登录：与公开维护实现保持相同三步会话语义
-    # GET 登录页 -> POST code="" -> GET 详情页暖机 -> 受限搜索验真
-    # ------------------------------------------------------------------
     def _gying_login_password(self, session: requests.Session, node: str) -> Dict[str, Any]:
         username = str(getattr(self, "_viewing_username", "") or "").strip()
         password = str(getattr(self, "_viewing_password", "") or "")
@@ -87,7 +84,6 @@ class GuangYaGyingAutoLoginV1109Mixin:
         timeout = min(max(int(getattr(self, "_provider_timeout", 15) or 15), 5), 15)
         self._gying_auth_log("INFO", "自动登录：节点=%s，开始建立登录会话", node)
         try:
-            # 先取登录页，保留 PHPSESSID/浏览器验证 Cookie；所有请求继续使用同一 Session。
             self._gying_request(
                 session,
                 node,
@@ -165,7 +161,6 @@ class GuangYaGyingAutoLoginV1109Mixin:
                 "message": f"观影自动登录失败：{message or ('HTTP ' + str(getattr(response, 'status_code', 0)))}",
             }
 
-        # 与公开维护实现一致，登录成功后访问一个详情页，触发完整防爬 Cookie；失败不抹掉登录结果。
         try:
             self._gying_request(
                 session,
@@ -214,9 +209,6 @@ class GuangYaGyingAutoLoginV1109Mixin:
             "message": "观影已自动登录并通过受限搜索验真",
         }
 
-    # ------------------------------------------------------------------
-    # 点击“建立观影会话”时也先自动登录；仅 captcha_required 才生成汉字验证码。
-    # ------------------------------------------------------------------
     def _gying_auth_worker_run_v1108(self, auth_id: str, force: bool) -> None:
         errors: List[str] = []
         try:
@@ -324,7 +316,6 @@ class GuangYaGyingAutoLoginV1109Mixin:
                         session.close()
                         continue
 
-                    # 服务端明确要求验证码后才进入人工流程；继续复用刚才自动登录用的同一 Session。
                     self._gying_auth_update_v1108(
                         auth_id,
                         stage="login_page",
@@ -373,9 +364,6 @@ class GuangYaGyingAutoLoginV1109Mixin:
                 message=("；".join(errors[:5]) or "没有可用于观影自动登录的内容节点")[:500],
             )
 
-    # ------------------------------------------------------------------
-    # 防止 MoviePilot 直接看到 500/超时提示：启动动作永远快速返回结构化状态。
-    # ------------------------------------------------------------------
     def api_viewing_auth_start(self, force: bool = False) -> Dict[str, Any]:
         try:
             if not isinstance(getattr(self, "_gying_auth_sessions", None), dict):
