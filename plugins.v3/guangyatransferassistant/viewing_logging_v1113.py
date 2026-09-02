@@ -1,16 +1,24 @@
-"""v1.10.13 观影执行完整日志与剩余缺集收口层。"""
+"""v1.10.13 观影执行完整日志与剩余缺集收口层。
+
+v1.10.16 追加迅雷秒传完整性层：秒传成功必须验证真实文件大小，失败任务会清理
+本轮新生成的空/尺寸异常占位，避免 upload task 残留被当成有效资源。
+"""
 
 from __future__ import annotations
 
 from typing import Any, Dict
 
 from .viewing_dispatch_v1113 import GuangYaViewingDispatchV1113Mixin
+from .xunlei_integrity_v1116 import GuangYaXunleiIntegrityV1116Mixin
 
 
-class GuangYaViewingLoggingV1113Mixin(GuangYaViewingDispatchV1113Mixin):
+class GuangYaViewingLoggingV1113Mixin(
+    GuangYaViewingDispatchV1113Mixin,
+    GuangYaXunleiIntegrityV1116Mixin,
+):
     """记录完整 cloudcollection 生命周期，并防止部分成功提前截断观影回退。"""
 
-    build_id = "20260902-r24"
+    build_id = "20260902-r28"
 
     def _submit_offline_source(self, source_id: str) -> Dict[str, Any]:
         source_id = str(source_id or "").strip()
