@@ -11,13 +11,14 @@ v1.10.13 在宿主 CloakBrowser 确认不可用、稳定回退 PanSou requests �
 节点自己的验证 Cookie，避免每次订阅搜索都重复执行远程 PoW；并接入迅雷 captcha
 设备合同、自愈熔断与迅雷秒传/Magnet/ED2K 云添加成功通知层。
 v1.10.14 增加迅雷最终真实设备合同、自动检索冷却/去自激、云添加完成闭环和外部资源质量/字幕门禁。
+v1.10.15 把频道改为真正的增量事件驱动：频道资源保留 7 天缓存，仅新增资源命中订阅时执行；观影改为独立冷却轮询。
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from .xunlei_final_v1114 import GuangYaXunleiFinalV1114Mixin
+from .channel_event_v1115 import GuangYaChannelEventV1115Mixin
 
 
 _REPLACEMENTS_V1109 = {
@@ -48,10 +49,10 @@ def _rewrite_text_v1109(value: Any) -> Any:
     return value
 
 
-class GuangYaGyingUiV1109Mixin(GuangYaXunleiFinalV1114Mixin):
-    """自动登录优先 UI，并启用最终迅雷/检索/质量/完成治理链。"""
+class GuangYaGyingUiV1109Mixin(GuangYaChannelEventV1115Mixin):
+    """自动登录优先 UI，并启用最终迅雷/检索/质量/频道事件/完成治理链。"""
 
-    build_id = "20260902-r25"
+    build_id = "20260902-r26"
 
     def _gying_auth_panel(self):
         return _rewrite_text_v1109(super()._gying_auth_panel())
