@@ -60,9 +60,9 @@ def test_v193_files_parse_and_publish_current_version():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.10.21"
-    assert 'plugin_version = "1.10.21"' in entry_text
-    assert 'build_id = "20260902-r36"' in entry_text
+    assert package["version"] == local["version"] == "1.10.22"
+    assert 'plugin_version = "1.10.22"' in entry_text
+    assert 'build_id = "20260902-r37"' in entry_text
     assert "v1.9.3" in package["history"]
 
 
@@ -344,3 +344,17 @@ def test_xunlei_json_real_identity_blocks_cross_media_import():
     assert "迅雷 JSON 季号不匹配" in helper
     assert dispatch.index("_xunlei_json_identity_matches_v1123") < dispatch.index("_xunlei_import_json_batch_v1123")
     assert "整批拒绝导入" in dispatch
+
+
+def test_xunlei_full_share_limit_does_not_collapse_to_one_file():
+    init = xunlei_text.split("    def init_plugin(", 1)[1].split(
+        "    def _search_viewing_xunlei", 1
+    )[0]
+    listing = xunlei_text.split("    def _xunlei_share_files(", 1)[1].split(
+        "    def _xunlei_file_info", 1
+    )[0]
+    assert "if configured_max_files <= 1:" in init
+    assert "configured_max_files = 500" in init
+    assert "min(configured_max_files, 5000)" in init
+    assert "分享目录递归完成" in listing
+    assert "JSON 可能被截断" in listing
