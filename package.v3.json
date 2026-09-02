@@ -66,14 +66,15 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "固定分流与多来源订阅助手：v1.10.10 对齐 PanSou 当前公开 GYING challenge→solve→retry 实现。只有真实挑战页才进入 /res/pow；网页 refresh=1 不再误投远程 PoW，而是先回根页建立 browser_pow，再使用同一 Session 计算并以原请求重试成功验真。自动账号密码登录、详情暖机、受限搜索验真和人工汉字验证码兜底继续保留。迅雷分享最高优先级走光鸭 userres 秒传，后续为光鸭直接转存 > Magnet > ED2K，Magnet/ED2K 继续走光鸭原生云添加。",
-    "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,PanSou,自动登录,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流",
-    "version": "1.10.10",
+    "description": "固定分流与多来源订阅助手：v1.10.11 针对真实环境 /res/pow HTTP 200 但验证未确认的问题，优先使用 MoviePilot 官方 CloakBrowser 让站点自己的挑战页与 refresh overlay 建立验证态，并在同一浏览器上下文继续登录、搜索和 downurl；browser_pow 恢复按节点隔离，发布/换址页不再参与每次业务 failover。无浏览器环境仍保留 PanSou 算法回退，自动账号密码登录和人工汉字验证码兜底继续保留。迅雷分享最高优先级走光鸭 userres 秒传，后续为光鸭直接转存 > Magnet > ED2K，Magnet/ED2K 继续走光鸭原生云添加。",
+    "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,PanSou,CloakBrowser,自动登录,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流",
+    "version": "1.10.11",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v1.10.11": "修复真实运行中远程 PoW 计算正确但 POST /res/pow HTTP 200 仍不被服务器确认：参考 PanSou 对浏览器请求指纹的排障结论，改用 MoviePilot 官方 app.sdk.browser/CloakBrowser 让站点自身挑战脚本建立 browser_verified，并在同一浏览器上下文继续登录、search 和 downurl；JSON refresh=1 会加载服务器 overlay 并调用 PowOverlay.run 后重试原请求。撤销 v1.10.8 的跨镜像完整 Cookie 共享，browser_pow 作为短期 challenge 严格按节点隔离并从持久恢复中清除；gying/gyg 发布换址域不再进入业务 failover，减少无效超时。旧层直接调用 _gying_solve_challenge 也统一落到新浏览器/PanSou 链，不再误入 v1.10.8 solver。",
       "v1.10.10": "对齐 PanSou 当前公开 GYING 反爬实现：挑战识别恢复为验证文案 + powSolve/pow.worker/const jss//res/pow 的真实挑战页语义；远程 PoW 按 GET /res/pow → N/x/t → 至少 3 秒平方取模 → POST form y → success=true → 重试原请求执行；不再把所有 JSON refresh=1 直接当远程 PoW，refresh 中间件先回根页建立 browser_pow 再求解；不主动删除 browser_pow，Cookie 生命周期交由服务端 Set-Cookie/cookie jar。",
       "v1.10.9": "修正观影账号登录策略：不再把汉字点击验证码当成必经步骤。优先按公开维护实现和站点实际可用协议 GET 登录页后 POST code 为空的账号密码表单，成功后访问详情页暖机并用受限搜索二次验真；仅当服务端明确返回 captcha/验证码/点击验证提示时才进入既有 315x180 人工点选流程。人工会话按钮同样先后台自动登录；启动 API 发生内部异常时返回结构化 error，不再直接让 MoviePilot 前端落到‘服务器无响应’。",
       "v1.10.8": "重构观影传输稳定层：人工认证启动改为后台线程，API 立即返回 auth_id，避免串行探测多个镜像和 PoW 导致 MoviePilot 显示服务器无响应；PoW 检测移除宽泛“安全验证”匹配，正常 _obj. 数据页优先放行，仅 code=419、refresh=1 且消息明确要求验证或精确挑战标记才触发；远程 /res/pow 必须明确 success=true；内置 8 个确认中文镜像并仅在该白名单内部共享运行时 Cookie，发布/换址页不继承认证态；Session 统一移动端 UA，与 315x180 人工汉字验证码保持一致。",

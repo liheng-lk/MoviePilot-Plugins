@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.10 对齐 PanSou 当前公开 GYING 挑战链。真实挑战页按 challenge→solve→retry 处理；refresh=1 不再直接误投 /res/pow，而是先回同节点根页建立 browser_pow，再以同一 Session 计算并用原请求重试验真。自动账号密码登录和人工汉字验证码兜底保持不变。固定优先级“观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K”，Magnet/ED2K 继续走光鸭原生云添加。",
-  "version": "1.10.10",
+  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.11 修正观影远程 PoW 的真实计时窗口和 HTTP 200 验真。3 秒窗口从取得 N/x/t 后、真正开始平方取模时计算；POST /res/pow 为 HTTP 200 但确认字段漂移时不再提前判失败，而以同一 Session 重试原请求是否仍为 challenge 作为最终依据。业务 failover 只保留真实 IDN 内容镜像，发布/换址页不再拖慢每次搜索。默认直连，不要求代理。自动账号密码登录和人工汉字验证码兜底保持不变。固定优先级“观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K”，Magnet/ED2K 继续走光鸭原生云添加。",
+  "version": "1.10.11",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,

@@ -13,6 +13,7 @@ ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 PATCH_PATH = PLUGIN / "gying_pansou_v1110.py"
 PATCH = PATCH_PATH.read_text(encoding="utf-8")
 UI = (PLUGIN / "gying_ui_v1109.py").read_text(encoding="utf-8")
+POW = (PLUGIN / "gying_pow_v1111.py").read_text(encoding="utf-8")
 
 
 def _challenge_namespace():
@@ -57,14 +58,16 @@ def test_v1110_release_and_layer_parse():
     ast.parse(PATCH, filename=str(PATCH_PATH))
     ast.parse(ENTRY)
     ast.parse(UI)
+    ast.parse(POW)
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.10.10"
-    assert 'plugin_version = "1.10.10"' in ENTRY
-    assert 'build_id = "20260902-r21"' in ENTRY
+    assert package["version"] == local["version"] == "1.10.11"
+    assert 'plugin_version = "1.10.11"' in ENTRY
+    assert 'build_id = "20260902-r22"' in ENTRY
     assert "v1.10.10" in package.get("history", {})
-    assert "GuangYaGyingPanSouV1110Mixin" in UI
-    assert "class GuangYaGyingUiV1109Mixin(GuangYaGyingPanSouV1110Mixin)" in UI
+    assert "GuangYaGyingPanSouV1110Mixin" in POW
+    assert "class GuangYaGyingPowV1111Mixin(GuangYaGyingPanSouV1110Mixin)" in POW
+    assert "class GuangYaGyingUiV1109Mixin(GuangYaGyingPowV1111Mixin)" in UI
 
 
 def test_challenge_detection_matches_pansou_and_does_not_confuse_refresh_with_remote_pow():
@@ -131,7 +134,6 @@ def test_v1110_does_not_add_browser_automation_ocr_or_secret_logging():
     ):
         assert forbidden not in lowered
 
-    # 不记录 PoW N/x/y、Cookie 值、密码或验证码点击坐标。
     log_lines = [line for line in PATCH.splitlines() if "_gying_auth_log" in line or '"PanSou PoW：' in line]
     joined = "\n".join(log_lines).lower()
     for secret in ("password", "username", "cookie_header", "captcha", "points", " n=", " x=", " y="):
