@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.18 增加资源选择及成功/失败/剩余缺集反馈；其它来源只补充核验后仍缺失的集数。",
-  "version": "1.10.18",
+  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.19 修复电影已确认下载但订阅不完成；完成回执会写入电影事实并触发官方完成流程。",
+  "version": "1.10.19",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
