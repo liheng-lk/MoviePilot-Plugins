@@ -11,6 +11,8 @@ VERIFIED = PLUGIN / "gying_browser_verified_v1112.py"
 PROFILE = PLUGIN / "gying_browser_profile_v1112.py"
 FALLBACK = PLUGIN / "gying_fallback_reuse_v1113.py"
 RUNTIME_FIX = PLUGIN / "runtime_fix_v1113.py"
+GOV = PLUGIN / "governance_v1114.py"
+FINAL = PLUGIN / "xunlei_final_v1114.py"
 UI = PLUGIN / "gying_ui_v1109.py"
 
 
@@ -19,6 +21,8 @@ verified_text = VERIFIED.read_text(encoding="utf-8")
 profile_text = PROFILE.read_text(encoding="utf-8")
 fallback_text = FALLBACK.read_text(encoding="utf-8")
 runtime_fix_text = RUNTIME_FIX.read_text(encoding="utf-8")
+gov_text = GOV.read_text(encoding="utf-8")
+final_text = FINAL.read_text(encoding="utf-8")
 ui_text = UI.read_text(encoding="utf-8")
 
 
@@ -29,6 +33,8 @@ def test_v1112_browser_files_parse():
         (PROFILE, profile_text),
         (FALLBACK, fallback_text),
         (RUNTIME_FIX, runtime_fix_text),
+        (GOV, gov_text),
+        (FINAL, final_text),
         (UI, ui_text),
     ):
         ast.parse(text, filename=str(path))
@@ -104,9 +110,10 @@ def test_v1112_browser_verified_wins_over_stale_challenge_dom():
     assert "_response_v1112(" in verified_text
 
 
-def test_ui_chain_wires_runtime_fallback_profile_verified_browser_layers_before_old_pow_layers():
-    assert "from .runtime_fix_v1113 import GuangYaRuntimeFixV1113Mixin" in ui_text
-    assert "class GuangYaGyingUiV1109Mixin(GuangYaRuntimeFixV1113Mixin):" in ui_text
+def test_ui_chain_wires_final_governance_runtime_fallback_profile_verified_browser_layers():
+    assert "class GuangYaGyingUiV1109Mixin(GuangYaXunleiFinalV1114Mixin):" in ui_text
+    assert "class GuangYaXunleiFinalV1114Mixin(GuangYaGovernanceV1114Mixin):" in final_text
+    assert "class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin):" in gov_text
     assert "class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin):" in runtime_fix_text
     assert "class GuangYaGyingFallbackReuseV1113Mixin(GuangYaGyingBrowserProfileV1112Mixin):" in fallback_text
     assert "class GuangYaGyingBrowserProfileV1112Mixin(GuangYaGyingBrowserVerifiedV1112Mixin):" in profile_text
