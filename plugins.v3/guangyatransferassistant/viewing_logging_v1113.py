@@ -22,7 +22,7 @@ class GuangYaViewingLoggingV1113Mixin(
 ):
     """记录完整 cloudcollection 生命周期，并防止部分成功提前截断观影回退。"""
 
-    build_id = "20260902-r29"
+    build_id = "20260902-r30"
 
     def _submit_offline_source(self, source_id: str) -> Dict[str, Any]:
         source_id = str(source_id or "").strip()
