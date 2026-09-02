@@ -25,7 +25,7 @@ def test_v1111_release_and_layer_parse():
     assert "v1.10.12" in package.get("history", {})
     assert "v1.10.11" in package.get("history", {})
     assert "class GuangYaGyingPowV1111Mixin(GuangYaGyingPanSouV1110Mixin)" in PATCH
-    assert "class GuangYaGyingUiV1109Mixin(GuangYaGyingBrowserVerifiedV1112Mixin)" in UI
+    assert "class GuangYaGyingUiV1109Mixin(GuangYaGyingBrowserProfileV1112Mixin)" in UI
 
 
 def test_remote_pow_timer_starts_after_challenge_fetch():
