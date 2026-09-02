@@ -66,14 +66,15 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "固定分流与多来源订阅助手：v1.10.13 在 CloakBrowser 同会话观影链基础上，把 GYING 搜索得到的 Magnet/ED2K 正式接入 ResourcePlanner 与光鸭 cloudcollection 原生云添加，不再只搜索不执行；修复 downlist.list.k 字段漂移误丢合法 BTIH。迅雷分享仍严格只走光鸭 userres 秒传，绝不转为 MoviePilot 本地/OSS 下载。观影来源创建远端资源时保留原始名称并追加搜索资源/影视名称，任务完成后使用光鸭云盘助手 rename 再核对远端名称，并补齐秒传、执行规划、云添加、命名及回退日志。",
-    "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,PanSou,CloakBrowser,自动登录,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流",
-    "version": "1.10.13",
+    "description": "固定分流与多来源订阅助手：v1.10.14 优先修复迅雷秒传，按真实 Web 请求同时绑定 captcha/client/device，并为 api-pan.xunlei.com 补齐 device_id/did/guid query；验证码失效只允许一次刷新重试，随后整批熔断并立即回退下一来源。自动外部检索增加单订阅冷却和执行中去重，避免一轮结束马上再开一轮；迅雷秒传和 Magnet/ED2K 云添加完成后主动走 MoviePilot 订阅完成闭环。新增资源质量门禁，固定过滤 BPHDTV 广告伪视频、CAM/TC/SCR 与显式低分辨率资源，并支持字幕要求、最小视频大小和自定义排除词。",
+    "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,PanSou,CloakBrowser,自动登录,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流,质量过滤,字幕过滤,检索冷却",
+    "version": "1.10.14",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v1.10.14": "修复迅雷分享在 captcha_token 失效时连续对 20 个候选重复请求的问题：按用户验证可用的迅雷 Web 脚本补齐 x-device-id/x-guid 与 device_id/did/guid query，真实配置的 captcha/device/client 组合优先，验证码无效只刷新并重试当前分享一次，仍失败立即熔断本批迅雷候选并回退下一来源。自动外部检索按订阅默认 180 分钟冷却，周期/宿主重复触发若订阅仍在执行则直接合并，不再产生补偿轮自激。迅雷秒传和 Magnet/ED2K cloudcollection 完成后主动同步进度并调用 MoviePilot 官方订阅完成流程。新增质量门禁：无条件过滤 BPHDTV 广告伪视频文件，默认过滤 CAM/TS/TC/SCR/R5 等低质标签和显式低于 720p 的资源，并提供最小视频大小、字幕信号要求与自定义排除词配置。",
       "v1.10.13": "修复观影资源‘搜到但不执行’：GYING 搜索结果中的 Magnet/ED2K 直接绑定当前 MoviePilot 订阅并进入 ResourcePlanner/SourceStore，随后由光鸭 cloudcollection 原生云添加执行；不再依赖 Telegram channel_index 才能创建外部来源。兼容 downlist.list.k 漂移，只要 list.m 是合法 BTIH 就保留 Magnet。迅雷资源继续仅作为 userres 秒传候选，失败只回退下一来源，绝不做 MoviePilot 本地/OSS 下载。观影云添加和迅雷秒传均在保留原始名称的基础上追加搜索资源/影视名称，云添加完成后再用光鸭云盘助手 rename 核对远端名称；新增候选、跳过、秒传、cloudcollection、命名及失败原因完整日志。",
       "v1.10.12": "真正落地 MoviePilot 官方 CloakBrowser 同会话链：按内容节点+账号复用固定单线程浏览器上下文，challenge、/res/pow、账号登录、/mv/wkMn、search、downurl 与人工 captcha 全部通过同一浏览器网络栈；remote PoW 只在 Python 计算 y，GET/POST 仍由浏览器 fetch(credentials=include) 完成；browser_pow/browser_verified/vrg_sc/vrg_go 不再跨浏览器或跨镜像恢复，并修复 browser_verified 已写入但旧挑战 DOM 尚未刷新的竞态。只有 CloakBrowser SDK/运行资源不可用时才降级 PanSou requests 链。",
       "v1.10.11": "修复真实运行中远程 PoW 计算正确但 POST /res/pow HTTP 200 仍不被服务器确认：参考 PanSou 对浏览器请求指纹的排障结论，改用 MoviePilot 官方 app.sdk.browser/CloakBrowser 让站点自身挑战脚本建立 browser_verified，并在同一浏览器上下文继续登录、search 和 downurl；JSON refresh=1 会加载服务器 overlay 并调用 PowOverlay.run 后重试原请求。撤销 v1.10.8 的跨镜像完整 Cookie 共享，browser_pow 作为短期 challenge 严格按节点隔离并从持久恢复中清除；gying/gyg 发布换址域不再进入业务 failover，减少无效超时。旧层直接调用 _gying_solve_challenge 也统一落到新浏览器/PanSou 链，不再误入 v1.10.8 solver。",
