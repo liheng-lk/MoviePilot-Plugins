@@ -129,6 +129,18 @@ class GuangYaViewingLoggingV1113Mixin(
         if existing_viewing:
             return result
 
+        # handled 是前序链的最终覆盖合同。电影没有 episode 集合，不能再用
+        # uncovered=movie 覆盖掉这个强确认，否则会在迅雷成功后错误创建 Magnet。
+        if bool(result.get("handled")):
+            sid = int(getattr(subscribe, "id", 0) or 0)
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【观影执行】#%s 前序结果 handled=True，硬阻断观影 Magnet/ED2K；信息=%s",
+                sid,
+                str(result.get("message") or "前序来源已完整覆盖")[:260],
+            )
+            return result
+
         gap = self._viewing_gap_v1113(subscribe)
         sid = int(getattr(subscribe, "id", 0) or 0)
         if bool(gap.get("covered")):
