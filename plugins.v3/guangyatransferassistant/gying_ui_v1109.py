@@ -7,13 +7,15 @@ v1.10.10 继承 PanSou challenge 层；v1.10.11 修正远程 PoW 计时与验真
 v1.10.12 再由 ``GuangYaGyingBrowserProfileV1112Mixin`` 把 challenge、PoW、登录、
 搜索和 downurl 收口到同一个 MoviePilot CloakBrowser 上下文；同时继承
 ``browser_verified`` 竞态保护，并对齐 MoviePilot 宿主的 viewport/humanize 配置。
+v1.10.13 在宿主 CloakBrowser 确认不可用、稳定回退 PanSou requests 后，保留当前
+节点自己的验证 Cookie，避免每次订阅搜索都重复执行远程 PoW。
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from .gying_browser_profile_v1112 import GuangYaGyingBrowserProfileV1112Mixin
+from .gying_fallback_reuse_v1113 import GuangYaGyingFallbackReuseV1113Mixin
 
 
 _REPLACEMENTS_V1109 = {
@@ -44,10 +46,10 @@ def _rewrite_text_v1109(value: Any) -> Any:
     return value
 
 
-class GuangYaGyingUiV1109Mixin(GuangYaGyingBrowserProfileV1112Mixin):
-    """自动登录优先 UI，并启用 v1.10.12 CloakBrowser 同会话/宿主指纹链。"""
+class GuangYaGyingUiV1109Mixin(GuangYaGyingFallbackReuseV1113Mixin):
+    """自动登录优先 UI，并启用 CloakBrowser / PanSou fallback 同节点验证态复用链。"""
 
-    build_id = "20260902-r23"
+    build_id = "20260902-r24"
 
     def _gying_auth_panel(self):
         return _rewrite_text_v1109(super()._gying_auth_panel())
