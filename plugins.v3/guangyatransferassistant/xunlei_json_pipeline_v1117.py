@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import requests
 
@@ -579,6 +579,62 @@ class GuangYaXunleiJsonPipelineV1117Mixin:
             "yes" if (preview.get("shareId") or template.get("shareId")) else "no",
         )
         return self._xunlei_import_json_file_v1117(subscribe, template, dict(row or {}))
+
+    def _xunlei_import_json_batch_v1123(
+        self,
+        subscribe: Any,
+        template: Dict[str, Any],
+        source_rows: Iterable[Dict[str, Any]],
+        skip_indexes: Optional[Iterable[int]] = None,
+    ) -> Dict[str, Any]:
+        """等价脚本“导入 JSON”：一次接收完整模板，再按 files 顺序执行光鸭导入合同。"""
+        files = list(template.get("files") or []) if isinstance(template, dict) else []
+        rows = [dict(row or {}) for row in source_rows]
+        skipped = {int(value) for value in (skip_indexes or [])}
+        if not files or len(files) != len(rows):
+            return {"success": False, "results": [], "message": "迅雷完整 JSON 与来源文件数量不一致"}
+        self._plugin_log(
+            "INFO",
+            "【光鸭转存助手】【迅雷JSON】批次导入开始：total=%s share=%s；严格按脚本 JSON files 顺序导入",
+            len(files),
+            str(template.get("shareId") or "-")[:30],
+        )
+        results: List[Dict[str, Any]] = []
+        for index, (entry, source_row) in enumerate(zip(files, rows)):
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【迅雷JSON】批次文件导入：current=%s/%s path=%s gcid=%s md5=%s cid=%s dl=%s",
+                index + 1, len(files), str(entry.get("path") or "")[:180],
+                "yes" if entry.get("gcid") else "no", "yes" if entry.get("md5") else "no",
+                "yes" if (entry.get("cid") or entry.get("tripleCid") or entry.get("wholeCid")) else "no",
+                "yes" if entry.get("downloadUrl") else "no",
+            )
+            if index in skipped:
+                result = {"success": True, "skipped": True, "reason": "此前已确认完成"}
+            else:
+                single = dict(template)
+                single["files"] = [dict(entry or {})]
+                result = dict(self._xunlei_import_json_file_v1117(subscribe, single, source_row) or {})
+            self._plugin_log(
+                "INFO" if result.get("success") else "WARNING",
+                "【光鸭转存助手】【迅雷JSON】批次文件结果：current=%s/%s success=%s path=%s reason=%s",
+                index + 1, len(files), bool(result.get("success")),
+                str(entry.get("path") or "")[:180], str(result.get("reason") or "-")[:280],
+            )
+            results.append({"index": index, "file": dict(entry or {}), "result": result})
+        success_count = sum(1 for item in results if bool((item.get("result") or {}).get("success")))
+        self._plugin_log(
+            "INFO" if success_count else "WARNING",
+            "【光鸭转存助手】【迅雷JSON】批次导入结束：total=%s success=%s failed=%s",
+            len(results), success_count, len(results) - success_count,
+        )
+        return {
+            "success": success_count > 0,
+            "total": len(results),
+            "successful": success_count,
+            "results": results,
+            "message": f"迅雷 JSON 批次导入完成：成功 {success_count}/{len(results)}",
+        }
 
 
 __all__ = ["GuangYaXunleiJsonPipelineV1117Mixin"]
