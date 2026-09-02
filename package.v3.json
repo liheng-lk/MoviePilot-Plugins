@@ -66,14 +66,15 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "固定分流与多来源订阅助手：v1.10.12 真正将 GYING challenge、/res/pow、登录、/mv/wkMn、搜索、downurl 与人工验证码统一到 MoviePilot 官方 CloakBrowser 同一浏览器上下文；PoW 仅由 Python 计算 y，网络提交继续由浏览器 fetch(credentials=include) 完成，避免浏览器与 requests 指纹切换。browser_pow/browser_verified/vrg_* 不跨浏览器或镜像恢复；只有 CloakBrowser SDK/运行资源不可用时才降级 PanSou requests。迅雷分享最高优先级走光鸭 userres 秒传，后续为光鸭直接转存 > Magnet > ED2K，Magnet/ED2K 继续走光鸭原生云添加。",
+    "description": "固定分流与多来源订阅助手：v1.10.13 在 CloakBrowser 同会话观影链基础上，把 GYING 搜索得到的 Magnet/ED2K 正式接入 ResourcePlanner 与光鸭 cloudcollection 原生云添加，不再只搜索不执行；修复 downlist.list.k 字段漂移误丢合法 BTIH。迅雷分享仍严格只走光鸭 userres 秒传，绝不转为 MoviePilot 本地/OSS 下载。观影来源创建远端资源时保留原始名称并追加搜索资源/影视名称，任务完成后使用光鸭云盘助手 rename 再核对远端名称，并补齐秒传、执行规划、云添加、命名及回退日志。",
     "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,PanSou,CloakBrowser,自动登录,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流",
-    "version": "1.10.12",
+    "version": "1.10.13",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v1.10.13": "修复观影资源‘搜到但不执行’：GYING 搜索结果中的 Magnet/ED2K 直接绑定当前 MoviePilot 订阅并进入 ResourcePlanner/SourceStore，随后由光鸭 cloudcollection 原生云添加执行；不再依赖 Telegram channel_index 才能创建外部来源。兼容 downlist.list.k 漂移，只要 list.m 是合法 BTIH 就保留 Magnet。迅雷资源继续仅作为 userres 秒传候选，失败只回退下一来源，绝不做 MoviePilot 本地/OSS 下载。观影云添加和迅雷秒传均在保留原始名称的基础上追加搜索资源/影视名称，云添加完成后再用光鸭云盘助手 rename 核对远端名称；新增候选、跳过、秒传、cloudcollection、命名及失败原因完整日志。",
       "v1.10.12": "真正落地 MoviePilot 官方 CloakBrowser 同会话链：按内容节点+账号复用固定单线程浏览器上下文，challenge、/res/pow、账号登录、/mv/wkMn、search、downurl 与人工 captcha 全部通过同一浏览器网络栈；remote PoW 只在 Python 计算 y，GET/POST 仍由浏览器 fetch(credentials=include) 完成；browser_pow/browser_verified/vrg_sc/vrg_go 不再跨浏览器或跨镜像恢复，并修复 browser_verified 已写入但旧挑战 DOM 尚未刷新的竞态。只有 CloakBrowser SDK/运行资源不可用时才降级 PanSou requests 链。",
       "v1.10.11": "修复真实运行中远程 PoW 计算正确但 POST /res/pow HTTP 200 仍不被服务器确认：参考 PanSou 对浏览器请求指纹的排障结论，改用 MoviePilot 官方 app.sdk.browser/CloakBrowser 让站点自身挑战脚本建立 browser_verified，并在同一浏览器上下文继续登录、search 和 downurl；JSON refresh=1 会加载服务器 overlay 并调用 PowOverlay.run 后重试原请求。撤销 v1.10.8 的跨镜像完整 Cookie 共享，browser_pow 作为短期 challenge 严格按节点隔离并从持久恢复中清除；gying/gyg 发布换址域不再进入业务 failover，减少无效超时。旧层直接调用 _gying_solve_challenge 也统一落到新浏览器/PanSou 链，不再误入 v1.10.8 solver。",
       "v1.10.10": "对齐 PanSou 当前公开 GYING 反爬实现：挑战识别恢复为验证文案 + powSolve/pow.worker/const jss//res/pow 的真实挑战页语义；远程 PoW 按 GET /res/pow → N/x/t → 至少 3 秒平方取模 → POST form y → success=true → 重试原请求执行；不再把所有 JSON refresh=1 直接当远程 PoW，refresh 中间件先回根页建立 browser_pow 再求解；不主动删除 browser_pow，Cookie 生命周期交由服务端 Set-Cookie/cookie jar。",
