@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.21 按脚本完整生成并整批导入迅雷 JSON；导入前校验 JSON 真实媒体身份，阻止跨剧误传。",
-  "version": "1.10.21",
+  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.22 修复全季迅雷分享只读取第一个文件；恢复完整目录递归和整批 JSON 导入。",
+  "version": "1.10.22",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
