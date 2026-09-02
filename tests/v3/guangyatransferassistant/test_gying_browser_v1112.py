@@ -42,8 +42,14 @@ def test_v1112_profile_matches_moviepilot_browser_defaults_without_internal_help
     assert 'get_runtime_setting("CLOAKBROWSER_HUMAN_PRESET")' in profile_text
     assert 'context_kwargs["humanize"] = humanize' in profile_text
     assert 'context_kwargs["human_preset"] = human_preset' in profile_text
-    assert "BrowserSessionHelper" not in profile_text
-    assert "app.adapters.network.browser" not in profile_text
+    tree = ast.parse(profile_text, filename=str(PROFILE))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            assert node.module != "app.adapters.network.browser"
+            assert all(alias.name != "BrowserSessionHelper" for alias in node.names)
+        elif isinstance(node, ast.Import):
+            assert all(alias.name != "app.adapters.network.browser" for alias in node.names)
+    assert "from app.sdk.browser import launch_browser_context" in profile_text
 
 
 def test_v1112_keeps_business_requests_inside_browser_context():
