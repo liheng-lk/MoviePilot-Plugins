@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Iterable
+from typing import Any, Dict, Iterable, List
 
 from app.schemas.types import NotificationType
 
@@ -277,6 +277,13 @@ class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin):
         )
         episodes = current.get("resolved_episodes") or current.get("target_episodes") or []
         episode_text = self._episode_text_v1113(episodes)
+        remaining: List[int] = []
+        if subscribe and not self._is_movie_subscription(subscribe):
+            confirmed = {int(value) for value in episodes if str(value).isdigit() and int(value) > 0}
+            remaining = sorted(
+                set(int(value) for value in (self._subscription_missing_episodes(subscribe) or []) if int(value or 0) > 0)
+                - confirmed
+            )
         resolved_name = str(
             current.get("renamed_name")
             or current.get("requested_name")
@@ -290,7 +297,12 @@ class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin):
             f"来源：{source_type.upper()} → 光鸭原生云添加",
         ]
         if episode_text:
-            lines.append(f"覆盖集数：{episode_text}")
+            lines.append(f"成功集数：{episode_text}")
+        if remaining:
+            lines.append(f"仍缺集数：{self._episode_text_v1113(remaining)}")
+            lines.append("后续：只会从其它来源补充上述缺集")
+        elif subscribe and not self._is_movie_subscription(subscribe):
+            lines.append("仍缺集数：无；已阻断后续 Magnet/ED2K")
         if resolved_name:
             lines.append(f"文件：{resolved_name[:180]}")
         if task_id:
@@ -307,6 +319,25 @@ class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin):
                 episode_text or "movie/auto",
             )
 
+    def _notify_cloud_failed_v1119(self, source: Dict[str, Any], result: Dict[str, Any]) -> None:
+        source_id = str(source.get("id") or "")
+        if not source_id:
+            return
+        data = result.get("data") if isinstance(result, dict) and isinstance(result.get("data"), dict) else {}
+        current = {**dict(source or {}), **dict(data or {})}
+        if str(current.get("state") or "") not in {"failed", "needs_review"} or current.get("failure_notified_at"):
+            return
+        source_type = str(current.get("type") or "").upper()
+        episodes = current.get("resolved_episodes") or current.get("target_episodes") or []
+        lines = [
+            f"来源：{source_type} → 光鸭原生云添加",
+            f"未确认集数：{self._episode_text_v1113(episodes) or '电影正片'}",
+            f"原因：{str(current.get('last_error') or result.get('message') or '任务失败')[:260]}",
+            "后续：这些集仍保持缺失，只允许下一个来源补充这些集",
+        ]
+        if self._notify_acquisition_v1113("⚠️ 光鸭云添加未完成", lines):
+            self._update_source(source_id, failure_notified_at=self._now_text())
+
     def _submit_offline_source(self, source_id: str) -> Dict[str, Any]:
         before = dict((self._source_store().get("items") or {}).get(str(source_id or "")) or {})
         result = dict(super()._submit_offline_source(source_id) or {})
@@ -316,6 +347,7 @@ class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin):
     def _poll_offline_source(self, source: Dict[str, Any]) -> Dict[str, Any]:
         result = dict(super()._poll_offline_source(source) or {})
         self._notify_cloud_completed_v1113(dict(source or {}), result)
+        self._notify_cloud_failed_v1119(dict(source or {}), result)
         return result
 
 

@@ -60,9 +60,9 @@ def test_v193_files_parse_and_publish_current_version():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.10.17"
-    assert 'plugin_version = "1.10.17"' in entry_text
-    assert 'build_id = "20260902-r32"' in entry_text
+    assert package["version"] == local["version"] == "1.10.18"
+    assert 'plugin_version = "1.10.18"' in entry_text
+    assert 'build_id = "20260902-r33"' in entry_text
     assert "v1.9.3" in package["history"]
 
 
@@ -268,3 +268,16 @@ def test_provider_match_rejects_wrong_year_and_season_before_cloud_add():
     assert "is_movie and seasons" in matcher
     assert "prior_movie_sources" in dispatch
     assert "等待成功/失败核验后再决定是否回退" in dispatch
+
+
+def test_cloud_candidate_and_verified_gap_are_reported_before_supplement():
+    viewing = (PLUGIN / "viewing_dispatch_v1113.py").read_text(encoding="utf-8")
+    runtime = (PLUGIN / "runtime_fix_v1113.py").read_text(encoding="utf-8")
+    assert "🎯 已选择光鸭云资源" in viewing
+    assert "计划补充" in viewing
+    assert "期间不会并行提交相似资源" in viewing
+    assert "成功集数" in runtime
+    assert "仍缺集数" in runtime
+    assert "只会从其它来源补充上述缺集" in runtime
+    assert "⚠️ 光鸭云添加未完成" in runtime
+    assert "这些集仍保持缺失，只允许下一个来源补充这些集" in runtime
