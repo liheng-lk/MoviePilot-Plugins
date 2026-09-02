@@ -516,6 +516,16 @@ class GuangYaXunleiFlashMixin:
         source = {"type": "xunlei", "target_episodes": sorted(set(int(v) for v in target_episodes if int(v or 0) > 0))}
         return self._planner_file_selection(source, subscribe, {"btResInfo": {"subfiles": fake_subfiles}})
 
+    @staticmethod
+    def _xunlei_json_batch_indexes_v1118(files: List[Dict[str, Any]]) -> List[int]:
+        """按稳定脚本把已匹配分享中的全部媒体文件写入 JSON。"""
+        indexes: List[int] = []
+        for index, row in enumerate(files or []):
+            path = str((row or {}).get("path") or (row or {}).get("name") or "")
+            if _is_video(path) or _is_subtitle(path):
+                indexes.append(index)
+        return indexes
+
     def _xunlei_reservation(self, subscribe_id: int) -> Dict[str, Any]:
         return dict(self._xunlei_runtime_reservations.get(int(subscribe_id or 0)) or {"episodes": set(), "paths": set(), "movie": False})
 
@@ -577,10 +587,16 @@ class GuangYaXunleiFlashMixin:
                 if not is_movie and not target:
                     break
                 selection = self._select_xunlei_files(subscribe, enriched, target)
-                indexes = [int(v) for v in (selection.get("indexes") or [])]
-                if not indexes or bool(selection.get("ambiguous")):
-                    errors.append(f"{share_id}: 迅雷分享文件无法高置信匹配当前缺集")
+                planned_indexes = [int(v) for v in (selection.get("indexes") or [])]
+                indexes = self._xunlei_json_batch_indexes_v1118(enriched)
+                if not indexes:
+                    errors.append(f"{share_id}: 迅雷分享中没有可写入 JSON 的视频/字幕文件")
                     continue
+                self._plugin_log(
+                    "INFO",
+                    "【光鸭转存助手】【迅雷JSON】完整分享批次：share=%s files=%s planner=%s ambiguous=%s；缺集规划仅用于覆盖判断，不裁剪 JSON 文件",
+                    share_id[:24], len(indexes), len(planned_indexes), bool(selection.get("ambiguous")),
+                )
                 selected_videos = [idx for idx in indexes if 0 <= idx < len(enriched) and _is_video(str(enriched[idx].get("path") or enriched[idx].get("name") or ""))]
                 video_success = 0
                 for index in indexes:
