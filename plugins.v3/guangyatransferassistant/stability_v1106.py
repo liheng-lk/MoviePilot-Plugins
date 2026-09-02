@@ -169,10 +169,14 @@ class GuangYaStabilityV1106Mixin(GuangYaGyingAuthVerifiedV1107Mixin):
         origin: str = "manual",
         enabled: bool = True,
         auto_dispatch: Optional[bool] = None,
+        **metadata: Any,
     ):
         sid = safe_int_v1106(subscribe_id, 0, 0)
         if sid <= 0:
             raise ValueError("MoviePilot 订阅不存在")
+        # 稳定层只负责 subscribe_id 清洗，必须透明转发 ResourcePlanner 后续扩展的
+        # resource_group_id / target_episodes / episode_hint / source_label / message_id /
+        # candidate_rank 等关键字参数，避免外层 MRO 因旧签名截断新资源合同。
         return super()._upsert_source(
             sid,
             uri,
@@ -180,6 +184,7 @@ class GuangYaStabilityV1106Mixin(GuangYaGyingAuthVerifiedV1107Mixin):
             origin=origin,
             enabled=enabled,
             auto_dispatch=auto_dispatch,
+            **metadata,
         )
 
     def _mark_offline_failure(
