@@ -570,7 +570,9 @@ class GuangYaXunleiFlashMixin:
                     path = str(row.get("path") or row.get("name") or "")
                     if bool(getattr(self, "_media_only", True)) and not (_is_video(path) or _is_subtitle(path)):
                         continue
-                    if not row.get("gcid") or (not row.get("cid") and not row.get("download_url")):
+                    # 稳定脚本极速模式：列表已给 GCID/size 时直接生成 JSON。
+                    # cid/downloadUrl 允许为空，不能因此对 11 个文件逐个补详情。
+                    if not row.get("gcid") or _safe_int(row.get("size"), 0) <= 0:
                         try:
                             row = self._xunlei_file_info(share_id, str(info.get("pass_code_token") or ""), row)
                         except Exception as err:
@@ -597,9 +599,14 @@ class GuangYaXunleiFlashMixin:
                     "【光鸭转存助手】【迅雷JSON】完整分享批次：share=%s files=%s planner=%s ambiguous=%s；缺集规划仅用于覆盖判断，不裁剪 JSON 文件",
                     share_id[:24], len(indexes), len(planned_indexes), bool(selection.get("ambiguous")),
                 )
+                batch_rows = [dict(enriched[idx] or {}) for idx in indexes]
+                batch_template = self._xunlei_make_json_v1117(batch_rows)
+                if len(batch_template.get("files") or []) != len(batch_rows):
+                    errors.append(f"{share_id}: 迅雷完整分享 JSON 生成不完整")
+                    continue
                 selected_videos = [idx for idx in indexes if 0 <= idx < len(enriched) and _is_video(str(enriched[idx].get("path") or enriched[idx].get("name") or ""))]
                 video_success = 0
-                for index in indexes:
+                for batch_index, index in enumerate(indexes):
                     if index < 0 or index >= len(enriched):
                         continue
                     row = enriched[index]
@@ -616,7 +623,10 @@ class GuangYaXunleiFlashMixin:
                     if not row.get("gcid"):
                         errors.append(f"{row.get('path')}: 迅雷未提供 GCID")
                         continue
-                    result = self._rapid_transfer_xunlei_file(subscribe, row)
+                    import_row = dict(row or {})
+                    import_row["_xunlei_json_template"] = batch_template
+                    import_row["_xunlei_json_index"] = batch_index
+                    result = self._rapid_transfer_xunlei_file(subscribe, import_row)
                     saved_items[item_key] = {"state": "completed" if result.get("success") else "failed", "subscribe_id": sid, "share_id": share_id, "file_id": str(row.get("id") or ""), "path": str(row.get("path") or "")[:500], "gcid": str(row.get("gcid") or ""), "episodes": sorted(row_episodes), "message": str(result.get("reason") or "")[:300], "updated_at": self._now_text(), "updated_ts": time.time()}
                     self._save_xunlei_state(state_store)
                     if result.get("success"):
