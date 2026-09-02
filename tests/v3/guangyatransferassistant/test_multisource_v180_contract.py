@@ -40,8 +40,8 @@ def test_v180_files_parse_as_python():
 def test_v180_contract_is_retained_by_current_runtime():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.10.9"
-    assert 'plugin_version = "1.10.9"' in entry_text
+    assert package["version"] == local["version"] == "1.10.10"
+    assert 'plugin_version = "1.10.10"' in entry_text
     assert "GuangYaOfflineSafetyMixin" in entry_text
     assert "GuangYaMultiSourceMixin" in entry_text
     assert entry_text.index("GuangYaOfflineSafetyMixin,", entry_text.index("class GuangYaTransferAssistant")) < entry_text.index(
