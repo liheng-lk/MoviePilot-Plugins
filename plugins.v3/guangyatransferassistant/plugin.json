@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.12 真正将观影 GYING 的 challenge、/res/pow、账号登录、/mv/wkMn、搜索、downurl 与人工验证码收口到同一个 MoviePilot 官方 CloakBrowser 浏览器上下文；PoW 只在 Python 计算 y，GET/POST 仍由浏览器 fetch(credentials=include) 发出，避免 requests 与浏览器指纹切换导致 HTTP 200 后仍不被服务器认可。browser_pow/browser_verified/vrg_* 不跨浏览器或镜像恢复；只有 CloakBrowser SDK/运行资源不可用时才降级 PanSou requests 链。固定优先级“观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K”，Magnet/ED2K 继续走光鸭原生云添加。",
-  "version": "1.10.12",
+  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.13 在 v1.10.12 CloakBrowser 同会话观影链基础上，把 GYING 搜索得到的 Magnet/ED2K 正式接入 ResourcePlanner 与光鸭 cloudcollection 原生云添加，不再只搜索不执行；修复 downlist.list.k 字段漂移误丢合法 BTIH。迅雷分享仍严格只走光鸭 userres 秒传，绝不转为 MoviePilot 本地/OSS 下载。观影来源创建远端资源时保留原始名称并追加搜索资源/影视名称，任务完成后再用光鸭云盘助手 rename 核对远端名称，同时补齐秒传、候选规划、云添加、命名和失败回退日志。",
+  "version": "1.10.13",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
