@@ -68,7 +68,7 @@ def test_v1110_release_and_layer_parse():
     assert "v1.10.10" in package.get("history", {})
     assert "GuangYaGyingPanSouV1110Mixin" in POW
     assert "class GuangYaGyingPowV1111Mixin(GuangYaGyingPanSouV1110Mixin)" in POW
-    assert "class GuangYaGyingUiV1109Mixin(GuangYaGyingBrowserVerifiedV1112Mixin)" in UI
+    assert "class GuangYaGyingUiV1109Mixin(GuangYaGyingBrowserProfileV1112Mixin)" in UI
 
 
 def test_challenge_detection_matches_pansou_and_does_not_confuse_refresh_with_remote_pow():
