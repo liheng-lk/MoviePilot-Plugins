@@ -11,25 +11,27 @@ ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 PATCH_PATH = PLUGIN / "gying_pow_v1111.py"
 PATCH = PATCH_PATH.read_text(encoding="utf-8")
 UI = (PLUGIN / "gying_ui_v1109.py").read_text(encoding="utf-8")
+FINAL = (PLUGIN / "xunlei_final_v1114.py").read_text(encoding="utf-8")
+GOV = (PLUGIN / "governance_v1114.py").read_text(encoding="utf-8")
 RUNTIME_FIX = (PLUGIN / "runtime_fix_v1113.py").read_text(encoding="utf-8")
 FALLBACK = (PLUGIN / "gying_fallback_reuse_v1113.py").read_text(encoding="utf-8")
 
 
 def test_v1111_release_and_layer_parse():
-    ast.parse(PATCH, filename=str(PATCH_PATH))
-    ast.parse(ENTRY)
-    ast.parse(UI)
-    ast.parse(RUNTIME_FIX)
-    ast.parse(FALLBACK)
+    for text in (PATCH, ENTRY, UI, FINAL, GOV, RUNTIME_FIX, FALLBACK):
+        ast.parse(text)
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.10.13"
-    assert 'plugin_version = "1.10.13"' in ENTRY
-    assert 'build_id = "20260902-r24"' in ENTRY
+    assert package["version"] == local["version"] == "1.10.14"
+    assert 'plugin_version = "1.10.14"' in ENTRY
+    assert 'build_id = "20260902-r25"' in ENTRY
+    assert "v1.10.14" in package.get("history", {})
     assert "v1.10.12" in package.get("history", {})
     assert "v1.10.11" in package.get("history", {})
     assert "class GuangYaGyingPowV1111Mixin(GuangYaGyingPanSouV1110Mixin)" in PATCH
-    assert "class GuangYaGyingUiV1109Mixin(GuangYaRuntimeFixV1113Mixin)" in UI
+    assert "class GuangYaGyingUiV1109Mixin(GuangYaXunleiFinalV1114Mixin)" in UI
+    assert "class GuangYaXunleiFinalV1114Mixin(GuangYaGovernanceV1114Mixin)" in FINAL
+    assert "class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin)" in GOV
     assert "class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin)" in RUNTIME_FIX
     assert "class GuangYaGyingFallbackReuseV1113Mixin(GuangYaGyingBrowserProfileV1112Mixin)" in FALLBACK
 
