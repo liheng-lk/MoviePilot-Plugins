@@ -8,10 +8,12 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 PATCH = PLUGIN / "channel_event_v1115.py"
 GUARD = PLUGIN / "channel_event_guard_v1115.py"
+CURSOR = PLUGIN / "channel_cursor_event_v1115.py"
 UI = PLUGIN / "gying_ui_v1109.py"
 
 patch = PATCH.read_text(encoding="utf-8")
 guard = GUARD.read_text(encoding="utf-8")
+cursor = CURSOR.read_text(encoding="utf-8")
 ui = UI.read_text(encoding="utf-8")
 
 
@@ -22,11 +24,13 @@ def _method(name: str, next_name: str) -> str:
 def test_v1115_layer_parses_and_is_wired_above_xunlei_final():
     ast.parse(patch, filename=str(PATCH))
     ast.parse(guard, filename=str(GUARD))
+    ast.parse(cursor, filename=str(CURSOR))
     ast.parse(ui, filename=str(UI))
     assert "class GuangYaChannelEventV1115Mixin(GuangYaXunleiFinalV1114Mixin):" in patch
     assert "class GuangYaChannelEventGuardV1115Mixin(GuangYaChannelEventV1115Mixin):" in guard
-    assert "from .channel_event_guard_v1115 import GuangYaChannelEventGuardV1115Mixin" in ui
-    assert "class GuangYaGyingUiV1109Mixin(GuangYaChannelEventGuardV1115Mixin):" in ui
+    assert "class GuangYaChannelCursorEventV1115Mixin(GuangYaChannelEventGuardV1115Mixin):" in cursor
+    assert "from .channel_cursor_event_v1115 import GuangYaChannelCursorEventV1115Mixin" in ui
+    assert "class GuangYaGyingUiV1109Mixin(GuangYaChannelCursorEventV1115Mixin):" in ui
     assert 'build_id = "20260902-r26"' in patch
 
 
@@ -38,6 +42,21 @@ def test_channel_cache_is_seven_days_and_weekly_pruned():
     assert "cache_seen_at" in cache
     assert "cutoff = now - _CHANNEL_CACHE_RETENTION_SECONDS_V1115" in cache
     assert '"retention_days": 7' in cache
+
+
+def test_numeric_channel_events_are_strictly_driven_by_pre_refresh_cursor():
+    assert 'before_cursors = self._cursor_snapshot_v1115(self.get_data("channel_cursors") or {})' in cursor
+    assert "rows = list(super().refresh_channels(force=force) or [])" in cursor
+    assert "old_cursor > 0 and int(message_id) > old_cursor" in cursor
+    assert "old_cursor=0 表示首次建立该频道游标" in cursor
+    assert "self._channel_new_entries_v1115 = strict_new" in cursor
+
+
+def test_non_numeric_channel_events_use_small_seen_fingerprint_fallback():
+    assert '_CHANNEL_EVENT_SEEN_KEY_V1115 = "channel_event_seen_v1115"' in cursor
+    assert "_CHANNEL_EVENT_SEEN_RETENTION_V1115 = 30 * 24 * 60 * 60" in cursor
+    assert "_CHANNEL_EVENT_SEEN_MAX_V1115 = 20000" in cursor
+    assert "if key in fallback_keys and key not in seen_before" in cursor
 
 
 def test_tick_only_routes_new_channel_matches_not_every_selected_subscription():
