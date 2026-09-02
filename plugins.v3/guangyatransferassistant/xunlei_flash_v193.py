@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, quote, urljoin, urlparse
 import requests
 
 from .episode_resolver_v190 import AUTO_SELECT_CONFIDENCE, reliable_episode_set, resolve_episode
+from .content_resilience_v1105 import is_auxiliary_media_v1105
 from .legacy import _is_subtitle, _is_video
 from .provider_sources_v192 import _GyingSearchParser, _proxy_dict
 
@@ -525,6 +526,17 @@ class GuangYaXunleiFlashMixin:
         ]
         return max(videos, key=lambda index: _safe_int(files[index].get("size"), 0)) if videos else None
 
+    @staticmethod
+    def _xunlei_movie_feature_indexes_v1122(files: List[Dict[str, Any]], indexes: Iterable[int]) -> set[int]:
+        """严格匹配电影分享后，任一非片头/预告/样片视频都可作为正片完成证据。"""
+        return {
+            int(index) for index in indexes
+            if 0 <= int(index) < len(files)
+            and _is_video(str(files[int(index)].get("path") or files[int(index)].get("name") or ""))
+            and not is_auxiliary_media_v1105(str(files[int(index)].get("path") or files[int(index)].get("name") or ""))
+            and _safe_int(files[int(index)].get("size"), 0) > 0
+        }
+
     def _select_xunlei_files(self, subscribe: Any, files: List[Dict[str, Any]], target_episodes: Iterable[int]) -> Dict[str, Any]:
         fake_subfiles = [{"fileIndex": index, "fileName": str(row.get("path") or row.get("name") or ""), "fileSize": _safe_int(row.get("size"), 0)} for index, row in enumerate(files)]
         source = {"type": "xunlei", "target_episodes": sorted(set(int(v) for v in target_episodes if int(v or 0) > 0))}
@@ -621,6 +633,7 @@ class GuangYaXunleiFlashMixin:
                 selected_videos = [idx for idx in indexes if 0 <= idx < len(enriched) and _is_video(str(enriched[idx].get("path") or enriched[idx].get("name") or ""))]
                 package_paths = [str(enriched[idx].get("path") or enriched[idx].get("name") or "") for idx in selected_videos]
                 movie_primary = self._xunlei_movie_primary_index_v1119(enriched, indexes) if is_movie else None
+                movie_features = self._xunlei_movie_feature_indexes_v1122(enriched, indexes) if is_movie else set()
                 successful_indexes: set[int] = set()
                 video_success = 0
                 for batch_index, index in enumerate(indexes):
@@ -655,8 +668,19 @@ class GuangYaXunleiFlashMixin:
                             runtime["episodes"] = set(runtime.get("episodes") or set()).union(row_episodes)
                     else:
                         errors.append(f"{row.get('path')}: {result.get('reason')}")
-                if is_movie and movie_primary is not None and movie_primary in successful_indexes:
+                completed_movie_indexes = movie_features.intersection(successful_indexes)
+                if is_movie and completed_movie_indexes:
                     runtime["movie"] = True
+                    completed_names = [
+                        str(enriched[index].get("path") or enriched[index].get("name") or "")[:180]
+                        for index in sorted(completed_movie_indexes)
+                    ]
+                    self._plugin_log(
+                        "INFO",
+                        "【光鸭转存助手】【迅雷秒传】#%s 电影正片已确认成功/已存在：%s；立即阻断光鸭分享/Magnet/ED2K",
+                        sid,
+                        "、".join(completed_names[:3]) or "已匹配视频",
+                    )
                     break
                 if not is_movie and missing and missing.issubset(set(runtime.get("episodes") or set())):
                     break
