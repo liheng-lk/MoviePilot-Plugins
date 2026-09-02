@@ -587,21 +587,26 @@ class GuangYaXunleiJsonPipelineV1117Mixin:
         template: Dict[str, Any],
         source_rows: Iterable[Dict[str, Any]],
         skip_indexes: Optional[Iterable[int]] = None,
+        include_indexes: Optional[Iterable[int]] = None,
     ) -> Dict[str, Any]:
-        """等价脚本“导入 JSON”：一次接收完整模板，再按 files 顺序执行光鸭导入合同。"""
+        """接收完整脚本模板，但只按允许索引执行光鸭导入合同。"""
         files = list(template.get("files") or []) if isinstance(template, dict) else []
         rows = [dict(row or {}) for row in source_rows]
         skipped = {int(value) for value in (skip_indexes or [])}
+        included = {int(value) for value in include_indexes} if include_indexes is not None else set(range(len(files)))
         if not files or len(files) != len(rows):
             return {"success": False, "results": [], "message": "迅雷完整 JSON 与来源文件数量不一致"}
         self._plugin_log(
             "INFO",
-            "【光鸭转存助手】【迅雷JSON】批次导入开始：total=%s share=%s；严格按脚本 JSON files 顺序导入",
+            "【光鸭转存助手】【迅雷JSON】批次导入开始：selected=%s source_total=%s share=%s；完整 JSON 已生成，仅按真实缺集索引导入",
+            len(included),
             len(files),
             str(template.get("shareId") or "-")[:30],
         )
         results: List[Dict[str, Any]] = []
         for index, (entry, source_row) in enumerate(zip(files, rows)):
+            if index not in included:
+                continue
             self._plugin_log(
                 "INFO",
                 "【光鸭转存助手】【迅雷JSON】批次文件导入：current=%s/%s path=%s gcid=%s md5=%s cid=%s dl=%s",

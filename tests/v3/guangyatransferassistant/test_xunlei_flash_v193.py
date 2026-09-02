@@ -60,9 +60,9 @@ def test_v193_files_parse_and_publish_current_version():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.10.22"
-    assert 'plugin_version = "1.10.22"' in entry_text
-    assert 'build_id = "20260902-r37"' in entry_text
+    assert package["version"] == local["version"] == "1.10.23"
+    assert 'plugin_version = "1.10.23"' in entry_text
+    assert 'build_id = "20260902-r38"' in entry_text
     assert "v1.9.3" in package["history"]
 
 
@@ -219,7 +219,7 @@ def test_public_xunlei_state_and_test_api_do_not_return_secret_config():
     assert '"/xunlei/runtime/status"' in xunlei_hardening_text
 
 
-def test_json_batch_is_full_share_not_pruned_by_episode_confidence():
+def test_full_json_generation_is_preserved_but_import_is_pruned_to_verified_missing():
     batch = xunlei_text.split("    def _xunlei_json_batch_indexes_v1118(", 1)[1].split(
         "    def _xunlei_reservation(", 1
     )[0]
@@ -231,11 +231,26 @@ def test_json_batch_is_full_share_not_pruned_by_episode_confidence():
     assert "batch_template = self._xunlei_make_json_v1117(batch_rows)" in dispatch
     assert "_xunlei_json_identity_matches_v1123" in dispatch
     assert "_xunlei_import_json_batch_v1123" in dispatch
+    assert "import_indexes = [index for index in indexes if index in planned_index_set]" in dispatch
+    assert "include_indexes=import_positions" in dispatch
+    assert "if batch_index not in import_positions:" in dispatch
+    assert "完整 JSON 不裁剪，planner 只控制实际导入索引" in dispatch
     assert "batch_results" in dispatch
     assert 'if not indexes or bool(selection.get("ambiguous"))' not in dispatch
-    assert "缺集规划仅用于覆盖判断，不裁剪 JSON 文件" in dispatch
     assert 'if not row.get("gcid") or _safe_int(row.get("size"), 0) <= 0:' in dispatch
     assert 'not row.get("cid") and not row.get("download_url")' not in dispatch
+
+
+def test_xunlei_syncs_library_before_planning_and_rejects_ambiguous_tv_batch():
+    dispatch = xunlei_text.split("    def _dispatch_xunlei_flash(", 1)[1].split(
+        "    def _try_transfer_subscription_inner(", 1
+    )[0]
+    assert dispatch.index("_sync_media_library_progress(subscribe)") < dispatch.index(
+        "missing = set(int(v) for v in (self._subscription_missing_episodes(subscribe)"
+    )
+    assert 'if bool(selection.get("ambiguous")) or not planned_indexes:' in dispatch
+    assert "完整模板已生成但不导入" in dispatch
+    assert "continue" in dispatch.split('if bool(selection.get("ambiguous")) or not planned_indexes:', 1)[1]
 
 
 def test_successful_xunlei_batch_blocks_fallback_for_tv_and_movie():

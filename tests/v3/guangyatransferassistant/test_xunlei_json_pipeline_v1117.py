@@ -113,8 +113,50 @@ def test_full_json_is_received_once_by_batch_importer_before_per_file_contract()
     )[0]
     assert 'files = list(template.get("files") or [])' in batch
     assert "len(files) != len(rows)" in batch
-    assert "严格按脚本 JSON files 顺序导入" in batch
+    assert "完整 JSON 已生成，仅按真实缺集索引导入" in batch
+    assert "include_indexes: Optional[Iterable[int]] = None" in pipeline
+    assert "if index not in included:" in batch
     assert "for index, (entry, source_row) in enumerate(zip(files, rows))" in batch
     assert "_xunlei_import_json_file_v1117" in batch
     assert "批次文件结果" in batch
     assert "批次导入结束" in batch
+
+
+def test_batch_importer_calls_guangya_only_for_included_json_indexes():
+    tree = ast.parse(pipeline, filename=str(PIPELINE))
+    class_node = next(node for node in tree.body if isinstance(node, ast.ClassDef))
+    method = next(
+        node for node in class_node.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_xunlei_import_json_batch_v1123"
+    )
+    method.returns = None
+    for argument in [*method.args.args, *method.args.kwonlyargs]:
+        argument.annotation = None
+    module = ast.Module(body=[method], type_ignores=[])
+    ast.fix_missing_locations(module)
+    namespace = {}
+    exec(compile(module, str(PIPELINE), "exec"), namespace)
+
+    class Dummy:
+        def __init__(self):
+            self.calls = []
+
+        def _plugin_log(self, *args):
+            return None
+
+        def _xunlei_import_json_file_v1117(self, subscribe, single, source_row):
+            self.calls.append(single["files"][0]["path"])
+            return {"success": True, "reason": "ok"}
+
+    dummy = Dummy()
+    files = [{"path": f"S01E{index + 1:02d}.mkv"} for index in range(70)]
+    result = namespace["_xunlei_import_json_batch_v1123"](
+        dummy,
+        object(),
+        {"shareId": "demo", "files": files},
+        [{} for _ in files],
+        include_indexes={3, 9},
+    )
+    assert dummy.calls == ["S01E04.mkv", "S01E10.mkv"]
+    assert result["total"] == result["successful"] == 2
+    assert [item["index"] for item in result["results"]] == [3, 9]
