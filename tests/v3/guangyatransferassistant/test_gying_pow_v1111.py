@@ -11,21 +11,24 @@ ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 PATCH_PATH = PLUGIN / "gying_pow_v1111.py"
 PATCH = PATCH_PATH.read_text(encoding="utf-8")
 UI = (PLUGIN / "gying_ui_v1109.py").read_text(encoding="utf-8")
+FALLBACK = (PLUGIN / "gying_fallback_reuse_v1113.py").read_text(encoding="utf-8")
 
 
 def test_v1111_release_and_layer_parse():
     ast.parse(PATCH, filename=str(PATCH_PATH))
     ast.parse(ENTRY)
     ast.parse(UI)
+    ast.parse(FALLBACK)
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.10.12"
-    assert 'plugin_version = "1.10.12"' in ENTRY
-    assert 'build_id = "20260902-r23"' in ENTRY
+    assert package["version"] == local["version"] == "1.10.13"
+    assert 'plugin_version = "1.10.13"' in ENTRY
+    assert 'build_id = "20260902-r24"' in ENTRY
     assert "v1.10.12" in package.get("history", {})
     assert "v1.10.11" in package.get("history", {})
     assert "class GuangYaGyingPowV1111Mixin(GuangYaGyingPanSouV1110Mixin)" in PATCH
-    assert "class GuangYaGyingUiV1109Mixin(GuangYaGyingBrowserProfileV1112Mixin)" in UI
+    assert "class GuangYaGyingUiV1109Mixin(GuangYaGyingFallbackReuseV1113Mixin)" in UI
+    assert "class GuangYaGyingFallbackReuseV1113Mixin(GuangYaGyingBrowserProfileV1112Mixin)" in FALLBACK
 
 
 def test_remote_pow_timer_starts_after_challenge_fetch():
