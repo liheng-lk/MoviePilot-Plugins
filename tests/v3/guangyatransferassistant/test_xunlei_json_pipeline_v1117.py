@@ -18,7 +18,7 @@ def test_pipeline_parses_and_is_between_viewing_dispatch_and_integrity():
     ast.parse(logging, filename=str(LOGGING))
     assert "from .xunlei_json_pipeline_v1117 import GuangYaXunleiJsonPipelineV1117Mixin" in logging
     assert "GuangYaViewingDispatchV1113Mixin,\n    GuangYaXunleiJsonPipelineV1117Mixin,\n    GuangYaXunleiIntegrityV1116Mixin," in logging
-    assert 'build_id = "20260902-r29"' in logging
+    assert 'build_id = "20260902-r30"' in logging
 
 
 def test_stage_a_keeps_user_script_json_contract():
@@ -40,6 +40,9 @@ def test_stage_a_keeps_user_script_json_contract():
         '"parentId"',
     ):
         assert marker in make_json
+    assert '"scriptVersion": "1.1.3"' in make_json
+    assert '"scriptAuthor": "sumuve"' in make_json
+    assert "1.1.3-mp-compatible" not in make_json
 
 
 def test_share_rows_are_annotated_before_import_even_when_file_info_is_skipped():
@@ -60,6 +63,9 @@ def test_file_info_keeps_stable_script_fast_path_and_post_download_fallbacks():
     assert '"/drive/v1/share/detail"' in info
     assert '"/drive/v1/share/download"' in info
     assert '"/drive/v1/share/files/download"' in info
+    assert 'f"/drive/v1/files/{file_id}"' in info
+    assert '"/drive/v1/share/save"' in info
+    assert 'f"/drive/v1/tasks/{task_id}"' in info
     assert "_pick_download_url(body)" in info
 
 
