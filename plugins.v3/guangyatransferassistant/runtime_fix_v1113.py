@@ -18,7 +18,7 @@ from typing import Any, Dict, Iterable
 
 from app.schemas.types import NotificationType
 
-from .gying_browser_profile_v1112 import GuangYaGyingBrowserProfileV1112Mixin
+from .gying_fallback_reuse_v1113 import GuangYaGyingFallbackReuseV1113Mixin
 
 
 _XUNLEI_API_BASE_V1113 = "https://api-pan.xunlei.com"
@@ -29,7 +29,7 @@ _CAPTCHA_INVALID_RE_V1113 = re.compile(
 )
 
 
-class GuangYaRuntimeFixV1113Mixin(GuangYaGyingBrowserProfileV1112Mixin):
+class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin):
     """观影 UI 链中的最终运行时修复层。"""
 
     build_id = "20260902-r24"
