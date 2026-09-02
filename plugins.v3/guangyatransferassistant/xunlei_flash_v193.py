@@ -20,7 +20,7 @@ import requests
 
 from .episode_resolver_v190 import AUTO_SELECT_CONFIDENCE, reliable_episode_set, resolve_episode
 from .content_resilience_v1105 import is_auxiliary_media_v1105
-from .legacy import _is_subtitle, _is_video
+from .legacy import _is_subtitle, _is_video, _normalize_media_text
 from .provider_sources_v192 import _GyingSearchParser, _proxy_dict
 
 
@@ -537,6 +537,51 @@ class GuangYaXunleiFlashMixin:
             and _safe_int(files[int(index)].get("size"), 0) > 0
         }
 
+    def _xunlei_json_identity_matches_v1123(
+        self,
+        subscribe: Any,
+        candidate: Dict[str, Any],
+        info: Dict[str, Any],
+        template: Dict[str, Any],
+    ) -> Tuple[bool, str]:
+        """搜索卡片只负责发现；迅雷标题与 JSON 路径负责最终媒体身份门禁。"""
+        expected_raw = str(getattr(subscribe, "name", "") or "").strip()
+        expected = _normalize_media_text(expected_raw)
+        file_paths = [str(row.get("path") or "") for row in (template.get("files") or []) if isinstance(row, dict)]
+        identity_raw = " ".join(
+            value for value in (
+                str(info.get("title") or "").strip(),
+                str(candidate.get("name") or "").strip(),
+                " ".join(file_paths[:20]),
+            ) if value
+        )
+        actual = _normalize_media_text(identity_raw)
+        if not expected or not actual:
+            return False, "迅雷 JSON 缺少可校验的媒体标题/路径"
+        direct_match = expected in actual or actual in expected
+        expected_cjk = "".join(re.findall(r"[\u4e00-\u9fff]+", expected_raw))
+        actual_cjk = "".join(re.findall(r"[\u4e00-\u9fff]+", identity_raw))
+        if expected_cjk and actual_cjk and not direct_match:
+            return False, f"迅雷 JSON 实际媒体不匹配：期望={expected_raw} 实际={identity_raw[:180]}"
+
+        expected_year = str(getattr(subscribe, "year", "") or "").strip()
+        years = set(re.findall(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)", identity_raw))
+        if expected_year and years and expected_year not in years:
+            return False, f"迅雷 JSON 年份不匹配：期望={expected_year} 实际={','.join(sorted(years))}"
+
+        try:
+            expected_season = int(getattr(subscribe, "season", 0) or 0)
+        except (TypeError, ValueError):
+            expected_season = 0
+        seasons = {int(value) for value in re.findall(r"(?i)\bS(?:eason)?[ ._-]*0*(\d{1,2})\b", identity_raw)}
+        if expected_season > 0 and seasons and expected_season not in seasons:
+            return False, f"迅雷 JSON 季号不匹配：期望=S{expected_season:02d} 实际={sorted(seasons)}"
+
+        search_title = _normalize_media_text(candidate.get("search_title") or "")
+        if not direct_match and not (search_title and (expected in search_title or search_title in expected)):
+            return False, f"迅雷 JSON 无法确认属于当前媒体：{identity_raw[:180]}"
+        return True, "迅雷 JSON 标题/年份/季号校验通过"
+
     def _select_xunlei_files(self, subscribe: Any, files: List[Dict[str, Any]], target_episodes: Iterable[int]) -> Dict[str, Any]:
         fake_subfiles = [{"fileIndex": index, "fileName": str(row.get("path") or row.get("name") or ""), "fileSize": _safe_int(row.get("size"), 0)} for index, row in enumerate(files)]
         source = {"type": "xunlei", "target_episodes": sorted(set(int(v) for v in target_episodes if int(v or 0) > 0))}
@@ -630,12 +675,45 @@ class GuangYaXunleiFlashMixin:
                 if len(batch_template.get("files") or []) != len(batch_rows):
                     errors.append(f"{share_id}: 迅雷完整分享 JSON 生成不完整")
                     continue
+                identity_ok, identity_reason = self._xunlei_json_identity_matches_v1123(
+                    subscribe, candidate, info, batch_template,
+                )
+                if not identity_ok:
+                    errors.append(f"{share_id}: {identity_reason}")
+                    self._plugin_log(
+                        "WARNING",
+                        "【光鸭转存助手】【迅雷JSON】整批拒绝导入：share=%s reason=%s",
+                        share_id[:24], identity_reason[:360],
+                    )
+                    continue
+                self._plugin_log(
+                    "INFO",
+                    "【光鸭转存助手】【迅雷JSON】整批身份校验通过：share=%s files=%s reason=%s",
+                    share_id[:24], len(batch_rows), identity_reason,
+                )
                 selected_videos = [idx for idx in indexes if 0 <= idx < len(enriched) and _is_video(str(enriched[idx].get("path") or enriched[idx].get("name") or ""))]
                 package_paths = [str(enriched[idx].get("path") or enriched[idx].get("name") or "") for idx in selected_videos]
                 movie_primary = self._xunlei_movie_primary_index_v1119(enriched, indexes) if is_movie else None
                 movie_features = self._xunlei_movie_feature_indexes_v1122(enriched, indexes) if is_movie else set()
                 successful_indexes: set[int] = set()
                 video_success = 0
+                skip_batch_indexes: set[int] = set()
+                for batch_index, index in enumerate(indexes):
+                    row = enriched[index]
+                    item_key = self._xunlei_item_key(sid, share_id, row)
+                    if str((saved_items.get(item_key) or {}).get("state") or "") == "completed":
+                        skip_batch_indexes.add(batch_index)
+                batch_import = self._xunlei_import_json_batch_v1123(
+                    subscribe,
+                    batch_template,
+                    batch_rows,
+                    skip_indexes=skip_batch_indexes,
+                )
+                batch_results = {
+                    int(item.get("index") or 0): dict(item.get("result") or {})
+                    for item in (batch_import.get("results") or [])
+                    if isinstance(item, dict)
+                }
                 for batch_index, index in enumerate(indexes):
                     if index < 0 or index >= len(enriched):
                         continue
@@ -654,10 +732,7 @@ class GuangYaXunleiFlashMixin:
                     if not row.get("gcid"):
                         errors.append(f"{row.get('path')}: 迅雷未提供 GCID")
                         continue
-                    import_row = dict(row or {})
-                    import_row["_xunlei_json_template"] = batch_template
-                    import_row["_xunlei_json_index"] = batch_index
-                    result = self._rapid_transfer_xunlei_file(subscribe, import_row)
+                    result = dict(batch_results.get(batch_index) or {"success": False, "reason": "迅雷 JSON 批次未返回文件结果"})
                     saved_items[item_key] = {"state": "completed" if result.get("success") else "failed", "subscribe_id": sid, "share_id": share_id, "file_id": str(row.get("id") or ""), "path": str(row.get("path") or "")[:500], "gcid": str(row.get("gcid") or ""), "episodes": sorted(row_episodes), "message": str(result.get("reason") or "")[:300], "updated_at": self._now_text(), "updated_ts": time.time()}
                     self._save_xunlei_state(state_store)
                     if result.get("success"):
