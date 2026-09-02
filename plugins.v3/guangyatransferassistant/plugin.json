@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.11 修正观影远程 PoW 的真实计时窗口和 HTTP 200 验真。3 秒窗口从取得 N/x/t 后、真正开始平方取模时计算；POST /res/pow 为 HTTP 200 但确认字段漂移时不再提前判失败，而以同一 Session 重试原请求是否仍为 challenge 作为最终依据。业务 failover 只保留真实 IDN 内容镜像，发布/换址页不再拖慢每次搜索。默认直连，不要求代理。自动账号密码登录和人工汉字验证码兜底保持不变。固定优先级“观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K”，Magnet/ED2K 继续走光鸭原生云添加。",
-  "version": "1.10.11",
+  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.12 真正将观影 GYING 的 challenge、/res/pow、账号登录、/mv/wkMn、搜索、downurl 与人工验证码收口到同一个 MoviePilot 官方 CloakBrowser 浏览器上下文；PoW 只在 Python 计算 y，GET/POST 仍由浏览器 fetch(credentials=include) 发出，避免 requests 与浏览器指纹切换导致 HTTP 200 后仍不被服务器认可。browser_pow/browser_verified/vrg_* 不跨浏览器或镜像恢复；只有 CloakBrowser SDK/运行资源不可用时才降级 PanSou requests 链。固定优先级“观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K”，Magnet/ED2K 继续走光鸭原生云添加。",
+  "version": "1.10.12",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
