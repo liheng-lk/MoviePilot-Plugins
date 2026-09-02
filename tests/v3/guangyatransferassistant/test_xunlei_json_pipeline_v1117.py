@@ -43,6 +43,8 @@ def test_stage_a_keeps_user_script_json_contract():
     assert '"scriptVersion": "1.1.3"' in make_json
     assert '"scriptAuthor": "sumuve"' in make_json
     assert "1.1.3-mp-compatible" not in make_json
+    assert "md5 = gcid[:32]" in make_json
+    assert '.strip().lower()' in make_json
 
 
 def test_share_rows_are_annotated_before_import_even_when_file_info_is_skipped():
@@ -94,6 +96,9 @@ def test_download_url_recomputes_real_three_sample_cid_on_import():
 def test_runtime_logs_explicit_json_generation_then_import():
     transfer = pipeline.split("    def _rapid_transfer_xunlei_file(", 1)[1]
     assert "_xunlei_make_json_v1117([row])" in transfer
-    assert "【迅雷JSON】模板已生成" in transfer
+    assert 'row.get("_xunlei_json_template")' in transfer
+    assert 'row.get("_xunlei_json_index")' in transfer
+    assert "【迅雷JSON】整批模板已生成" in transfer
+    assert "len(full_files)" in transfer
     assert "按光鸭 importMd5Json 合同导入" in transfer
     assert "_xunlei_import_json_file_v1117" in transfer
