@@ -8,14 +8,15 @@ v1.10.12 再由 ``GuangYaGyingBrowserProfileV1112Mixin`` 把 challenge、PoW、�
 搜索和 downurl 收口到同一个 MoviePilot CloakBrowser 上下文；同时继承
 ``browser_verified`` 竞态保护，并对齐 MoviePilot 宿主的 viewport/humanize 配置。
 v1.10.13 在宿主 CloakBrowser 确认不可用、稳定回退 PanSou requests 后，保留当前
-节点自己的验证 Cookie，避免每次订阅搜索都重复执行远程 PoW。
+节点自己的验证 Cookie，避免每次订阅搜索都重复执行远程 PoW；并接入迅雷 captcha
+失效自动刷新与迅雷秒传/Magnet/ED2K 云添加成功通知层。
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from .gying_fallback_reuse_v1113 import GuangYaGyingFallbackReuseV1113Mixin
+from .runtime_fix_v1113 import GuangYaRuntimeFixV1113Mixin
 
 
 _REPLACEMENTS_V1109 = {
@@ -46,8 +47,8 @@ def _rewrite_text_v1109(value: Any) -> Any:
     return value
 
 
-class GuangYaGyingUiV1109Mixin(GuangYaGyingFallbackReuseV1113Mixin):
-    """自动登录优先 UI，并启用 CloakBrowser / PanSou fallback 同节点验证态复用链。"""
+class GuangYaGyingUiV1109Mixin(GuangYaRuntimeFixV1113Mixin):
+    """自动登录优先 UI，并启用验证态复用、迅雷自愈与外部获取通知链。"""
 
     build_id = "20260902-r24"
 
