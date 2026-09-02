@@ -7,6 +7,7 @@
 
 因此保留原类名/MRO 合同，但明确改成正确性优先：
 - 新 Session 永远不恢复 browser_pow/browser_verified/vrg_*；
+- 这四类挑战 Cookie 也不再写入持久化节点 Cookie；
 - CloakBrowser fallback 后仍让 PanSou requests 在当前 Session 内完成
   challenge -> /res/pow -> retry；
 - 登录/业务 Cookie 仍由既有节点持久化逻辑处理；
@@ -14,6 +15,8 @@
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 import requests
 
@@ -48,6 +51,21 @@ def _drop_stale_challenge_cookies_v1113(session: requests.Session) -> int:
     return removed
 
 
+def _persistent_cookie_header_v1113(session: requests.Session) -> str:
+    """仅序列化可跨 Session 保存的登录/业务 Cookie。"""
+    pairs = []
+    seen = set()
+    for cookie in list(session.cookies):
+        name = str(getattr(cookie, "name", "") or "").strip()
+        value = str(getattr(cookie, "value", "") or "")
+        lowered = name.lower()
+        if not name or not value or lowered in _FALLBACK_NODE_COOKIES_V1113 or lowered in seen:
+            continue
+        pairs.append(f"{name}={value}")
+        seen.add(lowered)
+    return "; ".join(pairs)
+
+
 class GuangYaGyingFallbackReuseV1113Mixin(GuangYaGyingBrowserProfileV1112Mixin):
     """兼容历史类名；实际行为是隔离持久化挑战态，避免 stale PoW 回归。"""
 
@@ -73,8 +91,25 @@ class GuangYaGyingFallbackReuseV1113Mixin(GuangYaGyingBrowserProfileV1112Mixin):
                 )
         return session
 
+    def _gying_persist_session(self, node: str, session: requests.Session, **extra: Any) -> None:
+        """复用既有节点状态写入逻辑，但写回前永久剔除挑战 Cookie。"""
+        super()._gying_persist_session(node, session, **extra)
+        try:
+            state = self._gying_state()
+            nodes = state.setdefault("nodes", {})
+            row = dict(nodes.get(node) or {})
+            filtered = _persistent_cookie_header_v1113(session)
+            if str(row.get("cookie") or "") != filtered:
+                row["cookie"] = filtered
+                nodes[node] = row
+                self._save_gying_state(state)
+        except Exception:
+            # 持久化收口失败不能影响当前活 Session 的搜索/登录。
+            pass
+
 
 __all__ = [
     "GuangYaGyingFallbackReuseV1113Mixin",
     "_drop_stale_challenge_cookies_v1113",
+    "_persistent_cookie_header_v1113",
 ]
