@@ -26,6 +26,36 @@ class DailyAssistantContract(unittest.TestCase):
         self.assertIn('"api": "plugin/DailyAssistant/gysub"', ENTRY)
         self.assertIn('"apikey": settings.API_TOKEN', ENTRY)
 
+    def test_gysub_delivery_is_confirmed_from_moviepilot_subscription_facts(self):
+        self.assertIn("from app.chain.subscribe import SubscribeChain", ENTRY)
+        self.assertIn("def _subscription_exists", ENTRY)
+        self.assertIn("SubscribeChain().exists(mediainfo=info, meta=meta)", ENTRY)
+        self.assertIn('self.save_data("gysub_pending", pending)', ENTRY)
+        self.assertIn("def _reconcile_pending_gysub", ENTRY)
+        self.assertIn('"confirmed_at"', ENTRY)
+        self.assertIn("等待 MoviePilot 订阅落库确认", ENTRY)
+        dispatch_start = ENTRY.index("def _dispatch_gysub")
+        refresh_start = ENTRY.index("def refresh", dispatch_start)
+        dispatch = ENTRY[dispatch_start:refresh_start]
+        send_pos = dispatch.index("eventmanager.send_event")
+        pending_pos = dispatch.index('self.save_data("gysub_pending", pending)')
+        self.assertLess(send_pos, pending_pos)
+        self.assertNotIn('submitted[identity] = datetime.datetime.now().isoformat', dispatch)
+
+    def test_gysub_identity_separates_tv_seasons(self):
+        self.assertIn('return f"tmdb:{tmdb_id}:{media_type}:s{season:02d}"', ENTRY)
+        self.assertIn('_safe_int(item.get("season"), 1, 1, 99)', ENTRY)
+        self.assertNotIn('return f"tmdb:{tmdb_id}:{item.get(\'media_type\') or \'\'}"', ENTRY)
+
+    def test_auto_gysub_relies_on_existing_subscription_and_pending_ttl_not_permanent_emit_dedupe(self):
+        self.assertIn("_gysub_pending_ttl = datetime.timedelta(minutes=15)", ENTRY)
+        self.assertIn("reconcile = self._reconcile_pending_gysub()", ENTRY)
+        self.assertIn('result.get("status") == "requested"', ENTRY)
+        auto_start = ENTRY.index("if self._auto_gysub and self._auto_source_keys:")
+        api_start = ENTRY.index("def api_refresh", auto_start)
+        auto_block = ENTRY[auto_start:api_start]
+        self.assertNotIn('if self._candidate_identity(row) in submitted:', auto_block)
+
     def test_all_media_catalog_is_present(self):
         static_required = (
             "纪录片", "日漫", "综艺",
