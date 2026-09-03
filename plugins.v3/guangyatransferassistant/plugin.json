@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "固定分流与多来源订阅助手：频道光鸭分享、Magnet/ED2K 会按同一 ResourceGroup 自动决策；ED2K 单文件可先解析真实文件名再确认缺集并调用光鸭原生云添加；迅雷秒传与全部来源继续共用集级终态和媒体身份门禁。",
-  "version": "1.11.2",
+  "description": "逐集上映日历驱动的固定分流助手：每日助手/TMDB 计算当前应补集，未来集不重复访问外部资源站；光鸭分享、迅雷秒传、Magnet/ED2K 共用集级终态、在途门禁和媒体身份校验；Magnet/ED2K 继续使用光鸭原生云添加。",
+  "version": "1.12.0",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,

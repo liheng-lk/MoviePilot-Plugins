@@ -25,5 +25,5 @@ def test_interval_reconcile_still_uses_trigger_kwargs():
 
 
 def test_dailyassistant_market_version_is_v112():
-    assert PACKAGE["DailyAssistant"]["version"] == "1.1.2"
+    assert PACKAGE["DailyAssistant"]["version"] == "1.2.0"
     assert "v1.1.2" in PACKAGE["DailyAssistant"]["history"]

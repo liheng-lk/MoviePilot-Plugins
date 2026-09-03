@@ -19,7 +19,7 @@ class DailyAssistantContract(unittest.TestCase):
 
     def test_plugin_identity_and_gysub_bridge(self):
         self.assertIn('plugin_name = "每日助手"', ENTRY)
-        self.assertIn('plugin_version = "1.1.2"', ENTRY)
+        self.assertIn('plugin_version = "1.2.0"', ENTRY)
         self.assertIn('"action": "guangya_direct_subscribe"', ENTRY)
         self.assertIn("eventmanager.send_event(EventType.PluginAction", ENTRY)
         self.assertIn("MediaSource.TMDB", ENTRY)
@@ -121,7 +121,7 @@ class DailyAssistantContract(unittest.TestCase):
     def test_package_index_publishes_dailyassistant(self):
         package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
         item = package["DailyAssistant"]
-        self.assertEqual(item["version"], "1.1.2")
+        self.assertEqual(item["version"], "1.2.0")
         self.assertEqual(item["system_version"], ">=3.0.0")
         self.assertIn("GYSub", item["description"])
 
