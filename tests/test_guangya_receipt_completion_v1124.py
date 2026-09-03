@@ -17,7 +17,8 @@ class GuangYaReceiptCompletionV1124Tests(unittest.TestCase):
         self.assertIn("from .episode_fence_final_v1124 import GuangYaEpisodeFenceFinalV1124Mixin", ENTRY)
         class_head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
         mixins = [line.strip().rstrip(",") for line in class_head.splitlines() if line.strip()]
-        self.assertEqual(mixins[:6], [
+        self.assertEqual(mixins[:7], [
+            "GuangYaPagePerfV1123Mixin",
             "GuangYaAiringWeeklyV1121Mixin",
             "GuangYaAiringSchedulerV1120Mixin",
             "GuangYaMediaIdentityGuardV1111Mixin",
