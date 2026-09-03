@@ -9,6 +9,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from app.chain.download import DownloadChain
 from app.chain.media import MediaChain
+from app.chain.subscribe import SubscribeChain
 from app.plugins import _PluginBase
 from app.sdk.config import settings
 from app.sdk.events import eventmanager
@@ -70,6 +71,7 @@ class DailyAssistant(_PluginBase):
     _auto_gysub = False
     _source_keys: List[str] = list(DEFAULT_SOURCE_KEYS)
     _auto_source_keys: List[str] = []
+    _gysub_pending_ttl = datetime.timedelta(minutes=15)
 
     def init_plugin(self, config: Optional[dict] = None) -> None:
         """加载配置。"""
@@ -132,9 +134,11 @@ class DailyAssistant(_PluginBase):
     @staticmethod
     def _candidate_identity(item: Dict[str, Any]) -> str:
         tmdb_id = str(item.get("tmdb_id") or "")
+        media_type = str(item.get("media_type") or "")
         if tmdb_id:
-            return f"tmdb:{tmdb_id}:{item.get('media_type') or ''}"
-        return f"title:{str(item.get('title') or '').casefold()}:{item.get('year') or ''}:{item.get('media_type') or ''}"
+            season = _safe_int(item.get("season"), 1, 1, 99) if media_type == "tv" else 0
+            return f"tmdb:{tmdb_id}:{media_type}:s{season:02d}"
+        return f"title:{str(item.get('title') or '').casefold()}:{item.get('year') or ''}:{media_type}"
 
     @staticmethod
     def _candidate_tmdb_id(info: Any) -> str:
@@ -238,12 +242,130 @@ class DailyAssistant(_PluginBase):
         except Exception:
             return False
 
-    def _dispatch_gysub(self, row: Dict[str, Any], *, source: str = "每日助手") -> Dict[str, Any]:
-        """通过光鸭现有 /gysub PluginAction 精确创建固定转存订阅。"""
+    @staticmethod
+    def _pending_row(row: Dict[str, Any]) -> Dict[str, Any]:
+        """持久化最小 GYSub 请求事实，避免保存整份榜单对象。"""
+        return {
+            key: row.get(key)
+            for key in ("title", "year", "media_type", "season", "tmdb_id", "source_key", "source_label")
+            if row.get(key) not in (None, "")
+        }
+
+    def _subscription_exists(self, row: Dict[str, Any]) -> bool:
+        """用 MoviePilot 当前订阅仓储按 TMDB+季确认 GYSub 是否真正落库。"""
         tmdb_id = str(row.get("tmdb_id") or "").strip()
         media_type = str(row.get("media_type") or "tv").lower()
         if not tmdb_id or media_type not in {"movie", "tv"}:
-            return {"success": False, "message": "缺少 TMDB 精确身份，未提交 GYSub"}
+            return False
+        mtype = _mtype(media_type)
+        try:
+            info = MediaChain().recognize_media(
+                mtype=mtype,
+                media_source=MediaSource.TMDB,
+                media_id=tmdb_id,
+                cache=False,
+            )
+        except TypeError:
+            info = MediaChain().recognize_media(mtype=mtype, media_source=MediaSource.TMDB, media_id=tmdb_id)
+        except Exception as err:
+            logger.debug("【每日助手】GYSub 落库确认识别失败 TMDB %s: %s", tmdb_id, err)
+            return False
+        if not info:
+            return False
+        meta = MetaInfo(str(row.get("title") or getattr(info, "title", "") or ""))
+        meta.type = mtype
+        if mtype == MediaType.TV:
+            meta.begin_season = _safe_int(row.get("season"), 1, 1, 99)
+        try:
+            return bool(SubscribeChain().exists(mediainfo=info, meta=meta))
+        except Exception as err:
+            logger.debug("【每日助手】GYSub 落库确认失败 TMDB %s: %s", tmdb_id, err)
+            return False
+
+    def _confirm_gysub(self, row: Dict[str, Any], *, source: str) -> None:
+        identity = self._candidate_identity(row)
+        submitted = self.get_data("gysub_submitted") or {}
+        if not isinstance(submitted, dict):
+            submitted = {}
+        submitted[identity] = {
+            "confirmed_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            "source": source,
+            "row": self._pending_row(row),
+        }
+        self.save_data("gysub_submitted", submitted)
+        pending = self.get_data("gysub_pending") or {}
+        if isinstance(pending, dict) and identity in pending:
+            pending.pop(identity, None)
+            self.save_data("gysub_pending", pending)
+
+    def _reconcile_pending_gysub(self) -> Dict[str, int]:
+        """把广播请求与实际 MoviePilot 订阅事实对账；超时请求自动释放以允许重试。"""
+        pending = self.get_data("gysub_pending") or {}
+        if not isinstance(pending, dict) or not pending:
+            return {"confirmed": 0, "expired": 0, "pending": 0}
+        now = datetime.datetime.now()
+        confirmed = 0
+        expired = 0
+        changed = False
+        submitted = self.get_data("gysub_submitted") or {}
+        if not isinstance(submitted, dict):
+            submitted = {}
+        for identity, entry in list(pending.items()):
+            entry = entry if isinstance(entry, dict) else {}
+            row = entry.get("row") if isinstance(entry.get("row"), dict) else {}
+            if row and self._subscription_exists(row):
+                submitted[identity] = {
+                    "confirmed_at": now.isoformat(timespec="seconds"),
+                    "source": entry.get("source") or "每日助手",
+                    "row": row,
+                }
+                pending.pop(identity, None)
+                confirmed += 1
+                changed = True
+                continue
+            try:
+                requested_at = datetime.datetime.fromisoformat(str(entry.get("requested_at") or ""))
+            except (TypeError, ValueError):
+                requested_at = now - self._gysub_pending_ttl - datetime.timedelta(seconds=1)
+            if now - requested_at > self._gysub_pending_ttl:
+                pending.pop(identity, None)
+                expired += 1
+                changed = True
+        if changed:
+            self.save_data("gysub_pending", pending)
+            self.save_data("gysub_submitted", submitted)
+        return {"confirmed": confirmed, "expired": expired, "pending": len(pending)}
+
+    def _dispatch_gysub(self, row: Dict[str, Any], *, source: str = "每日助手") -> Dict[str, Any]:
+        """发送光鸭 GYSub 请求；只有 MoviePilot 订阅实际存在后才写入已确认去重状态。"""
+        tmdb_id = str(row.get("tmdb_id") or "").strip()
+        media_type = str(row.get("media_type") or "tv").lower()
+        if not tmdb_id or media_type not in {"movie", "tv"}:
+            return {"success": False, "status": "rejected", "message": "缺少 TMDB 精确身份，未提交 GYSub"}
+        identity = self._candidate_identity(row)
+        if self._subscription_exists(row):
+            self._confirm_gysub(row, source=source)
+            return {"success": True, "status": "confirmed", "confirmed": True, "message": f"GYSub 已存在：{row.get('title')}"}
+
+        now = datetime.datetime.now()
+        pending = self.get_data("gysub_pending") or {}
+        if not isinstance(pending, dict):
+            pending = {}
+        existing = pending.get(identity)
+        if isinstance(existing, dict):
+            try:
+                requested_at = datetime.datetime.fromisoformat(str(existing.get("requested_at") or ""))
+            except (TypeError, ValueError):
+                requested_at = now - self._gysub_pending_ttl - datetime.timedelta(seconds=1)
+            if now - requested_at <= self._gysub_pending_ttl:
+                return {
+                    "success": True,
+                    "status": "pending",
+                    "confirmed": False,
+                    "message": f"GYSub 请求处理中：{row.get('title')}，等待 MoviePilot 订阅落库确认",
+                }
+            pending.pop(identity, None)
+
         arg = f"tmdb:{tmdb_id} {media_type}"
         if media_type == "tv":
             season = _safe_int(row.get("season"), 1, 1, 99)
@@ -252,16 +374,23 @@ class DailyAssistant(_PluginBase):
         try:
             eventmanager.send_event(EventType.PluginAction, event_data)
         except Exception as err:
-            logger.error("【每日助手】GYSub 事件提交失败 %s: %s", arg, err)
-            return {"success": False, "message": str(err)}
-        identity = self._candidate_identity(row)
-        submitted = self.get_data("gysub_submitted") or {}
-        if not isinstance(submitted, dict):
-            submitted = {}
-        submitted[identity] = datetime.datetime.now().isoformat(timespec="seconds")
-        self.save_data("gysub_submitted", submitted)
-        logger.info("【每日助手】已提交 GYSub：%s %s source=%s", row.get("title"), arg, source)
-        return {"success": True, "message": f"已提交 GYSub：{row.get('title')} ({arg})"}
+            logger.error("【每日助手】GYSub 事件发送失败 %s: %s", arg, err)
+            return {"success": False, "status": "failed", "message": str(err)}
+
+        pending[identity] = {
+            "requested_at": now.isoformat(timespec="seconds"),
+            "source": source,
+            "arg": arg,
+            "row": self._pending_row(row),
+        }
+        self.save_data("gysub_pending", pending)
+        logger.info("【每日助手】已发送 GYSub 请求：%s %s source=%s，等待订阅落库确认", row.get("title"), arg, source)
+        return {
+            "success": True,
+            "status": "requested",
+            "confirmed": False,
+            "message": f"已发送 GYSub 请求：{row.get('title')} ({arg})，等待落库确认",
+        }
 
     def refresh(self, manual: bool = False) -> Dict[str, Any]:
         """刷新所有启用榜单，统一识别、去重并可按榜单自动提交 GYSub。"""
@@ -270,7 +399,8 @@ class DailyAssistant(_PluginBase):
         seen = set()
         filtered_library = 0
         unresolved = 0
-        auto_success = 0
+        auto_requested = 0
+        auto_confirmed = 0
         auto_failed = 0
 
         for source_key in self._source_keys:
@@ -303,6 +433,7 @@ class DailyAssistant(_PluginBase):
                     unresolved += 1
                 candidates.append(row)
 
+        reconcile = self._reconcile_pending_gysub()
         payload = {
             "batch_id": datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
             "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
@@ -312,32 +443,37 @@ class DailyAssistant(_PluginBase):
             "candidates": candidates,
             "filtered_library": filtered_library,
             "unresolved": unresolved,
+            "gysub_reconcile": reconcile,
         }
         self.save_data("dailyassistant_candidates", payload)
 
         if self._auto_gysub and self._auto_source_keys:
-            submitted = self.get_data("gysub_submitted") or {}
-            if not isinstance(submitted, dict):
-                submitted = {}
             for row in candidates:
                 if row.get("source_key") not in self._auto_source_keys or not row.get("tmdb_id"):
                     continue
-                if self._candidate_identity(row) in submitted:
-                    continue
                 result = self._dispatch_gysub(row, source="每日助手自动订阅")
-                if result.get("success"):
-                    auto_success += 1
-                else:
+                if not result.get("success"):
                     auto_failed += 1
+                elif result.get("status") == "requested":
+                    auto_requested += 1
+                elif result.get("status") == "confirmed":
+                    auto_confirmed += 1
 
-        payload["auto_success"] = auto_success
+        payload["auto_requested"] = auto_requested
+        payload["auto_confirmed"] = auto_confirmed
+        payload["auto_success"] = auto_requested + auto_confirmed
         payload["auto_failed"] = auto_failed
         self.save_data("dailyassistant_candidates", payload)
         logger.info(
-            "【每日助手】刷新完成：榜单=%s 候选=%s 媒体库过滤=%s 未识别=%s 自动GYSub=%s/%s",
-            len(self._source_keys), len(candidates), filtered_library, unresolved, auto_success, auto_failed,
+            "【每日助手】刷新完成：榜单=%s 候选=%s 媒体库过滤=%s 未识别=%s GYSub请求=%s 确认=%s 失败=%s 待确认=%s",
+            len(self._source_keys), len(candidates), filtered_library, unresolved,
+            auto_requested, auto_confirmed, auto_failed, reconcile.get("pending", 0),
         )
-        return {"success": True, "data": payload, "message": f"发现 {len(candidates)} 个候选，自动 GYSub {auto_success} 个"}
+        return {
+            "success": True,
+            "data": payload,
+            "message": f"发现 {len(candidates)} 个候选，自动 GYSub 请求 {auto_requested} 个，已确认 {auto_confirmed} 个",
+        }
 
     def api_refresh(self) -> Dict[str, Any]:
         """手动刷新榜单 API。"""
@@ -401,6 +537,7 @@ class DailyAssistant(_PluginBase):
         candidates = payload.get("candidates") or []
         statuses = payload.get("statuses") or []
         batch_id = str(payload.get("batch_id") or "")
+        reconcile = payload.get("gysub_reconcile") or {}
         status_lines = [
             f"{'✅' if item.get('ok') else '❌'} {item.get('label')}: {item.get('count', 0)}" + (f" · {item.get('error')}" if item.get("error") else "")
             for item in statuses
@@ -409,7 +546,8 @@ class DailyAssistant(_PluginBase):
             "component": "VAlert",
             "props": {"type": "info", "variant": "tonal", "text": (
                 f"更新时间：{payload.get('updated_at') or '尚未刷新'} · 候选 {len(candidates)} · "
-                f"已入库过滤 {payload.get('filtered_library', 0)} · 待识别 {payload.get('unresolved', 0)}"
+                f"已入库过滤 {payload.get('filtered_library', 0)} · 待识别 {payload.get('unresolved', 0)} · "
+                f"GYSub待确认 {reconcile.get('pending', 0)}"
             )},
         }]
         if status_lines:
