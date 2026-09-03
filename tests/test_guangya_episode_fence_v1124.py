@@ -34,10 +34,14 @@ class GuangYaEpisodeFenceV1124Tests(unittest.TestCase):
         self.assertIn("base[\"episodes\"].update(self._acquired_episode_facts_v1124(subscribe))", pending)
 
     def test_direct_share_is_filtered_again_after_xunlei_receipt(self):
+        helper = self.fence.split("    def _resolved_item_episodes_v1124(", 1)[1].split(
+            "    def _filter_inflight_planned_items(", 1
+        )[0]
         method = self.fence.split("    def _filter_inflight_planned_items(", 1)[1].split(
             "    @staticmethod\n    def _source_episode_targets_v1124", 1
         )[0]
-        self.assertIn("resolve_episode(", method)
+        self.assertIn("resolve_episode(", helper)
+        self.assertIn("self._resolved_item_episodes_v1124(subscribe, item, package_paths)", method)
         self.assertIn("overlap = episodes.intersection(acquired)", method)
         self.assertIn("blocked.append(item)", method)
         self.assertIn("【光鸭转存助手】【集级终止】", method)
