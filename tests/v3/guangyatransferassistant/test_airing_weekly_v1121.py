@@ -124,6 +124,8 @@ def test_v1122_same_day_miss_retries_after_external_cooldown_until_day_gate_clos
     assert "_subscription_missing_episodes(subscribe)" in due
     assert "now - last_at >= cooldown" in due
     assert "_external_search_cooldown_minutes_v1114" in due
+    assert "if not missing:" in due
+    assert due.index("if not missing:") < due.index("_finish_subscription_if_complete(subscribe)")
 
     dispatch = SCHEDULER[SCHEDULER.index("def _run_airing_subscription_v1120("):SCHEDULER.index("def _try_transfer_subscription(")]
     assert "gate = self._airing_gate_v1120(subscribe)" in dispatch
@@ -135,9 +137,8 @@ def test_v1122_same_day_miss_retries_after_external_cooldown_until_day_gate_clos
     assert "now - last_at >= cooldown" in claim
     assert "self.save_data(\"external_search_guard\", state)" in claim
 
-    # 没搜到资源只进入冷却，不会完成订阅或清除缺集；只要仍在当天门禁内，
-    # 下一次 tick 达到冷却后会再次进入观影。跨日后由星期门禁停止普通重试。
-    assert "_finish_subscription_if_complete" not in due
+    # 只有“已经没有缺集”才完成订阅；仍缺集的搜索 miss 只进入冷却。
+    # 只要当天门禁仍开放，下一次 tick 达到冷却后会再次进入观影；跨日后停止普通重试。
     assert "off_day_missing" in GATE
 
 
