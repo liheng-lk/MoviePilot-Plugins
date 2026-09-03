@@ -1,0 +1,71 @@
+name: Balance GuangYa identity v1.11.1
+
+on:
+  push:
+    branches:
+      - hotfix/guangya-media-identity-v1111
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hotfix/guangya-media-identity-v1111
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply balanced identity policy
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          plugin = Path('plugins.v3/guangyatransferassistant')
+
+          legacy = plugin / 'legacy.py'
+          text = legacy.read_text(encoding='utf-8')
+          strict = '    if wanted_season > 1 and not seasons:\n        return False\n'
+          if strict in text:
+              text = text.replace(
+                  strict,
+                  '    # 缺少季号本身不是冲突；后续真实文件结构与缺集规划继续确认。\n',
+                  1,
+              )
+          elif 'wanted_season > 1 and not seasons' in text:
+              raise SystemExit('unexpected high-season guard shape')
+          legacy.write_text(text, encoding='utf-8')
+
+          guard = plugin / 'media_identity_guard_v1111.py'
+          text = guard.read_text(encoding='utf-8')
+          text = text.replace('build_id = "20260903-r43"', 'build_id = "20260903-r42"')
+          guard.write_text(text, encoding='utf-8')
+
+          package_path = Path('package.v3.json')
+          package = json.loads(package_path.read_text(encoding='utf-8'))
+          item = package['GuangYaTransferAssistant']
+          item['version'] = '1.11.1'
+          item['description'] = '固定分流与多来源订阅助手：新增实际资源媒体身份置信度门禁；明确标题/年份/季号冲突硬拒绝，缺少年份或季号时结合真实文件结构与搜索发现弱证据继续判断，兼顾防错与迅雷秒传成功率。'
+          history = dict(item.get('history') or {})
+          history['v1.11.1'] = '修复偶发错资源并兼顾成功率：搜索只作弱发现证据；真实分享/解析标题、年份、季号出现明确冲突时硬拒绝；信息缺失不再直接判错，结合真实文件列表、剧集结构和搜索标题做置信度判断。迅雷、光鸭分享、Magnet/ED2K 共用这一原则。'
+          item['history'] = history
+          package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          PY
+      - name: Focused validation
+        run: |
+          python -m compileall -q plugins.v3/guangyatransferassistant
+          python -m unittest discover -s tests -p 'test_guangya_*.py' -v
+          git diff --check
+      - name: Commit balanced policy
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add plugins.v3/guangyatransferassistant/legacy.py plugins.v3/guangyatransferassistant/media_identity_guard_v1111.py package.v3.json
+          git commit -m "fix: balance GuangYa identity safety and success rate"
+          git push origin HEAD:hotfix/guangya-media-identity-v1111
