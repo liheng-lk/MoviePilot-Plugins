@@ -16,12 +16,13 @@ def test_v1120_scheduler_parses_and_is_first_runtime_authority():
     ast.parse(SCHEDULER)
     assert "from .airing_scheduler_v1120 import GuangYaAiringSchedulerV1120Mixin" in ENTRY
     start = ENTRY.index("class GuangYaTransferAssistant(")
+    weekly_pos = ENTRY.index("GuangYaAiringWeeklyV1121Mixin,", start)
     scheduler_pos = ENTRY.index("GuangYaAiringSchedulerV1120Mixin,", start)
     identity_pos = ENTRY.index("GuangYaMediaIdentityGuardV1111Mixin,", start)
     release_pos = ENTRY.index("GuangYaReleaseV1110Mixin,", start)
-    assert scheduler_pos < identity_pos < release_pos
-    assert 'plugin_version = "1.12.0"' in ENTRY
-    assert 'build_id = "20260903-r44"' in ENTRY
+    assert weekly_pos < scheduler_pos < identity_pos < release_pos
+    assert 'plugin_version = "1.12.1"' in ENTRY
+    assert 'build_id = "20260903-r46"' in ENTRY
 
 
 def test_v1120_prefers_dailyassistant_and_keeps_tmdb_fallback():
@@ -59,7 +60,6 @@ def test_v1120_date_only_schedule_has_explicit_estimated_hour_and_early_window()
     assert "air_at - early" in SCHEDULER
     assert '"precision": "datetime" if air_at else ("date" if air_date else "unknown")' in SCHEDULER
 
-    # 纯逻辑样例：周更 E12 尚在一周后，即使订阅总缺集包含 E12，也不能进入 due。
     now = datetime.datetime(2026, 9, 3, 20, 0)
     early = datetime.timedelta(hours=12)
     e12 = datetime.datetime(2026, 9, 10, 20, 0)
