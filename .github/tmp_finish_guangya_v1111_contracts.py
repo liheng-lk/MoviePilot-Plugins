@@ -91,6 +91,8 @@ for path in root.glob('test_*.py'):
     updated = updated.replace('plugin_version = "1.11.0"\' in texts[ENTRY]', 'plugin_version = "1.11.1"\' in texts[ENTRY]')
     updated = updated.replace("'plugin_version = \"1.11.0\"' in entry_text", "'plugin_version = \"1.11.1\"' in entry_text")
     updated = updated.replace("'plugin_version = \"1.11.0\"' in ENTRY", "'plugin_version = \"1.11.1\"' in ENTRY")
+    updated = updated.replace('build_id = "20260903-r41"\' in entry', 'build_id = "20260903-r42"\' in entry')
+    updated = updated.replace('build_id = "20260903-r41"\' in texts[ENTRY]', 'build_id = "20260903-r42"\' in texts[ENTRY]')
     updated = updated.replace("'build_id = \"20260903-r41\"' in entry_text", "'build_id = \"20260903-r42\"' in entry_text")
     updated = updated.replace("'build_id = \"20260903-r41\"' in ENTRY", "'build_id = \"20260903-r42\"' in ENTRY")
     if path.name == 'test_episode_compat_v171.py':
@@ -98,7 +100,6 @@ for path in root.glob('test_*.py'):
     if updated != original:
         path.write_text(updated, encoding='utf-8')
 
-# 保留原生离线功能的发布契约，同时补充新的媒体身份门禁说明。
 package_path = Path('package.v3.json')
 package_data = json.loads(package_path.read_text(encoding='utf-8'))
 package_item = package_data['GuangYaTransferAssistant']
