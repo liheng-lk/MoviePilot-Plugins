@@ -1,5 +1,11 @@
 # 每日助手
 
+## v1.1.2：修复定时服务注册失败
+
+- MoviePilot V3 当前调度器中，`kwargs` 是 APScheduler 触发器参数，不是插件函数参数。
+- `refresh(manual=...)` 改用 `func_kwargs`；一次性刷新把 `run_date` 放入 date trigger 的 `kwargs`。
+- 修复启用每日助手或勾选保存后立即刷新时出现“注册服务失败”。
+
 ## v1.1.1：修复 MoviePilot 安装失败
 
 - 修复 v1.1.0 同时向 MoviePilot 暴露 `DailyAssistantV100` 与最终 `DailyAssistant` 两个插件类，宿主 Loader 按模块顺序误选旧基类的问题。

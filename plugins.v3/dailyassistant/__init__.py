@@ -100,9 +100,9 @@ class DailyAssistantV100(_PluginBase):
                 "id": "DailyAssistantOnce",
                 "name": "每日助手立即刷新",
                 "trigger": "date",
-                "run_date": datetime.datetime.now() + datetime.timedelta(seconds=3),
                 "func": self.refresh,
-                "kwargs": {"manual": True},
+                "kwargs": {"run_date": datetime.datetime.now() + datetime.timedelta(seconds=3)},
+                "func_kwargs": {"manual": True},
             })
             self._save_config(onlyonce=False)
         if self._enabled and self._cron:
@@ -113,7 +113,7 @@ class DailyAssistantV100(_PluginBase):
                     "name": "每日助手榜单刷新",
                     "trigger": trigger,
                     "func": self.refresh,
-                    "kwargs": {"manual": False},
+                    "func_kwargs": {"manual": False},
                 })
             except Exception as err:
                 logger.error("【每日助手】Cron 配置无效 %s: %s", self._cron, err)
@@ -578,9 +578,9 @@ class DailyAssistantV100(_PluginBase):
 
 
 class DailyAssistant(DailyAssistantV110Mixin, DailyAssistantV100):
-    """v1.1.1 最终运行类。"""
+    """v1.1.2 最终运行类。"""
 
-    plugin_version = "1.1.1"
+    plugin_version = "1.1.2"
 
 
 # MoviePilot PluginLoader 按模块 globals 插入顺序寻找第一个 _PluginBase 子类。
