@@ -20,27 +20,12 @@ def test_observability_layer_parses_and_wraps_final_runtime():
     start = entry_text.index("class GuangYaTransferAssistant")
     assert entry_text.index("GuangYaGyingObservabilityV1104Mixin,", start) < entry_text.index("GuangYaChannelUiV1101Mixin,", start)
     assert entry_text.index("GuangYaGyingObservabilityV1104Mixin,", start) < entry_text.index("GuangYaGyingHardeningMixin,", start)
-    assert 'plugin_version = "1.12.0"' in entry_text
-    assert 'build_id = "20260903-r44"' in entry_text
+    assert 'plugin_version = "1.12.1"' in entry_text
+    assert 'build_id = "20260903-r46"' in entry_text
 
 
 def test_observability_covers_all_real_gying_stages():
-    for token in (
-        "运行时初始化",
-        "节点刷新完成",
-        "检测到浏览器 PoW",
-        "PoW通过",
-        "登录检查",
-        "登录结果",
-        "会话结果",
-        "搜索开始",
-        "搜索结果",
-        "downurl成功",
-        "候选提取：Magnet",
-        "迅雷候选提取",
-        "人工操作：测试观影会话",
-        "viewing_observability_state",
-    ):
+    for token in ("运行时初始化", "节点刷新完成", "检测到浏览器 PoW", "PoW通过", "登录检查", "登录结果", "会话结果", "搜索开始", "搜索结果", "downurl成功", "候选提取：Magnet", "迅雷候选提取", "人工操作：测试观影会话", "viewing_observability_state"):
         assert token in text
 
 
@@ -68,14 +53,5 @@ def test_observability_logs_do_not_pass_secret_values():
 
 def test_observability_is_non_destructive():
     lowered = text.lower()
-    for forbidden in (
-        "create_transfer",
-        "flash_upload",
-        "create_task",
-        "add_download",
-        "downloadchain(",
-        "qbittorrent",
-        "transmission",
-        "aria2",
-    ):
+    for forbidden in ("create_transfer", "flash_upload", "create_task", "add_download", "downloadchain(", "qbittorrent", "transmission", "aria2"):
         assert forbidden not in lowered
