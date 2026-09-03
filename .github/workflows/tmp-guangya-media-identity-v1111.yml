@@ -1,0 +1,97 @@
+name: Stage GuangYa media identity v1.11.1
+
+on:
+  push:
+    branches: [hotfix/guangya-media-identity-v1111]
+    paths: [.github/workflows/tmp-guangya-media-identity-v1111.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hotfix/guangya-media-identity-v1111
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Wire identity guard into runtime
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          root = Path('.')
+          plugin = root / 'plugins.v3/guangyatransferassistant'
+
+          legacy = plugin / 'legacy.py'
+          text = legacy.read_text(encoding='utf-8')
+          import_line = 'from .media_identity_v1111 import explicit_seasons_v1111, strong_title_match_v1111\n'
+          anchor = 'from app.sdk.network import RequestUtils\n'
+          if import_line not in text:
+              if anchor not in text:
+                  raise SystemExit('legacy import anchor missing')
+              text = text.replace(anchor, anchor + import_line, 1)
+          start = text.index('def _entry_matches_subscription(')
+          end = text.index('\ndef _subscription_aliases(', start)
+          replacement = '''def _entry_matches_subscription(\n    entry: Dict[str, Any], name: str, year: Any = None, season: Any = None,\n    media_source: Any = None, media_id: Any = None,\n) -> bool:\n    """频道身份门禁：TMDB 冲突硬拒绝；标题强匹配；S02+ 必须有明确季号。"""\n    source = str(media_source or "").lower()\n    entry_tmdb = str(entry.get("tmdb_id") or "").strip()\n    subscribe_id = str(media_id or "").strip()\n    comparable_tmdb = bool(entry_tmdb and subscribe_id and ("tmdb" in source or "themoviedb" in source))\n    if comparable_tmdb and entry_tmdb != subscribe_id:\n        return False\n    text_value = str(entry.get("text") or "")\n    seasons = explicit_seasons_v1111([text_value, entry.get("display_title"), entry.get("episode_hint")])\n    try:\n        wanted_season = int(season or 0) if season not in (None, "") else 0\n    except (TypeError, ValueError):\n        wanted_season = 0\n    if wanted_season > 0 and seasons and wanted_season not in seasons:\n        return False\n    if wanted_season > 1 and not seasons:\n        return False\n    if comparable_tmdb:\n        return True\n    parsed_title = str(entry.get("display_title") or "").strip()\n    title_evidence = [parsed_title] if parsed_title else [line.strip() for line in text_value.splitlines()[:12] if line.strip()]\n    raw_name = str(name or "").strip()\n    candidates = [raw_name, re.split(r"[(/（]", raw_name, maxsplit=1)[0]]\n    if not any(\n        str(candidate or "").strip() and str(evidence or "").strip()\n        and strong_title_match_v1111(candidate, evidence, expected_year=year)\n        for candidate in candidates for evidence in title_evidence\n    ):\n        return False\n    if year:\n        hinted_year = entry.get("year_hint")\n        years = {int(hinted_year)} if hinted_year else {int(value) for value in re.findall(r"\\b(19\\d{2}|20\\d{2})\\b", text_value)}\n        title_years = {int(value) for value in re.findall(r"\\b(19\\d{2}|20\\d{2})\\b", raw_name)}\n        years -= title_years\n        if years and int(year) not in years:\n            return False\n    return True\n'''
+          text = text[:start] + replacement + text[end:]
+          legacy.write_text(text, encoding='utf-8')
+
+          entry = plugin / '__init__.py'
+          text = entry.read_text(encoding='utf-8')
+          import_guard = 'from .media_identity_guard_v1111 import GuangYaMediaIdentityGuardV1111Mixin\n'
+          if import_guard not in text:
+              text = text.replace(
+                  'from .multisource_v180 import GuangYaMultiSourceMixin\n',
+                  'from .multisource_v180 import GuangYaMultiSourceMixin\n' + import_guard,
+                  1,
+              )
+          if '    GuangYaMediaIdentityGuardV1111Mixin,\n' not in text:
+              text = text.replace(
+                  'class GuangYaTransferAssistant(\n    GuangYaReleaseV1110Mixin,',
+                  'class GuangYaTransferAssistant(\n    GuangYaMediaIdentityGuardV1111Mixin,\n    GuangYaReleaseV1110Mixin,',
+                  1,
+              )
+          text = text.replace('plugin_version = "1.11.0"\n    build_id = "20260903-r41"', 'plugin_version = "1.11.1"\n    build_id = "20260903-r42"', 1)
+          text = text.replace('光鸭转存助手 v1.10.24 运行入口。', '光鸭转存助手 v1.11.1 运行入口。', 1)
+          entry.write_text(text, encoding='utf-8')
+
+          package_path = root / 'package.v3.json'
+          package = json.loads(package_path.read_text(encoding='utf-8'))
+          item = package['GuangYaTransferAssistant']
+          item['version'] = '1.11.1'
+          item['description'] = '固定分流与多来源订阅助手：新增实际资源媒体身份总门禁，搜索卡片只负责发现；迅雷 JSON、光鸭直接分享、Magnet/ED2K 解析后按真实标题/年份/季号再次校验，冲突或高季缺少季号证据时拒绝自动转存。'
+          old_history = dict(item.get('history') or {})
+          item['history'] = {
+              'v1.11.1': '修复偶发错资源：最终 GYING 匹配不再被搜索标题误导；迅雷秒传禁止搜索卡片兜底实际 JSON 不匹配；Magnet/ED2K 在 cloudcollection resolve 后用真实 btResInfo/subfiles 二次校验；频道分享改为强标题匹配，S02+ 无明确季号证据不自动转存。',
+              **old_history,
+          }
+          package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          local_path = plugin / 'plugin.json'
+          local = json.loads(local_path.read_text(encoding='utf-8'))
+          local['version'] = '1.11.1'
+          local['description'] = item['description']
+          local_path.write_text(json.dumps(local, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          test = root / 'tests/test_guangya_media_identity_v1111.py'
+          test.write_text('''from __future__ import annotations\n\nimport importlib.util\nimport json\nfrom pathlib import Path\n\nROOT = Path(__file__).resolve().parents[1]\nPLUGIN = ROOT / "plugins.v3/guangyatransferassistant"\nspec = importlib.util.spec_from_file_location("guangya_media_identity_v1111", PLUGIN / "media_identity_v1111.py")\nmod = importlib.util.module_from_spec(spec)\nassert spec.loader is not None\nspec.loader.exec_module(mod)\n\n\ndef test_release_layer_is_outermost_and_versioned():\n    entry = (PLUGIN / "__init__.py").read_text(encoding="utf-8")\n    start = entry.index("class GuangYaTransferAssistant(")\n    assert entry.index("GuangYaMediaIdentityGuardV1111Mixin,", start) < entry.index("GuangYaReleaseV1110Mixin,", start)\n    assert 'plugin_version = "1.11.1"' in entry\n    assert 'build_id = "20260903-r42"' in entry\n    package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]\n    local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))\n    assert package["version"] == local["version"] == "1.11.1"\n\n\ndef test_release_name_cleanup_keeps_real_title_and_rejects_related_title():\n    assert mod.strong_title_match_v1111("The Last of Us", "The.Last.of.Us.2025.S02E03.2160p.WEB-DL.mkv", 2025)\n    assert not mod.strong_title_match_v1111("Fallout", "Fallout.Shelter.2024.S01E01.1080p.WEB-DL.mkv", 2024)\n    assert not mod.strong_title_match_v1111("逆局", "逆局外传.S01E01.2160p.mkv", 2021)\n\n\ndef test_numeric_title_is_not_mistaken_for_release_year():\n    assert mod.title_key_v1111("1923.S02E01.1080p.WEB-DL.mkv", 2025).startswith("1923")\n    assert mod.explicit_years_v1111(["1923.S02E01.2025.1080p.mkv"], ["1923"]) == {"2025"}\n\n\ndef test_high_season_requires_explicit_actual_season():\n    ok, reason = mod.validate_media_evidence_v1111(aliases=["The Last of Us"], expected_year=2025, expected_season=2, is_movie=False, evidences=["The.Last.of.Us.2025.E03.2160p.mkv"], require_title=True, require_explicit_season=True)\n    assert not ok and "缺少季号证据" in reason\n    ok, _ = mod.validate_media_evidence_v1111(aliases=["The Last of Us"], expected_year=2025, expected_season=2, is_movie=False, evidences=["The.Last.of.Us.2025.S02E03.2160p.mkv"], require_title=True, require_explicit_season=True)\n    assert ok\n\n\ndef test_explicit_wrong_year_or_season_is_rejected():\n    ok, reason = mod.validate_media_evidence_v1111(aliases=["Demo Show"], expected_year=2026, expected_season=1, is_movie=False, evidences=["Demo.Show.2025.S01E01.mkv"], require_title=True)\n    assert not ok and "年份冲突" in reason\n    ok, reason = mod.validate_media_evidence_v1111(aliases=["Demo Show"], expected_year=2026, expected_season=1, is_movie=False, evidences=["Demo.Show.2026.S02E01.mkv"], require_title=True)\n    assert not ok and "季号冲突" in reason\n\n\ndef test_search_card_cannot_rescue_xunlei_actual_payload():\n    guard = (PLUGIN / "media_identity_guard_v1111.py").read_text(encoding="utf-8")\n    method = guard.split("    def _xunlei_json_identity_matches_v1123(", 1)[1].split("    def _resolve_offline_source", 1)[0]\n    assert 'resource_name.casefold() == search_title.casefold()' in method\n    assert "validate_media_evidence_v1111" in method\n    assert "search_title" not in method.split("actual =", 1)[1].split("ok, reason", 1)[0]\n\n\ndef test_offline_resolve_has_final_payload_gate_before_cloud_create():\n    guard = (PLUGIN / "media_identity_guard_v1111.py").read_text(encoding="utf-8")\n    method = guard.split("    def _resolve_offline_source(", 1)[1].split("    def _plan_incremental_files", 1)[0]\n    assert 'data.get("btResInfo")' in method\n    assert 'bt_info.get("subfiles")' in method\n    assert "validate_media_evidence_v1111" in method\n    assert "EPISODE_AMBIGUOUS:" in guard\n\n\ndef test_channel_match_is_strong_and_high_season_fails_closed():\n    legacy = (PLUGIN / "legacy.py").read_text(encoding="utf-8")\n    method = legacy.split("def _entry_matches_subscription(", 1)[1].split("def _subscription_aliases", 1)[0]\n    assert "strong_title_match_v1111" in method\n    assert "wanted_season > 1 and not seasons" in method\n    assert "value in haystack" not in method\n\n\ndef test_final_provider_matcher_checks_year_and_season():\n    guard = (PLUGIN / "media_identity_guard_v1111.py").read_text(encoding="utf-8")\n    matcher = guard.split("    def _provider_candidate_matches(", 1)[1].split("    def _xunlei_json_identity_matches_v1123", 1)[0]\n    assert "explicit_years_v1111" in matcher\n    assert "explicit_seasons_v1111" in matcher\n    assert "season not in seasons" in matcher\n''', encoding='utf-8')
+          PY
+      - name: Validate focused patch
+        run: |
+          python -m compileall -q plugins.v3/guangyatransferassistant
+          python -m unittest discover -s tests -p 'test_guangya_media_identity_v1111.py' -v
+          git diff --check
+      - name: Commit runtime wiring
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add plugins.v3/guangyatransferassistant package.v3.json tests/test_guangya_media_identity_v1111.py
+          git diff --cached --check
+          git commit -m "fix: enforce actual media identity before GuangYa transfer"
+          git push origin HEAD:hotfix/guangya-media-identity-v1111
