@@ -12,7 +12,7 @@ from pathlib import PurePosixPath
 from typing import Any, Iterable, List, Sequence, Set
 
 _TECH_TOKEN_RE = re.compile(
-    r"(?ix)^(?:2160p|1080p|1080i|720p|576p|480p|4k|8k|web(?:dl|rip)?|web-dl|bluray|blu-ray|bdrip|brrip|remux|hdtv|uhd|x26[45]|h26[45]|hevc|avc|av1|10bit|8bit|hdr10\+?|hdr|dv|dolbyvision|aac\d?(?:\.\d)?|ac3|eac3|ddp?\d?(?:\.\d)?|dts(?:hd)?|truehd|atmos|flac|proper|repack|rerip|internal|extended|uncut|complete|全集|全季|chs|cht|chi|eng|jpn|kor|multi|dual|字幕|中字|简中|繁中)$"
+    r"(?ix)^(?:2160p|1080p|1080i|720p|576p|480p|4k|8k|web(?:dl|rip)?|web-dl|dl|bluray|blu-ray|bdrip|brrip|remux|hdtv|uhd|x26[45]|h26[45]|hevc|avc|av1|10bit|8bit|hdr10\+?|hdr|dv|dolbyvision|aac\d?(?:\.\d)?|ac3|eac3|ddp?\d?(?:\.\d)?|dts(?:hd)?|truehd|atmos|flac|proper|repack|rerip|internal|extended|uncut|complete|全集|全季|chs|cht|chi|eng|jpn|kor|multi|dual|字幕|中字|简中|繁中)$"
 )
 _EP_TOKEN_RE = re.compile(r"(?i)^(?:s\d{1,2}(?:e\d{1,4})?|e\d{1,4}|ep\d{1,4}|episode\d{1,4})$")
 _SEASON_PATTERNS = (
@@ -97,7 +97,7 @@ def title_key_v1111(value: Any, expected_year: Any = None) -> str:
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"\.(?:mkv|mp4|ts|m2ts|avi|mov|wmv|flv|webm|iso|m4v|srt|ass|ssa|vtt|sup)$", " ", text, flags=re.I)
     text = re.sub(r"[\[【（(][^\]】）)]{0,80}[\]】）)]", " ", text)
-    text = re.sub(r"(?i)\bS(?:eason)?[ ._\-]*0*\d{1,2}(?:[ ._\-]*E(?:pisode)?[ ._\-]*0*\d{1,4})?\b", " ", text)
+    text = re.sub(r"(?i)\bS(?:eason)?[ ._\-]*0*\d{1,2}(?:[ ._\-]*E(?:pisode)?[ ._\-]*0*\d{1,4})?(?=[^0-9A-Za-z]|$)", " ", text)
     text = re.sub(r"(?i)\b(?:E|EP|Episode)[ ._\-]*0*\d{1,4}\b", " ", text)
     text = re.sub(r"第\s*[0-9一二三四五六七八九十]{1,3}\s*(?:季|集|话)", " ", text)
     year = str(expected_year or "").strip()
