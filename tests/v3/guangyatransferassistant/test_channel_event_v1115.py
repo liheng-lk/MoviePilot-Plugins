@@ -29,8 +29,8 @@ def test_v1115_layer_parses_and_is_wired_above_xunlei_final():
     assert "class GuangYaChannelEventV1115Mixin(GuangYaXunleiFinalV1114Mixin):" in patch
     assert "class GuangYaChannelEventGuardV1115Mixin(GuangYaChannelEventV1115Mixin):" in guard
     assert "class GuangYaChannelCursorEventV1115Mixin(GuangYaChannelEventGuardV1115Mixin):" in cursor
-    assert "from .channel_cursor_event_v1115 import GuangYaChannelCursorEventV1115Mixin" in ui
-    assert "class GuangYaGyingUiV1109Mixin(GuangYaChannelCursorEventV1115Mixin):" in ui
+    assert "from .console_control_cursor_v1116 import GuangYaConsoleControlCursorV1116Mixin" in ui
+    assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlCursorV1116Mixin):" in ui
     assert 'build_id = "20260902-r26"' in patch
 
 

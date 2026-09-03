@@ -1,6 +1,6 @@
 {
   "name": "光鸭转存助手",
-  "description": "MoviePilot V3 固定分流与多来源订阅助手：跨来源集级终止防重复，新增 TMDB 更新日历、临近播出检查与每日全员缺集复核。",
+  "description": "固定分流与多来源订阅助手：迅雷秒传、光鸭直接转存、Magnet/ED2K 光鸭原生云添加共用集级终态与在途栅栏；新增 TMDB 更新日历、临近播出补漏和每日全员缺集复核。",
   "version": "1.11.0",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",

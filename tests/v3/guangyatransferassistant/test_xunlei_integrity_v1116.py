@@ -19,8 +19,9 @@ def test_integrity_layer_parses_and_is_between_viewing_dispatch_and_legacy_xunle
     ast.parse(integrity, filename=str(INTEGRITY))
     ast.parse(logging, filename=str(LOGGING))
     assert "from .xunlei_integrity_v1116 import GuangYaXunleiIntegrityV1116Mixin" in logging
-    assert "GuangYaViewingDispatchV1113Mixin,\n    GuangYaXunleiIntegrityV1116Mixin," in logging
-    assert 'build_id = "20260902-r28"' in logging
+    assert logging.index("GuangYaViewingDispatchV1113Mixin,") < logging.index("GuangYaXunleiJsonPipelineV1117Mixin,")
+    assert logging.index("GuangYaXunleiJsonPipelineV1117Mixin,") < logging.index("GuangYaXunleiIntegrityV1116Mixin,")
+    assert 'build_id = "20260902-r30"' in logging
 
 
 def test_fileid_alone_is_not_a_success_signal_anymore():
