@@ -19,82 +19,47 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Update stale current-release assertions without weakening feature checks
+      - name: Align current-release contracts while preserving historical layers
         run: |
           python - <<'PY'
           from pathlib import Path
+          import json
+          import re
 
           root = Path('tests/v3/guangyatransferassistant')
 
-          # These assertions are explicitly about the *current published release*.
-          # Historical module versions/history keys are deliberately left untouched.
+          # Only assertions whose subject is the current public entry/package are upgraded.
+          # Historical source modules retain their own version/build markers.
+          public_version_vars = ('ENTRY', 'ENTRY_TEXT', 'entry', 'entry_text', 'texts[ENTRY]')
+          public_build_vars = ('ENTRY', 'ENTRY_TEXT', 'entry', 'entry_text', 'texts[ENTRY]', 'text')
           for path in root.glob('test_*.py'):
               text = path.read_text(encoding='utf-8')
-              before = text
-              for old in ('1.10.13', '1.10.16', '1.10.23'):
+
+              for old in ('1.10.13', '1.10.16', '1.10.23', '1.10.24'):
                   text = text.replace(
                       f'package["version"] == local["version"] == "{old}"',
                       'package["version"] == local["version"] == "1.11.0"',
                   )
-                  text = text.replace(
-                      f'package["version"] == "{old}"',
-                      'package["version"] == "1.11.0"',
-                  )
-                  text = text.replace(
-                      f'local["version"] == "{old}"',
-                      'local["version"] == "1.11.0"',
-                  )
-                  text = text.replace(
-                      f"'plugin_version = \"{old}\"' in ENTRY",
-                      "'plugin_version = \"1.11.0\"' in ENTRY",
-                  )
-                  text = text.replace(
-                      f"'plugin_version = \"{old}\"' in entry_text",
-                      "'plugin_version = \"1.11.0\"' in entry_text",
-                  )
-                  text = text.replace(
-                      f"'plugin_version = \"{old}\"' in UI_TEXT",
-                      "'plugin_version = \"1.11.0\"' in UI_TEXT",
-                  )
-                  text = text.replace(
-                      f"'plugin_version = \"{old}\"' in ENTRY_TEXT",
-                      "'plugin_version = \"1.11.0\"' in ENTRY_TEXT",
-                  )
-              if text != before:
-                  path.write_text(text, encoding='utf-8')
+                  text = text.replace(f'package["version"] == "{old}"', 'package["version"] == "1.11.0"')
+                  text = text.replace(f'local["version"] == "{old}"', 'local["version"] == "1.11.0"')
+                  for var in public_version_vars:
+                      text = text.replace(
+                          f'\'plugin_version = "{old}"\' in {var}',
+                          f'\'plugin_version = "1.11.0"\' in {var}',
+                      )
 
-          # Current-entry build assertions; old layer source build markers remain historical.
-          build_files = {
-              'test_episode_compat_v171.py': ['20260902-r31'],
-              'test_gying_hardening_v193.py': ['20260902-r24'],
-              'test_xunlei_hardening_v193.py': ['20260902-r24'],
-              'test_plugin_contract.py': ['20260902-r24'],
-              'test_mp_sdk_compat_v195.py': ['20260902-r24'],
-              'test_release_v1109_marker.py': ['20260902-r24'],
-              'test_subscribe_contract_v196.py': ['20260902-r24'],
-          }
-          for name, old_builds in build_files.items():
-              path = root / name
-              text = path.read_text(encoding='utf-8')
-              for old in old_builds:
-                  text = text.replace(
-                      f"'build_id = \"{old}\"' in ENTRY",
-                      "'build_id = \"20260903-r41\"' in ENTRY",
-                  )
-                  text = text.replace(
-                      f"'build_id = \"{old}\"' in entry_text",
-                      "'build_id = \"20260903-r41\"' in entry_text",
-                  )
-                  text = text.replace(
-                      f"'build_id = \"{old}\"' in text",
-                      "'build_id = \"20260903-r41\"' in text",
-                  )
+              for old in ('20260902-r24', '20260902-r25', '20260902-r28', '20260902-r31', '20260902-r38', '20260903-r39', '20260903-r40'):
+                  for var in public_build_vars:
+                      text = text.replace(
+                          f'\'build_id = "{old}"\' in {var}',
+                          f'\'build_id = "20260903-r41"\' in {var}',
+                      )
+
               path.write_text(text, encoding='utf-8')
 
-          # GYING UI is now wrapped by the console-control/cursor aggregate.  Keep checking
-          # the historical chain in its own source modules, but stop asserting an obsolete
-          # direct edge from the UI to xunlei-final/channel-cursor.
-          ui_replacements = {
+          # Current GYING UI no longer directly inherits the historical XunleiFinal/ChannelCursor
+          # layer.  It inherits the console-control/cursor aggregate, which itself retains them.
+          replacements = {
               'assert "from .channel_cursor_event_v1115 import GuangYaChannelCursorEventV1115Mixin" in ui':
                   'assert "from .console_control_cursor_v1116 import GuangYaConsoleControlCursorV1116Mixin" in ui',
               'assert "class GuangYaGyingUiV1109Mixin(GuangYaChannelCursorEventV1115Mixin):" in ui':
@@ -112,12 +77,18 @@ jobs:
           }
           for path in root.glob('test_*.py'):
               text = path.read_text(encoding='utf-8')
-              for old, new in ui_replacements.items():
+              for old, new in replacements.items():
                   text = text.replace(old, new)
               path.write_text(text, encoding='utf-8')
 
-          # Viewing logging became an intentional multi-inheritance aggregate when JSON
-          # pipeline + integrity checks were added. Assert all three retained layers.
+          # The governance contract reads gying_ui_v1109.py itself; keep its real module-local build.
+          path = root / 'test_governance_v1114.py'
+          text = path.read_text(encoding='utf-8')
+          text = text.replace('assert \'build_id = "20260902-r25"\' in UI_TEXT', 'assert \'build_id = "20260902-r27"\' in UI_TEXT')
+          path.write_text(text, encoding='utf-8')
+
+          # Viewing logging intentionally aggregates dispatch + JSON + integrity.  Preserve all edges
+          # and assert the real logging module build (r30), not the final public release build.
           path = root / 'test_viewing_dispatch_v1113.py'
           text = path.read_text(encoding='utf-8')
           text = text.replace(
@@ -136,15 +107,31 @@ jobs:
               '    assert logging.index("GuangYaViewingDispatchV1113Mixin,") < logging.index("GuangYaXunleiJsonPipelineV1117Mixin,")\n'
               '    assert logging.index("GuangYaXunleiJsonPipelineV1117Mixin,") < logging.index("GuangYaXunleiIntegrityV1116Mixin,")',
           )
+          text = text.replace('assert \'build_id = "20260902-r28"\' in logging', 'assert \'build_id = "20260902-r30"\' in logging')
           path.write_text(text, encoding='utf-8')
 
-          # The dedicated release marker tests should now pin the consolidated release.
-          for name in ('test_release_v1109_marker.py', 'test_release_v1111_marker.py'):
+          # A few public version assertions use subscripted/current-entry expressions that are
+          # intentionally not covered by simple variable names above.
+          for name in ('test_release_v1111_marker.py', 'test_resource_planner_v190_contract.py', 'test_status_ui_v191.py'):
               path = root / name
               text = path.read_text(encoding='utf-8')
-              text = text.replace('20260902-r31', '20260903-r41')
-              text = text.replace('20260902-r24', '20260903-r41')
+              text = re.sub(r'plugin_version = "1\.10\.(?:13|16|23|24)"', 'plugin_version = "1.11.0"', text)
               path.write_text(text, encoding='utf-8')
+
+          # Native Magnet/ED2K cloudcollection remains a first-class release contract. Restore this
+          # useful wording in public metadata rather than weakening the old contract test.
+          pkg_path = Path('package.v3.json')
+          package = json.loads(pkg_path.read_text(encoding='utf-8'))
+          package['GuangYaTransferAssistant']['description'] = (
+              '固定分流与多来源订阅助手：迅雷秒传、光鸭直接转存、Magnet/ED2K 光鸭原生云添加共用集级终态与在途栅栏；'
+              '新增 TMDB 更新日历、临近播出补漏和每日全员缺集复核。'
+          )
+          pkg_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          plugin_path = Path('plugins.v3/guangyatransferassistant/plugin.json')
+          plugin = json.loads(plugin_path.read_text(encoding='utf-8'))
+          plugin['description'] = package['GuangYaTransferAssistant']['description']
+          plugin_path.write_text(json.dumps(plugin, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
           PY
       - name: Sanity-check modified contracts
         run: |
@@ -154,7 +141,7 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add tests/v3/guangyatransferassistant
+          git add tests/v3/guangyatransferassistant package.v3.json plugins.v3/guangyatransferassistant/plugin.json
           git diff --cached --check
-          git commit -m "test: align GuangYa historical contracts with 1.11 runtime" || exit 0
+          git commit -m "test: align GuangYa contracts with 1.11 release" || exit 0
           git push origin HEAD:feature/daily-gysub-v1110
