@@ -16,8 +16,8 @@ def test_v1105_layer_parses_and_is_outer_runtime_guard():
     start = ENTRY.index("class GuangYaTransferAssistant")
     assert "from .content_resilience_v1105 import GuangYaContentResilienceV1105Mixin" in ENTRY
     assert ENTRY.index("GuangYaContentResilienceV1105Mixin,", start) < ENTRY.index("GuangYaGyingObservabilityV1104Mixin,", start)
-    assert 'plugin_version = "1.12.0"' in ENTRY
-    assert 'build_id = "20260903-r44"' in ENTRY
+    assert 'plugin_version = "1.12.1"' in ENTRY
+    assert 'build_id = "20260903-r46"' in ENTRY
 
 
 def test_share_episode_floor_is_raised_before_legacy_range_filter():
@@ -53,15 +53,5 @@ def test_processed_entry_is_bound_to_target_total_and_old_records_reopen_once():
 
 def test_v1105_does_not_touch_other_acquisition_or_download_paths():
     lowered = PATCH.lower()
-    for forbidden in (
-        "downloadchain(",
-        "from app.chain.download",
-        "flash_upload",
-        "cloudcollection/v1/create_task",
-        "_search_viewing",
-        "_search_api_provider",
-        "qbittorrent",
-        "transmission",
-        "aria2",
-    ):
+    for forbidden in ("downloadchain(", "from app.chain.download", "flash_upload", "cloudcollection/v1/create_task", "_search_viewing", "_search_api_provider", "qbittorrent", "transmission", "aria2"):
         assert forbidden not in lowered
