@@ -1,9 +1,30 @@
 # 每日助手
 
-每日助手把 MoviePilot V3 的推荐/发现能力与公共榜单统一成一个候选池，再通过光鸭转存助手现有的 `guangya_direct_subscribe` / GYSub 固定路线创建订阅。
+每日助手把 MoviePilot V3 的推荐/发现能力与公共榜单统一成候选池，再通过光鸭转存助手现有的 `guangya_direct_subscribe` / GYSub 固定路线创建订阅。
 
-默认只生成候选，不会因为榜单上榜就自动订阅。需要自动化时同时开启“自动 GYSub”并选择允许自动订阅的榜单；未选中的榜单仍只展示候选。
+默认只生成候选，不会因为上榜就自动订阅。需要自动化时同时开启“自动 GYSub”并选择允许自动订阅的榜单；未选中的榜单仍只展示候选。所有来源最终都尽量投影为 TMDB 精确身份，无法唯一识别的条目只展示，不会自动提交。
 
-当前来源包括纪录片、日漫、综艺，Netflix 官方 Tudum Top10，HBO/Max、Apple TV+、Disney+、Crunchyroll、Amazon Prime、Amazon、Hulu 的 TMDB watch-provider 发现，猫眼，豆瓣，IMDb，TMDB 趋势，AniList，Bangumi 以及腾讯视频热播。榜单条目先尽量解析为 TMDB 身份；无法唯一识别的条目只展示，不会自动提交 GYSub。
+## 当前榜单
 
-GYSub 仍由光鸭转存助手执行，因此后续继续沿用现有的观影 GYING → 迅雷分享 → scriptVersion 1.1.3 JSON → 光鸭秒传 → MoviePilot 整理链路。
+- 类型：纪录片、日漫、综艺。
+- 欧美流媒体：Netflix 电影/剧集/混合榜；HBO/Max、Apple TV+、Disney+、Crunchyroll、Amazon Prime、Amazon、Hulu 的电影/剧集/混合发现。
+- 猫眼：电影、剧集、综艺、混合榜。
+- 豆瓣：正在上映、即将上映、新片榜、一周口碑榜、北美票房榜、热门电影、剧集近期值得看、热门剧集、华语口碑剧、全球口碑剧、动画榜、电影 TOP250、推荐、混合榜。
+- 热门：IMDb 热门电影/剧集、TMDB 趋势、AniList 热门、Bangumi 今日动漫、混合热门。
+- 腾讯视频：热播、电影、电视剧、综艺、少儿。
+
+## 来源实现
+
+优先复用 MoviePilot 自身的 `RecommendChain`，避免重复实现媒体规则。HBO/Max、Apple TV+、Disney+ 等平台通过 TMDB watch-provider 发现；腾讯视频电视剧/综艺热度通过猫眼专业版平台维度获取，腾讯电影与少儿使用 TMDB/JustWatch provider 组合补充。
+
+Netflix 使用 Tudum 官方 Top10 周榜。IMDb 使用当前 Moviemeter GraphQL 查询。豆瓣“即将上映”“一周口碑”“近期值得看”等直接读取移动端 `subject_collection`；北美票房榜读取当前豆瓣电影排行榜页面，因为旧 `v2/movie/us_box` 接口已经不可作为稳定来源。
+
+每个榜单独立容错：单个外部来源失败只会记录该来源状态，不影响其它榜单刷新。候选进入 GYSub 前还会经过 TMDB 唯一身份确认、媒体库完整性检查和已提交去重。
+
+## 转存链路
+
+GYSub 仍由光鸭转存助手执行，后续继续沿用现有固定链路：
+
+`每日助手榜单 → TMDB 精确身份 → GYSub → 观影 GYING → 迅雷分享 → scriptVersion 1.1.3 JSON → 光鸭秒传 → MoviePilot 整理`
+
+每日助手只负责“发现 + 身份确认 + 提交 GYSub”，不会新增第二套下载器、转存器或媒体整理规则。
