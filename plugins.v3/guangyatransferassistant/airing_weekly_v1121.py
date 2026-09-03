@@ -15,7 +15,7 @@ from .airing_weekly_impl_v1121 import GuangYaAiringWeeklyV1121Mixin as _WeeklyIm
 class GuangYaAiringWeeklyV1121Mixin(_WeeklyImplV1121):
     """在周视图实现之上把普通后台搜索严格限制到本更新日。"""
 
-    build_id = "20260903-r46"
+    build_id = "20260903-r47-preview"
 
     def _airing_gate_v1120(self, subscribe: Any, payload: Dict[str, Any] = None) -> Dict[str, Any]:
         result = dict(super()._airing_gate_v1120(subscribe, payload=payload) or {})
@@ -119,6 +119,120 @@ class GuangYaAiringWeeklyV1121Mixin(_WeeklyImplV1121):
                 ",".join(f"E{value:02d}" for value in sorted(off_day)) or "无",
             )
         return result
+
+    def _weekly_calendar_snapshot_v1121(self) -> Dict[str, Any]:
+        """以 MoviePilot 媒体库事实修正周视图状态，避免把“非缺集”直接误当已入库。"""
+        snapshot = dict(super()._weekly_calendar_snapshot_v1121() or {})
+        days = list(snapshot.get("days") or [])
+        today = self._date_v1121(snapshot.get("today")) or datetime.date.today()
+        state_cache: Dict[int, Dict[str, Any]] = {}
+
+        for day in days:
+            items = list(day.get("items") or []) if isinstance(day, dict) else []
+            for row in items:
+                if not isinstance(row, dict):
+                    continue
+                sid = int(row.get("subscribe_id") or 0)
+                episode = int(row.get("episode") or 0)
+                if sid <= 0 or episode <= 0:
+                    row["status"] = "unknown"
+                    row["status_label"] = "待确认"
+                    continue
+
+                subscribe = self._find_subscription(sid)
+                if not subscribe:
+                    row["status"] = "unknown"
+                    row["status_label"] = "待确认"
+                    continue
+
+                if sid not in state_cache:
+                    try:
+                        sync = dict(self._sync_media_library_progress(subscribe) or {})
+                    except Exception:
+                        sync = {"success": False, "existing": [], "missing": []}
+                    existing = self._positive_set_v1121(sync.get("existing") or [])
+                    missing = self._positive_set_v1121(sync.get("missing") or [])
+                    note = self._positive_set_v1121(getattr(subscribe, "note", None) or [])
+                    try:
+                        reservations = dict(self._pending_reservations(subscribe) or {})
+                        reserved = self._positive_set_v1121(reservations.get("episodes") or [])
+                    except Exception:
+                        reserved = set()
+                    try:
+                        claimed = self._positive_set_v1121(self._active_source_claims(sid) or [])
+                    except Exception:
+                        claimed = set()
+                    raw_missing = self._positive_set_v1121(self._raw_subscription_missing_v1120(subscribe))
+                    state_cache[sid] = {
+                        "success": bool(sync.get("success")),
+                        "existing": existing,
+                        "missing": missing,
+                        "note": note,
+                        "reserved": reserved,
+                        "claimed": claimed,
+                        "raw_missing": raw_missing,
+                    }
+
+                state = state_cache[sid]
+                day_value = self._date_v1121(row.get("air_date"))
+
+                # 状态优先级必须以真实事实为先，而不是先看播出日期：
+                # 已提前入库 > 在途 > 已完成回执 > 缺集(待补/待更新) > 无法确认。
+                if episode in state["existing"]:
+                    row["status"], row["status_label"] = "library", "已入库"
+                elif episode in state["reserved"] or episode in state["claimed"]:
+                    row["status"], row["status_label"] = "inflight", "转存中"
+                elif state["success"]:
+                    if episode not in state["missing"] and episode in state["note"]:
+                        row["status"], row["status_label"] = "completed", "已完成"
+                    elif day_value and day_value > today:
+                        row["status"], row["status_label"] = "scheduled", "待更新"
+                    else:
+                        row["status"], row["status_label"] = "pending", "待补"
+                elif episode in state["raw_missing"]:
+                    if day_value and day_value > today:
+                        row["status"], row["status_label"] = "scheduled", "待更新"
+                    else:
+                        row["status"], row["status_label"] = "pending", "待补"
+                else:
+                    row["status"], row["status_label"] = "unknown", "待确认"
+
+            if isinstance(day, dict):
+                day["items"] = items
+                day["library"] = sum(1 for row in items if row.get("status") == "library")
+                day["completed"] = sum(1 for row in items if row.get("status") == "completed")
+                day["pending"] = sum(1 for row in items if row.get("status") == "pending")
+                day["inflight"] = sum(1 for row in items if row.get("status") == "inflight")
+                day["unknown"] = sum(1 for row in items if row.get("status") == "unknown")
+
+        all_rows = [row for day in days if isinstance(day, dict) for row in (day.get("items") or []) if isinstance(row, dict)]
+        snapshot.update({
+            "days": days,
+            "library": sum(1 for row in all_rows if row.get("status") == "library"),
+            "completed": sum(1 for row in all_rows if row.get("status") == "completed"),
+            "pending": sum(1 for row in all_rows if row.get("status") == "pending"),
+            "inflight": sum(1 for row in all_rows if row.get("status") == "inflight"),
+            "unknown": sum(1 for row in all_rows if row.get("status") == "unknown"),
+            "status_source": "moviepilot_library",
+        })
+        self.save_data("airing_week_view_v1121", snapshot)
+        return snapshot
+
+    def _episode_card_v1121(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        card = dict(super()._episode_card_v1121(row) or {})
+        try:
+            chip = card["content"][1]["content"][0]
+            chip.setdefault("props", {})["color"] = {
+                "library": "success",
+                "completed": "success",
+                "pending": "error",
+                "inflight": "warning",
+                "unknown": "secondary",
+                "scheduled": "info",
+            }.get(str(row.get("status") or ""), "info")
+        except (KeyError, IndexError, TypeError):
+            pass
+        return card
 
 
 __all__ = ["GuangYaAiringWeeklyV1121Mixin"]
