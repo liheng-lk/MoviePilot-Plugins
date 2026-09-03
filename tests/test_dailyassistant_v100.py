@@ -7,12 +7,15 @@ ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugins.v3" / "dailyassistant"
 ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 SOURCES = (PLUGIN / "sources.py").read_text(encoding="utf-8")
+BACKENDS = (PLUGIN / "source_backends.py").read_text(encoding="utf-8")
+ALL_SOURCES = SOURCES + "\n" + BACKENDS
 
 
 class DailyAssistantContract(unittest.TestCase):
     def test_python_sources_parse(self):
         ast.parse(ENTRY)
         ast.parse(SOURCES)
+        ast.parse(BACKENDS)
 
     def test_plugin_identity_and_gysub_bridge(self):
         self.assertIn('plugin_name = "每日助手"', ENTRY)
@@ -48,17 +51,27 @@ class DailyAssistantContract(unittest.TestCase):
             "all-weeks-global.tsv", "api.graphql.imdb.com",
             "piaofang.maoyan.com", "AniListChain",
         ):
-            self.assertIn(token, SOURCES)
+            self.assertIn(token, ALL_SOURCES)
+        self.assertIn("from .source_backends import", SOURCES)
 
-    def test_douban_catalog_uses_current_public_collection_contracts(self):
+    def test_douban_catalog_uses_current_live_contracts(self):
         for token in (
             "rexxar/api/v2/subject_collection", "movie_soon", "movie_weekly_best",
-            "movie_real_time_hotest", "tv_real_time_hotest", "movie/us_box",
+            "movie_real_time_hotest", "tv_real_time_hotest",
+            "movie.douban.com/chart", "BeautifulSoup",
             'chain.douban_movies(sort=spec.arg or "U"',
         ):
-            self.assertIn(token, SOURCES)
+            self.assertIn(token, ALL_SOURCES)
         self.assertIn("_douban_subject_id", SOURCES)
         self.assertIn("_year_value", SOURCES)
+        self.assertIn("北美票房页面结构已变化", BACKENDS)
+
+    def test_imdb_uses_live_moviemeter_graphql_shape(self):
+        self.assertIn("MOST_POPULAR_MOVIES", BACKENDS)
+        self.assertIn("MOST_POPULAR_TV_SHOWS", BACKENDS)
+        self.assertIn("AdvancedTitleSearchSort", BACKENDS)
+        self.assertIn('"sortBy": "POPULARITY"', BACKENDS)
+        self.assertIn("chartTitles", BACKENDS)
 
     def test_tencent_movie_tv_variety_and_kids_have_distinct_routes(self):
         self.assertIn('"tencent": "623|1170"', SOURCES)
