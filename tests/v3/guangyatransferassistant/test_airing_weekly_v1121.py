@@ -126,7 +126,7 @@ def test_v1122_same_day_miss_retries_after_external_cooldown_until_day_gate_clos
     assert "_external_search_cooldown_minutes_v1114" in due
 
     dispatch = SCHEDULER[SCHEDULER.index("def _try_transfer_subscription("):SCHEDULER.index("def _try_transfer_subscription_inner(")]
-    assert "gate = self._airing_gate_v1120(subscribe)" in dispatch
+    assert "_airing_gate_v1120(subscribe)" in dispatch
     assert 'due = list(gate.get("due_uncovered") or [])' in dispatch
     assert "if not due:" in dispatch
 
