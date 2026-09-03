@@ -8,7 +8,7 @@ def test_package_and_plugin_metadata_retain_v180_native_offline_history():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
     assert package["version"] == local["version"] == "1.12.3"
-    assert "Magnet" in package["description"] and "ED2K" in package["description"]
+    assert "Magnet" in package["labels"] and "ED2K" in package["labels"]
     assert "v1.12.3" in package["history"]
     assert "v1.10.13" in package["history"]
     assert "v1.8.0" in package["history"]
