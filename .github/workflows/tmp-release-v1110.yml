@@ -1,4 +1,4 @@
-name: Consolidate GuangYa 1.11 release
+name: Finalize GuangYa 1.11 release docs
 
 on:
   push:
@@ -19,90 +19,60 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Consolidate release metadata and wiring
+      - name: Finalize release documentation
         run: |
           python - <<'PY'
           from pathlib import Path
-          import json
 
-          # DailyAssistant: keep v1.0.0 implementation as the base and wrap it with v1.1.0 hardening.
-          path = Path('plugins.v3/dailyassistant/__init__.py')
-          text = path.read_text(encoding='utf-8')
-          if 'from .hardening_v110 import DailyAssistantV110Mixin' not in text:
-              text = text.replace('from .sources import DEFAULT_SOURCE_KEYS, SOURCE_MAP, fetch_source, source_options\n', 'from .sources import DEFAULT_SOURCE_KEYS, SOURCE_MAP, fetch_source, source_options\nfrom .hardening_v110 import DailyAssistantV110Mixin\n')
-          text = text.replace('class DailyAssistant(_PluginBase):', 'class DailyAssistantV100(_PluginBase):', 1)
-          if 'class DailyAssistant(DailyAssistantV110Mixin, DailyAssistantV100):' not in text:
-              text += '\n\nclass DailyAssistant(DailyAssistantV110Mixin, DailyAssistantV100):\n    """v1.1.0 最终运行类。"""\n\n    plugin_version = "1.1.0"\n\n\n__all__ = ["DailyAssistant"]\n'
-          path.write_text(text, encoding='utf-8')
+          entry = Path('plugins.v3/guangyatransferassistant/__init__.py')
+          text = entry.read_text(encoding='utf-8')
+          text = text.replace('"""光鸭转存助手 v1.10.24 运行入口。', '"""光鸭转存助手 v1.11.0 运行入口。', 1)
+          marker = '同时增加跨来源集级终止栅栏：秒传/分享转存/Magnet/ED2K 共用已成功集与在途集，成功一集立即终止该集其它任务。'
+          replacement = marker + '\n' + 'v1.11.0 在此终态栅栏之上加入 TMDB 更新日历、临近播出补漏和每天一次全员缺集复核，覆盖提前更新与漏检。'
+          text = text.replace(marker, replacement, 1)
+          entry.write_text(text, encoding='utf-8')
 
-          # Source corrections: screenshot-exact HBO label and true TMDB Kids genre.
-          path = Path('plugins.v3/dailyassistant/sources.py')
-          text = path.read_text(encoding='utf-8')
-          text = text.replace('("hbo", "HBO / Max")', '("hbo", "HBO")')
-          text = text.replace('"tencent:10751"', '"tencent:10762"')
-          path.write_text(text, encoding='utf-8')
+          readme = Path('plugins.v3/guangyatransferassistant/README.md')
+          text = readme.read_text(encoding='utf-8')
+          section = '''## v1.11.0：跨来源集级终止 + 更新日历 + 每日全员补漏
 
-          # GuangYa 1.11.0 final release layer sits above the 1.10.24 episode fence.
-          path = Path('plugins.v3/guangyatransferassistant/__init__.py')
-          text = path.read_text(encoding='utf-8')
-          if 'from .release_v1110 import GuangYaReleaseV1110Mixin' not in text:
-              text = text.replace('from .receipt_completion_v1124 import GuangYaReceiptCompletionV1124Mixin\n', 'from .receipt_completion_v1124 import GuangYaReceiptCompletionV1124Mixin\nfrom .release_v1110 import GuangYaReleaseV1110Mixin\n')
-          text = text.replace('class GuangYaTransferAssistant(\n    GuangYaEpisodeFenceFinalV1124Mixin,', 'class GuangYaTransferAssistant(\n    GuangYaReleaseV1110Mixin,\n    GuangYaEpisodeFenceFinalV1124Mixin,')
-          text = text.replace('plugin_version = "1.10.24"', 'plugin_version = "1.11.0"')
-          text = text.replace('build_id = "20260903-r40"', 'build_id = "20260903-r41"')
-          text = text.replace('v1.10.24 成功资源立即记账：剧集按成功集号立刻写入进度并阻止同集重复版本，电影首个正片成功即完成订阅。', 'v1.10.24 成功资源立即记账并建立跨来源集级终止栅栏；v1.11.0 新增 TMDB 更新日历、临近播出补漏与每日全员缺集复核。')
-          path.write_text(text, encoding='utf-8')
+- 迅雷秒传、光鸭直接转存、Magnet 与 ED2K 统一使用同一套“成功集 + 在途集”栅栏；任一来源先真实获得某集，该集立即回写 MoviePilot 订阅进度并终止其它来源重复任务。
+- 已在途的 Magnet/ED2K 若与新成功集部分重叠，会先取消旧 cloudcollection task，再只为剩余缺集重新解析/提交；旧 taskId 不再继续轮询。远端取消失败时本地永久停止该来源重试，优先避免重复入库。
+- 光鸭直接转存提交前再次按已成功集裁剪；电影已有成功或在途正片时不再启动第二份电影资源。
+- 使用 MoviePilot/TMDB `next_episode_to_air` 建立下一集更新日历；昨天、今天、明天播出的订阅每小时进入一次到期检查，单订阅至少间隔 2 小时，以覆盖提前放出和日期漂移。
+- 每天 04:10 对全部固定路线订阅执行一次强制缺集复核，不依赖当天是否收到新频道消息；仍完整经过缺集、质量、在途 reservation 和集级终态门禁。
+- Magnet/ED2K 始终使用光鸭原生云添加，不进入 MoviePilot 本地下载器。
 
-          # Plugin manifest.
-          path = Path('plugins.v3/guangyatransferassistant/plugin.json')
-          data = json.loads(path.read_text(encoding='utf-8'))
-          data['version'] = '1.11.0'
-          data['description'] = 'MoviePilot V3 固定分流与多来源订阅助手：跨来源集级终止防重复，新增 TMDB 更新日历、临近播出检查与每日全员缺集复核。'
-          path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+'''
+          if '## v1.11.0：跨来源集级终止 + 更新日历 + 每日全员补漏' not in text:
+              text = text.replace('# 光鸭转存助手\n\n', '# 光鸭转存助手\n\n' + section, 1)
+          readme.write_text(text, encoding='utf-8')
 
-          # Package index: publish both big-release versions and histories.
-          path = Path('package.v3.json')
-          package = json.loads(path.read_text(encoding='utf-8'))
-          daily = package['DailyAssistant']
-          daily['version'] = '1.1.0'
-          daily['description'] = '全媒体榜单发现助手：多榜单同媒体合并、48小时故障缓存、GYSub 落库对账，统一 TMDB 识别后接入光鸭固定转存路线。'
-          daily.setdefault('history', {})
-          daily['history'] = {
-              'v1.1.0': '新增多来源候选合并，修复同媒体跨榜单丢失自动订阅资格；榜单故障使用48小时缓存但禁止缓存触发新自动订阅；GYSub pending 每5分钟与 MoviePilot 订阅事实对账；修正腾讯少儿为 TMDB Kids 10762。',
-              **daily['history'],
-          }
-          gy = package['GuangYaTransferAssistant']
-          gy['version'] = '1.11.0'
-          gy['description'] = '固定分流与多来源订阅助手：迅雷秒传/光鸭转存/Magnet/ED2K 共用集级终态与在途栅栏；新增 TMDB 更新日历、临近播出补漏和每日全员缺集复核。'
-          gy.setdefault('history', {})
-          gy['history'] = {
-              'v1.11.0': '合并追更闭环大版本：任一来源成功一集后立即回写 MoviePilot 订阅并终止其它来源同集任务；在途任务统一 reservation，部分重叠 Magnet/ED2K 取消旧 task 后只重建剩余缺集；新增 TMDB next_episode_to_air 更新日历，昨天/今天/明天播出剧每小时补漏且单订阅2小时冷却；每天04:10对全部固定路线订阅执行一次强制缺集复核，覆盖提前更新和漏检。',
-              **gy['history'],
-          }
-          path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          daily = Path('plugins.v3/dailyassistant/README.md')
+          text = daily.read_text(encoding='utf-8')
+          section = '''## v1.1.0：多榜单合并、故障缓存与 GYSub 对账
 
-          # Update focused unit contracts for the new public versions/source correction.
-          path = Path('tests/test_dailyassistant_v100.py')
-          text = path.read_text(encoding='utf-8')
-          text = text.replace("self.assertIn('plugin_version = \"1.0.0\"', ENTRY)", "self.assertIn('plugin_version = \"1.1.0\"', ENTRY)")
-          text = text.replace('("HBO / Max", "Apple TV+"', '("HBO", "Apple TV+"')
-          text = text.replace("self.assertIn('\"tencent:10751\"', SOURCES)", "self.assertIn('\"tencent:10762\"', SOURCES)")
-          text = text.replace('self.assertEqual(item["version"], "1.0.0")', 'self.assertEqual(item["version"], "1.1.0")')
-          path.write_text(text, encoding='utf-8')
+- 同一媒体同时出现在多个榜单时合并为一个候选并保留全部来源，不再由“第一个榜单命中”覆盖其它来源的自动订阅资格。
+- 每个榜单保留最近 48 小时成功缓存；实时来源短暂失败时页面仍可展示最近候选，但缓存候选绝不会触发新的自动 GYSub，避免旧榜单误订阅。
+- GYSub 请求后每 5 分钟主动与 MoviePilot 实际订阅事实对账，从 `requested/pending` 转为 `confirmed` 不再依赖下一次整榜刷新。
+- HBO 标签与当前产品分类对齐；腾讯少儿使用 TMDB Kids 类型 `10762`，不再误用 Family 类型。
 
-          path = Path('tests/test_guangya_receipt_completion_v1124.py')
-          text = path.read_text(encoding='utf-8')
-          old = '''        first_mixin = next(line.strip().rstrip(",") for line in class_head.splitlines() if line.strip())\n        self.assertEqual(first_mixin, "GuangYaEpisodeFenceFinalV1124Mixin")\n        self.assertIn("GuangYaEpisodeFenceFinalV1124Mixin,\\n    GuangYaReceiptCompletionV1124Mixin,", class_head)'''
-          new = '''        mixins = [line.strip().rstrip(",") for line in class_head.splitlines() if line.strip()]\n        self.assertEqual(mixins[:3], [\n            "GuangYaReleaseV1110Mixin",\n            "GuangYaEpisodeFenceFinalV1124Mixin",\n            "GuangYaReceiptCompletionV1124Mixin",\n        ])'''
-          if old in text:
-              text = text.replace(old, new)
-          path.write_text(text, encoding='utf-8')
+'''
+          if '## v1.1.0：多榜单合并、故障缓存与 GYSub 对账' not in text:
+              text = text.replace('# 每日助手\n\n', '# 每日助手\n\n' + section, 1)
+          text = text.replace('HBO/Max、Apple TV+', 'HBO、Apple TV+')
+          daily.write_text(text, encoding='utf-8')
           PY
-      - name: Commit release consolidation
+      - name: Validate docs-adjacent Python
+        run: |
+          python -m compileall -q plugins.v3/guangyatransferassistant plugins.v3/dailyassistant
+          find plugins.v3 -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v3 -type f -name '*.pyc' -delete
+      - name: Commit docs
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add package.v3.json plugins.v3/dailyassistant plugins.v3/guangyatransferassistant tests/test_dailyassistant_v100.py tests/test_guangya_receipt_completion_v1124.py
+          git add plugins.v3/guangyatransferassistant/__init__.py plugins.v3/guangyatransferassistant/README.md plugins.v3/dailyassistant/README.md
           git diff --cached --check
-          git commit -m "feat: consolidate GuangYa 1.11 and DailyAssistant 1.1" || exit 0
+          git commit -m "docs: finalize GuangYa 1.11 and DailyAssistant 1.1" || exit 0
           git push origin HEAD:feature/daily-gysub-v1110
