@@ -28,15 +28,18 @@ class DailyAssistantContract(unittest.TestCase):
             "纪录片", "日漫", "综艺",
             "Netflix · 电影榜", "Netflix · 剧集榜", "Netflix · 混合榜",
             "猫眼 · 电影榜", "猫眼 · 剧集榜", "猫眼 · 综艺榜", "猫眼 · 混合榜",
-            "豆瓣 · 正在上映", "豆瓣 · 热门电影", "豆瓣 · 热门剧集", "豆瓣 · 混合榜",
+            "豆瓣 · 正在上映", "豆瓣 · 即将上映", "豆瓣 · 新片榜", "豆瓣 · 一周口碑榜",
+            "豆瓣 · 北美票房榜", "豆瓣 · 热门电影", "豆瓣 · 剧集近期值得看",
+            "豆瓣 · 热门剧集", "豆瓣 · 推荐", "豆瓣 · 混合榜",
             "热门 · IMDb 热门电影", "热门 · IMDb 热门剧集", "热门 · TMDB 趋势",
             "热门 · AniList 热门", "热门 · Bangumi 今日动漫", "热门 · 混合榜",
-            "腾讯视频 · 热播", "腾讯视频 · 电视剧",
+            "腾讯视频 · 热播", "腾讯视频 · 电影", "腾讯视频 · 电视剧",
+            "腾讯视频 · 综艺", "腾讯视频 · 少儿",
         )
         for token in static_required:
             self.assertIn(token, SOURCES)
         for family in ("HBO / Max", "Apple TV+", "Disney+", "Crunchyroll", "Amazon Prime", "Amazon", "Hulu"):
-            self.assertIn(f'(\"{family.split(" / ")[0].lower() if family == "HBO / Max" else ""}', SOURCES) if False else self.assertIn(f'"{family}"', SOURCES)
+            self.assertIn(f'"{family}"', SOURCES)
         self.assertIn('(("movie", "电影榜"), ("tv", "剧集榜"), ("mixed", "混合榜"))', SOURCES)
 
     def test_catalog_uses_host_chains_and_public_rank_sources(self):
@@ -46,6 +49,25 @@ class DailyAssistantContract(unittest.TestCase):
             "piaofang.maoyan.com", "AniListChain",
         ):
             self.assertIn(token, SOURCES)
+
+    def test_douban_catalog_uses_current_public_collection_contracts(self):
+        for token in (
+            "rexxar/api/v2/subject_collection", "movie_soon", "movie_weekly_best",
+            "movie_real_time_hotest", "tv_real_time_hotest", "movie/us_box",
+            'chain.douban_movies(sort=spec.arg or "U"',
+        ):
+            self.assertIn(token, SOURCES)
+        self.assertIn("_douban_subject_id", SOURCES)
+        self.assertIn("_year_value", SOURCES)
+
+    def test_tencent_movie_tv_variety_and_kids_have_distinct_routes(self):
+        self.assertIn('"tencent": "623|1170"', SOURCES)
+        self.assertIn('SourceSpec("tencent_movie"', SOURCES)
+        self.assertIn('SourceSpec("tencent_tv"', SOURCES)
+        self.assertIn('SourceSpec("tencent_variety"', SOURCES)
+        self.assertIn('SourceSpec("tencent_kids"', SOURCES)
+        self.assertIn('"watch_provider_genre"', SOURCES)
+        self.assertIn('"tencent:10751"', SOURCES)
 
     def test_candidate_and_auto_modes_are_separate(self):
         self.assertIn("auto_gysub", ENTRY)
