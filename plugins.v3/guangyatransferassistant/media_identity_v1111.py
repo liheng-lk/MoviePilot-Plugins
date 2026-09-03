@@ -16,7 +16,7 @@ _TECH_TOKEN_RE = re.compile(
 )
 _EP_TOKEN_RE = re.compile(r"(?i)^(?:s\d{1,2}(?:e\d{1,4})?|e\d{1,4}|ep\d{1,4}|episode\d{1,4})$")
 _SEASON_PATTERNS = (
-    re.compile(r"(?i)\bS(?:eason)?[ ._\-]*0*(\d{1,2})\b"),
+    re.compile(r"(?i)\bS(?:eason)?[ ._\-]*0*(\d{1,2})(?=E|[^0-9]|$)"),
     re.compile(r"第\s*0*(\d{1,2})\s*季"),
 )
 _YEAR_RE = re.compile(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)")
