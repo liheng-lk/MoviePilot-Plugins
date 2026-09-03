@@ -28,10 +28,14 @@ class GuangYaEpisodeFenceV1124Tests(unittest.TestCase):
         self.assertIn("class GuangYaReceiptCompletionV1124Mixin(GuangYaEpisodeFenceV1124Mixin):", self.receipt)
         self.assertIn("from .episode_fence_final_v1124 import GuangYaEpisodeFenceFinalV1124Mixin", self.entry)
         self.assertLess(
+            self.entry.index("    GuangYaMediaIdentityGuardV1111Mixin,"),
+            self.entry.index("    GuangYaEpisodeFenceFinalV1124Mixin,"),
+        )
+        self.assertLess(
             self.entry.index("    GuangYaEpisodeFenceFinalV1124Mixin,"),
             self.entry.index("    GuangYaReceiptCompletionV1124Mixin,"),
         )
-        self.assertIn('build_id = "20260903-r41"', self.entry)
+        self.assertIn('build_id = "20260903-r42"', self.entry)
 
     def test_success_facts_are_hard_missing_episode_fence(self):
         method = self.fence.split("    def _subscription_missing_episodes(", 1)[1].split(

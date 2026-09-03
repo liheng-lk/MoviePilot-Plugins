@@ -1,0 +1,313 @@
+"""v1.11.1 多来源媒体身份门禁纯函数。
+
+原则：明确冲突硬拒绝；信息缺失不直接判错。搜索卡片只能作为弱证据，
+必须与实际分享/解析后的文件结构共同达到置信度阈值，避免为了防错显著降低秒传成功率。
+"""
+from __future__ import annotations
+
+import html
+import re
+from pathlib import PurePosixPath
+from typing import Any, Dict, Iterable, List, Sequence, Set
+
+_TECH_TOKEN_RE = re.compile(
+    r"(?ix)^(?:2160p|1080p|1080i|720p|576p|480p|4k|8k|web(?:dl|rip)?|web-dl|dl|bluray|blu-ray|bdrip|brrip|remux|hdtv|uhd|x26[45]|h26[45]|hevc|avc|av1|10bit|8bit|hdr10\+?|hdr|dv|dolbyvision|aac\d?(?:\.\d)?|ac3|eac3|ddp?\d?(?:\.\d)?|dts(?:hd)?|truehd|atmos|flac|proper|repack|rerip|internal|extended|uncut|complete|全集|全季|chs|cht|chi|eng|jpn|kor|multi|dual|字幕|中字|简中|繁中)$"
+)
+_EP_TOKEN_RE = re.compile(r"(?i)^(?:s\d{1,2}(?:e\d{1,4})?|e\d{1,4}|ep\d{1,4}|episode\d{1,4})$")
+_EPISODE_EVIDENCE_RE = re.compile(
+    r"(?i)(?:\bS\d{1,2}[ ._\-]*E\d{1,4}\b|\b(?:E|EP|Episode)[ ._\-]*0*\d{1,4}\b|第\s*\d{1,4}\s*(?:集|话))"
+)
+_SEASON_PATTERNS = (
+    re.compile(r"(?i)\bS(?:eason)?[ ._\-]*0*(\d{1,2})(?=E|[^0-9]|$)"),
+    re.compile(r"第\s*0*(\d{1,2})\s*季"),
+)
+_YEAR_RE = re.compile(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)")
+_CJK_SEASON_RE = re.compile(r"第\s*([一二三四五六七八九十]{1,3})\s*季")
+_GENERIC_PRIMARY_KEYS = {
+    "file", "files", "video", "movie", "tv", "season", "download", "resource", "share",
+    "资源", "文件", "视频", "电影", "电视剧", "剧集", "分享", "迅雷", "云盘", "迅雷云盘",
+    "迅雷分享", "云盘分享", "资源分享", "迅雷云盘分享",
+}
+
+
+def _cn_number(value: str) -> int:
+    digits = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+    if value == "十":
+        return 10
+    if "十" in value:
+        left, _, right = value.partition("十")
+        return (digits.get(left, 1) * 10) + digits.get(right, 0)
+    return digits.get(value, 0)
+
+
+def explicit_seasons_v1111(values: Iterable[Any]) -> Set[int]:
+    seasons: Set[int] = set()
+    for raw in values or []:
+        text = html.unescape(str(raw or ""))
+        for pattern in _SEASON_PATTERNS:
+            for match in pattern.findall(text):
+                try:
+                    number = int(match)
+                except (TypeError, ValueError):
+                    continue
+                if 0 <= number <= 99:
+                    seasons.add(number)
+        for token in _CJK_SEASON_RE.findall(text):
+            number = _cn_number(token)
+            if 0 < number <= 99:
+                seasons.add(number)
+    return seasons
+
+
+def _title_year_tokens(aliases: Sequence[str]) -> Set[str]:
+    result: Set[str] = set()
+    for alias in aliases or []:
+        result.update(_YEAR_RE.findall(str(alias or "")))
+    return result
+
+
+def explicit_years_v1111(values: Iterable[Any], aliases: Sequence[str] = ()) -> Set[str]:
+    title_numbers = _title_year_tokens(aliases)
+    years: Set[str] = set()
+    for raw in values or []:
+        for token in _YEAR_RE.findall(html.unescape(str(raw or ""))):
+            if token not in title_numbers:
+                years.add(token)
+    return years
+
+
+def _candidate_strings(value: Any) -> List[str]:
+    text = html.unescape(str(value or "")).replace("\\", "/").strip()
+    if not text:
+        return []
+    rows = [text]
+    rows.extend(part.strip() for part in text.splitlines() if part.strip())
+    rows.extend(part.strip() for part in re.split(r"[|／]", text) if part.strip())
+    try:
+        path = PurePosixPath(text)
+        rows.extend(part for part in path.parts if part not in {"/", ".", ".."})
+        rows.append(path.name)
+    except Exception:
+        pass
+    result: List[str] = []
+    seen = set()
+    for row in rows:
+        key = row.casefold()
+        if row and key not in seen:
+            seen.add(key)
+            result.append(row)
+    return result
+
+
+def title_key_v1111(value: Any, expected_year: Any = None) -> str:
+    text = html.unescape(str(value or ""))
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\.(?:mkv|mp4|ts|m2ts|avi|mov|wmv|flv|webm|iso|m4v|srt|ass|ssa|vtt|sup)$", " ", text, flags=re.I)
+    text = re.sub(r"[\[【（(][^\]】）)]{0,80}[\]】）)]", " ", text)
+    text = re.sub(r"(?i)\bS(?:eason)?[ ._\-]*0*\d{1,2}(?:[ ._\-]*E(?:pisode)?[ ._\-]*0*\d{1,4})?(?=[^0-9A-Za-z]|$)", " ", text)
+    text = re.sub(r"(?i)\b(?:E|EP|Episode)[ ._\-]*0*\d{1,4}\b", " ", text)
+    text = re.sub(r"第\s*[0-9一二三四五六七八九十]{1,3}\s*(?:季|集|话)", " ", text)
+    year = str(expected_year or "").strip()
+    if year and re.fullmatch(r"(?:19|20)\d{2}", year):
+        text = re.sub(rf"(?<!\d){re.escape(year)}(?!\d)", " ", text)
+    raw_tokens = [token for token in re.split(r"[^0-9A-Za-z\u4e00-\u9fff]+", text) if token]
+    kept: List[str] = []
+    for token in raw_tokens:
+        lowered = token.casefold()
+        if _TECH_TOKEN_RE.fullmatch(lowered) or _EP_TOKEN_RE.fullmatch(lowered):
+            continue
+        if lowered in {"2160", "1080", "720", "576", "480", "264", "265"}:
+            continue
+        kept.append(lowered)
+    return "".join(kept)
+
+
+def title_variants_v1111(value: Any, expected_year: Any = None) -> Set[str]:
+    variants: Set[str] = set()
+    for candidate in _candidate_strings(value):
+        key = title_key_v1111(candidate, expected_year=expected_year)
+        if len(key) >= 2:
+            variants.add(key)
+    return variants
+
+
+def strong_title_match_v1111(expected: Any, actual: Any, expected_year: Any = None) -> bool:
+    wanted = title_variants_v1111(expected, expected_year=expected_year)
+    found = title_variants_v1111(actual, expected_year=expected_year)
+    return bool(wanted and found and wanted.intersection(found))
+
+
+def any_alias_title_match_v1111(aliases: Sequence[str], evidences: Iterable[Any], expected_year: Any = None) -> bool:
+    alias_keys: Set[str] = set()
+    for alias in aliases or []:
+        alias_keys.update(title_variants_v1111(alias, expected_year=expected_year))
+    if not alias_keys:
+        return False
+    for evidence in evidences or []:
+        if alias_keys.intersection(title_variants_v1111(evidence, expected_year=expected_year)):
+            return True
+    return False
+
+
+def _rows_v1111(values: Iterable[Any]) -> List[str]:
+    return [str(value or "").strip() for value in values or [] if str(value or "").strip()]
+
+
+def _credible_primary_title_v1111(values: Iterable[Any], expected_year: Any = None) -> bool:
+    for value in _rows_v1111(values):
+        for key in title_variants_v1111(value, expected_year=expected_year):
+            folded = key.casefold()
+            if len(folded) < 3 or folded in _GENERIC_PRIMARY_KEYS:
+                continue
+            return True
+    return False
+
+
+def has_episode_structure_v1111(values: Iterable[Any]) -> bool:
+    return any(_EPISODE_EVIDENCE_RE.search(str(value or "")) for value in values or [])
+
+
+def assess_media_identity_v1111(
+    *,
+    aliases: Sequence[str],
+    expected_year: Any,
+    expected_season: Any,
+    is_movie: bool,
+    primary_evidences: Iterable[Any] = (),
+    file_evidences: Iterable[Any] = (),
+    discovery_evidences: Iterable[Any] = (),
+    threshold: int = 50,
+) -> Dict[str, Any]:
+    """硬冲突优先；其余按实际标题、弱搜索证据、年份/季号和剧集结构累计置信度。"""
+    primary = _rows_v1111(primary_evidences)
+    files = _rows_v1111(file_evidences)
+    discovery = _rows_v1111(discovery_evidences)
+    actual = primary + files
+    year = str(expected_year or "").strip()
+    try:
+        season = int(expected_season or 0)
+    except (TypeError, ValueError):
+        season = 0
+
+    years = explicit_years_v1111(actual, aliases)
+    if year and years and year not in years:
+        return {
+            "ok": False, "hard_conflict": True, "score": 0,
+            "reason": f"实际资源年份冲突：期望={year} 实际={','.join(sorted(years))}",
+        }
+
+    seasons = explicit_seasons_v1111(actual)
+    if is_movie and seasons:
+        return {
+            "ok": False, "hard_conflict": True, "score": 0,
+            "reason": f"电影资源出现季号：{sorted(seasons)}",
+        }
+    if not is_movie and season > 0 and seasons and season not in seasons:
+        return {
+            "ok": False, "hard_conflict": True, "score": 0,
+            "reason": f"实际资源季号冲突：期望=S{season:02d} 实际={sorted(seasons)}",
+        }
+
+    primary_match = any_alias_title_match_v1111(aliases, primary, expected_year=year)
+    file_match = any_alias_title_match_v1111(aliases, files, expected_year=year)
+    discovery_match = any_alias_title_match_v1111(aliases, discovery, expected_year=year)
+
+    # 顶层真实分享名/解析名如果明确指向另一作品，搜索卡片绝不能把它救回来。
+    if primary and not primary_match and _credible_primary_title_v1111(primary, expected_year=year):
+        preview = " | ".join(primary[:3])[:220]
+        return {
+            "ok": False, "hard_conflict": True, "score": 0,
+            "reason": f"实际资源顶层标题与订阅不一致：{preview}",
+        }
+
+    score = 0
+    reasons: List[str] = []
+    if primary_match:
+        score += 60
+        reasons.append("实际分享/解析标题匹配+60")
+    if file_match:
+        score += 40
+        reasons.append("实际文件路径标题匹配+40")
+    if discovery_match:
+        score += 35
+        reasons.append("搜索发现标题匹配+35")
+    if files:
+        score += 5
+        reasons.append("已取得实际文件列表+5")
+    if year and years and year in years:
+        score += 10
+        reasons.append("实际年份匹配+10")
+    if not is_movie and season > 0 and seasons and season in seasons:
+        score += 10
+        reasons.append("实际季号匹配+10")
+    if not is_movie and has_episode_structure_v1111(files):
+        score += 15
+        reasons.append("实际文件含剧集结构+15")
+
+    score = min(100, score)
+    required = max(1, int(threshold or 50))
+    if score >= required:
+        if season > 1 and not seasons:
+            reasons.append("季号缺失但无冲突，按多证据置信度放行")
+        return {
+            "ok": True, "hard_conflict": False, "score": score,
+            "reason": "；".join(reasons) or f"媒体身份置信度={score}",
+            "primary_match": primary_match, "file_match": file_match,
+            "discovery_match": discovery_match, "years": sorted(years), "seasons": sorted(seasons),
+        }
+
+    preview = " | ".join((primary + files[:3] + discovery[:2])[:6])[:260]
+    return {
+        "ok": False, "hard_conflict": False, "score": score,
+        "reason": f"媒体身份置信度不足：{score}<{required}；{preview}",
+        "primary_match": primary_match, "file_match": file_match,
+        "discovery_match": discovery_match, "years": sorted(years), "seasons": sorted(seasons),
+    }
+
+
+def validate_media_evidence_v1111(
+    *,
+    aliases: Sequence[str],
+    expected_year: Any,
+    expected_season: Any,
+    is_movie: bool,
+    evidences: Iterable[Any],
+    require_title: bool = True,
+    require_explicit_season: bool = False,
+) -> tuple[bool, str]:
+    """兼容旧严格调用；v1.11.1 自动来源使用 assess_media_identity_v1111。"""
+    rows = _rows_v1111(evidences)
+    if not rows:
+        return False, "实际资源没有可校验的标题或文件路径"
+    year = str(expected_year or "").strip()
+    years = explicit_years_v1111(rows, aliases)
+    if year and years and year not in years:
+        return False, f"实际资源年份冲突：期望={year} 实际={','.join(sorted(years))}"
+    seasons = explicit_seasons_v1111(rows)
+    try:
+        season = int(expected_season or 0)
+    except (TypeError, ValueError):
+        season = 0
+    if is_movie and seasons:
+        return False, f"电影资源出现季号：{sorted(seasons)}"
+    if not is_movie and season > 0 and seasons and season not in seasons:
+        return False, f"实际资源季号冲突：期望=S{season:02d} 实际={sorted(seasons)}"
+    if not is_movie and require_explicit_season and season > 1 and not seasons:
+        return False, f"S{season:02d} 自动转存要求实际资源包含明确季号，当前资源缺少季号证据"
+    if require_title and not any_alias_title_match_v1111(aliases, rows, expected_year=year):
+        preview = " | ".join(rows[:4])[:220]
+        return False, f"实际资源标题无法确认属于当前媒体：{preview}"
+    return True, "实际资源标题/年份/季号校验通过"
+
+
+__all__ = [
+    "explicit_seasons_v1111",
+    "explicit_years_v1111",
+    "title_key_v1111",
+    "title_variants_v1111",
+    "strong_title_match_v1111",
+    "any_alias_title_match_v1111",
+    "has_episode_structure_v1111",
+    "assess_media_identity_v1111",
+    "validate_media_evidence_v1111",
+]

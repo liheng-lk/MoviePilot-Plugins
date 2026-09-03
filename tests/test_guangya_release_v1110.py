@@ -12,19 +12,20 @@ PLUGIN_JSON = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
 
 
 class GuangYaReleaseV1110Tests(unittest.TestCase):
-    def test_release_layer_parses_and_is_outermost(self):
+    def test_release_layer_parses_and_calendar_layer_remains_above_episode_fence(self):
         ast.parse(ENTRY)
         ast.parse(RELEASE)
         self.assertIn("from .release_v1110 import GuangYaReleaseV1110Mixin", ENTRY)
         head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
         mixins = [line.strip().rstrip(",") for line in head.splitlines() if line.strip()]
-        self.assertEqual(mixins[:3], [
+        self.assertEqual(mixins[:4], [
+            "GuangYaMediaIdentityGuardV1111Mixin",
             "GuangYaReleaseV1110Mixin",
             "GuangYaEpisodeFenceFinalV1124Mixin",
             "GuangYaReceiptCompletionV1124Mixin",
         ])
-        self.assertIn('plugin_version = "1.11.0"', ENTRY)
-        self.assertIn('build_id = "20260903-r41"', ENTRY)
+        self.assertIn('plugin_version = "1.11.1"', ENTRY)
+        self.assertIn('build_id = "20260903-r42"', ENTRY)
 
     def test_daily_full_catchup_is_independent_of_new_channel_messages(self):
         self.assertIn('"id": "GuangYaTransferAssistantDailyCatchup"', RELEASE)
@@ -51,12 +52,13 @@ class GuangYaReleaseV1110Tests(unittest.TestCase):
         self.assertIn("datetime.timedelta(hours=self._calendar_per_sub_cooldown_hours_v1110)", RELEASE)
         self.assertIn("self._is_guangya_route(subscribe)", RELEASE)
 
-    def test_calendar_page_and_metadata_are_published(self):
+    def test_calendar_page_and_current_metadata_are_published(self):
         self.assertIn("追更日历与每日补漏", RELEASE)
         package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
-        self.assertEqual(package["GuangYaTransferAssistant"]["version"], "1.11.0")
-        self.assertEqual(PLUGIN_JSON["version"], "1.11.0")
+        self.assertEqual(package["GuangYaTransferAssistant"]["version"], "1.11.1")
+        self.assertEqual(PLUGIN_JSON["version"], "1.11.1")
         self.assertIn("v1.11.0", package["GuangYaTransferAssistant"]["history"])
+        self.assertIn("v1.11.1", package["GuangYaTransferAssistant"]["history"])
 
 
 if __name__ == "__main__":
