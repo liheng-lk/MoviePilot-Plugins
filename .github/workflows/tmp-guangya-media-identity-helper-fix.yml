@@ -1,0 +1,34 @@
+name: Fix GuangYa media identity helper
+on:
+  push:
+    branches: [hotfix/guangya-media-identity-v1111]
+    paths: [.github/workflows/tmp-guangya-media-identity-helper-fix.yml]
+permissions:
+  contents: write
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hotfix/guangya-media-identity-v1111
+      - name: Patch release token cleanup
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('plugins.v3/guangyatransferassistant/media_identity_v1111.py')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace('web(?:dl|rip)?|web-dl|bluray|', 'web(?:dl|rip)?|web-dl|dl|bluray|', 1)
+          text = text.replace(r'(?i)\bS(?:eason)?[ ._\-]*0*\d{1,2}(?:[ ._\-]*E(?:pisode)?[ ._\-]*0*\d{1,4})?\b', r'(?i)\bS(?:eason)?[ ._\-]*0*\d{1,2}(?:[ ._\-]*E(?:pisode)?[ ._\-]*0*\d{1,4})?(?=[^0-9A-Za-z]|$)')
+          path.write_text(text, encoding='utf-8')
+          PY
+          python -m compileall -q plugins.v3/guangyatransferassistant/media_identity_v1111.py
+          git diff --check
+      - name: Commit helper fix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add plugins.v3/guangyatransferassistant/media_identity_v1111.py
+          git commit -m "fix: normalize split WEB-DL release tokens"
+          git push origin HEAD:hotfix/guangya-media-identity-v1111
