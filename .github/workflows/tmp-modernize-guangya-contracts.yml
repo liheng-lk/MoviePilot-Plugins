@@ -1,0 +1,160 @@
+name: Modernize GuangYa release contracts
+
+on:
+  push:
+    branches: [feature/daily-gysub-v1110]
+    paths: [.github/workflows/tmp-modernize-guangya-contracts.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/daily-gysub-v1110
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Update stale current-release assertions without weakening feature checks
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('tests/v3/guangyatransferassistant')
+
+          # These assertions are explicitly about the *current published release*.
+          # Historical module versions/history keys are deliberately left untouched.
+          for path in root.glob('test_*.py'):
+              text = path.read_text(encoding='utf-8')
+              before = text
+              for old in ('1.10.13', '1.10.16', '1.10.23'):
+                  text = text.replace(
+                      f'package["version"] == local["version"] == "{old}"',
+                      'package["version"] == local["version"] == "1.11.0"',
+                  )
+                  text = text.replace(
+                      f'package["version"] == "{old}"',
+                      'package["version"] == "1.11.0"',
+                  )
+                  text = text.replace(
+                      f'local["version"] == "{old}"',
+                      'local["version"] == "1.11.0"',
+                  )
+                  text = text.replace(
+                      f"'plugin_version = \"{old}\"' in ENTRY",
+                      "'plugin_version = \"1.11.0\"' in ENTRY",
+                  )
+                  text = text.replace(
+                      f"'plugin_version = \"{old}\"' in entry_text",
+                      "'plugin_version = \"1.11.0\"' in entry_text",
+                  )
+                  text = text.replace(
+                      f"'plugin_version = \"{old}\"' in UI_TEXT",
+                      "'plugin_version = \"1.11.0\"' in UI_TEXT",
+                  )
+                  text = text.replace(
+                      f"'plugin_version = \"{old}\"' in ENTRY_TEXT",
+                      "'plugin_version = \"1.11.0\"' in ENTRY_TEXT",
+                  )
+              if text != before:
+                  path.write_text(text, encoding='utf-8')
+
+          # Current-entry build assertions; old layer source build markers remain historical.
+          build_files = {
+              'test_episode_compat_v171.py': ['20260902-r31'],
+              'test_gying_hardening_v193.py': ['20260902-r24'],
+              'test_xunlei_hardening_v193.py': ['20260902-r24'],
+              'test_plugin_contract.py': ['20260902-r24'],
+              'test_mp_sdk_compat_v195.py': ['20260902-r24'],
+              'test_release_v1109_marker.py': ['20260902-r24'],
+              'test_subscribe_contract_v196.py': ['20260902-r24'],
+          }
+          for name, old_builds in build_files.items():
+              path = root / name
+              text = path.read_text(encoding='utf-8')
+              for old in old_builds:
+                  text = text.replace(
+                      f"'build_id = \"{old}\"' in ENTRY",
+                      "'build_id = \"20260903-r41\"' in ENTRY",
+                  )
+                  text = text.replace(
+                      f"'build_id = \"{old}\"' in entry_text",
+                      "'build_id = \"20260903-r41\"' in entry_text",
+                  )
+                  text = text.replace(
+                      f"'build_id = \"{old}\"' in text",
+                      "'build_id = \"20260903-r41\"' in text",
+                  )
+              path.write_text(text, encoding='utf-8')
+
+          # GYING UI is now wrapped by the console-control/cursor aggregate.  Keep checking
+          # the historical chain in its own source modules, but stop asserting an obsolete
+          # direct edge from the UI to xunlei-final/channel-cursor.
+          ui_replacements = {
+              'assert "from .channel_cursor_event_v1115 import GuangYaChannelCursorEventV1115Mixin" in ui':
+                  'assert "from .console_control_cursor_v1116 import GuangYaConsoleControlCursorV1116Mixin" in ui',
+              'assert "class GuangYaGyingUiV1109Mixin(GuangYaChannelCursorEventV1115Mixin):" in ui':
+                  'assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlCursorV1116Mixin):" in ui',
+              'assert "from .xunlei_final_v1114 import GuangYaXunleiFinalV1114Mixin" in UI_TEXT':
+                  'assert "from .console_control_cursor_v1116 import GuangYaConsoleControlCursorV1116Mixin" in UI_TEXT',
+              'assert "class GuangYaGyingUiV1109Mixin(GuangYaXunleiFinalV1114Mixin):" in UI_TEXT':
+                  'assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlCursorV1116Mixin):" in UI_TEXT',
+              'assert "from .xunlei_final_v1114 import GuangYaXunleiFinalV1114Mixin" in UI':
+                  'assert "from .console_control_cursor_v1116 import GuangYaConsoleControlCursorV1116Mixin" in UI',
+              'assert "class GuangYaGyingUiV1109Mixin(GuangYaXunleiFinalV1114Mixin):" in UI':
+                  'assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlCursorV1116Mixin):" in UI',
+              'assert "class GuangYaGyingUiV1109Mixin(GuangYaXunleiFinalV1114Mixin):" in ui':
+                  'assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlCursorV1116Mixin):" in ui',
+          }
+          for path in root.glob('test_*.py'):
+              text = path.read_text(encoding='utf-8')
+              for old, new in ui_replacements.items():
+                  text = text.replace(old, new)
+              path.write_text(text, encoding='utf-8')
+
+          # Viewing logging became an intentional multi-inheritance aggregate when JSON
+          # pipeline + integrity checks were added. Assert all three retained layers.
+          path = root / 'test_viewing_dispatch_v1113.py'
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              '    assert "class GuangYaViewingLoggingV1113Mixin(GuangYaViewingDispatchV1113Mixin):" in logging_text',
+              '    assert "class GuangYaViewingLoggingV1113Mixin(" in logging_text\n'
+              '    assert "GuangYaViewingDispatchV1113Mixin," in logging_text\n'
+              '    assert "GuangYaXunleiJsonPipelineV1117Mixin," in logging_text\n'
+              '    assert "GuangYaXunleiIntegrityV1116Mixin," in logging_text',
+          )
+          path.write_text(text, encoding='utf-8')
+
+          path = root / 'test_xunlei_integrity_v1116.py'
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              '    assert "GuangYaViewingDispatchV1113Mixin,\\n    GuangYaXunleiIntegrityV1116Mixin," in logging',
+              '    assert logging.index("GuangYaViewingDispatchV1113Mixin,") < logging.index("GuangYaXunleiJsonPipelineV1117Mixin,")\n'
+              '    assert logging.index("GuangYaXunleiJsonPipelineV1117Mixin,") < logging.index("GuangYaXunleiIntegrityV1116Mixin,")',
+          )
+          path.write_text(text, encoding='utf-8')
+
+          # The dedicated release marker tests should now pin the consolidated release.
+          for name in ('test_release_v1109_marker.py', 'test_release_v1111_marker.py'):
+              path = root / name
+              text = path.read_text(encoding='utf-8')
+              text = text.replace('20260902-r31', '20260903-r41')
+              text = text.replace('20260902-r24', '20260903-r41')
+              path.write_text(text, encoding='utf-8')
+          PY
+      - name: Sanity-check modified contracts
+        run: |
+          python -m compileall -q tests/v3/guangyatransferassistant
+          python tests/v3/guangyatransferassistant/run_contract_tests.py
+      - name: Commit modernized contracts
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add tests/v3/guangyatransferassistant
+          git diff --cached --check
+          git commit -m "test: align GuangYa historical contracts with 1.11 runtime" || exit 0
+          git push origin HEAD:feature/daily-gysub-v1110
