@@ -30,6 +30,7 @@ from app.sdk.plugins import PluginManager
 from app.sdk.config import settings
 from app.sdk.logging import logger
 from app.sdk.network import RequestUtils
+from .media_identity_v1111 import explicit_seasons_v1111, strong_title_match_v1111
 
 
 DEFAULT_CHANNEL_URLS = [
@@ -364,42 +365,43 @@ def _entry_matches_subscription(
     entry: Dict[str, Any], name: str, year: Any = None, season: Any = None,
     media_source: Any = None, media_id: Any = None,
 ) -> bool:
-    """优先使用频道 TMDB 精确匹配；没有可比身份时才回退标题/年份/季。"""
+    """频道身份门禁：TMDB 冲突硬拒绝；标题强匹配；S02+ 必须有明确季号。"""
     source = str(media_source or "").lower()
     entry_tmdb = str(entry.get("tmdb_id") or "").strip()
     subscribe_id = str(media_id or "").strip()
     comparable_tmdb = bool(entry_tmdb and subscribe_id and ("tmdb" in source or "themoviedb" in source))
     if comparable_tmdb and entry_tmdb != subscribe_id:
         return False
-
     text_value = str(entry.get("text") or "")
-    if season not in (None, ""):
-        explicit = re.findall(r"(?i)\bS(?:eason)?\s*0*(\d{1,2})\b", text_value)
-        if explicit and int(season) not in {int(value) for value in explicit}:
-            return False
+    seasons = explicit_seasons_v1111([text_value, entry.get("display_title"), entry.get("episode_hint")])
+    try:
+        wanted_season = int(season or 0) if season not in (None, "") else 0
+    except (TypeError, ValueError):
+        wanted_season = 0
+    if wanted_season > 0 and seasons and wanted_season not in seasons:
+        return False
+    if wanted_season > 1 and not seasons:
+        return False
     if comparable_tmdb:
         return True
-
     parsed_title = str(entry.get("display_title") or "").strip()
-    # 已成功解析频道标题时，只用标题做标题匹配；避免字幕/文件列表中的其它片名造成误命中。
-    haystack = _normalize_media_text(parsed_title if parsed_title else text_value)
-    if not haystack:
-        return False
+    title_evidence = [parsed_title] if parsed_title else [line.strip() for line in text_value.splitlines()[:12] if line.strip()]
     raw_name = str(name or "").strip()
-    candidates = {
-        _normalize_media_text(raw_name),
-        _normalize_media_text(re.split(r"[(/（]", raw_name, maxsplit=1)[0]),
-    }
-    candidates = {value for value in candidates if len(value) >= 2}
-    if not candidates or not any(value in haystack for value in candidates):
+    candidates = [raw_name, re.split(r"[(/（]", raw_name, maxsplit=1)[0]]
+    if not any(
+        str(candidate or "").strip() and str(evidence or "").strip()
+        and strong_title_match_v1111(candidate, evidence, expected_year=year)
+        for candidate in candidates for evidence in title_evidence
+    ):
         return False
     if year:
         hinted_year = entry.get("year_hint")
         years = {int(hinted_year)} if hinted_year else {int(value) for value in re.findall(r"\b(19\d{2}|20\d{2})\b", text_value)}
+        title_years = {int(value) for value in re.findall(r"\b(19\d{2}|20\d{2})\b", raw_name)}
+        years -= title_years
         if years and int(year) not in years:
             return False
     return True
-
 
 def _subscription_aliases(subscribe: Any) -> List[str]:
     """收集 MoviePilot 订阅上可用的安全别名；只做规范化标题匹配，不做编辑距离模糊匹配。"""

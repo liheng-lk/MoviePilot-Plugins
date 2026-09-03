@@ -82,14 +82,15 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "固定分流与多来源订阅助手：迅雷秒传、光鸭直接转存、Magnet/ED2K 光鸭原生云添加共用集级终态与在途栅栏；新增 TMDB 更新日历、临近播出补漏和每日全员缺集复核。",
+    "description": "固定分流与多来源订阅助手：新增实际资源媒体身份总门禁，搜索卡片只负责发现；迅雷 JSON、光鸭直接分享、Magnet/ED2K 解析后按真实标题/年份/季号再次校验，冲突或高季缺少季号证据时拒绝自动转存。",
     "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,PanSou,CloakBrowser,自动登录,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流,质量过滤,字幕过滤,检索冷却",
-    "version": "1.11.0",
+    "version": "1.11.1",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v1.11.1": "修复偶发错资源：最终 GYING 匹配不再被搜索标题误导；迅雷秒传禁止搜索卡片兜底实际 JSON 不匹配；Magnet/ED2K 在 cloudcollection resolve 后用真实 btResInfo/subfiles 二次校验；频道分享改为强标题匹配，S02+ 无明确季号证据不自动转存。",
       "v1.11.0": "合并追更闭环大版本：任一来源成功一集后立即回写 MoviePilot 订阅并终止其它来源同集任务；在途任务统一 reservation，部分重叠 Magnet/ED2K 取消旧 task 后只重建剩余缺集；新增 TMDB next_episode_to_air 更新日历，昨天/今天/明天播出剧每小时补漏且单订阅2小时冷却；每天04:10对全部固定路线订阅执行一次强制缺集复核，覆盖提前更新和漏检。",
       "v1.10.23": "修复绿灯军团订阅已有 E01-E03 却一次秒传 70 个文件：Stage A 仍完整生成并校验分享 JSON；Stage B 前先同步媒体库进度，只导入 planner 高置信匹配到当前真实缺集的 JSON 索引。已有集、无法解析集号、花絮和未被选择文件均不调用光鸭接口。",
       "v1.10.22": "修复迅雷文件上限默认值失效：_safe_int(None, 80) 实际返回 0，随后被固化为 1，导致全38集分享只生成 E38 一条 JSON。历史 0/1 配置自动迁移为 500，允许最多 5000 文件，按脚本完整递归目录并输出截断诊断。",
