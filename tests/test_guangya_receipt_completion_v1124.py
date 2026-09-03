@@ -17,7 +17,12 @@ class GuangYaReceiptCompletionV1124Tests(unittest.TestCase):
         self.assertIn("from .episode_fence_final_v1124 import GuangYaEpisodeFenceFinalV1124Mixin", ENTRY)
         class_head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
         mixins = [line.strip().rstrip(",") for line in class_head.splitlines() if line.strip()]
-        self.assertEqual(mixins[:2], ["GuangYaEpisodeFenceFinalV1124Mixin", "GuangYaReceiptCompletionV1124Mixin"])
+        self.assertEqual(mixins[:3], [
+            "GuangYaReleaseV1110Mixin",
+            "GuangYaEpisodeFenceFinalV1124Mixin",
+            "GuangYaReceiptCompletionV1124Mixin",
+        ])
+        self.assertEqual(mixins.index("GuangYaReceiptCompletionV1124Mixin"), mixins.index("GuangYaEpisodeFenceFinalV1124Mixin") + 1)
 
     def test_tv_success_receipt_is_persisted_before_next_search(self):
         method = RECEIPT.split("    def _save_xunlei_state(", 1)[1]
