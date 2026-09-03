@@ -1,0 +1,97 @@
+name: Release ShukGuangYaDisk v3.6.6 once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/release-shukguangyadisk-v366-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Synchronize v3.6.6 release metadata
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          root = Path('.')
+          plugin = root / 'plugins.v3' / 'shukguangyadisk'
+          summary = (
+              '修复自动整理重复扫描与入库监控不灵敏：恢复配置的监控 interval；资源目录仅在全部主媒体 ready 时才使用 MoviePilot 原生目录批量，'
+              '历史完成文件与新增文件混合时只提交实际 ready 成员；建立已知资源目录增量签名监控并低频全库补扫；'
+              'MoviePilot 不同输入准入冲突改为 blocked，避免分钟级重复提交。'
+          )
+
+          entry = plugin / '__init__.py'
+          text = entry.read_text(encoding='utf-8')
+          if 'plugin_version = "3.6.5"' not in text and 'plugin_version = "3.6.6"' not in text:
+              raise RuntimeError('unexpected ShukGuangYaDisk plugin_version')
+          text = text.replace('plugin_version = "3.6.5"', 'plugin_version = "3.6.6"', 1)
+          entry.write_text(text, encoding='utf-8')
+
+          local_meta = plugin / 'plugin.json'
+          meta = json.loads(local_meta.read_text(encoding='utf-8'))
+          meta['version'] = '3.6.6'
+          history = dict(meta.get('history') or {})
+          history.pop('v3.6.6', None)
+          meta['history'] = {'v3.6.6': summary, **history}
+          local_meta.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          package = root / 'package.v3.json'
+          data = json.loads(package.read_text(encoding='utf-8'))
+          shuk = dict(data['ShukGuangYaDisk'])
+          shuk['version'] = '3.6.6'
+          package_history = dict(shuk.get('history') or {})
+          package_history.pop('v3.6.6', None)
+          shuk['history'] = {'v3.6.6': summary, **package_history}
+          data['ShukGuangYaDisk'] = shuk
+          package.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          remote = plugin / 'dist' / 'assets' / 'remoteEntry.js'
+          remote_text = remote.read_text(encoding='utf-8')
+          if '?v=3.6.5' not in remote_text and '?v=3.6.6' not in remote_text:
+              raise RuntimeError('unexpected remoteEntry version token')
+          remote.write_text(remote_text.replace('?v=3.6.5', '?v=3.6.6'), encoding='utf-8')
+
+          contract = root / 'tests' / 'v3' / 'shukguangyadisk' / 'test_move_transaction_guard_v364.py'
+          contract_text = contract.read_text(encoding='utf-8')
+          contract_text = contract_text.replace('== "3.6.5"', '== "3.6.6"')
+          contract_text = contract_text.replace('plugin_version = "3.6.5"', 'plugin_version = "3.6.6"')
+          contract_text = contract_text.replace('?v=3.6.5', '?v=3.6.6')
+          contract.write_text(contract_text, encoding='utf-8')
+
+          one_shot = root / '.github' / 'workflows' / 'release-shukguangyadisk-v366-once.yml'
+          if one_shot.exists():
+              one_shot.unlink()
+          PY
+
+      - name: Validate ShukGuangYaDisk release
+        run: |
+          python -m pytest \
+            tests/v3/shukguangyadisk/test_monitor_v366.py \
+            tests/v3/shukguangyadisk/test_pending_revisit_v361.py \
+            tests/v3/shukguangyadisk/test_move_transaction_guard_v364.py \
+            tests/v3/shukguangyadisk/test_engine_v360.py \
+            -q
+
+      - name: Commit v3.6.6 release
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "release: ShukGuangYaDisk v3.6.6"
+          git push origin HEAD:main
