@@ -1,14 +1,15 @@
 {
   "DailyAssistant": {
     "name": "每日助手",
-    "description": "全媒体榜单发现助手：修复 MoviePilot V3 插件类发现导致安装失败；保留多榜单合并、48小时故障缓存、GYSub 落库对账与光鸭固定转存路线。",
+    "description": "全媒体榜单发现助手：修复 MoviePilot V3 定时服务注册参数契约；保留多榜单合并、48小时故障缓存、GYSub 落库对账与光鸭固定转存路线。",
     "labels": "榜单,Netflix,HBO,Apple TV+,Disney+,Crunchyroll,Amazon Prime,Hulu,猫眼,豆瓣,IMDb,TMDB,AniList,Bangumi,腾讯视频,GYSub,光鸭转存",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "icon": "movie.jpg",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v1.1.2": "修复注册服务失败：MoviePilot 当前调度器把 service.kwargs 作为 APScheduler 触发器参数，回调参数必须放入 func_kwargs；立即刷新改为 date trigger 的 run_date 参数，定时刷新 manual 参数改为 func_kwargs。",
       "v1.1.1": "修复安装失败：MoviePilot PluginLoader 会按模块符号顺序加载首个插件基类，v1.1.0 暴露 DailyAssistantV100 导致误加载旧类；现在只向宿主暴露最终 DailyAssistant 插件类。",
       "v1.1.0": "新增多来源候选合并，修复同媒体跨榜单丢失自动订阅资格；榜单故障使用48小时缓存但禁止缓存触发新自动订阅；GYSub pending 每5分钟与 MoviePilot 订阅事实对账；修正腾讯少儿为 TMDB Kids 10762。",
       "v1.0.0": "新增全媒体榜单发现层；候选统一到 TMDB 精确身份，支持手动或按榜单自动提交 GYSub，并复用光鸭转存助手现有固定路线。"

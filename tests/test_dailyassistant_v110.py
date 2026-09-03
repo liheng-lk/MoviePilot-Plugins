@@ -17,7 +17,7 @@ class DailyAssistantV110Tests(unittest.TestCase):
         ast.parse(HARDENING)
         self.assertIn("from .hardening_v110 import DailyAssistantV110Mixin", ENTRY)
         self.assertIn("class DailyAssistant(DailyAssistantV110Mixin, DailyAssistantV100):", ENTRY)
-        self.assertIn('plugin_version = "1.1.1"', ENTRY)
+        self.assertIn('plugin_version = "1.1.2"', ENTRY)
 
     def test_same_media_merges_all_source_provenance(self):
         self.assertIn("def _merge_candidate", HARDENING)
@@ -48,7 +48,7 @@ class DailyAssistantV110Tests(unittest.TestCase):
     def test_package_index_is_v110(self):
         package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
         item = package["DailyAssistant"]
-        self.assertEqual(item["version"], "1.1.1")
+        self.assertEqual(item["version"], "1.1.2")
         self.assertIn("v1.1.0", item["history"])
         self.assertIn("48小时", item["history"]["v1.1.0"])
 
