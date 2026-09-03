@@ -301,6 +301,56 @@ class GuangYaResourcePlannerMixin:
         selection = self._planner_file_selection(source, subscribe, data)
         indexes = list(selection.get("indexes") or [])
         subfiles = bt_info.get("subfiles") if isinstance(bt_info, dict) else None
+
+        # ED2K 通常是“单文件云添加”，resolve_res 不一定返回 btResInfo.subfiles。
+        # 旧逻辑在这种情况下会创建任务，但 resolved_episodes 为空；完成后无法把该集
+        # 写回 MoviePilot，也可能让后续扫描再次命中同一集。现在用真实 resolve 文件名
+        # + 频道 episode_hint 做最后一次高置信集号确认，并把实际命中的缺集回填。
+        source_type = str(source.get("type") or "").strip().lower()
+        no_subfiles = not (isinstance(subfiles, list) and subfiles)
+        if source_type == "ed2k" and not self._is_movie_subscription(subscribe) and no_subfiles:
+            season_hint = getattr(subscribe, "season", None)
+            episode_hint = str(source.get("episode_hint") or "").strip()
+            actual_names = []
+            for value in (resolved_name, bt_info.get("fileName") if isinstance(bt_info, dict) else ""):
+                value = str(value or "").strip()
+                if value and value not in actual_names:
+                    actual_names.append(value)
+            actual_episodes = set()
+            threshold = float(self._episode_auto_confidence or AUTO_SELECT_CONFIDENCE)
+            for value in actual_names:
+                result = resolve_episode(
+                    value,
+                    package_paths=actual_names,
+                    season_hint=season_hint,
+                    episode_hint=episode_hint,
+                )
+                actual_episodes.update(reliable_episode_set(result, threshold))
+            if not actual_episodes and episode_hint:
+                hinted = resolve_episode(episode_hint, season_hint=season_hint)
+                actual_episodes.update(reliable_episode_set(hinted, 0.99))
+
+            missing_now = {
+                int(value) for value in (self._subscription_missing_episodes(subscribe) or [])
+                if int(value or 0) > 0
+            }
+            configured_target = {
+                int(value) for value in (source.get("target_episodes") or [])
+                if str(value).isdigit() and int(value) > 0
+            }
+            allowed_target = (configured_target or missing_now).intersection(missing_now)
+            matched_episodes = actual_episodes.intersection(allowed_target)
+            if not matched_episodes:
+                detail = ", ".join(actual_names[:2]) or str(source.get("name") or "ED2K 单文件")
+                raise RuntimeError(
+                    f"{_AMBIGUOUS_PREFIX}ED2K 已解析但真实文件无法确认覆盖当前缺集：{detail}"
+                )
+            selection["episodes"] = sorted(matched_episodes)
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【频道云添加】ED2K 单文件解析命中缺集=%s，允许提交光鸭 cloudcollection",
+                ",".join(f"E{value:02d}" for value in sorted(matched_episodes)),
+            )
         if not self._is_movie_subscription(subscribe) and bool(selection.get("covered")) and not indexes:
             raise RuntimeError(f"{_AMBIGUOUS_PREFIX}当前缺集已被其它在途任务覆盖，暂不创建重复离线任务")
         if bool(selection.get("ambiguous")):
@@ -396,8 +446,12 @@ class GuangYaResourcePlannerMixin:
         if hinted:
             return hinted.intersection(uncovered)
 
-        # Magnet 往往是整季/更新包，只有 resolve 后才能知道内部文件；先让它尝试覆盖当前未覆盖缺集。
-        if str(source.get("type") or "") == "magnet":
+        # Magnet/ED2K 都允许先进入光鸭 resolve：
+        # - Magnet 常见整季/更新包，需要解析内部文件后才能确认缺集；
+        # - ED2K 是单文件链接，频道标题或文件名可能不带可直接识别的集号，
+        #   但 resolve 后的真实文件名仍可安全确认。这里只做“待解析候选”，
+        #   最终集号仍必须在 _resolve_offline_source 中回填并通过缺集门禁。
+        if str(source.get("type") or "") in {"magnet", "ed2k"}:
             return set(uncovered)
         return set()
 
