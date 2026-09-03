@@ -51,6 +51,7 @@ from .gying_runtime_v193 import GuangYaGyingRuntimeMixin
 from .gying_transport_v1108 import GuangYaGyingTransportV1108Mixin
 from .multisource_v180 import GuangYaMultiSourceMixin
 from .media_identity_guard_v1111 import GuangYaMediaIdentityGuardV1111Mixin
+from .page_perf_v1123 import GuangYaPagePerfV1123Mixin
 from .airing_weekly_v1121 import GuangYaAiringWeeklyV1121Mixin
 from .airing_scheduler_v1120 import GuangYaAiringSchedulerV1120Mixin
 from .airing_ui_v1120 import GuangYaAiringUiV1120Mixin
@@ -76,6 +77,7 @@ install_channel_multisource_compat(_legacy_module)
 
 
 class GuangYaTransferAssistant(
+    GuangYaPagePerfV1123Mixin,
     GuangYaAiringWeeklyV1121Mixin,
     GuangYaAiringSchedulerV1120Mixin,
     GuangYaMediaIdentityGuardV1111Mixin,
