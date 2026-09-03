@@ -25,8 +25,8 @@ def test_v1121_parses_and_is_above_v1120_scheduler():
     weekly = ENTRY.index("GuangYaAiringWeeklyV1121Mixin,", start)
     scheduler = ENTRY.index("GuangYaAiringSchedulerV1120Mixin,", start)
     assert weekly < scheduler
-    assert 'plugin_version = "1.12.2"' in ENTRY
-    assert 'build_id = "20260903-r48"' in ENTRY
+    assert 'plugin_version = "1.12.3"' in ENTRY
+    assert 'build_id = "20260904-r49"' in ENTRY
     assert 'build_id = "20260903-r48-preview"' in GATE
 
 
