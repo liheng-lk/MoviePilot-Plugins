@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Tuple
 
+from .episode_fence_v1124 import GuangYaEpisodeFenceV1124Mixin
 from .episode_resolver_v190 import AUTO_SELECT_CONFIDENCE, reliable_episode_set, resolve_episode
 from .legacy import _is_subtitle, _is_video
 
@@ -31,10 +32,10 @@ def _safe_int_v1124(value: Any, default: int = 0) -> int:
         return default
 
 
-class GuangYaReceiptCompletionV1124Mixin:
+class GuangYaReceiptCompletionV1124Mixin(GuangYaEpisodeFenceV1124Mixin):
     """把真实成功回执提升为即时、持久的订阅进度事实。"""
 
-    build_id = "20260903-r39"
+    build_id = "20260903-r40"
 
     @staticmethod
     def _resolved_rows_v1124(resolved: Dict[str, Any]) -> List[Dict[str, Any]]:
