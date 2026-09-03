@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 GATE = (PLUGIN / "airing_weekly_v1121.py").read_text(encoding="utf-8")
 IMPL = (PLUGIN / "airing_weekly_impl_v1121.py").read_text(encoding="utf-8")
+CHANNEL = (PLUGIN / "channel_event_v1115.py").read_text(encoding="utf-8")
 WEEKLY = IMPL + "\n" + GATE
 ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 SCHEDULER = (PLUGIN / "airing_scheduler_v1120.py").read_text(encoding="utf-8")
@@ -25,6 +26,7 @@ def test_v1121_parses_and_is_above_v1120_scheduler():
     assert weekly < scheduler
     assert 'plugin_version = "1.12.1"' in ENTRY
     assert 'build_id = "20260903-r46"' in ENTRY
+    assert 'build_id = "20260903-r48-preview"' in GATE
 
 
 def test_v1121_date_precision_never_crosses_to_previous_day():
@@ -65,39 +67,64 @@ def test_v1121_unscheduled_gap_only_runs_on_inferred_weekday():
 def test_v1121_week_view_has_seven_days_status_and_posters():
     snapshot = IMPL[IMPL.index("def _weekly_calendar_snapshot_v1121"):IMPL.index("def _legacy_calendar_card_v1121")]
     assert "for index in range(7)" in snapshot
-    for token in ('"scheduled", "待更新"', '"inflight", "转存中"', '"pending", "待补"', '"library", "已入库"'):
-        assert token in snapshot
     assert '"poster": poster' in snapshot
     assert '"movie_count": len(movies)' in snapshot
     assert 'self.save_data("airing_week_view_v1121", snapshot)' in snapshot
 
 
-def test_v1121_episode_status_uses_moviepilot_library_truth_before_air_date():
+def test_v1122_final_episode_status_is_exactly_three_states():
     snapshot = GATE[GATE.index("def _weekly_calendar_snapshot_v1121"):GATE.index("def _episode_card_v1121")]
     assert "_sync_media_library_progress(subscribe)" in snapshot
-    assert '"status_source": "moviepilot_library"' in snapshot
+    assert '"status_source": "moviepilot_library_three_state"' in snapshot
     assert 'row["status"], row["status_label"] = "library", "已入库"' in snapshot
     assert 'row["status"], row["status_label"] = "inflight", "转存中"' in snapshot
-    assert 'row["status"], row["status_label"] = "completed", "已完成"' in snapshot
-    assert 'row["status"], row["status_label"] = "unknown", "待确认"' in snapshot
-    library_pos = snapshot.index('episode in state["existing"]')
-    inflight_pos = snapshot.index('episode in state["reserved"] or episode in state["claimed"]')
-    date_pos = snapshot.index("day_value and day_value > today")
-    assert library_pos < inflight_pos < date_pos
+    assert 'row["status"], row["status_label"] = "pending", "待补"' in snapshot
+    for removed in ('"completed", "已完成"', '"unknown", "待确认"', '"scheduled", "待更新"'):
+        assert removed not in snapshot
+    assert 'episode in state["existing"]' in snapshot
+    assert 'episode in state["reserved"]' in snapshot
+    assert 'episode in state["claimed"]' in snapshot
+    assert 'episode in state["note"] and episode not in state["existing"]' in snapshot
 
 
-def test_v1121_sync_failure_never_guesses_not_missing_as_library():
-    snapshot = GATE[GATE.index("def _weekly_calendar_snapshot_v1121"):GATE.index("def _episode_card_v1121")]
-    assert 'elif episode in state["raw_missing"]:' in snapshot
-    assert 'else:\n                    row["status"], row["status_label"] = "unknown", "待确认"' in snapshot
-    assert "非缺集" in snapshot and "误当已入库" in snapshot
+def test_v1122_episode_card_and_day_summary_only_expose_three_states():
+    card = GATE[GATE.index("def _episode_card_v1121"):GATE.index("def _weekly_page_v1121")]
+    assert '"library": "success"' in card
+    assert '"inflight": "warning"' in card
+    assert '"pending": "error"' in card
+    assert '"completed"' not in card and '"unknown"' not in card and '"scheduled"' not in card
+    page = GATE[GATE.index("def _weekly_page_v1121"):GATE.index("def _refresh_channel_cache_v1115")]
+    assert '_metric_chip_v1121("转存中"' in page
+    assert "已入库" in page and "转存中" in page and "待补" in page
 
 
-def test_v1121_episode_card_colors_completed_and_unknown_explicitly():
-    card = GATE[GATE.index("def _episode_card_v1121"):]
-    assert '"completed": "success"' in card
-    assert '"unknown": "secondary"' in card
-    assert '"scheduled": "info"' in card
+def test_v1122_visible_channel_resources_expire_by_last_seen_not_first_added():
+    cache = GATE[GATE.index("def _refresh_channel_cache_v1115"):GATE.index("def _run_reliability_route_batch")]
+    assert 'entry["cache_seen_at"] = now' in cache
+    assert 'get("cache_seen_at") or (row or {}).get("cache_added_at")' in cache
+    assert '"retention_basis": "last_seen"' in cache
+    assert "_CHANNEL_CACHE_RETENTION_SECONDS_V1115" in cache
+    assert "_CHANNEL_CACHE_MAX_ITEMS_V1115" in cache
+
+
+def test_v1122_viewing_is_routine_poll_not_add_only_and_cannot_be_starved_by_channel():
+    assert "def _viewing_due_subscription_ids_v1115" in CHANNEL
+    assert 'trigger="观影定时轮询"' in CHANNEL
+    batch = GATE[GATE.index("def _run_reliability_route_batch"):GATE.index("def _spawn_route_prime")]
+    assert 'if "频道新增资源" not in text:' in batch
+    assert "_viewing_due_subscription_ids_v1115()" in batch
+    assert '"viewing_poll"' in batch
+    assert "观影不会被频道事件长期饿死" in batch
+    assert "int(sid) not in channel_set" in batch
+
+
+def test_v1122_new_subscription_cache_miss_repairs_channel_once_before_viewing():
+    prime = GATE[GATE.index("def _spawn_route_prime"):]
+    assert "_cached_matches_for_subscription(subscribe)" in prime
+    assert "refresh_channels(force=True)" in prime
+    assert 'trigger="新订阅资源匹配"' in prime
+    assert "频道缓存未命中" in prime
+    assert "继续观影搜索兜底" in prime
 
 
 def test_v1121_page_matches_calendar_card_product_direction():
