@@ -380,8 +380,7 @@ def _entry_matches_subscription(
         wanted_season = 0
     if wanted_season > 0 and seasons and wanted_season not in seasons:
         return False
-    if wanted_season > 1 and not seasons:
-        return False
+    # 缺少季号本身不是冲突；后续真实文件结构与缺集规划继续确认。
     if comparable_tmdb:
         return True
     parsed_title = str(entry.get("display_title") or "").strip()

@@ -18,7 +18,7 @@ class GuangYaMediaIdentityGuardV1111Mixin:
     """执行前核验真实 payload；明确冲突硬拒绝，缺字段按多证据置信度处理。"""
 
     plugin_version = "1.11.1"
-    build_id = "20260903-r43"
+    build_id = "20260903-r42"
 
     @staticmethod
     def _identity_aliases_v1111(subscribe: Any) -> List[str]:
