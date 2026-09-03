@@ -37,9 +37,9 @@ def test_v192_files_parse_and_release_metadata_is_consistent():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.12.0"
-    assert 'plugin_version = "1.12.0"' in entry_text
-    assert 'build_id = "20260903-r44"' in entry_text
+    assert package["version"] == local["version"] == "1.12.1"
+    assert 'plugin_version = "1.12.1"' in entry_text
+    assert 'build_id = "20260903-r46"' in entry_text
     assert "v1.10.16" in package["history"]
     assert "v1.9.2" in package["history"]
 
@@ -56,26 +56,11 @@ def test_final_config_ui_replaces_stacked_legacy_cards():
 
 def test_config_exposes_complete_viewing_node_login_and_cookie_controls():
     for token in (
-        '"viewing_enabled"',
-        '"viewing_base_url"',
-        '"viewing_registry_urls"',
-        '"viewing_node_urls"',
-        '"viewing_auto_switch"',
-        '"viewing_auto_challenge"',
-        '"viewing_node_cache_minutes"',
-        '"viewing_username"',
-        '"viewing_password"',
-        '"viewing_cookie"',
-        "首选观影节点（可留空）",
-        "观影地址发布页",
-        "手动备用观影节点",
-        "观影节点自动切换",
-        "自动完成观影计算验证",
-        "观影用户名 / 邮箱",
-        "观影密码",
-        "观影 Cookie（可选）",
-        "https://www.星际穿越.com",
-        "https://www.gying.page",
+        '"viewing_enabled"', '"viewing_base_url"', '"viewing_registry_urls"', '"viewing_node_urls"',
+        '"viewing_auto_switch"', '"viewing_auto_challenge"', '"viewing_node_cache_minutes"',
+        '"viewing_username"', '"viewing_password"', '"viewing_cookie"', "首选观影节点（可留空）",
+        "观影地址发布页", "手动备用观影节点", "观影节点自动切换", "自动完成观影计算验证",
+        "观影用户名 / 邮箱", "观影密码", "观影 Cookie（可选）", "https://www.星际穿越.com", "https://www.gying.page",
     ):
         assert token in config_text
     assert 'type="password"' in config_text
@@ -102,15 +87,7 @@ def test_config_exposes_multiple_magnet_ed2k_api_sources():
 
 
 def test_final_gying_runtime_uses_real_login_search_downurl_and_pow_paths():
-    for token in (
-        "/user/login",
-        "/search?q=",
-        "/res/downurl/",
-        "/res/pow",
-        "_GYING_SEARCH_RE",
-        "browser_verified",
-        "viewing_session_state",
-    ):
+    for token in ("/user/login", "/search?q=", "/res/downurl/", "/res/pow", "_GYING_SEARCH_RE", "browser_verified", "viewing_session_state"):
         assert token in gying_text
     assert "_discover_gying_nodes" in gying_text
     assert "_gying_node_order" in failover_text
@@ -134,14 +111,7 @@ def test_provider_results_enter_existing_resourcegroup_not_local_downloader():
     assert "_spawn_source_dispatch" in provider_text
     assert "_existing_source" in provider_text
     combined = "\n".join((provider_text, gying_text, failover_text, hardening_text)).lower()
-    for forbidden in (
-        "from app.chain.download",
-        "downloadchain(",
-        "qbittorrent",
-        "transmission",
-        "aria2",
-        "bridge_url",
-    ):
+    for forbidden in ("from app.chain.download", "downloadchain(", "qbittorrent", "transmission", "aria2", "bridge_url"):
         assert forbidden not in combined
 
 
@@ -158,39 +128,12 @@ def test_viewing_secrets_are_not_returned_by_public_provider_or_node_api():
 
 def test_provider_config_survives_route_async_save():
     save = safety_text.split("    def _save_config(self)", 1)[1].split("    def _external_resource_allowed", 1)[0]
-    for key in (
-        "provider_auto_search",
-        "provider_timeout",
-        "provider_result_limit",
-        "provider_proxy",
-        "viewing_enabled",
-        "viewing_base_url",
-        "viewing_login_path",
-        "viewing_username",
-        "viewing_password",
-        "viewing_cookie",
-        "viewing_registry_urls",
-        "viewing_node_urls",
-        "viewing_auto_switch",
-        "viewing_auto_challenge",
-        "viewing_node_cache_minutes",
-        "magnet_api_sources",
-    ):
+    for key in ("provider_auto_search", "provider_timeout", "provider_result_limit", "provider_proxy", "viewing_enabled", "viewing_base_url", "viewing_login_path", "viewing_username", "viewing_password", "viewing_cookie", "viewing_registry_urls", "viewing_node_urls", "viewing_auto_switch", "viewing_auto_challenge", "viewing_node_cache_minutes", "magnet_api_sources"):
         assert f'"{key}"' in save
 
 
 def test_runtime_mro_places_complete_gying_before_xunlei_provider_and_planner():
     start = entry_text.index("class GuangYaTransferAssistant")
-    order = [
-        "GuangYaConfigUiMixin,",
-        "GuangYaGyingHardeningMixin,",
-        "GuangYaGyingFailoverMixin,",
-        "GuangYaGyingRuntimeMixin,",
-        "GuangYaXunleiHardeningMixin,",
-        "GuangYaXunleiFlashMixin,",
-        "GuangYaProviderSourcesMixin,",
-        "GuangYaPlannerSafetyMixin,",
-        "GuangYaResourcePlannerMixin,",
-    ]
+    order = ["GuangYaConfigUiMixin,", "GuangYaGyingHardeningMixin,", "GuangYaGyingFailoverMixin,", "GuangYaGyingRuntimeMixin,", "GuangYaXunleiHardeningMixin,", "GuangYaXunleiFlashMixin,", "GuangYaProviderSourcesMixin,", "GuangYaPlannerSafetyMixin,", "GuangYaResourcePlannerMixin,"]
     positions = [entry_text.index(token, start) for token in order]
     assert positions == sorted(positions)
