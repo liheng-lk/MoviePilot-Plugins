@@ -72,6 +72,34 @@ def test_v1121_week_view_has_seven_days_status_and_posters():
     assert 'self.save_data("airing_week_view_v1121", snapshot)' in snapshot
 
 
+def test_v1121_episode_status_uses_moviepilot_library_truth_before_air_date():
+    snapshot = GATE[GATE.index("def _weekly_calendar_snapshot_v1121"):GATE.index("def _episode_card_v1121")]
+    assert "_sync_media_library_progress(subscribe)" in snapshot
+    assert '"status_source": "moviepilot_library"' in snapshot
+    assert 'row["status"], row["status_label"] = "library", "已入库"' in snapshot
+    assert 'row["status"], row["status_label"] = "inflight", "转存中"' in snapshot
+    assert 'row["status"], row["status_label"] = "completed", "已完成"' in snapshot
+    assert 'row["status"], row["status_label"] = "unknown", "待确认"' in snapshot
+    library_pos = snapshot.index('episode in state["existing"]')
+    inflight_pos = snapshot.index('episode in state["reserved"] or episode in state["claimed"]')
+    date_pos = snapshot.index("day_value and day_value > today")
+    assert library_pos < inflight_pos < date_pos
+
+
+def test_v1121_sync_failure_never_guesses_not_missing_as_library():
+    snapshot = GATE[GATE.index("def _weekly_calendar_snapshot_v1121"):GATE.index("def _episode_card_v1121")]
+    assert 'elif episode in state["raw_missing"]:' in snapshot
+    assert 'else:\n                    row["status"], row["status_label"] = "unknown", "待确认"' in snapshot
+    assert "非缺集" in snapshot and "误当已入库" in snapshot
+
+
+def test_v1121_episode_card_colors_completed_and_unknown_explicitly():
+    card = GATE[GATE.index("def _episode_card_v1121"):]
+    assert '"completed": "success"' in card
+    assert '"unknown": "secondary"' in card
+    assert '"scheduled": "info"' in card
+
+
 def test_v1121_page_matches_calendar_card_product_direction():
     page = IMPL[IMPL.index("def _weekly_page_v1121"):]
     for token in (
