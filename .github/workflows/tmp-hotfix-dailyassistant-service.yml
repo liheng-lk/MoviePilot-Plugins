@@ -1,0 +1,87 @@
+name: Hotfix DailyAssistant service registration
+
+on:
+  push:
+    branches: [hotfix/dailyassistant-service-v112]
+    paths: [.github/workflows/tmp-hotfix-dailyassistant-service.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hotfix/dailyassistant-service-v112
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Patch DailyAssistant service contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          entry = Path('plugins.v3/dailyassistant/__init__.py')
+          text = entry.read_text(encoding='utf-8')
+          text = text.replace(
+              '"trigger": "date",\n                "run_date": datetime.datetime.now() + datetime.timedelta(seconds=3),\n                "func": self.refresh,\n                "kwargs": {"manual": True},',
+              '"trigger": "date",\n                "func": self.refresh,\n                "kwargs": {"run_date": datetime.datetime.now() + datetime.timedelta(seconds=3)},\n                "func_kwargs": {"manual": True},'
+          )
+          text = text.replace(
+              '"trigger": trigger,\n                    "func": self.refresh,\n                    "kwargs": {"manual": False},',
+              '"trigger": trigger,\n                    "func": self.refresh,\n                    "func_kwargs": {"manual": False},'
+          )
+          text = text.replace('"""v1.1.1 最终运行类。"""', '"""v1.1.2 最终运行类。"""')
+          text = text.replace('plugin_version = "1.1.1"\n\n\n# MoviePilot PluginLoader', 'plugin_version = "1.1.2"\n\n\n# MoviePilot PluginLoader')
+          if '"func_kwargs": {"manual": True}' not in text or '"func_kwargs": {"manual": False}' not in text:
+              raise SystemExit('service contract patch did not apply')
+          entry.write_text(text, encoding='utf-8')
+
+          package_path = Path('package.v3.json')
+          package = json.loads(package_path.read_text(encoding='utf-8'))
+          item = package['DailyAssistant']
+          item['version'] = '1.1.2'
+          item['description'] = '全媒体榜单发现助手：修复 MoviePilot V3 定时服务注册参数契约；保留多榜单合并、48小时故障缓存、GYSub 落库对账与光鸭固定转存路线。'
+          history = item.setdefault('history', {})
+          item['history'] = {
+              'v1.1.2': '修复注册服务失败：MoviePilot 当前调度器把 service.kwargs 作为 APScheduler 触发器参数，回调参数必须放入 func_kwargs；立即刷新改为 date trigger 的 run_date 参数，定时刷新 manual 参数改为 func_kwargs。',
+              **history,
+          }
+          package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          readme = Path('plugins.v3/dailyassistant/README.md')
+          rt = readme.read_text(encoding='utf-8')
+          if '## v1.1.2：修复定时服务注册失败' not in rt:
+              rt = '# 每日助手\n\n## v1.1.2：修复定时服务注册失败\n\n- MoviePilot V3 当前调度器中，`kwargs` 是 APScheduler 触发器参数，不是插件函数参数。\n- `refresh(manual=...)` 改用 `func_kwargs`；一次性刷新把 `run_date` 放入 date trigger 的 `kwargs`。\n- 修复启用每日助手或勾选保存后立即刷新时出现“注册服务失败”。\n\n' + rt.removeprefix('# 每日助手\n\n')
+              readme.write_text(rt, encoding='utf-8')
+
+          for name in ('tests/test_dailyassistant_v100.py', 'tests/test_dailyassistant_v110.py', 'tests/test_dailyassistant_loader_v111.py'):
+              path = Path(name)
+              if not path.exists():
+                  continue
+              body = path.read_text(encoding='utf-8')
+              body = body.replace('1.1.1', '1.1.2')
+              path.write_text(body, encoding='utf-8')
+
+          test = Path('tests/test_dailyassistant_service_v112.py')
+          test.write_text('''import json\nfrom pathlib import Path\n\nROOT = Path(__file__).resolve().parents[1]\nENTRY = (ROOT / "plugins.v3/dailyassistant/__init__.py").read_text(encoding="utf-8")\nPACKAGE = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))\n\n\ndef test_refresh_callback_args_use_func_kwargs_not_trigger_kwargs():\n    assert '\"func_kwargs\": {\"manual\": True}' in ENTRY\n    assert '\"func_kwargs\": {\"manual\": False}' in ENTRY\n    assert '\"kwargs\": {\"manual\": True}' not in ENTRY\n    assert '\"kwargs\": {\"manual\": False}' not in ENTRY\n\n\ndef test_once_service_places_run_date_in_trigger_kwargs():\n    assert '\"trigger\": \"date\"' in ENTRY\n    assert '\"kwargs\": {\"run_date\": datetime.datetime.now() + datetime.timedelta(seconds=3)}' in ENTRY\n\n\ndef test_interval_reconcile_still_uses_trigger_kwargs():\n    hardening = (ROOT / "plugins.v3/dailyassistant/hardening_v110.py").read_text(encoding="utf-8")\n    assert '\"trigger\": \"interval\"' in hardening\n    assert '\"kwargs\": {\"minutes\": 5}' in hardening\n\n\ndef test_dailyassistant_market_version_is_v112():\n    assert PACKAGE["DailyAssistant"]["version"] == "1.1.2"\n    assert "v1.1.2" in PACKAGE["DailyAssistant"]["history"]\n''', encoding='utf-8')
+          PY
+      - name: Validate hotfix
+        run: |
+          python -m compileall -q plugins.v3/dailyassistant
+          python -m unittest discover -s tests -v
+          python tests/v3/guangyatransferassistant/run_contract_tests.py
+          python tests/v3/shukguangyadisk/run_contract_tests.py
+          python -c "import json; json.load(open('package.v3.json', encoding='utf-8'))"
+      - name: Commit hotfix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add plugins.v3/dailyassistant package.v3.json tests/test_dailyassistant_v100.py tests/test_dailyassistant_v110.py tests/test_dailyassistant_loader_v111.py tests/test_dailyassistant_service_v112.py
+          git diff --cached --check
+          git commit -m "fix: repair DailyAssistant service registration contract"
+          git push origin HEAD:hotfix/dailyassistant-service-v112
