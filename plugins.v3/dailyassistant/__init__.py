@@ -578,9 +578,14 @@ class DailyAssistantV100(_PluginBase):
 
 
 class DailyAssistant(DailyAssistantV110Mixin, DailyAssistantV100):
-    """v1.1.0 最终运行类。"""
+    """v1.1.1 最终运行类。"""
 
-    plugin_version = "1.1.0"
+    plugin_version = "1.1.1"
 
+
+# MoviePilot PluginLoader 按模块 globals 插入顺序寻找第一个 _PluginBase 子类。
+# v1.1.0 暴露了 DailyAssistantV100，导致宿主先加载旧基类而不是 DailyAssistant。
+# 最终类创建完成后删除旧公开符号，只保留正式插件类供 Loader 发现。
+del DailyAssistantV100
 
 __all__ = ["DailyAssistant"]
