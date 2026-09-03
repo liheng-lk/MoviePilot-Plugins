@@ -63,15 +63,15 @@ def test_v1110_release_and_layer_parse():
         ast.parse(text)
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.10.16"
-    assert 'plugin_version = "1.10.16"' in ENTRY
-    assert 'build_id = "20260902-r31"' in ENTRY
+    assert package["version"] == local["version"] == "1.11.0"
+    assert 'plugin_version = "1.11.0"' in ENTRY
+    assert 'build_id = "20260903-r41"' in ENTRY
     assert "v1.10.16" in package.get("history", {})
     assert "v1.10.12" in package.get("history", {})
     assert "v1.10.10" in package.get("history", {})
     assert "GuangYaGyingPanSouV1110Mixin" in POW
     assert "class GuangYaGyingPowV1111Mixin(GuangYaGyingPanSouV1110Mixin)" in POW
-    assert "class GuangYaGyingUiV1109Mixin(GuangYaXunleiFinalV1114Mixin)" in UI
+    assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlCursorV1116Mixin)" in UI
     assert "class GuangYaXunleiFinalV1114Mixin(GuangYaGovernanceV1114Mixin)" in FINAL
     assert "class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin)" in GOV
     assert "class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin)" in RUNTIME_FIX

@@ -23,7 +23,7 @@ def test_runtime_fix_parses_and_is_retained_in_final_gying_chain():
     assert "class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin):" in patch
     assert "class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin):" in gov
     assert "class GuangYaXunleiFinalV1114Mixin(GuangYaGovernanceV1114Mixin):" in final
-    assert "class GuangYaGyingUiV1109Mixin(GuangYaXunleiFinalV1114Mixin):" in ui
+    assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlCursorV1116Mixin):" in ui
 
 
 def test_xunlei_invalid_captcha_chinese_error_forces_one_refresh_without_init_json_gate():

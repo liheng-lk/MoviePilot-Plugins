@@ -24,9 +24,9 @@ def test_v1113_files_parse_and_release_is_published():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads(PLUGIN_JSON.read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.10.13"
-    assert 'plugin_version = "1.10.13"' in entry_text
-    assert 'build_id = "20260902-r24"' in entry_text
+    assert package["version"] == local["version"] == "1.11.0"
+    assert 'plugin_version = "1.11.0"' in entry_text
+    assert 'build_id = "20260903-r41"' in entry_text
     assert "v1.10.13" in package["history"]
 
 
@@ -36,7 +36,10 @@ def test_v1113_mro_enables_logging_then_dispatch_before_old_gying_protocol():
     assert entry_text.index("GuangYaViewingLoggingV1113Mixin,", start) < entry_text.index(
         "GuangYaGyingProtocolV1106Mixin,", start
     )
-    assert "class GuangYaViewingLoggingV1113Mixin(GuangYaViewingDispatchV1113Mixin):" in logging_text
+    assert "class GuangYaViewingLoggingV1113Mixin(" in logging_text
+    assert "GuangYaViewingDispatchV1113Mixin," in logging_text
+    assert "GuangYaXunleiJsonPipelineV1117Mixin," in logging_text
+    assert "GuangYaXunleiIntegrityV1116Mixin," in logging_text
 
 
 def test_v1113_valid_btih_is_not_discarded_only_because_downlist_k_drifted():

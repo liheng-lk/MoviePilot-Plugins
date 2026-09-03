@@ -1,4 +1,18 @@
 {
+  "DailyAssistant": {
+    "name": "每日助手",
+    "description": "全媒体榜单发现助手：多榜单同媒体合并、48小时故障缓存、GYSub 落库对账，统一 TMDB 识别后接入光鸭固定转存路线。",
+    "labels": "榜单,Netflix,HBO,Apple TV+,Disney+,Crunchyroll,Amazon Prime,Hulu,猫眼,豆瓣,IMDb,TMDB,AniList,Bangumi,腾讯视频,GYSub,光鸭转存",
+    "version": "1.1.0",
+    "icon": "movie.jpg",
+    "author": "liheng-lk",
+    "level": 1,
+    "system_version": ">=3.0.0",
+    "history": {
+      "v1.1.0": "新增多来源候选合并，修复同媒体跨榜单丢失自动订阅资格；榜单故障使用48小时缓存但禁止缓存触发新自动订阅；GYSub pending 每5分钟与 MoviePilot 订阅事实对账；修正腾讯少儿为 TMDB Kids 10762。",
+      "v1.0.0": "新增全媒体榜单发现层；候选统一到 TMDB 精确身份，支持手动或按榜单自动提交 GYSub，并复用光鸭转存助手现有固定路线。"
+    }
+  },
   "DailyNewDrama": {
     "name": "每日新剧助手",
     "description": "MoviePilot V3 新剧与在播剧聚合助手，支持多平台发现、过滤、通知和一键订阅。",
@@ -66,14 +80,15 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "固定分流与多来源订阅助手：v1.10.23 完整生成迅雷 JSON，但只导入媒体库核验后仍缺失且能确认集号的文件。",
+    "description": "固定分流与多来源订阅助手：迅雷秒传、光鸭直接转存、Magnet/ED2K 光鸭原生云添加共用集级终态与在途栅栏；新增 TMDB 更新日历、临近播出补漏和每日全员缺集复核。",
     "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,PanSou,CloakBrowser,自动登录,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流,质量过滤,字幕过滤,检索冷却",
-    "version": "1.10.23",
+    "version": "1.11.0",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v1.11.0": "合并追更闭环大版本：任一来源成功一集后立即回写 MoviePilot 订阅并终止其它来源同集任务；在途任务统一 reservation，部分重叠 Magnet/ED2K 取消旧 task 后只重建剩余缺集；新增 TMDB next_episode_to_air 更新日历，昨天/今天/明天播出剧每小时补漏且单订阅2小时冷却；每天04:10对全部固定路线订阅执行一次强制缺集复核，覆盖提前更新和漏检。",
       "v1.10.23": "修复绿灯军团订阅已有 E01-E03 却一次秒传 70 个文件：Stage A 仍完整生成并校验分享 JSON；Stage B 前先同步媒体库进度，只导入 planner 高置信匹配到当前真实缺集的 JSON 索引。已有集、无法解析集号、花絮和未被选择文件均不调用光鸭接口。",
       "v1.10.22": "修复迅雷文件上限默认值失效：_safe_int(None, 80) 实际返回 0，随后被固化为 1，导致全38集分享只生成 E38 一条 JSON。历史 0/1 配置自动迁移为 500，允许最多 5000 文件，按脚本完整递归目录并输出截断诊断。",
       "v1.10.21": "修复和平使者订阅错误导入极昼血祭：搜索卡片只用于发现候选，先按脚本生成含全部 files 的 v1.1.3 迅雷 JSON，再以迅雷标题和 JSON 文件路径校验真实媒体、年份、季号；整批校验通过后一次交给 JSON 批次导入器，逐文件反馈结果，身份不符则整批拒绝。",
