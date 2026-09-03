@@ -9,6 +9,7 @@ PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 GATE = (PLUGIN / "airing_weekly_v1121.py").read_text(encoding="utf-8")
 IMPL = (PLUGIN / "airing_weekly_impl_v1121.py").read_text(encoding="utf-8")
 CHANNEL = (PLUGIN / "channel_event_v1115.py").read_text(encoding="utf-8")
+GOVERNANCE = (PLUGIN / "governance_v1114.py").read_text(encoding="utf-8")
 WEEKLY = IMPL + "\n" + GATE
 ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 SCHEDULER = (PLUGIN / "airing_scheduler_v1120.py").read_text(encoding="utf-8")
@@ -116,6 +117,28 @@ def test_v1122_viewing_is_routine_poll_not_add_only_and_cannot_be_starved_by_cha
     assert '"viewing_poll"' in batch
     assert "观影不会被频道事件长期饿死" in batch
     assert "int(sid) not in channel_set" in batch
+
+
+def test_v1122_same_day_miss_retries_after_external_cooldown_until_day_gate_closes():
+    due = CHANNEL[CHANNEL.index("def _viewing_due_subscription_ids_v1115"):CHANNEL.index("def _run_v1115_mode_batch")]
+    assert "_subscription_missing_episodes(subscribe)" in due
+    assert "now - last_at >= cooldown" in due
+    assert "_external_search_cooldown_minutes_v1114" in due
+
+    dispatch = SCHEDULER[SCHEDULER.index("def _try_transfer_subscription("):SCHEDULER.index("def _try_transfer_subscription_inner(")]
+    assert "gate = self._airing_gate_v1120(subscribe)" in dispatch
+    assert 'due = list(gate.get("due_uncovered") or [])' in dispatch
+    assert "if not due:" in dispatch
+
+    claim = GOVERNANCE[GOVERNANCE.index("def _claim_external_search_round_v1114"):GOVERNANCE.index("def _try_transfer_subscription(")]
+    assert '"last_at": now' in claim
+    assert "now - last_at >= cooldown" in claim
+    assert "self.save_data(\"external_search_guard\", state)" in claim
+
+    # 没搜到资源只进入冷却，不会完成订阅或清除缺集；只要仍在当天门禁内，
+    # 下一次 tick 达到冷却后会再次进入观影。跨日后由星期门禁停止普通重试。
+    assert "_finish_subscription_if_complete" not in due
+    assert "off_day_missing" in GATE
 
 
 def test_v1122_new_subscription_cache_miss_repairs_channel_once_before_viewing():
