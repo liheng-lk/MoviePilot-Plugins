@@ -1,4 +1,4 @@
-"""光鸭转存助手 v1.12.3 预览：数据页性能、星期交互与大订阅配置体验。
+"""光鸭转存助手 v1.12.3：数据页性能、星期交互与大订阅配置体验。
 
 目标：
 - 数据页打开时不再同步逐个调用 MoviePilot 媒体库缺集检查；优先秒开最近快照，过期后后台刷新。
@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Set
 class GuangYaPagePerfV1123Mixin:
     """页面只读快照层：把耗时校准移出 HTTP 页面加载路径。"""
 
-    build_id = "20260904-r49-preview"
+    build_id = "20260904-r49"
     _weekly_page_cache_seconds_v1123 = 600
 
     # ------------------------------------------------------------------
@@ -130,7 +130,7 @@ class GuangYaPagePerfV1123Mixin:
 
         def worker() -> None:
             try:
-                # 明确跳过本层缓存方法，调用 v1.12.2 的真实媒体库校准快照；耗时不再阻塞页面 HTTP。
+                # 明确跳过本层缓存方法，调用上一层真实媒体库校准快照；耗时不再阻塞页面 HTTP。
                 super(GuangYaPagePerfV1123Mixin, self)._weekly_calendar_snapshot_v1121()
             except Exception as err:
                 try:
