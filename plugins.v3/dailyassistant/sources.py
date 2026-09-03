@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List
 
@@ -32,6 +33,8 @@ WATCH_PROVIDERS = {
     "disney": 337,
     "appletv": 350,
     "hbo": 1899,
+    # Tencent Video / WeTV 在 TMDB/JustWatch 目录中存在多个区域 provider，OR 组合可提升命中率。
+    "tencent": "623|1170",
 }
 
 SOURCES: List[SourceSpec] = [
@@ -59,33 +62,61 @@ SOURCES.extend([
     SourceSpec("maoyan_tv", "猫眼 · 剧集榜", "猫眼", "maoyan", "tv"),
     SourceSpec("maoyan_variety", "猫眼 · 综艺榜", "猫眼", "maoyan", "variety"),
     SourceSpec("maoyan_mixed", "猫眼 · 混合榜", "猫眼", "maoyan", "mixed"),
+
+    # 豆瓣：补齐 MoviePilot 首页/豆瓣榜单中用户常用的电影与剧集栏目。
     SourceSpec("douban_showing", "豆瓣 · 正在上映", "豆瓣", "builtin", "movie", "douban_movie_showing"),
+    SourceSpec("douban_coming", "豆瓣 · 即将上映", "豆瓣", "douban_collection", "movie", "movie_soon"),
+    SourceSpec("douban_new_movies", "豆瓣 · 新片榜", "豆瓣", "douban_discover", "movie", "R"),
+    SourceSpec("douban_weekly_movie", "豆瓣 · 一周口碑榜", "豆瓣", "douban_collection", "movie", "movie_weekly_best"),
+    SourceSpec("douban_us_box", "豆瓣 · 北美票房榜", "豆瓣", "douban_us_box", "movie"),
     SourceSpec("douban_movie_hot", "豆瓣 · 热门电影", "豆瓣", "builtin", "movie", "douban_movie_hot"),
+    SourceSpec("douban_tv_recent", "豆瓣 · 剧集近期值得看", "豆瓣", "douban_collection", "tv", "tv_real_time_hotest"),
     SourceSpec("douban_tv_hot", "豆瓣 · 热门剧集", "豆瓣", "builtin", "tv", "douban_tv_hot"),
     SourceSpec("douban_weekly_cn", "豆瓣 · 华语口碑剧", "豆瓣", "builtin", "tv", "douban_tv_weekly_chinese"),
     SourceSpec("douban_weekly_global", "豆瓣 · 全球口碑剧", "豆瓣", "builtin", "tv", "douban_tv_weekly_global"),
     SourceSpec("douban_animation", "豆瓣 · 动画榜", "豆瓣", "builtin", "tv", "douban_tv_animation"),
     SourceSpec("douban_top250", "豆瓣 · 电影 TOP250", "豆瓣", "builtin", "movie", "douban_movie_top250"),
+    SourceSpec("douban_recommend", "豆瓣 · 推荐", "豆瓣", "douban_recommend", "mixed"),
     SourceSpec("douban_mixed", "豆瓣 · 混合榜", "豆瓣", "builtin_mixed", "mixed", "douban_hot"),
+
     SourceSpec("imdb_movie", "热门 · IMDb 热门电影", "热门", "imdb", "movie"),
     SourceSpec("imdb_tv", "热门 · IMDb 热门剧集", "热门", "imdb", "tv"),
     SourceSpec("tmdb_trending", "热门 · TMDB 趋势", "热门", "builtin", "mixed", "tmdb_trending"),
     SourceSpec("anilist_trending", "热门 · AniList 热门", "热门", "anilist", "tv"),
     SourceSpec("bangumi_calendar", "热门 · Bangumi 今日动漫", "热门", "builtin", "tv", "bangumi_calendar"),
     SourceSpec("popular_mixed", "热门 · 混合榜", "热门", "popular_mixed", "mixed"),
+
     SourceSpec("tencent_hot", "腾讯视频 · 热播", "腾讯视频", "maoyan", "tv", "3"),
+    SourceSpec("tencent_movie", "腾讯视频 · 电影", "腾讯视频", "watch_provider", "movie", "tencent"),
     SourceSpec("tencent_tv", "腾讯视频 · 电视剧", "腾讯视频", "maoyan", "tv", "3"),
     SourceSpec("tencent_variety", "腾讯视频 · 综艺", "腾讯视频", "maoyan", "variety", "3"),
+    SourceSpec("tencent_kids", "腾讯视频 · 少儿", "腾讯视频", "watch_provider_genre", "tv", "tencent:10751"),
 ])
 
 SOURCE_MAP = {item.key: item for item in SOURCES}
 DEFAULT_SOURCE_KEYS = [
     "netflix_movie", "netflix_tv", "hbo_tv", "appletv_tv", "disney_tv",
     "crunchyroll_tv", "prime_movie", "prime_tv", "hulu_tv",
-    "maoyan_movie", "maoyan_tv", "douban_showing", "douban_movie_hot",
-    "douban_tv_hot", "tmdb_trending", "anilist_trending", "bangumi_calendar",
-    "tencent_hot",
+    "maoyan_movie", "maoyan_tv",
+    "douban_showing", "douban_coming", "douban_new_movies", "douban_weekly_movie",
+    "douban_movie_hot", "douban_tv_recent", "douban_tv_hot",
+    "tmdb_trending", "anilist_trending", "bangumi_calendar",
+    "tencent_hot", "tencent_tv",
 ]
+
+_YEAR_RE = re.compile(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)")
+_DOUBAN_SUBJECT_RE = re.compile(r"(?:subject/|movie/subject/|tv/subject/)(\d{5,})")
+_DOUBAN_US_BOX_API_KEY = "0df993c66c0c636e29ecbb5344252a4a"
+
+
+def _year_value(value: Any) -> Any:
+    """把年份字段规整成四位年份；猫眼等来源常返回“2026-09-01 上映”一类文本。"""
+    if value is None or value == "":
+        return None
+    if isinstance(value, int) and 1900 <= value <= 2099:
+        return value
+    match = _YEAR_RE.search(str(value))
+    return int(match.group(1)) if match else value
 
 
 def _as_dict(item: Any) -> Dict[str, Any]:
@@ -136,17 +167,18 @@ def _normalize(rows: Iterable[Any], spec: SourceSpec, limit: int) -> List[Dict[s
         if mtype not in {"movie", "tv"}:
             continue
         tmdb_id = data.get("tmdb_id")
-        media_source = str(getattr(data.get("media_source"), "value", data.get("media_source")) or "")
+        media_source = str(getattr(data.get("media_source"), "value", data.get("media_source")) or "").lower()
         media_id = data.get("media_id")
-        if not tmdb_id and media_source.lower() == "tmdb":
+        if not tmdb_id and media_source in {"tmdb", "themoviedb"}:
             tmdb_id = media_id
-        key = (str(tmdb_id or ""), mtype, title.casefold(), str(data.get("year") or ""))
+        year = _year_value(data.get("year"))
+        key = (str(tmdb_id or ""), mtype, title.casefold(), str(year or ""))
         if key in seen:
             continue
         seen.add(key)
         result.append({
             "title": title,
-            "year": data.get("year"),
+            "year": year,
             "media_type": mtype,
             "season": data.get("season"),
             "tmdb_id": str(tmdb_id or ""),
@@ -177,6 +209,18 @@ def _tmdb_provider(chain: RecommendChain, spec: SourceSpec, limit: int) -> List[
     return _normalize(rows, spec, limit)
 
 
+def _tmdb_provider_genre(chain: RecommendChain, spec: SourceSpec, limit: int) -> List[Dict[str, Any]]:
+    provider_key, genre = (spec.arg.split(":", 1) + [""])[:2]
+    provider = WATCH_PROVIDERS[provider_key]
+    rows: List[Any] = []
+    kwargs = {"with_watch_providers": str(provider), "with_genres": genre, "page": 1}
+    if spec.media in {"movie", "mixed"}:
+        rows.extend(chain.tmdb_movies(**kwargs) or [])
+    if spec.media in {"tv", "mixed"}:
+        rows.extend(chain.tmdb_tvs(**kwargs) or [])
+    return _normalize(rows, spec, limit)
+
+
 def _tmdb_genre(chain: RecommendChain, spec: SourceSpec, limit: int) -> List[Dict[str, Any]]:
     rows: List[Any] = []
     kwargs = {"with_genres": spec.arg, "page": 1}
@@ -196,6 +240,98 @@ def _builtin(chain: RecommendChain, spec: SourceSpec, limit: int) -> List[Dict[s
             rows = method(page=1, count=limit) or []
         except TypeError:
             rows = method(page=1) or []
+    return _normalize(rows, spec, limit)
+
+
+def _douban_discover(chain: RecommendChain, spec: SourceSpec, limit: int) -> List[Dict[str, Any]]:
+    """复用 MoviePilot 豆瓣发现链；R=最近上映，U=综合/近期热门。"""
+    rows: List[Any] = []
+    if spec.media in {"movie", "mixed"}:
+        rows.extend(chain.douban_movies(sort=spec.arg or "U", tags="", page=1, count=limit) or [])
+    if spec.media in {"tv", "mixed"}:
+        rows.extend(chain.douban_tvs(sort=spec.arg or "U", tags="", page=1, count=limit) or [])
+    return _normalize(rows, spec, limit)
+
+
+def _douban_subject_id(entry: Dict[str, Any]) -> str:
+    direct = entry.get("id") or entry.get("subject_id") or entry.get("douban_id")
+    if direct and str(direct).isdigit():
+        return str(direct)
+    link = str(entry.get("url") or entry.get("uri") or entry.get("alt") or "")
+    match = _DOUBAN_SUBJECT_RE.search(link)
+    return match.group(1) if match else ""
+
+
+def _douban_collection(spec: SourceSpec, collection: str, limit: int, proxy: bool) -> List[Dict[str, Any]]:
+    """直连豆瓣移动端公开 subject_collection，不依赖 RSSHub。"""
+    url = f"https://m.douban.com/rexxar/api/v2/subject_collection/{collection}/items"
+    request = RequestUtils(
+        headers={
+            "Referer": f"https://m.douban.com/subject_collection/{collection}",
+            "User-Agent": "Mozilla/5.0 Chrome/131.0 Safari/537.36",
+        },
+        proxies=settings.PROXY if proxy else None,
+    )
+    response = request.get_res(url, params={"start": 0, "count": max(1, limit)})
+    if response is None or getattr(response, "status_code", 500) >= 400:
+        raise RuntimeError(f"豆瓣集合 HTTP {getattr(response, 'status_code', '无响应')}")
+    payload = response.json() or {}
+    entries = payload.get("subject_collection_items") or payload.get("items") or []
+    rows = []
+    for entry in entries[:max(1, limit)]:
+        entry = entry or {}
+        rating = entry.get("rating") or {}
+        cover = entry.get("cover") or {}
+        subtitle = entry.get("card_subtitle") or entry.get("description") or entry.get("abstract") or ""
+        rows.append({
+            "title": entry.get("title") or entry.get("name"),
+            "year": _year_value(subtitle),
+            "type": spec.media,
+            "douban_id": _douban_subject_id(entry),
+            "vote_average": rating.get("value") if isinstance(rating, dict) else None,
+            "poster": (cover.get("url") if isinstance(cover, dict) else "") or entry.get("cover_url") or "",
+            "detail_link": entry.get("url") or "",
+        })
+    return _normalize(rows, spec, limit)
+
+
+def _douban_recommend(spec: SourceSpec, limit: int, proxy: bool) -> List[Dict[str, Any]]:
+    """“豆瓣推荐”采用电影/剧集实时热门集合并行合并，避免混入图书和音乐。"""
+    movie_spec = SourceSpec(spec.key, spec.label, spec.family, spec.kind, "movie", "movie_real_time_hotest")
+    tv_spec = SourceSpec(spec.key, spec.label, spec.family, spec.kind, "tv", "tv_real_time_hotest")
+    rows = _douban_collection(movie_spec, "movie_real_time_hotest", limit, proxy)
+    rows.extend(_douban_collection(tv_spec, "tv_real_time_hotest", limit, proxy))
+    rows.sort(key=lambda item: (int(item.get("rank") or 9999), item.get("media_type") or ""))
+    return rows[:max(1, limit)]
+
+
+def _douban_us_box(spec: SourceSpec, limit: int, proxy: bool) -> List[Dict[str, Any]]:
+    """豆瓣北美票房榜；接口与 RSSHub 当前上游实现保持一致。"""
+    request = RequestUtils(
+        headers={"User-Agent": "Mozilla/5.0 Chrome/131.0 Safari/537.36"},
+        proxies=settings.PROXY if proxy else None,
+    )
+    response = request.get_res(
+        "https://api.douban.com/v2/movie/us_box",
+        params={"apikey": _DOUBAN_US_BOX_API_KEY},
+    )
+    if response is None or getattr(response, "status_code", 500) >= 400:
+        raise RuntimeError(f"豆瓣北美票房 HTTP {getattr(response, 'status_code', '无响应')}")
+    payload = response.json() or {}
+    rows = []
+    for wrapper in (payload.get("subjects") or [])[:max(1, limit)]:
+        item = (wrapper or {}).get("subject") or wrapper or {}
+        rating = item.get("rating") or {}
+        images = item.get("images") or {}
+        rows.append({
+            "title": item.get("title"),
+            "year": item.get("year"),
+            "type": "movie",
+            "douban_id": item.get("id"),
+            "vote_average": rating.get("average") if isinstance(rating, dict) else None,
+            "poster": images.get("large") if isinstance(images, dict) else "",
+            "detail_link": item.get("alt") or "",
+        })
     return _normalize(rows, spec, limit)
 
 
@@ -323,10 +459,20 @@ def fetch_source(key: str, limit: int = 20, proxy: bool = False) -> Dict[str, An
     try:
         if spec.kind == "watch_provider":
             items = _tmdb_provider(chain, spec, limit)
+        elif spec.kind == "watch_provider_genre":
+            items = _tmdb_provider_genre(chain, spec, limit)
         elif spec.kind == "tmdb_genre":
             items = _tmdb_genre(chain, spec, limit)
         elif spec.kind in {"builtin", "builtin_mixed"}:
             items = _builtin(chain, spec, limit)
+        elif spec.kind == "douban_discover":
+            items = _douban_discover(chain, spec, limit)
+        elif spec.kind == "douban_collection":
+            items = _douban_collection(spec, spec.arg, limit, proxy)
+        elif spec.kind == "douban_recommend":
+            items = _douban_recommend(spec, limit, proxy)
+        elif spec.kind == "douban_us_box":
+            items = _douban_us_box(spec, limit, proxy)
         elif spec.kind == "netflix":
             items = _netflix(spec, limit, proxy)
         elif spec.kind == "imdb":
