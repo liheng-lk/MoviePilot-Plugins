@@ -1,4 +1,17 @@
 {
+  "DailyAssistant": {
+    "name": "每日助手",
+    "description": "全媒体榜单发现助手：聚合 Netflix/HBO/Apple TV+/Disney+/Crunchyroll/Prime/Hulu/猫眼/豆瓣/IMDb/TMDB/AniList/Bangumi/腾讯等榜单，统一 TMDB 识别后通过 GYSub 接入光鸭固定转存路线。",
+    "labels": "榜单,Netflix,HBO,Apple TV+,Disney+,Crunchyroll,Amazon Prime,Hulu,猫眼,豆瓣,IMDb,TMDB,AniList,Bangumi,腾讯视频,GYSub,光鸭转存",
+    "version": "1.0.0",
+    "icon": "movie.jpg",
+    "author": "liheng-lk",
+    "level": 1,
+    "system_version": ">=3.0.0",
+    "history": {
+      "v1.0.0": "新增全媒体榜单发现层；候选统一到 TMDB 精确身份，支持手动或按榜单自动提交 GYSub，并复用光鸭转存助手现有固定路线。"
+    }
+  },
   "DailyNewDrama": {
     "name": "每日新剧助手",
     "description": "MoviePilot V3 新剧与在播剧聚合助手，支持多平台发现、过滤、通知和一键订阅。",
