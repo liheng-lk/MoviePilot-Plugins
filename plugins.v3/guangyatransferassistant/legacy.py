@@ -361,11 +361,65 @@ def _entry_process_key(entry: Dict[str, Any]) -> str:
         message_marker = "txt:" + hashlib.sha256(stable_text.encode("utf-8")).hexdigest()[:20]
     return hashlib.sha256(f"{source}|{message_marker}|{share_key}".encode("utf-8")).hexdigest()
 
+
+def _legacy_explicit_seasons_v1111(values: Iterable[Any]) -> set[int]:
+    """频道 matcher 自包含季号提取，兼容插件契约的顶层函数隔离执行。"""
+    seasons = set()
+    for raw in values or []:
+        value = html.unescape(str(raw or ""))
+        for matched in re.findall(r"(?i)\bS(?:eason)?[ ._\-]*0*(\d{1,2})(?=E|[^0-9]|$)", value):
+            try:
+                seasons.add(int(matched))
+            except (TypeError, ValueError):
+                pass
+        for matched in re.findall(r"第\s*0*(\d{1,2})\s*季", value):
+            try:
+                seasons.add(int(matched))
+            except (TypeError, ValueError):
+                pass
+    return {value for value in seasons if 0 <= value <= 99}
+
+
+def _legacy_release_title_key_v1111(value: Any, expected_year: Any = None) -> str:
+    """频道标题强匹配键：去季集/年份/画质发布信息，但不做包含式模糊匹配。"""
+    text = html.unescape(str(value or ""))
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"(?i)\bS(?:eason)?[ ._\-]*0*\d{1,2}(?:[ ._\-]*E(?:pisode)?[ ._\-]*0*\d{1,4})?(?=[^0-9A-Za-z]|$)", " ", text)
+    text = re.sub(r"(?i)\b(?:E|EP|Episode)[ ._\-]*0*\d{1,4}\b", " ", text)
+    text = re.sub(r"第\s*[0-9一二三四五六七八九十]{1,3}\s*(?:季|集|话)", " ", text)
+    year = str(expected_year or "").strip()
+    if year and re.fullmatch(r"(?:19|20)\d{2}", year):
+        text = re.sub(rf"(?<!\d){re.escape(year)}(?!\d)", " ", text)
+    tokens = []
+    noise = {
+        "2160p", "1080p", "720p", "4k", "8k", "web", "webdl", "webrip", "bluray", "remux",
+        "hdtv", "x264", "x265", "h264", "h265", "hevc", "avc", "hdr", "dv", "aac", "dts",
+        "complete", "全集", "全季", "中字", "字幕",
+    }
+    for token in re.split(r"[^0-9A-Za-z\u4e00-\u9fff]+", text):
+        lowered = token.casefold().strip()
+        if not lowered or lowered in noise:
+            continue
+        if re.fullmatch(r"(?:2160|1080|720|576|480|264|265)", lowered):
+            continue
+        tokens.append(lowered)
+    return "".join(tokens)
+
+
+def _legacy_strong_title_match_v1111(expected: Any, actual: Any, expected_year: Any = None) -> bool:
+    expected_key = _legacy_release_title_key_v1111(expected, expected_year)
+    if not expected_key:
+        return False
+    candidates = [str(actual or "")]
+    candidates.extend(line.strip() for line in str(actual or "").splitlines() if line.strip())
+    return any(_legacy_release_title_key_v1111(value, expected_year) == expected_key for value in candidates)
+
+
 def _entry_matches_subscription(
     entry: Dict[str, Any], name: str, year: Any = None, season: Any = None,
     media_source: Any = None, media_id: Any = None,
 ) -> bool:
-    """频道身份门禁：TMDB 冲突硬拒绝；标题强匹配；S02+ 必须有明确季号。"""
+    """频道身份门禁：TMDB 冲突硬拒绝；标题强匹配；缺少季号不等于冲突。"""
     source = str(media_source or "").lower()
     entry_tmdb = str(entry.get("tmdb_id") or "").strip()
     subscribe_id = str(media_id or "").strip()
@@ -373,7 +427,7 @@ def _entry_matches_subscription(
     if comparable_tmdb and entry_tmdb != subscribe_id:
         return False
     text_value = str(entry.get("text") or "")
-    seasons = explicit_seasons_v1111([text_value, entry.get("display_title"), entry.get("episode_hint")])
+    seasons = _legacy_explicit_seasons_v1111([text_value, entry.get("display_title"), entry.get("episode_hint")])
     try:
         wanted_season = int(season or 0) if season not in (None, "") else 0
     except (TypeError, ValueError):
@@ -389,7 +443,7 @@ def _entry_matches_subscription(
     candidates = [raw_name, re.split(r"[(/（]", raw_name, maxsplit=1)[0]]
     if not any(
         str(candidate or "").strip() and str(evidence or "").strip()
-        and strong_title_match_v1111(candidate, evidence, expected_year=year)
+        and _legacy_strong_title_match_v1111(candidate, evidence, expected_year=year)
         for candidate in candidates for evidence in title_evidence
     ):
         return False

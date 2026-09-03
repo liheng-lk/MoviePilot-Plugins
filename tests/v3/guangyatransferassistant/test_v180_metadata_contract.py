@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[3]
 def test_package_and_plugin_metadata_retain_v180_native_offline_history():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.11.0"
+    assert package["version"] == local["version"] == "1.11.1"
     assert "Magnet" in package["description"] and "ED2K" in package["description"]
     assert "原生云添加" in package["description"]
     assert "v1.10.13" in package["history"]

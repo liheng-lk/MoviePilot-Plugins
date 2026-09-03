@@ -16,9 +16,9 @@ def test_v1100_files_parse_and_publish_current_release():
         ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.11.0"
-    assert 'plugin_version = "1.11.0"' in ENTRY
-    assert 'build_id = "20260903-r41"' in ENTRY
+    assert package["version"] == local["version"] == "1.11.1"
+    assert 'plugin_version = "1.11.1"' in ENTRY
+    assert 'build_id = "20260903-r42"' in ENTRY
 
 def test_v1100_mro_installs_final_layers_before_old_layers():
     start = ENTRY.index("class GuangYaTransferAssistant")

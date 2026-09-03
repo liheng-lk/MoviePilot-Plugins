@@ -82,7 +82,7 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "固定分流与多来源订阅助手：新增实际资源媒体身份置信度门禁；明确标题/年份/季号冲突硬拒绝，缺少年份或季号时结合真实文件结构与搜索发现弱证据继续判断，兼顾防错与迅雷秒传成功率。",
+    "description": "固定分流与多来源订阅助手：迅雷秒传、光鸭直接转存、Magnet/ED2K 光鸭原生云添加共用集级终态；新增实际资源媒体身份置信度门禁，明确标题/年份/季号冲突硬拒绝，信息缺失时结合真实文件结构与搜索弱证据继续判断。",
     "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,PanSou,CloakBrowser,自动登录,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流,质量过滤,字幕过滤,检索冷却",
     "version": "1.11.1",
     "icon": "Guangyadisk_A.png",
