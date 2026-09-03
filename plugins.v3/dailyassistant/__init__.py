@@ -19,6 +19,7 @@ from app.schemas.types import EventType, MediaSource, MediaType
 
 from .sources import DEFAULT_SOURCE_KEYS, SOURCE_MAP, fetch_source, source_options
 from .hardening_v110 import DailyAssistantV110Mixin
+from .airing_calendar_v120 import DailyAssistantCalendarV120Mixin
 
 
 def _as_list(value: Any) -> List[str]:
@@ -577,10 +578,10 @@ class DailyAssistantV100(_PluginBase):
         return None
 
 
-class DailyAssistant(DailyAssistantV110Mixin, DailyAssistantV100):
-    """v1.1.2 最终运行类。"""
+class DailyAssistant(DailyAssistantCalendarV120Mixin, DailyAssistantV110Mixin, DailyAssistantV100):
+    """v1.2.0 最终运行类：榜单 + GYSub + 整季逐集上映日历。"""
 
-    plugin_version = "1.1.2"
+    plugin_version = "1.2.0"
 
 
 # MoviePilot PluginLoader 按模块 globals 插入顺序寻找第一个 _PluginBase 子类。

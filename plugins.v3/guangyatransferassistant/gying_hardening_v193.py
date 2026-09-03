@@ -194,7 +194,7 @@ class GuangYaGyingHardeningMixin:
         last_rows = []
         last_state: Dict[str, Any] = {"success": False, "message": "观影搜索失败"}
         for index, variant in enumerate(variants):
-            rows, state = super()._gying_raw_results(variant, force=force or index > 0)
+            rows, state = super()._gying_raw_results(variant, force=force)
             last_rows, last_state = rows, dict(state or {})
             if not state.get("success"):
                 return rows, state

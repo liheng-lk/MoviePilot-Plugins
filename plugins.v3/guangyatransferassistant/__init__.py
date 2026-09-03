@@ -1,4 +1,4 @@
-"""光鸭转存助手 v1.11.2 运行入口。
+"""光鸭转存助手 v1.12.0 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
@@ -8,6 +8,7 @@ v1.10.23 完整生成迅雷 JSON，但只导入媒体库同步后仍缺失且高
 v1.10.24 成功资源立即记账：剧集按成功集号立刻写入进度并阻止同集重复版本，电影首个正片成功即完成订阅；
 同时增加跨来源集级终止栅栏：秒传/分享转存/Magnet/ED2K 共用已成功集与在途集，成功一集立即终止该集其它任务。
 v1.11.2 补齐频道 ED2K 云添加：频道命中的 ED2K 单文件允许先 resolve，再用真实文件名/频道集号确认缺集并提交光鸭原生 cloudcollection。
+v1.12.0 改为逐集上映日历驱动：普通后台只处理当前应播缺集，未来集等待更新窗口；每日全员补漏仍保留。
 
 最终优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。
 后续 ResourceGroup 内部仍保持：光鸭直接转存 > Magnet > ED2K。
@@ -48,6 +49,7 @@ from .gying_runtime_v193 import GuangYaGyingRuntimeMixin
 from .gying_transport_v1108 import GuangYaGyingTransportV1108Mixin
 from .multisource_v180 import GuangYaMultiSourceMixin
 from .media_identity_guard_v1111 import GuangYaMediaIdentityGuardV1111Mixin
+from .airing_scheduler_v1120 import GuangYaAiringSchedulerV1120Mixin
 from .offline_safety_v180 import GuangYaOfflineSafetyMixin
 from .page_auth_v172 import force_bear_auth, strip_page_api_secrets
 from .planner_safety_v190 import GuangYaPlannerSafetyMixin
@@ -70,6 +72,7 @@ install_channel_multisource_compat(_legacy_module)
 
 
 class GuangYaTransferAssistant(
+    GuangYaAiringSchedulerV1120Mixin,
     GuangYaMediaIdentityGuardV1111Mixin,
     GuangYaReleaseV1110Mixin,
     GuangYaEpisodeFenceFinalV1124Mixin,
@@ -106,8 +109,8 @@ class GuangYaTransferAssistant(
 ):
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
 
-    plugin_version = "1.11.2"
-    build_id = "20260903-r43"
+    plugin_version = "1.12.0"
+    build_id = "20260903-r44"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""

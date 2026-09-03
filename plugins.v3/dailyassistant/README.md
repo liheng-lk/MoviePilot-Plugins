@@ -1,5 +1,11 @@
 # 每日助手
 
+## v1.2.0：逐集上映日历
+
+- 为 GYSub/光鸭转存提供 TMDB 整季逐集 `air_date` 日历，不再只知道下一集。
+- 通过 MoviePilot `MediaChain.tmdb_info(..., season=...)` 公共合同读取季详情；不可用时回退 `next_episode_to_air`。
+- 日历缓存 6 小时；每日助手不可用时，光鸭转存助手仍可自行回退 TMDB，不形成硬依赖。
+
 ## v1.1.2：修复定时服务注册失败
 
 - MoviePilot V3 当前调度器中，`kwargs` 是 APScheduler 触发器参数，不是插件函数参数。
