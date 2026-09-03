@@ -27,7 +27,9 @@ jobs:
         run: python -m pip install -q pytest
 
       - name: Apply integration
-        run: python tools/apply_gysub_airing_calendar_v1120.py
+        run: |
+          python tools/apply_gysub_airing_calendar_v1120.py
+          python tools/fix_airing_contract_tests.py
 
       - name: Compile changed Python modules
         run: |
@@ -56,6 +58,7 @@ jobs:
       - name: Remove one-shot tooling
         run: |
           rm -f tools/apply_gysub_airing_calendar_v1120.py
+          rm -f tools/fix_airing_contract_tests.py
           rm -f .github/workflows/feature-gysub-airing-calendar-v1120-once.yml
 
       - name: Commit validated candidate
