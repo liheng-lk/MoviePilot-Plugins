@@ -20,24 +20,15 @@ entry_text = ENTRY.read_text(encoding="utf-8")
 
 
 def test_v1107_files_parse_and_release_metadata_are_aligned():
-    for path, text in (
-        (AUTH, auth_text),
-        (AUTH_VERIFIED, verified_text),
-        (STABILITY, stability_text),
-        (ENTRY, entry_text),
-    ):
+    for path, text in ((AUTH, auth_text), (AUTH_VERIFIED, verified_text), (STABILITY, stability_text), (ENTRY, entry_text)):
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.12.0"
-    assert 'plugin_version = "1.12.0"' in entry_text
-    assert 'build_id = "20260903-r44"' in entry_text
-    assert "v1.10.13" in package.get("history", {})
-    assert "v1.10.12" in package.get("history", {})
-    assert "v1.10.10" in package.get("history", {})
-    assert "v1.10.9" in package.get("history", {})
-    assert "v1.10.8" in package.get("history", {})
-    assert "v1.10.7" in package.get("history", {})
+    assert package["version"] == local["version"] == "1.12.1"
+    assert 'plugin_version = "1.12.1"' in entry_text
+    assert 'build_id = "20260903-r46"' in entry_text
+    for version in ("v1.10.13", "v1.10.12", "v1.10.10", "v1.10.9", "v1.10.8", "v1.10.7"):
+        assert version in package.get("history", {})
 
 
 def test_v1107_auth_layer_is_outermost_through_stability_gate():
@@ -50,19 +41,7 @@ def test_v1107_auth_layer_is_outermost_through_stability_gate():
 
 
 def test_real_click_captcha_protocol_is_encoded_without_ocr():
-    for token in (
-        '"/res/captcha/2"',
-        'data={"webp": "1"}',
-        'data={"do": "check", "info": info}',
-        'payload.get("code") in (200, "200")',
-        '"code": str(info or "")',
-        'payload.get("type")',
-        'payload.get("img")',
-        'payload.get("text")',
-        "_CAPTCHA_WIDTH = 315",
-        "_CAPTCHA_HEIGHT = 180",
-        "_CAPTCHA_GRID = 15",
-    ):
+    for token in ('"/res/captcha/2"', 'data={"webp": "1"}', 'data={"do": "check", "info": info}', 'payload.get("code") in (200, "200")', '"code": str(info or "")', 'payload.get("type")', 'payload.get("img")', 'payload.get("text")', "_CAPTCHA_WIDTH = 315", "_CAPTCHA_HEIGHT = 180", "_CAPTCHA_GRID = 15"):
         assert token in auth_text, token
     lowered = auth_text.lower()
     for forbidden in ("pytesseract", "easyocr", "paddleocr", "captcha_solver"):
@@ -80,15 +59,7 @@ def test_captcha_info_uses_click_order_and_canvas_size():
 
 
 def test_same_session_flows_through_captcha_check_login_and_probe():
-    for token in (
-        '"session": session',
-        'session = row.get("session")',
-        "self._gying_verify_captcha(row)",
-        "self._gying_finish_manual_login(row",
-        "self._gying_authenticated_probe(session, node)",
-        'login_mode="manual_captcha"',
-        "authenticated=True",
-    ):
+    for token in ('"session": session', 'session = row.get("session")', "self._gying_verify_captcha(row)", "self._gying_finish_manual_login(row", "self._gying_authenticated_probe(session, node)", 'login_mode="manual_captcha"', "authenticated=True"):
         assert token in auth_text, token
     assert "requests.Session()" not in auth_text.split("def _gying_verify_captcha", 1)[1].split("def _gying_finish_manual_login", 1)[0]
 
@@ -119,14 +90,7 @@ def test_auth_probe_rejects_anonymous_restricted_search_marker():
 
 
 def test_manual_auth_api_and_moviepilot_click_grid_are_exposed():
-    for path in (
-        "/viewing/auth/start",
-        "/viewing/auth/status",
-        "/viewing/auth/click",
-        "/viewing/auth/undo",
-        "/viewing/auth/refresh",
-        "/viewing/auth/cancel",
-    ):
+    for path in ("/viewing/auth/start", "/viewing/auth/status", "/viewing/auth/click", "/viewing/auth/undo", "/viewing/auth/refresh", "/viewing/auth/cancel"):
         assert path in auth_text
     assert "观影人工认证" in auth_text
     assert "请依次点击" in auth_text
