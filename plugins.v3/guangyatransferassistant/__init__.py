@@ -50,6 +50,7 @@ from .gying_transport_v1108 import GuangYaGyingTransportV1108Mixin
 from .multisource_v180 import GuangYaMultiSourceMixin
 from .media_identity_guard_v1111 import GuangYaMediaIdentityGuardV1111Mixin
 from .airing_scheduler_v1120 import GuangYaAiringSchedulerV1120Mixin
+from .airing_ui_v1120 import GuangYaAiringUiV1120Mixin
 from .offline_safety_v180 import GuangYaOfflineSafetyMixin
 from .page_auth_v172 import force_bear_auth, strip_page_api_secrets
 from .planner_safety_v190 import GuangYaPlannerSafetyMixin
@@ -77,6 +78,7 @@ class GuangYaTransferAssistant(
     GuangYaReleaseV1110Mixin,
     GuangYaEpisodeFenceFinalV1124Mixin,
     GuangYaReceiptCompletionV1124Mixin,
+    GuangYaAiringUiV1120Mixin,
     GuangYaGyingAutoLoginV1109Mixin,
     GuangYaGyingTransportV1108Mixin,
     GuangYaStabilityV1106Mixin,
