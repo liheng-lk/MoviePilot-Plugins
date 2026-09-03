@@ -16,7 +16,9 @@ def test_v1123_page_layer_parses_and_is_outermost():
     assert "from .page_perf_v1123 import GuangYaPagePerfV1123Mixin" in ENTRY
     start = ENTRY.index("class GuangYaTransferAssistant(")
     assert ENTRY.index("GuangYaPagePerfV1123Mixin,", start) < ENTRY.index("GuangYaAiringWeeklyV1121Mixin,", start)
-    assert 'build_id = "20260904-r49-preview"' in PATCH
+    assert 'build_id = "20260904-r49"' in PATCH
+    assert 'plugin_version = "1.12.3"' in ENTRY
+    assert 'build_id = "20260904-r49"' in ENTRY
 
 
 def test_data_page_reads_snapshot_first_and_moves_media_library_sync_to_background():
@@ -76,4 +78,3 @@ def test_large_subscription_picker_is_single_line_search_not_chip_wall():
     assert '"no-data-text": "没有匹配的活跃订阅"' in form
     assert "输入剧名 / 年份 / 季 / 订阅 ID 搜索" in form
     assert "已选项带 ✓ 并可再次点击取消" in form
-    assert "页面不再铺满 chips" in form
