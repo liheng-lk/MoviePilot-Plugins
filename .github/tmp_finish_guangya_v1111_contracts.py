@@ -87,16 +87,9 @@ for path in root.glob('test_*.py'):
     updated = updated.replace('package["version"] == local["version"] == "1.11.0"', 'package["version"] == local["version"] == "1.11.1"')
     updated = updated.replace('package["version"] == "1.11.0"', 'package["version"] == "1.11.1"')
     updated = updated.replace('local["version"] == "1.11.0"', 'local["version"] == "1.11.1"')
-    updated = updated.replace('plugin_version = "1.11.0"\' in entry', 'plugin_version = "1.11.1"\' in entry')
-    updated = updated.replace('plugin_version = "1.11.0"\' in texts[ENTRY]', 'plugin_version = "1.11.1"\' in texts[ENTRY]')
-    updated = updated.replace("'plugin_version = \"1.11.0\"' in entry_text", "'plugin_version = \"1.11.1\"' in entry_text")
-    updated = updated.replace("'plugin_version = \"1.11.0\"' in ENTRY", "'plugin_version = \"1.11.1\"' in ENTRY")
-    updated = updated.replace('build_id = "20260903-r41"\' in entry', 'build_id = "20260903-r42"\' in entry')
-    updated = updated.replace('build_id = "20260903-r41"\' in texts[ENTRY]', 'build_id = "20260903-r42"\' in texts[ENTRY]')
-    updated = updated.replace("'build_id = \"20260903-r41\"' in entry_text", "'build_id = \"20260903-r42\"' in entry_text")
-    updated = updated.replace("'build_id = \"20260903-r41\"' in ENTRY", "'build_id = \"20260903-r42\"' in ENTRY")
-    if path.name == 'test_episode_compat_v171.py':
-        updated = updated.replace("'build_id = \"20260903-r41\"' in text", "'build_id = \"20260903-r42\"' in text")
+    # These contract files assert the current outer entry release, not the historical inner layer.
+    updated = updated.replace('plugin_version = "1.11.0"', 'plugin_version = "1.11.1"')
+    updated = updated.replace('20260903-r41', '20260903-r42')
     if updated != original:
         path.write_text(updated, encoding='utf-8')
 
