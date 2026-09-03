@@ -5,20 +5,20 @@ from typing import Any, Dict, List
 
 from .legacy import _is_video, _subscription_aliases
 from .media_identity_v1111 import (
+    assess_media_identity_v1111,
     explicit_seasons_v1111,
     explicit_years_v1111,
     strong_title_match_v1111,
-    validate_media_evidence_v1111,
 )
 
 _AMBIGUOUS_PREFIX_V1111 = "EPISODE_AMBIGUOUS:"
 
 
 class GuangYaMediaIdentityGuardV1111Mixin:
-    """所有自动来源在真正执行前重新核验实际 payload，而不是信任搜索卡片。"""
+    """执行前核验真实 payload；明确冲突硬拒绝，缺字段按多证据置信度处理。"""
 
     plugin_version = "1.11.1"
-    build_id = "20260903-r42"
+    build_id = "20260903-r43"
 
     @staticmethod
     def _identity_aliases_v1111(subscribe: Any) -> List[str]:
@@ -42,7 +42,7 @@ class GuangYaMediaIdentityGuardV1111Mixin:
             return 0
 
     def _provider_candidate_matches(self, subscribe: Any, row: Dict[str, Any]) -> bool:
-        """搜索阶段保守预筛；最终身份仍在迅雷 JSON / cloud resolve 后确认。"""
+        """搜索阶段只做预筛；最终仍由真实迅雷 JSON / cloud resolve 结果确认。"""
         aliases = self._identity_aliases_v1111(subscribe)
         year = str(getattr(subscribe, "year", "") or "").strip()
         season = self._identity_expected_season_v1111(subscribe)
@@ -73,14 +73,14 @@ class GuangYaMediaIdentityGuardV1111Mixin:
         info: Dict[str, Any],
         template: Dict[str, Any],
     ):
-        """迅雷最终门禁只信分享真实标题/JSON 路径，搜索卡片绝不能兜底。"""
+        """迅雷最终门禁：实际资源为主，搜索卡片只能补充弱证据，不能覆盖硬冲突。"""
         aliases = self._identity_aliases_v1111(subscribe)
         year = str(getattr(subscribe, "year", "") or "").strip()
         season = self._identity_expected_season_v1111(subscribe)
         search_title = str(candidate.get("search_title") or "").strip()
         resource_name = str(candidate.get("name") or "").strip()
-        # GYING 在 panlist 没有 name 时会把搜索卡片 title 回填到 candidate.name；
-        # 这种值仍只是发现证据，不能参与最终确认。
+        # GYING 在 panlist 没有 name 时可能把搜索卡片 title 回填到 candidate.name；
+        # 这种值降级成 discovery 弱证据，不能伪装成真实分享标题。
         if resource_name and search_title and resource_name.casefold() == search_title.casefold():
             resource_name = ""
         files = [
@@ -88,48 +88,55 @@ class GuangYaMediaIdentityGuardV1111Mixin:
             for row in (template.get("files") or [])
             if isinstance(row, dict) and str(row.get("path") or row.get("name") or "").strip()
         ]
-        actual = [str(info.get("title") or "").strip(), resource_name, *files[:300]]
-        ok, reason = validate_media_evidence_v1111(
+        assessment = assess_media_identity_v1111(
             aliases=aliases,
             expected_year=year,
             expected_season=season,
             is_movie=self._identity_is_movie_v1111(subscribe),
-            evidences=actual,
-            require_title=True,
-            require_explicit_season=(season > 1),
+            primary_evidences=[str(info.get("title") or "").strip(), resource_name],
+            file_evidences=files[:300],
+            discovery_evidences=[search_title, candidate.get("label")],
+            threshold=50,
         )
-        if not ok:
-            return False, f"迅雷实际资源身份拒绝：{reason}"
-        return True, "迅雷实际 JSON 标题/年份/季号强校验通过"
+        if not assessment.get("ok"):
+            return False, f"迅雷实际资源身份拒绝：{assessment.get('reason') or '置信度不足'}"
+        return True, f"迅雷媒体身份通过：score={assessment.get('score', 0)}；{assessment.get('reason') or ''}"
 
     def _resolve_offline_source(self, source: Dict[str, Any], subscribe: Any) -> Dict[str, Any]:
-        """Magnet/ED2K 解析后使用真实 btResInfo/subfiles 做最终身份确认。"""
+        """Magnet/ED2K resolve 后用真实 btResInfo/subfiles 做最终身份确认。"""
         result = dict(super()._resolve_offline_source(source, subscribe) or {})
         data = result.get("resolve_data") if isinstance(result.get("resolve_data"), dict) else {}
         bt_info = data.get("btResInfo") if isinstance(data.get("btResInfo"), dict) else {}
-        evidences: List[str] = [
-            str(result.get("resolved_name") or "").strip(),
-            str(bt_info.get("fileName") or "").strip(),
-        ]
+        files: List[str] = []
         subfiles = bt_info.get("subfiles") if isinstance(bt_info.get("subfiles"), list) else []
         for row in subfiles[:500]:
             if not isinstance(row, dict):
                 continue
             value = str(row.get("fileName") or row.get("relative_path") or row.get("name") or "").strip()
             if value:
-                evidences.append(value)
+                files.append(value)
         season = self._identity_expected_season_v1111(subscribe)
-        ok, reason = validate_media_evidence_v1111(
+        assessment = assess_media_identity_v1111(
             aliases=self._identity_aliases_v1111(subscribe),
             expected_year=getattr(subscribe, "year", None),
             expected_season=season,
             is_movie=self._identity_is_movie_v1111(subscribe),
-            evidences=evidences,
-            require_title=True,
-            require_explicit_season=(season > 1),
+            primary_evidences=[
+                str(result.get("resolved_name") or "").strip(),
+                str(bt_info.get("fileName") or "").strip(),
+            ],
+            file_evidences=files,
+            discovery_evidences=[
+                source.get("search_title"), source.get("title"), source.get("name"), source.get("label")
+            ],
+            threshold=50,
         )
-        if not ok:
-            raise RuntimeError(f"{_AMBIGUOUS_PREFIX_V1111}媒体身份门禁：{reason}")
+        if not assessment.get("ok"):
+            raise RuntimeError(
+                f"{_AMBIGUOUS_PREFIX_V1111}媒体身份门禁：{assessment.get('reason') or '置信度不足'}"
+            )
+        result["identity_score_v1111"] = int(assessment.get("score") or 0)
+        result["identity_reason_v1111"] = str(assessment.get("reason") or "")
         return result
 
     def _plan_incremental_files(
@@ -140,7 +147,7 @@ class GuangYaMediaIdentityGuardV1111Mixin:
         target_path: str = "",
         stats: Dict[str, Any] | None = None,
     ):
-        """直接分享在抬高集数和规划文件之前先拒绝明确的年份/季号冲突。"""
+        """直接分享先处理硬冲突；缺少年份/季号不会因为信息不足直接拒绝。"""
         if subscribe is not None:
             paths = [
                 str(row.get("relative_path") or row.get("name") or "").strip()
