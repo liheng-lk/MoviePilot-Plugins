@@ -24,6 +24,7 @@ from .models import (
 from .organizer_folder_history import GuangYaFolderHistoryMixin
 from .organizer_execution_v360 import GuangYaOrganizerExecutionV360Mixin
 from .organizer_pending_revisit_v361 import GuangYaOrganizerPendingRevisitV361Mixin
+from .organizer_monitor_v366 import GuangYaOrganizerMonitorV366Mixin
 from .organizer_worker_guard import GuangYaWorkerGuardMixin
 from .organizer_queue_recovery import GuangYaQueueRecoveryMixin
 from .organizer_candidate_filter import GuangYaCandidateFilterMixin
@@ -36,8 +37,9 @@ _LegacyPlugin = _legacy_module.ShukGuangYaDisk
 
 
 class ShukGuangYaDisk(
-    # v3.6.1 的等待/回访修正必须先于 v3.6 Engine；其余 3.5.x 兼容层继续只提供
-    # MoviePilot 识别、安全预览、season、冲突等能力，不能抢占 scan/tick/fallback 主状态机。
+    # v3.6.6 必须位于最前：最终控制真实 interval、资源增量发现、目录批量准入边界与
+    # admission conflict；v3.6.1 继续提供稳定等待 pending 回访，其余兼容层不抢占调度权。
+    GuangYaOrganizerMonitorV366Mixin,
     GuangYaOrganizerPendingRevisitV361Mixin,
     GuangYaOrganizerExecutionV360Mixin,
     GuangYaFolderHistoryMixin,
