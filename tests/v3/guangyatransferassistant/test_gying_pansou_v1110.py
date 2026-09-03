@@ -42,13 +42,7 @@ def _challenge_namespace():
     runtime = (PLUGIN / "gying_runtime_v193.py").read_text(encoding="utf-8")
     match = re.search(r'_GYING_CHALLENGE_RE\s*=\s*re\.compile\(r"([^"]+)"\)', runtime)
     assert match
-    ns: Dict[str, Any] = {
-        "Any": Any,
-        "Dict": Dict,
-        "json": json,
-        "_safe_int": lambda value, default=0: int(value or default),
-        "_GYING_CHALLENGE_RE": re.compile(match.group(1)),
-    }
+    ns: Dict[str, Any] = {"Any": Any, "Dict": Dict, "json": json, "_safe_int": lambda value, default=0: int(value or default), "_GYING_CHALLENGE_RE": re.compile(match.group(1))}
     exec(compile(module, str(PATCH_PATH), "exec"), ns)
     return ns
 
@@ -63,9 +57,9 @@ def test_v1110_release_and_layer_parse():
         ast.parse(text)
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.12.0"
-    assert 'plugin_version = "1.12.0"' in ENTRY
-    assert 'build_id = "20260903-r44"' in ENTRY
+    assert package["version"] == local["version"] == "1.12.1"
+    assert 'plugin_version = "1.12.1"' in ENTRY
+    assert 'build_id = "20260903-r46"' in ENTRY
     assert "v1.10.16" in package.get("history", {})
     assert "v1.10.12" in package.get("history", {})
     assert "v1.10.10" in package.get("history", {})
@@ -80,29 +74,13 @@ def test_v1110_release_and_layer_parse():
 
 def test_challenge_detection_matches_pansou_and_does_not_confuse_refresh_with_remote_pow():
     kind = _challenge_namespace()["_challenge_kind_v1110"]
-
-    normal = _Response(
-        text="<script>_obj.search={};</script><script src='powSolve-demo.js'></script>浏览器安全验证",
-        status_code=200,
-    )
+    normal = _Response(text="<script>_obj.search={};</script><script src='powSolve-demo.js'></script>浏览器安全验证", status_code=200)
     assert kind(normal) == ""
-
-    remote = _Response(
-        text="<html>正在进行浏览器计算验证<script src='powSolve-demo.js'></script></html>",
-        status_code=200,
-    )
+    remote = _Response(text="<html>正在进行浏览器计算验证<script src='powSolve-demo.js'></script></html>", status_code=200)
     assert kind(remote) == "remote_pow"
-
-    embedded = _Response(
-        text='浏览器安全验证<script>const json={"id":"abc","N":"ff","x":"02","t":3};const jss={};</script>',
-        status_code=200,
-    )
+    embedded = _Response(text='浏览器安全验证<script>const json={"id":"abc","N":"ff","x":"02","t":3};const jss={};</script>', status_code=200)
     assert kind(embedded) == "embedded_pow"
-
-    refresh = _Response(
-        text=json.dumps({"refresh": 1, "overlay": "https://static.example/pow-overlay.js", "msg": "验证"}),
-        status_code=200,
-    )
+    refresh = _Response(text=json.dumps({"refresh": 1, "overlay": "https://static.example/pow-overlay.js", "msg": "验证"}), status_code=200)
     assert kind(refresh) == "refresh_overlay"
     assert kind(refresh) != "remote_pow"
 
@@ -111,7 +89,6 @@ def test_remote_pow_follows_pansou_get_compute_post_success_retry_contract():
     solve = PATCH.split("    def _gying_solve_challenge_v1110(", 1)[1].split("    def _gying_refresh_bootstrap_v1110", 1)[0]
     request = PATCH.split("    def _gying_request(", 1)[1].split("\n\n\n__all__", 1)[0]
     refresh = PATCH.split("    def _gying_refresh_bootstrap_v1110(", 1)[1].split("    def _gying_request(", 1)[0]
-
     assert 'pow_url = node.rstrip("/") + "/res/pow"' in solve
     assert "challenge = session.get(" in solve
     assert "_solve_pow_hex" in solve
@@ -120,7 +97,6 @@ def test_remote_pow_follows_pansou_get_compute_post_success_retry_contract():
     assert '_truthy_success_v1110(result.get("success"))' in solve
     assert "browser_verified" in solve
     assert "_drop_cookie_v1108" not in solve
-
     assert 'node.rstrip("/") + "/"' in refresh
     assert 'kind in {"embedded_pow", "legacy_hash", "remote_pow"}' in refresh
     assert 'attempts = 2 if retry_challenge else 1' in request
@@ -131,17 +107,8 @@ def test_remote_pow_follows_pansou_get_compute_post_success_retry_contract():
 
 def test_v1110_does_not_add_browser_automation_ocr_or_secret_logging():
     lowered = PATCH.lower()
-    for forbidden in (
-        "pytesseract",
-        "easyocr",
-        "paddleocr",
-        "playwright",
-        "puppeteer",
-        "selenium",
-        "captcha_solver",
-    ):
+    for forbidden in ("pytesseract", "easyocr", "paddleocr", "playwright", "puppeteer", "selenium", "captcha_solver"):
         assert forbidden not in lowered
-
     log_lines = [line for line in PATCH.splitlines() if "_gying_auth_log" in line or '"PanSou PoW：' in line]
     joined = "\n".join(log_lines).lower()
     for secret in ("password", "username", "cookie_header", "captcha", "points", " n=", " x=", " y="):

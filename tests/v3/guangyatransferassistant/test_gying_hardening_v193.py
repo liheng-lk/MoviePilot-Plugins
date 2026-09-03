@@ -35,17 +35,10 @@ def _pure_namespace():
 def test_gying_hardening_parses_and_is_final_node_layer():
     ast.parse(text, filename=str(HARDENING))
     start = entry_text.index("class GuangYaTransferAssistant")
-    order = [
-        "GuangYaConfigUiMixin,",
-        "GuangYaGyingHardeningMixin,",
-        "GuangYaGyingFailoverMixin,",
-        "GuangYaGyingRuntimeMixin,",
-        "GuangYaXunleiHardeningMixin,",
-        "GuangYaXunleiFlashMixin,",
-    ]
+    order = ["GuangYaConfigUiMixin,", "GuangYaGyingHardeningMixin,", "GuangYaGyingFailoverMixin,", "GuangYaGyingRuntimeMixin,", "GuangYaXunleiHardeningMixin,", "GuangYaXunleiFlashMixin,"]
     positions = [entry_text.index(token, start) for token in order]
     assert positions == sorted(positions)
-    assert 'build_id = "20260903-r44"' in entry_text
+    assert 'build_id = "20260903-r46"' in entry_text
 
 
 def test_unicode_and_punycode_are_one_node_identity():
