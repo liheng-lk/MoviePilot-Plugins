@@ -24,18 +24,20 @@ class DailyAssistantContract(unittest.TestCase):
         self.assertIn('"apikey": settings.API_TOKEN', ENTRY)
 
     def test_all_media_catalog_is_present(self):
-        required = (
+        static_required = (
             "纪录片", "日漫", "综艺",
             "Netflix · 电影榜", "Netflix · 剧集榜", "Netflix · 混合榜",
-            "HBO / Max · 电影榜", "Apple TV+ · 剧集榜", "Disney+ · 剧集榜",
-            "Crunchyroll · 剧集榜", "Amazon Prime · 电影榜", "Amazon · 剧集榜",
-            "Hulu · 剧集榜", "猫眼 · 电影榜", "猫眼 · 剧集榜", "猫眼 · 综艺榜",
-            "豆瓣 · 正在上映", "豆瓣 · 热门电影", "豆瓣 · 热门剧集",
+            "猫眼 · 电影榜", "猫眼 · 剧集榜", "猫眼 · 综艺榜", "猫眼 · 混合榜",
+            "豆瓣 · 正在上映", "豆瓣 · 热门电影", "豆瓣 · 热门剧集", "豆瓣 · 混合榜",
             "热门 · IMDb 热门电影", "热门 · IMDb 热门剧集", "热门 · TMDB 趋势",
-            "热门 · AniList 热门", "热门 · Bangumi 今日动漫", "腾讯视频 · 热播",
+            "热门 · AniList 热门", "热门 · Bangumi 今日动漫", "热门 · 混合榜",
+            "腾讯视频 · 热播", "腾讯视频 · 电视剧",
         )
-        for token in required:
+        for token in static_required:
             self.assertIn(token, SOURCES)
+        for family in ("HBO / Max", "Apple TV+", "Disney+", "Crunchyroll", "Amazon Prime", "Amazon", "Hulu"):
+            self.assertIn(f'(\"{family.split(" / ")[0].lower() if family == "HBO / Max" else ""}', SOURCES) if False else self.assertIn(f'"{family}"', SOURCES)
+        self.assertIn('(("movie", "电影榜"), ("tv", "剧集榜"), ("mixed", "混合榜"))', SOURCES)
 
     def test_catalog_uses_host_chains_and_public_rank_sources(self):
         for token in (
