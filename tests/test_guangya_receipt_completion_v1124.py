@@ -10,13 +10,14 @@ RECEIPT = (PLUGIN / "receipt_completion_v1124.py").read_text(encoding="utf-8")
 
 
 class GuangYaReceiptCompletionV1124Tests(unittest.TestCase):
-    def test_sources_parse_and_layer_is_outermost(self):
+    def test_sources_parse_and_receipt_stays_directly_beneath_final_fence(self):
         ast.parse(ENTRY)
         ast.parse(RECEIPT)
         self.assertIn("from .receipt_completion_v1124 import GuangYaReceiptCompletionV1124Mixin", ENTRY)
+        self.assertIn("from .episode_fence_final_v1124 import GuangYaEpisodeFenceFinalV1124Mixin", ENTRY)
         class_head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
-        first_mixin = next(line.strip().rstrip(",") for line in class_head.splitlines() if line.strip())
-        self.assertEqual(first_mixin, "GuangYaReceiptCompletionV1124Mixin")
+        mixins = [line.strip().rstrip(",") for line in class_head.splitlines() if line.strip()]
+        self.assertEqual(mixins[:2], ["GuangYaEpisodeFenceFinalV1124Mixin", "GuangYaReceiptCompletionV1124Mixin"])
 
     def test_tv_success_receipt_is_persisted_before_next_search(self):
         method = RECEIPT.split("    def _save_xunlei_state(", 1)[1]
