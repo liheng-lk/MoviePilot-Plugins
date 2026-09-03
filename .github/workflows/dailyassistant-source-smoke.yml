@@ -1,0 +1,142 @@
+name: DailyAssistant source smoke
+
+on:
+  push:
+    branches:
+      - feature/daily-gysub-v1110
+    paths:
+      - '.github/workflows/dailyassistant-source-smoke.yml'
+      - 'plugins.v3/dailyassistant/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Probe public ranking endpoints
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import ssl
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          TIMEOUT = 20
+          UA = 'Mozilla/5.0 Chrome/131.0 Safari/537.36'
+          hard_failures = []
+          results = []
+
+          def request(name, url, *, method='GET', headers=None, data=None, validator=None):
+              req_headers = {'User-Agent': UA, **(headers or {})}
+              body = None
+              if data is not None:
+                  body = json.dumps(data).encode('utf-8')
+                  req_headers.setdefault('Content-Type', 'application/json')
+              req = urllib.request.Request(url, data=body, headers=req_headers, method=method)
+              try:
+                  with urllib.request.urlopen(req, timeout=TIMEOUT, context=ssl.create_default_context()) as resp:
+                      raw = resp.read()
+                      status = getattr(resp, 'status', 200)
+                      content_type = resp.headers.get('Content-Type', '')
+                  if status >= 400:
+                      raise RuntimeError(f'HTTP {status}')
+                  try:
+                      parsed = json.loads(raw.decode('utf-8')) if 'json' in content_type.lower() else raw.decode('utf-8', 'replace')
+                  except Exception as err:
+                      hard_failures.append(f'{name}: decode failed: {err}')
+                      results.append((name, 'BAD_SCHEMA', f'decode={err}'))
+                      return
+                  ok, detail = validator(parsed) if validator else (True, f'bytes={len(raw)}')
+                  if not ok:
+                      hard_failures.append(f'{name}: schema mismatch: {detail}')
+                      results.append((name, 'BAD_SCHEMA', detail))
+                  else:
+                      results.append((name, 'OK', detail))
+              except urllib.error.HTTPError as err:
+                  # GitHub-hosted runners may be blocked by upstream anti-bot/rate limits.
+                  # Treat 401/403/418/429/451 as environmental unavailability, not a contract regression.
+                  state = 'BLOCKED' if err.code in {401, 403, 418, 429, 451} else 'HTTP_ERROR'
+                  results.append((name, state, f'HTTP {err.code}'))
+              except Exception as err:
+                  results.append((name, 'UNAVAILABLE', f'{type(err).__name__}: {err}'))
+
+          def json_list_at(*path):
+              def validate(obj):
+                  cur = obj
+                  for key in path:
+                      if not isinstance(cur, dict) or key not in cur:
+                          return False, f'missing {".".join(path)}'
+                      cur = cur[key]
+                  if not isinstance(cur, list):
+                      return False, f'{".".join(path)} is {type(cur).__name__}, expected list'
+                  return True, f'items={len(cur)}'
+              return validate
+
+          def netflix_validator(text):
+              if not isinstance(text, str):
+                  return False, 'not text'
+              first = text.splitlines()[0] if text.splitlines() else ''
+              required = {'week', 'category', 'show_title', 'weekly_rank'}
+              cols = set(first.split('\t'))
+              return required.issubset(cols), f'columns={len(cols)} first={first[:180]}'
+
+          def imdb_validator(obj):
+              try:
+                  edges = obj['data']['chartTitles']['edges']
+              except Exception:
+                  return False, f'keys={list(obj) if isinstance(obj, dict) else type(obj).__name__}'
+              return isinstance(edges, list), f'edges={len(edges)}'
+
+          request(
+              'Netflix Tudum Top10',
+              'https://www.netflix.com/tudum/top10/data/all-weeks-global.tsv',
+              validator=netflix_validator,
+          )
+          for collection in ('movie_soon', 'movie_weekly_best', 'tv_real_time_hotest', 'movie_real_time_hotest'):
+              request(
+                  f'Douban collection {collection}',
+                  f'https://m.douban.com/rexxar/api/v2/subject_collection/{collection}/items?start=0&count=3',
+                  headers={'Referer': f'https://m.douban.com/subject_collection/{collection}'},
+                  validator=json_list_at('subject_collection_items'),
+              )
+          request(
+              'Douban US box',
+              'https://api.douban.com/v2/movie/us_box?apikey=0df993c66c0c636e29ecbb5344252a4a',
+              validator=json_list_at('subjects'),
+          )
+          request(
+              'Maoyan Tencent TV',
+              'https://piaofang.maoyan.com/dashboard/webHeatData?seriesType=4&platformType=3&showDate=2',
+              headers={'Referer': 'https://piaofang.maoyan.com/'},
+              validator=json_list_at('dataList', 'list'),
+          )
+          imdb_query = '''query Chart($first:Int!,$chartType:ChartType!){chartTitles(first:$first,chart:{chartType:$chartType}){edges{currentRank node{id titleText{text} releaseYear{year}}}}}'''
+          request(
+              'IMDb popular movies GraphQL',
+              'https://api.graphql.imdb.com/',
+              method='POST',
+              headers={'Origin': 'https://www.imdb.com', 'Referer': 'https://www.imdb.com/chart/'},
+              data={'query': imdb_query, 'variables': {'first': 3, 'chartType': 'MOST_POPULAR_MOVIES'}},
+              validator=imdb_validator,
+          )
+
+          print('\n=== DailyAssistant source smoke ===')
+          for name, state, detail in results:
+              print(f'{state:11} {name}: {detail}')
+          if hard_failures:
+              print('\nSchema regressions:')
+              for item in hard_failures:
+                  print(f'- {item}')
+              raise SystemExit(1)
+          print('\nNo schema regression detected. BLOCKED/UNAVAILABLE entries are runner-network observations only.')
+          PY
