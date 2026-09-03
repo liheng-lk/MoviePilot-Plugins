@@ -79,13 +79,15 @@ class GuangYaPagePerfV1123Mixin:
                 # 大量 chips 会把配置页撑得很高；关闭 chips 后保持单行输入和搜索体验。
                 "chips": False,
                 "closable-chips": False,
-                "hide-selected": True,
+                # 已选项仍保留在下拉中，用户可以再次点击单独取消，不必只能“全部清空”。
+                "hide-selected": False,
                 "clearable": True,
                 "auto-select-first": True,
                 "menu-props": {"maxHeight": 420},
+                "no-data-text": "没有匹配的活跃订阅",
                 "hint": (
                     f"当前固定接管 {selected_count} 个订阅。只列出活跃订阅和已接管订阅；"
-                    "输入关键词搜索添加，已选项会从候选菜单隐藏，不再铺满整页。"
+                    "输入关键词搜索添加，已选项带 ✓ 并可再次点击取消，页面不再铺满 chips。"
                 ),
                 "persistent-hint": True,
             })
