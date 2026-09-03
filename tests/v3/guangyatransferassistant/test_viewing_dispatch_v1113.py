@@ -24,9 +24,10 @@ def test_v1113_files_parse_and_release_is_published():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads(PLUGIN_JSON.read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.12.2"
-    assert 'plugin_version = "1.12.2"' in entry_text
-    assert 'build_id = "20260903-r48"' in entry_text
+    assert package["version"] == local["version"] == "1.12.3"
+    assert 'plugin_version = "1.12.3"' in entry_text
+    assert 'build_id = "20260904-r49"' in entry_text
+    assert "v1.12.3" in package["history"]
     assert "v1.10.13" in package["history"]
 
 

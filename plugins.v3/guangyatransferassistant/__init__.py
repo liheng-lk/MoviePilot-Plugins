@@ -1,4 +1,4 @@
-"""光鸭转存助手 v1.12.2 运行入口。
+"""光鸭转存助手 v1.12.3 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
@@ -11,6 +11,7 @@ v1.11.2 补齐频道 ED2K 云添加：频道命中的 ED2K 单文件允许先 re
 v1.12.0 改为逐集上映日历驱动：普通后台只处理当前应播缺集，未来集等待更新窗口；每日全员补漏仍保留。
 v1.12.1 新增周视图追剧日历和严格星期门禁：普通后台仅在对应更新日搜索，跨日欠集交给每日全员补漏兜底；电影不参与星期筛选。
 v1.12.2 收口追剧三态与来源轮询：日历仅显示已入库/转存中/待补；频道缓存按最后可见时间续期；频道事件后继续观影常规轮询；新订阅缓存未命中时补一次频道现查；当天缺集按外部搜索冷却继续重试，跨日后由每日04:10全员补漏兜底。
+v1.12.3 优化大订阅页面体验：数据页优先读取周快照并后台校准媒体库，7 天日期可点击/滑动查看对应剧集；配置页改为轻量搜索选择器，不再逐订阅计算进度或铺满 chips。
 
 最终优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。
 后续 ResourceGroup 内部仍保持：光鸭直接转存 > Magnet > ED2K。
@@ -51,6 +52,7 @@ from .gying_runtime_v193 import GuangYaGyingRuntimeMixin
 from .gying_transport_v1108 import GuangYaGyingTransportV1108Mixin
 from .multisource_v180 import GuangYaMultiSourceMixin
 from .media_identity_guard_v1111 import GuangYaMediaIdentityGuardV1111Mixin
+from .page_perf_v1123 import GuangYaPagePerfV1123Mixin
 from .airing_weekly_v1121 import GuangYaAiringWeeklyV1121Mixin
 from .airing_scheduler_v1120 import GuangYaAiringSchedulerV1120Mixin
 from .airing_ui_v1120 import GuangYaAiringUiV1120Mixin
@@ -76,6 +78,7 @@ install_channel_multisource_compat(_legacy_module)
 
 
 class GuangYaTransferAssistant(
+    GuangYaPagePerfV1123Mixin,
     GuangYaAiringWeeklyV1121Mixin,
     GuangYaAiringSchedulerV1120Mixin,
     GuangYaMediaIdentityGuardV1111Mixin,
@@ -115,8 +118,8 @@ class GuangYaTransferAssistant(
 ):
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
 
-    plugin_version = "1.12.2"
-    build_id = "20260903-r48"
+    plugin_version = "1.12.3"
+    build_id = "20260904-r49"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
