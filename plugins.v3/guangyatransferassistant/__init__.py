@@ -5,7 +5,8 @@ v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观
 地址/登录配置及通用 Magnet/ED2K 搜索 API；v1.9.3 把观影中的迅雷分享接入
 光鸭 userres 秒传链路，并补齐观影多节点、浏览器 PoW 验证、真实登录/搜索/downurl 会话；
 v1.10.23 完整生成迅雷 JSON，但只导入媒体库同步后仍缺失且高置信匹配的集数；拒绝无法识别的顺带文件；
-v1.10.24 成功资源立即记账：剧集按成功集号立刻写入进度并阻止同集重复版本，电影首个正片成功即完成订阅。
+v1.10.24 成功资源立即记账：剧集按成功集号立刻写入进度并阻止同集重复版本，电影首个正片成功即完成订阅；
+同时增加跨来源集级终止栅栏：秒传/分享转存/Magnet/ED2K 共用已成功集与在途集，成功一集立即终止该集其它任务。
 
 最终优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。
 后续 ResourceGroup 内部仍保持：光鸭直接转存 > Magnet > ED2K。
@@ -31,6 +32,7 @@ from .config_ui_v1100 import GuangYaConfigUiV1100Mixin
 from .console_ui_v1100 import GuangYaConsoleUiV1100Mixin
 from .content_resilience_v1105 import GuangYaContentResilienceV1105Mixin
 from .diagnostics_v1100 import GuangYaDiagnosticsV1100Mixin
+from .episode_fence_final_v1124 import GuangYaEpisodeFenceFinalV1124Mixin
 from .provider_reliability_v1100 import GuangYaProviderReliabilityV1100Mixin
 from .xunlei_reliability_v1100 import GuangYaXunleiReliabilityV1100Mixin
 from .config_ui_v192 import GuangYaConfigUiMixin
@@ -65,6 +67,7 @@ install_channel_multisource_compat(_legacy_module)
 
 
 class GuangYaTransferAssistant(
+    GuangYaEpisodeFenceFinalV1124Mixin,
     GuangYaReceiptCompletionV1124Mixin,
     GuangYaGyingAutoLoginV1109Mixin,
     GuangYaGyingTransportV1108Mixin,
@@ -99,7 +102,7 @@ class GuangYaTransferAssistant(
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
 
     plugin_version = "1.10.24"
-    build_id = "20260903-r39"
+    build_id = "20260903-r40"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
