@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
 PATCH = (PLUGIN / "organizer_monitor_v366.py").read_text(encoding="utf-8")
 ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
+FOLDER_BATCH = (PLUGIN / "organizer_folder_batch_v342.py").read_text(encoding="utf-8")
 
 
 def test_v366_patch_is_valid_python_and_first_mro_authority():
@@ -66,3 +67,22 @@ def test_v366_pending_revisit_still_receives_waiting_results():
     assert "_v361_remove_pending" in finish
     for phase in ("stabilizing", "history_wait", "retry_wait", "inflight"):
         assert phase in finish
+
+
+
+def test_v367_manual_scan_never_uses_native_directory_batch():
+    schedule = PATCH[PATCH.index("def _v360_schedule_resource"):PATCH.index("@staticmethod\n    def _v366_is_admission_conflict")]
+    manual_api = PATCH[PATCH.index("def api_organize_monitor_scan"):PATCH.index("def api_organize_monitor_status")]
+    assert '_v366_manual_scan_active: bool = False' in PATCH
+    assert 'manual_safe_mode = bool(getattr(self, "_v366_manual_scan_active", False))' in schedule
+    assert 'not manual_safe_mode' in schedule
+    assert 'mode_text = "手动安全筛选成员"' in schedule
+    assert 'self._v366_manual_scan_active = True' in manual_api
+    assert 'finally:' in manual_api
+    assert 'self._v366_manual_scan_active = previous' in manual_api
+
+
+def test_v367_selected_member_failure_uses_final_admission_guard():
+    compat = FOLDER_BATCH[FOLDER_BATCH.index("if not item.directory_mode:"):FOLDER_BATCH.index("directory_item = FileItem(")]
+    assert 'self._fallback_terminal_state(member, success=success, message=message)' in compat
+    assert 'original_fallback(self, member, success=success, message=message)' not in compat

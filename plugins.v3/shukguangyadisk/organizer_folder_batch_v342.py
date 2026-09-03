@@ -346,7 +346,8 @@ def _install_queue_batch_execution() -> None:
             )
             for member in item.members:
                 success, message = original_execute(self, member)
-                original_fallback(self, member, success=success, message=message)
+                # 动态分派到最终插件实例，让 admission conflict guard 先于旧 retry fallback 生效。
+                self._fallback_terminal_state(member, success=success, message=message)
                 all_success = all_success and bool(success)
                 if message:
                     messages.append(str(message))

@@ -39,6 +39,8 @@ class GuangYaOrganizerMonitorV366Mixin:
     """位于 v3.6.1/v3.6.0 之前的最终自动监控调度边界。"""
 
     _v366_known_scan_active: bool = False
+    # 手动整理必须保持‘已筛选成员’输入语义，禁止再次把整个目录交给 MoviePilot。
+    _v366_manual_scan_active: bool = False
 
     def _v366_load_known(self) -> Dict[str, Dict[str, Any]]:
         raw = self.get_data(_KNOWN_KEY) or {}
@@ -141,6 +143,7 @@ class GuangYaOrganizerMonitorV366Mixin:
 
         monitor_root = self._v360_norm(self._organize_monitor_path)
         normalized_group = self._v360_norm(group_path)
+        manual_safe_mode = bool(getattr(self, "_v366_manual_scan_active", False))
         loose = normalized_group == monitor_root
         if not loose:
             try:
@@ -190,7 +193,8 @@ class GuangYaOrganizerMonitorV366Mixin:
                 and sum(int(value or 0) for value in phases.values()) == len(primary)
             )
             directory_mode = bool(
-                all_primary_ready
+                not manual_safe_mode
+                and all_primary_ready
                 and _can_use_native_directory_batch(
                     self,
                     normalized_group,
@@ -246,7 +250,7 @@ class GuangYaOrganizerMonitorV366Mixin:
                 reason=dispatch_message or "私有 worker 暂未接收；仅回 discovery pending",
             )
             logger.warning(
-                "【光鸭云盘助手】【v3.6.6】【调度】资源未进入 worker，成员=%s 已回 pending，不写 retry: %s%s",
+                "【光鸭云盘助手】【v3.6.7】【调度】资源未进入 worker，成员=%s 已回 pending，不写 retry: %s%s",
                 restored,
                 normalized_group,
                 f" - {dispatch_message}" if dispatch_message else "",
@@ -267,9 +271,14 @@ class GuangYaOrganizerMonitorV366Mixin:
             submitted=len(accepted_members),
             selected_member_mode=not directory_mode,
         )
-        mode_text = "MoviePilot原生目录（全成员ready）" if directory_mode else "已筛选成员"
+        if directory_mode:
+            mode_text = "MoviePilot原生目录（全成员ready）"
+        elif manual_safe_mode:
+            mode_text = "手动安全筛选成员"
+        else:
+            mode_text = "已筛选成员"
         logger.info(
-            "【光鸭云盘助手】【v3.6.6】【调度】当前资源已入队: %s，主媒体=%s，实际成员=%s，模式=%s，phases=%s",
+            "【光鸭云盘助手】【v3.6.7】【调度】当前资源已入队: %s，主媒体=%s，实际成员=%s，模式=%s，phases=%s",
             normalized_group,
             len(primary),
             len(accepted_members),
@@ -320,7 +329,7 @@ class GuangYaOrganizerMonitorV366Mixin:
                     admission_conflict_at=time.time(),
                 )
                 logger.warning(
-                    "【光鸭云盘助手】【v3.6.6】【准入冲突】%s 个成员已进入 blocked，停止分钟级重复提交: %s",
+                    "【光鸭云盘助手】【v3.6.7】【准入冲突】%s 个成员已进入 blocked，停止分钟级重复提交: %s",
                     blocked,
                     message,
                 )
@@ -452,7 +461,7 @@ class GuangYaOrganizerMonitorV366Mixin:
             known_resource_scan_at=now,
         )
         logger.info(
-            "【光鸭云盘助手】【v3.6.6】【增量监控】已知资源=%s，检查=%s，内容变化=%s，移除空目录=%s，错误=%s，提交=%s",
+            "【光鸭云盘助手】【v3.6.7】【增量监控】已知资源=%s，检查=%s，内容变化=%s，移除空目录=%s，错误=%s，提交=%s",
             len(rows),
             checked,
             changed,
@@ -516,10 +525,19 @@ class GuangYaOrganizerMonitorV366Mixin:
             if data.get("cycle_complete"):
                 self._v366_mark_baseline_complete()
                 self._save_monitor_status(full_discovery_completed_at=time.time())
-                logger.info("【光鸭云盘助手】【v3.6.6】【基线发现】本轮完整 discovery cycle 已完成；切换为资源目录增量监控")
+                logger.info("【光鸭云盘助手】【v3.6.7】【基线发现】本轮完整 discovery cycle 已完成；切换为资源目录增量监控")
             return baseline
 
         return known_result
+
+    def api_organize_monitor_scan(self, payload: dict = None) -> Dict[str, Any]:
+        """手动整理只允许使用已筛选成员，避免目录输入与历史单文件输入发生准入冲突。"""
+        previous = bool(getattr(self, "_v366_manual_scan_active", False))
+        self._v366_manual_scan_active = True
+        try:
+            return super().api_organize_monitor_scan(payload)
+        finally:
+            self._v366_manual_scan_active = previous
 
     def api_organize_monitor_status(self) -> Dict[str, Any]:
         response = super().api_organize_monitor_status()
@@ -531,7 +549,7 @@ class GuangYaOrganizerMonitorV366Mixin:
         baseline = self.get_data(_BASELINE_KEY) or {}
         status.update(
             {
-                "monitor_engine_patch": "v3.6.6",
+                "monitor_engine_patch": "v3.6.7",
                 "effective_scan_interval": int(getattr(self, "_organize_monitor_interval", 60) or 60),
                 "known_resource_total": len(known),
                 "full_discovery_interval": int(_FULL_DISCOVERY_INTERVAL),
