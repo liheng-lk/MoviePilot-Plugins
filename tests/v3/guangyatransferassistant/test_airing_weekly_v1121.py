@@ -23,7 +23,8 @@ def test_v1121_parses_and_is_above_v1120_scheduler():
     weekly = ENTRY.index("GuangYaAiringWeeklyV1121Mixin,", start)
     scheduler = ENTRY.index("GuangYaAiringSchedulerV1120Mixin,", start)
     assert weekly < scheduler
-    assert 'plugin_version = "1.12.0"' in ENTRY
+    assert 'plugin_version = "1.12.1"' in ENTRY
+    assert 'build_id = "20260903-r46"' in ENTRY
 
 
 def test_v1121_date_precision_never_crosses_to_previous_day():
@@ -34,7 +35,6 @@ def test_v1121_date_precision_never_crosses_to_previous_day():
 
 
 def test_v1121_past_scheduled_episode_is_not_searched_on_wrong_weekday():
-    # 普通后台只保留本更新日；过去日期缺集进入 off_day，由每日全员补漏兜底。
     assert "off_day.add(episode)" in GATE
     assert '"due_missing": sorted(active)' in GATE
     assert '"due_uncovered": sorted(active - reserved - claimed)' in GATE
@@ -58,7 +58,6 @@ def test_v1121_unscheduled_gap_only_runs_on_inferred_weekday():
     assert "due.add(fallback_episode)" in legacy_gate
     assert '"weekday_fallback": bool(fallback_episode)' in legacy_gate
     assert "【星期排期】" in legacy_gate
-    # 最终门禁只保留本星期推断明确放行的那个未知日期缺集。
     assert 'bool(result.get("weekday_fallback"))' in GATE
     assert 'int(result.get("weekday")) == today.weekday()' in GATE
 
