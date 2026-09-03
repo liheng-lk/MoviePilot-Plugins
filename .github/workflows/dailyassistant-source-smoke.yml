@@ -28,7 +28,6 @@ jobs:
           import json
           import ssl
           import urllib.error
-          import urllib.parse
           import urllib.request
 
           TIMEOUT = 20
@@ -63,8 +62,6 @@ jobs:
                   else:
                       results.append((name, 'OK', detail))
               except urllib.error.HTTPError as err:
-                  # GitHub-hosted runners may be blocked by upstream anti-bot/rate limits.
-                  # Treat 401/403/418/429/451 as environmental unavailability, not a contract regression.
                   state = 'BLOCKED' if err.code in {401, 403, 418, 429, 451} else 'HTTP_ERROR'
                   results.append((name, state, f'HTTP {err.code}'))
               except Exception as err:
@@ -90,12 +87,18 @@ jobs:
               cols = set(first.split('\t'))
               return required.issubset(cols), f'columns={len(cols)} first={first[:180]}'
 
+          def douban_chart_validator(text):
+              if not isinstance(text, str):
+                  return False, 'not text'
+              ok = '北美票房榜' in text and 'box_chart' in text and '/subject/' in text
+              return ok, f'heading={"北美票房榜" in text} box_chart={"box_chart" in text} subject_link={"/subject/" in text}'
+
           def imdb_validator(obj):
               try:
                   edges = obj['data']['chartTitles']['edges']
               except Exception:
                   return False, f'keys={list(obj) if isinstance(obj, dict) else type(obj).__name__}'
-              return isinstance(edges, list), f'edges={len(edges)}'
+              return isinstance(edges, list) and bool(edges), f'edges={len(edges) if isinstance(edges, list) else -1}'
 
           request(
               'Netflix Tudum Top10',
@@ -110,9 +113,14 @@ jobs:
                   validator=json_list_at('subject_collection_items'),
               )
           request(
-              'Douban US box',
-              'https://api.douban.com/v2/movie/us_box?apikey=0df993c66c0c636e29ecbb5344252a4a',
-              validator=json_list_at('subjects'),
+              'Douban chart US box HTML',
+              'https://movie.douban.com/chart/',
+              headers={
+                  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                  'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                  'Referer': 'https://movie.douban.com/',
+              },
+              validator=douban_chart_validator,
           )
           request(
               'Maoyan Tencent TV',
@@ -120,13 +128,27 @@ jobs:
               headers={'Referer': 'https://piaofang.maoyan.com/'},
               validator=json_list_at('dataList', 'list'),
           )
-          imdb_query = '''query Chart($first:Int!,$chartType:ChartType!){chartTitles(first:$first,chart:{chartType:$chartType}){edges{currentRank node{id titleText{text} releaseYear{year}}}}}'''
+          imdb_query = '''query MoviemeterChart($first: Int!, $sort: AdvancedTitleSearchSort) {
+            chartTitles(first: $first, chart: { chartType: MOST_POPULAR_MOVIES }, sort: $sort) {
+              edges { currentRank node { id titleText { text } releaseYear { year } primaryImage { url } } }
+            }
+          }'''
           request(
               'IMDb popular movies GraphQL',
               'https://api.graphql.imdb.com/',
               method='POST',
-              headers={'Origin': 'https://www.imdb.com', 'Referer': 'https://www.imdb.com/chart/'},
-              data={'query': imdb_query, 'variables': {'first': 3, 'chartType': 'MOST_POPULAR_MOVIES'}},
+              headers={
+                  'Origin': 'https://www.imdb.com',
+                  'Referer': 'https://www.imdb.com/chart/moviemeter/',
+                  'Accept-Language': 'en-US,en;q=0.9',
+              },
+              data={
+                  'query': imdb_query,
+                  'variables': {
+                      'first': 3,
+                      'sort': {'sortBy': 'POPULARITY', 'sortOrder': 'ASC'},
+                  },
+              },
               validator=imdb_validator,
           )
 
