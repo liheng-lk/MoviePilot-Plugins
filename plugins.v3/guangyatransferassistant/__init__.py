@@ -51,6 +51,7 @@ from .page_auth_v172 import force_bear_auth, strip_page_api_secrets
 from .planner_safety_v190 import GuangYaPlannerSafetyMixin
 from .provider_sources_v192 import GuangYaProviderSourcesMixin
 from .receipt_completion_v1124 import GuangYaReceiptCompletionV1124Mixin
+from .release_v1110 import GuangYaReleaseV1110Mixin
 from .reliability_v170 import GuangYaReliabilityMixin
 from .resource_planner_v190 import GuangYaResourcePlannerMixin
 from .runtime_v170 import GuangYaRuntimeFinalizerMixin
@@ -67,6 +68,7 @@ install_channel_multisource_compat(_legacy_module)
 
 
 class GuangYaTransferAssistant(
+    GuangYaReleaseV1110Mixin,
     GuangYaEpisodeFenceFinalV1124Mixin,
     GuangYaReceiptCompletionV1124Mixin,
     GuangYaGyingAutoLoginV1109Mixin,
@@ -101,8 +103,8 @@ class GuangYaTransferAssistant(
 ):
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
 
-    plugin_version = "1.10.24"
-    build_id = "20260903-r40"
+    plugin_version = "1.11.0"
+    build_id = "20260903-r41"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""

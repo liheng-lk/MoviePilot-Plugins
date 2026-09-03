@@ -59,7 +59,7 @@ SOURCES: List[SourceSpec] = [
 ]
 
 for _family, _label in (
-    ("hbo", "HBO / Max"),
+    ("hbo", "HBO"),
     ("appletv", "Apple TV+"),
     ("disney", "Disney+"),
     ("crunchyroll", "Crunchyroll"),
@@ -111,7 +111,7 @@ SOURCES.extend([
     SourceSpec("tencent_movie", "腾讯视频 · 电影", "腾讯视频", "watch_provider", "movie", "tencent"),
     SourceSpec("tencent_tv", "腾讯视频 · 电视剧", "腾讯视频", "maoyan", "tv", "3"),
     SourceSpec("tencent_variety", "腾讯视频 · 综艺", "腾讯视频", "maoyan", "variety", "3"),
-    SourceSpec("tencent_kids", "腾讯视频 · 少儿", "腾讯视频", "watch_provider_genre", "tv", "tencent:10751"),
+    SourceSpec("tencent_kids", "腾讯视频 · 少儿", "腾讯视频", "watch_provider_genre", "tv", "tencent:10762"),
 ])
 
 SOURCE_MAP = {item.key: item for item in SOURCES}

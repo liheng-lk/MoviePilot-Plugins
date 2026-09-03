@@ -19,7 +19,7 @@ class DailyAssistantContract(unittest.TestCase):
 
     def test_plugin_identity_and_gysub_bridge(self):
         self.assertIn('plugin_name = "每日助手"', ENTRY)
-        self.assertIn('plugin_version = "1.0.0"', ENTRY)
+        self.assertIn('plugin_version = "1.1.0"', ENTRY)
         self.assertIn('"action": "guangya_direct_subscribe"', ENTRY)
         self.assertIn("eventmanager.send_event(EventType.PluginAction", ENTRY)
         self.assertIn("MediaSource.TMDB", ENTRY)
@@ -71,7 +71,7 @@ class DailyAssistantContract(unittest.TestCase):
         )
         for token in static_required:
             self.assertIn(token, SOURCES)
-        for family in ("HBO / Max", "Apple TV+", "Disney+", "Crunchyroll", "Amazon Prime", "Amazon", "Hulu"):
+        for family in ("HBO", "Apple TV+", "Disney+", "Crunchyroll", "Amazon Prime", "Amazon", "Hulu"):
             self.assertIn(f'"{family}"', SOURCES)
         self.assertIn('(("movie", "电影榜"), ("tv", "剧集榜"), ("mixed", "混合榜"))', SOURCES)
 
@@ -110,7 +110,7 @@ class DailyAssistantContract(unittest.TestCase):
         self.assertIn('SourceSpec("tencent_variety"', SOURCES)
         self.assertIn('SourceSpec("tencent_kids"', SOURCES)
         self.assertIn('"watch_provider_genre"', SOURCES)
-        self.assertIn('"tencent:10751"', SOURCES)
+        self.assertIn('"tencent:10762"', SOURCES)
 
     def test_candidate_and_auto_modes_are_separate(self):
         self.assertIn("auto_gysub", ENTRY)
@@ -121,7 +121,7 @@ class DailyAssistantContract(unittest.TestCase):
     def test_package_index_publishes_dailyassistant(self):
         package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
         item = package["DailyAssistant"]
-        self.assertEqual(item["version"], "1.0.0")
+        self.assertEqual(item["version"], "1.1.0")
         self.assertEqual(item["system_version"], ">=3.0.0")
         self.assertIn("GYSub", item["description"])
 

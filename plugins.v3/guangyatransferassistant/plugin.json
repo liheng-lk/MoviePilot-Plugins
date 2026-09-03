@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "MoviePilot V3 固定分流与多来源订阅助手：v1.10.24 成功资源立即记账，剧集按集防重复，电影首个正片成功即完成订阅。",
-  "version": "1.10.24",
+  "description": "MoviePilot V3 固定分流与多来源订阅助手：跨来源集级终止防重复，新增 TMDB 更新日历、临近播出检查与每日全员缺集复核。",
+  "version": "1.11.0",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,

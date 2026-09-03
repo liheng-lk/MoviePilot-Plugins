@@ -18,6 +18,7 @@ from app.sdk.media import MetaInfo
 from app.schemas.types import EventType, MediaSource, MediaType
 
 from .sources import DEFAULT_SOURCE_KEYS, SOURCE_MAP, fetch_source, source_options
+from .hardening_v110 import DailyAssistantV110Mixin
 
 
 def _as_list(value: Any) -> List[str]:
@@ -48,7 +49,7 @@ def _safe_float(value: Any, default: float, minimum: float, maximum: float) -> f
     return max(minimum, min(number, maximum))
 
 
-class DailyAssistant(_PluginBase):
+class DailyAssistantV100(_PluginBase):
     """聚合电影、剧集、动漫、综艺、纪录片和流媒体榜单，并通过 GYSub 接入光鸭转存。"""
 
     plugin_name = "每日助手"
@@ -574,3 +575,12 @@ class DailyAssistant(_PluginBase):
     def stop_service(self) -> None:
         """插件停用时无常驻线程需要回收。"""
         return None
+
+
+class DailyAssistant(DailyAssistantV110Mixin, DailyAssistantV100):
+    """v1.1.0 最终运行类。"""
+
+    plugin_version = "1.1.0"
+
+
+__all__ = ["DailyAssistant"]
