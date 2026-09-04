@@ -8,6 +8,8 @@
 v1.12.5 追加跨关键词重试边界：一次迅雷秒传调用内部即使会降级多个 GYING 关键词，
 只要底层迅雷分享 API 已打开 captcha 熔断，就把该熔断视为整个召回轮次的终止事实，
 不能因为下一档关键词重新进入 RuntimeFix 并重置 captcha circuit 后再次访问迅雷分享接口。
+同时把外部检索治理放在召回扩大之前：频道事件、外部冷却或自动搜索关闭时，RecallGuard
+不能利用旧搜索缓存直接发起宽关键词 GYING 请求。
 """
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ _CONTENT_RANGE_RE = re.compile(r"bytes\s+(\d+)-(\d+)/(?:\d+|\*)", re.I)
 
 
 class GuangYaXunleiReliabilityV1100Mixin:
-    """最终 CID 采样边界、秒传链路预检与跨关键词 captcha 熔断保持。"""
+    """最终 CID 采样边界、秒传预检、外部检索治理与跨关键词 captcha 熔断保持。"""
 
     build_id = "20260901-r11"
     _CID_SAMPLE_SIZE = 20 * 1024
@@ -68,6 +70,44 @@ class GuangYaXunleiReliabilityV1100Mixin:
             except Exception:
                 pass
         return merged
+
+    def _dispatch_viewing_external_v1113(self, subscribe: Any) -> Dict[str, Any]:
+        """RecallGuard 扩大关键词前再次执行外部治理，禁止频道/冷却路径绕过 GYING 门禁。"""
+        sid = int(getattr(subscribe, "id", 0) or 0)
+        if not bool(getattr(self, "_provider_auto_search", True)):
+            return {
+                "success": False,
+                "actions": [],
+                "message": "观影自动搜索已关闭",
+            }
+        if not bool(getattr(self, "_external_auto_dispatch", True)):
+            return {
+                "success": False,
+                "actions": [],
+                "message": "Magnet/ED2K 自动云添加已关闭",
+            }
+
+        mode_reader = getattr(self, "_route_source_mode_value_v1115", None)
+        mode = str(mode_reader() if callable(mode_reader) else getattr(self, "_route_source_mode_v1115", "") or "")
+        if mode == "channel_event":
+            return {
+                "success": False,
+                "actions": [],
+                "cooldown": True,
+                "channel_only": True,
+                "message": "频道事件只消费已到达资源，本轮禁止主动 GYING",
+            }
+
+        round_ok = getattr(self, "_external_round_ok_v1114", None)
+        if callable(round_ok) and not bool(round_ok(subscribe)):
+            return {
+                "success": False,
+                "actions": [],
+                "cooldown": True,
+                "subscribe_id": sid,
+                "message": "外部观影检索处于冷却/本轮未授权状态，不扩大 GYING 关键词",
+            }
+        return dict(super()._dispatch_viewing_external_v1113(subscribe) or {})
 
     def _xunlei_compute_triple_cid(self, download_url: str, file_size: int) -> str:
         download_url = str(download_url or "").strip()
