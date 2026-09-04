@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,10 +15,18 @@ for path in (ROOT / "tests").rglob("test_*.py"):
 
 def add_fast_recall(path: Path, old_slice: str, new_slice: str) -> None:
     text = path.read_text(encoding="utf-8")
-    pair = '        "GuangYaPagePerfV1123Mixin",\n        "GuangYaDispatchPolicyFinalV1125Mixin",'
-    replacement = '        "GuangYaPagePerfV1123Mixin",\n        "GuangYaFastRecallV1126Mixin",\n        "GuangYaDispatchPolicyFinalV1125Mixin",'
     if '"GuangYaFastRecallV1126Mixin"' not in text:
-        text = text.replace(pair, replacement, 1)
+        text, count = re.subn(
+            r'(?m)^(\s*)"GuangYaPagePerfV1123Mixin",\n\1"GuangYaDispatchPolicyFinalV1125Mixin",',
+            lambda match: (
+                f'{match.group(1)}"GuangYaPagePerfV1123Mixin",\n'
+                f'{match.group(1)}"GuangYaFastRecallV1126Mixin",\n'
+                f'{match.group(1)}"GuangYaDispatchPolicyFinalV1125Mixin",'
+            ),
+            text,
+            count=1,
+        )
+        assert count == 1, path
     text = text.replace(old_slice, new_slice, 1)
     path.write_text(text, encoding="utf-8")
 
