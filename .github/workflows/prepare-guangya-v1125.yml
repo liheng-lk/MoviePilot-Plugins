@@ -1,0 +1,50 @@
+name: Prepare GuangYa v1.12.5 release
+
+on:
+  push:
+    branches:
+      - release/guangya-v1.12.5
+    paths:
+      - .github/workflows/prepare-guangya-v1125.yml
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/guangya-v1.12.5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply release migration
+        run: python scripts/release_guangya_v1125.py
+      - name: Python syntax
+        run: |
+          python -m compileall -q plugins.v2 plugins.v3
+          find plugins.v2 plugins.v3 -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v2 plugins.v3 -type f -name '*.pyc' -delete
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: V3 plugin contract tests
+        run: |
+          python tests/v3/dailynewdrama/test_plugin_contract.py
+          python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          python tests/v3/shukguangyadisk/run_contract_tests.py
+          python tests/v3/guangyatransferassistant/run_contract_tests.py
+      - name: Dependency and JSON checks
+        run: |
+          test -z "$(find plugins.v3 -type f -name 'requirements.txt' -print)"
+          python -c "import json; [json.load(open(p,encoding='utf-8')) for p in ['plugin.json','package.v2.json','package.v3.json']]"
+      - name: Commit validated release migration
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/prepare-guangya-v1125.yml scripts/release_guangya_v1125.py
+          git add plugins.v3/guangyatransferassistant tests/test_guangya*.py tests/v3/guangyatransferassistant
+          git diff --cached --check
+          git commit -m "release(guangya): finalize v1.12.5 contracts"
+          git push origin HEAD:release/guangya-v1.12.5
