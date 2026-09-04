@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
   "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
-  "version": "3.6.8",
+  "version": "3.6.9",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v3.6.9": "深度运行时硬化：修复路径逐级只读第一页导致大目录第二页以后误报不存在、GuangYaApi 类级缓存跨实例污染、网络/API失败被目录 list 伪装为空目录；known-resource 单轮远端预算从 500 收敛到 24，且每个监控周期在 known 检查后继续推进 50 目录 discovery 游标；成功完整读取目录后仅按直属路径局部回收已消失状态，提升短周期监控灵敏度与长期运行效率。",
     "v3.6.8": "修复已整理/已搬空资源残留 pending 持续优先回访：终态成功后即时收口；按直属状态机证据批量清理陈旧 pending；同轮最多清理 50 个搬空目录并同步移出 known-resource；保留 stabilizing/history_wait/retry_wait/inflight 的真实等待资源，避免历史任务阻塞新资源扫描。",
     "v3.6.7": "修复手动整理‘整理源文件已按不同输入准入’：手动扫描强制使用已筛选成员，禁止把整个 Season 目录再次作为另一种输入提交给 MoviePilot；逐文件兼容执行的终态回调改为动态走最终 admission guard，使不同输入准入冲突进入 blocked 而不是先落入普通 retry。",
     "v3.6.6": "修复自动整理重复扫描与入库监控不灵敏：恢复配置的监控 interval；资源目录仅在全部主媒体 ready 时才使用 MoviePilot 原生目录批量，历史完成文件与新增文件混合时只提交实际 ready 成员；建立已知资源目录增量签名监控并低频全库补扫；MoviePilot 不同输入准入冲突改为 blocked，避免分钟级重复提交。",
