@@ -18,6 +18,24 @@ jobs:
           python-version: '3.12'
       - name: Apply v1.12.9 migration
         run: python tools/_prepare_guangya_v1129.py
+      - name: Migrate outer MRO contracts
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          for rel in (
+              'tests/test_guangya_receipt_completion_v1124.py',
+              'tests/test_guangya_release_v1110.py',
+          ):
+              path = Path(rel)
+              text = path.read_text(encoding='utf-8')
+              text = text.replace('self.assertEqual(mixins[:11], [', 'self.assertEqual(mixins[:12], [', 1)
+              anchor = '            "GuangYaPagePerfV1123Mixin",\n            "GuangYaResourceGateV1127Mixin",'
+              replacement = '            "GuangYaPagePerfV1123Mixin",\n            "GuangYaMovieIdentityV1129Mixin",\n            "GuangYaResourceGateV1127Mixin",'
+              if anchor not in text and replacement not in text:
+                  raise RuntimeError(f'MRO anchor missing: {rel}')
+              text = text.replace(anchor, replacement, 1)
+              path.write_text(text, encoding='utf-8')
+          PY
       - name: Python syntax
         run: |
           python -m compileall -q plugins.v2 plugins.v3
