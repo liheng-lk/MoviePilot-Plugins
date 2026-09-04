@@ -99,11 +99,9 @@ readme_path.write_text(readme, encoding="utf-8")
 for path in (ROOT / "tests").rglob("test_*.py"):
     text = path.read_text(encoding="utf-8")
     original = text
-    # Current public version assertions consistently use the latest version literal.
     text = text.replace('"1.12.6"', '"1.12.7"')
     text = text.replace("'1.12.6'", "'1.12.7'")
 
-    # Runtime ENTRY build moves to r53; never rewrite historical module markers such as FAST/guard_text/text.
     lines = []
     for line in text.splitlines(keepends=True):
         lowered = line.lower()
@@ -137,10 +135,18 @@ add_gate_to_mro(ROOT / "tests/test_guangya_receipt_completion_v1124.py", "mixins
 add_gate_to_mro(ROOT / "tests/test_guangya_release_v1110.py", "mixins[:10]", "mixins[:11]")
 add_gate_to_mro(ROOT / "tests/v3/guangyatransferassistant/test_airing_ui_v1120.py", "mixins[:11]", "mixins[:12]")
 
-# Preserve explicit historical v1.12.6 source-layer assertions where the variable is not ENTRY.
+# This legacy test reads the runtime entry into a variable named `text`, so migrate its final-entry build assertion explicitly.
+compat_test = ROOT / "tests/v3/guangyatransferassistant/test_episode_compat_v171.py"
+compat_text = compat_test.read_text(encoding="utf-8")
+compat_text = compat_text.replace(
+    'assert \'build_id = "20260904-r52"\' in text',
+    'assert \'build_id = "20260905-r53"\' in text',
+)
+compat_test.write_text(compat_text, encoding="utf-8")
+
+# Historical v1.12.6 implementation stays r52; only runtime ENTRY moves to r53.
 fast_test = ROOT / "tests/v3/guangyatransferassistant/test_fast_recall_v1126.py"
 fast_text = fast_test.read_text(encoding="utf-8")
-# Its version/build assertions inspect ENTRY and correctly stay at 1.12.7/r53; FAST itself is intentionally untouched.
 fast_test.write_text(fast_text, encoding="utf-8")
 
 # New release contract must also prove v1.12.6 history remains published.
