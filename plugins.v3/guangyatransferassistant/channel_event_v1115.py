@@ -8,11 +8,15 @@
 - 观影保持独立定时轮询，只处理仍有缺集且达到外部检索冷却时间的订阅；
 - 同一 tick 若频道命中订阅，频道优先，观影最多顺延一个 tick，避免刚命中频道又重复搜索站点；
 - 周期批次仍复用可靠后台队列，执行中重复事件继续由 v1.10.14 去自激层合并。
+
+v1.12.5 的最终调度层会把常规观影轮询收口到 AiringDue；本层保留旧 ABI，并把来源 mode
+改成 thread-local 真相，避免频道 worker 与日历/人工线程并发时互相误读 channel_event。
 """
 
 from __future__ import annotations
 
 import hashlib
+import threading
 import time
 from typing import Any, Dict, Iterable, List, Tuple
 
@@ -60,8 +64,16 @@ class GuangYaChannelEventV1115Mixin(GuangYaXunleiFinalV1114Mixin):
 
     def init_plugin(self, config: dict = None) -> None:
         self._route_source_mode_v1115 = ""
+        self._route_source_local_v1115 = threading.local()
         self._channel_new_entries_v1115: List[Dict[str, Any]] = []
         return super().init_plugin(config)
+
+    def _route_source_mode_value_v1115(self) -> str:
+        """当前线程的来源模式是真相；共享字段只保留给旧代码/诊断兼容。"""
+        local = getattr(self, "_route_source_local_v1115", None)
+        if local is not None and hasattr(local, "mode"):
+            return str(getattr(local, "mode", "") or "")
+        return str(getattr(self, "_route_source_mode_v1115", "") or "")
 
     # ------------------------------------------------------------------
     # 7 天频道资源缓存
@@ -182,8 +194,8 @@ class GuangYaChannelEventV1115Mixin(GuangYaXunleiFinalV1114Mixin):
         return pairs
 
     def refresh_channels(self, force: bool = False):
-        # 观影轮询批次内部若旧层因为“无频道命中”要求 refresh，只允许读缓存，不再访问频道。
-        if str(getattr(self, "_route_source_mode_v1115", "")) == "viewing_poll" and not force:
+        # 主动 Pull 内部若旧层因为“无频道命中”要求 refresh，只允许读缓存，不再额外访问频道。
+        if self._route_source_mode_value_v1115() in {"viewing_poll", "airing_pull", "daily_repair_pull"} and not force:
             return list((self.get_data("channel_index") or {}).get("items") or [])
         rows = list(super().refresh_channels(force=force) or [])
         self._channel_new_entries_v1115 = self._refresh_channel_cache_v1115(rows)
@@ -239,10 +251,10 @@ class GuangYaChannelEventV1115Mixin(GuangYaXunleiFinalV1114Mixin):
         return sorted(matched_ids)
 
     # ------------------------------------------------------------------
-    # 频道批次不碰观影；观影批次由独立冷却调度
+    # 频道批次不碰观影；主动 Pull 的冷却由上层统一调度
     # ------------------------------------------------------------------
     def _claim_external_search_round_v1114(self, subscribe: Any, force: bool = False) -> bool:
-        if str(getattr(self, "_route_source_mode_v1115", "")) == "channel_event":
+        if self._route_source_mode_value_v1115() == "channel_event":
             sid = int(getattr(subscribe, "id", 0) or 0)
             if sid > 0:
                 self._external_round_allowed_v1114[sid] = False
@@ -277,7 +289,15 @@ class GuangYaChannelEventV1115Mixin(GuangYaXunleiFinalV1114Mixin):
         return due
 
     def _run_v1115_mode_batch(self, batch: List[int], trigger: str, mode: str, force: bool = False) -> None:
+        local = getattr(self, "_route_source_local_v1115", None)
+        if local is None:
+            local = threading.local()
+            self._route_source_local_v1115 = local
+        had_local = hasattr(local, "mode")
+        previous_local = str(getattr(local, "mode", "") or "")
         previous = str(getattr(self, "_route_source_mode_v1115", "") or "")
+        local.mode = mode
+        # 共享字段继续写入，兼容旧诊断；业务判断统一读取 thread-local helper。
         self._route_source_mode_v1115 = mode
         try:
             try:
@@ -323,6 +343,13 @@ class GuangYaChannelEventV1115Mixin(GuangYaXunleiFinalV1114Mixin):
                         err,
                     )
         finally:
+            if had_local:
+                local.mode = previous_local
+            else:
+                try:
+                    delattr(local, "mode")
+                except AttributeError:
+                    pass
             self._route_source_mode_v1115 = previous
 
     def _run_reliability_route_batch(self, batch: List[int], trigger: str) -> None:
@@ -336,7 +363,7 @@ class GuangYaChannelEventV1115Mixin(GuangYaXunleiFinalV1114Mixin):
         return super()._run_reliability_route_batch(batch, trigger)
 
     # ------------------------------------------------------------------
-    # tick：刷新频道 -> 新资源事件；没有频道命中时再做观影到期轮询
+    # tick：旧实现保留 ABI；v1.12.5 最外层会在 tick 线程内抑制 viewing_ids。
     # ------------------------------------------------------------------
     def _tick(self, host_service: bool = True) -> None:
         if not self._runtime_is_current() or not self._enabled:
