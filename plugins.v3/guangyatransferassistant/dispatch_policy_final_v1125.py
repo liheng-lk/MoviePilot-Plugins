@@ -1,17 +1,17 @@
 """v1.12.5 最终调度收口。
 
-在 dispatch_policy_v1125 的 Push/Pull 分流之上只处理三个发布前边界：
+在 dispatch_policy_v1125 的 Push/Pull 分流之上处理发布前边界：
 - 没有逐集日期、但历史更新星期已经稳定时，仍把星期规则视为有效调度事实；
   不能误判“日历不可用”后回退为全量缺集主动搜索；
-- 新订阅仍允许立即响应，但必须先消费频道，再仅对当前应该主动搜索的缺口执行一次 GYING；
-  未来集/非更新日不能因为“刚新增订阅”绕过日历门禁；
+- 新订阅仍立即响应：先查频道缓存，必要时只合并强刷频道一次，再消费频道；
+  频道后仅对当前更新日/电影冷却允许的缺口主动 GYING，未来集/非更新日不能因新增订阅绕门禁；
 - 每日 04:10 的自动强制 GYING 虽可绕过冷却执行本轮，但执行后必须登记正常冷却，
   避免 05:00 的小时 Pull 立刻再次访问观影；人工强制检查不受此规则影响。
 """
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterable, List
 
 from .dispatch_policy_v1125 import GuangYaDispatchPolicyV1125Mixin as _DispatchPolicyPreviewV1125
 
@@ -70,6 +70,45 @@ class GuangYaDispatchPolicyFinalV1125Mixin(_DispatchPolicyPreviewV1125):
             self._record_auto_external_cooldown_v1125(subscribe, "daily_repair_pull")
         return allowed
 
+    def _spawn_route_prime(self, sids: Iterable[int], trigger: str = "立即检查") -> None:
+        """新增订阅只做一次频道补查；主动站点搜索仍交给最终日历 selector。"""
+        ids = sorted(self._positive_ids_v1125(sids or []))
+        if not ids or not self._enabled:
+            return
+
+        missing_cache: List[int] = []
+        for sid in ids:
+            subscribe = self._find_subscription(sid)
+            if not subscribe or not self._is_guangya_route(subscribe):
+                continue
+            try:
+                if not self._cached_matches_for_subscription(subscribe):
+                    missing_cache.append(sid)
+            except Exception:
+                missing_cache.append(sid)
+
+        if missing_cache:
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【新订阅】%s 个订阅频道缓存未命中，合并现查频道一次；随后仅按更新日历判断是否主动搜索",
+                len(missing_cache),
+            )
+            try:
+                self.refresh_channels(force=True)
+            except Exception as err:
+                self._plugin_log(
+                    "WARNING",
+                    "【光鸭转存助手】【新订阅】频道现查失败，仍继续按当前更新日历判断主动搜索：%s",
+                    str(err)[:260],
+                )
+
+        self._plugin_log(
+            "INFO",
+            "【光鸭转存助手】【新订阅】进入频道缓存/现查 + 当前应播主动搜索判定，共 %s 个订阅",
+            len(ids),
+        )
+        self._queue_async_route_check(ids, trigger="新订阅资源匹配")
+
     def _run_reliability_route_batch(self, batch: List[int], trigger: str) -> None:
         text = str(trigger or "")
         if "新订阅资源匹配" not in text:
@@ -79,8 +118,8 @@ class GuangYaDispatchPolicyFinalV1125Mixin(_DispatchPolicyPreviewV1125):
         if not ids:
             return None
 
-        # Weekly 的 _spawn_route_prime 已在缓存 miss 时合并强刷频道一次。
-        # 异步执行阶段先只消费频道；频道 mode 会禁止任何 GYING 调用，并绕过日期门禁。
+        # 新订阅入口已经完成必要的合并频道现查；异步执行阶段先只消费频道。
+        # channel_event 会禁止任何 GYING 调用，并绕过日期门禁处理已经到达的真实资源。
         self._run_v1115_mode_batch(
             ids,
             "新订阅资源匹配·频道阶段",
