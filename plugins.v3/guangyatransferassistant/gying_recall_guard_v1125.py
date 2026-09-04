@@ -6,14 +6,16 @@
 - 未标集号的整季包/合集仍保留为潜在可用候选，避免为了扩大关键词无意义增加请求；
 - 关键词降级后，把本轮真正成功请求过的各级详情结果合并回原关键词 120 秒缓存，
   即使没有可用迅雷，后续 Magnet 也能复用已经付出的 downurl 请求；
-- 严格迅雷候选最终秒传失败且严格关键词没有 Magnet/ED2K 时，才按宽关键词逐级补查，
-  每级请求成功后立即重建 SearchBundle，找到可执行外部候选即停止，避免请求风暴；
+- 某一级迅雷候选通过预筛但实际秒传失败时，才继续下一档关键词；已失败分享只保存在
+  thread-local 去重集合中，本轮不会因宽关键词再次返回同一分享而重复尝试；
+- 迅雷各级都未完成后，Magnet/ED2K 只在严格缓存为空时逐级补查，找到可执行候选即停止；
 - 真正的媒体身份与文件级缺集校验仍由现有迅雷 JSON / Episode Planner 最终确认。
 
 本层是标准 cooperative mixin，不继承旧 Hardening；运行时显式放在 Hardening 前面。
 """
 from __future__ import annotations
 
+import threading
 import time
 from typing import Any, Dict, Iterable, List, Set, Tuple
 
@@ -22,9 +24,16 @@ from .gying_hardening_v193 import gying_keyword_variants
 
 
 class GuangYaGyingRecallGuardV1125Mixin:
-    """最终迅雷召回门禁：明确旧集不能提前终止关键词降级。"""
+    """最终迅雷召回门禁：预筛、真实执行失败后的渐进降级、SearchBundle 复用。"""
 
     build_id = "20260904-r51-preview"
+
+    def _recall_retry_local_v1125(self):
+        local = getattr(self, "_gying_recall_retry_local_v1125", None)
+        if local is None:
+            local = threading.local()
+            self._gying_recall_retry_local_v1125 = local
+        return local
 
     @staticmethod
     def _candidate_episode_hint_v1125(subscribe: Any, row: Dict[str, Any]) -> Set[int]:
@@ -112,29 +121,54 @@ class GuangYaGyingRecallGuardV1125Mixin:
         }
 
     def _search_viewing_xunlei(self, keyword: str):
-        """只有当前媒体且可能覆盖当前缺集的迅雷候选，才能停止关键词降级。"""
-        variants = gying_keyword_variants(keyword)
-        if not variants:
+        """只有当前媒体且可能覆盖当前缺集的迅雷候选，才能停止当前一档搜索。"""
+        all_variants = gying_keyword_variants(keyword)
+        if not all_variants:
             return super()._search_viewing_xunlei(keyword)
+
+        retry_local = self._recall_retry_local_v1125()
+        try:
+            start_index = max(0, int(getattr(retry_local, "start_index", 0) or 0))
+        except (TypeError, ValueError):
+            start_index = 0
+        start_index = min(start_index, len(all_variants))
+        variants = all_variants[start_index:]
+        if not variants:
+            return [], {
+                "provider": "viewing_xunlei",
+                "success": True,
+                "message": "观影迅雷关键词层级已全部尝试",
+                "searched_variants": all_variants,
+            }
 
         context = getattr(self, "_gying_xunlei_context_v1125", None)
         subscribe = getattr(context, "subscribe", None) if context is not None else None
+        seen_identities = set(getattr(retry_local, "seen_identities", set()) or set())
         last_state: Dict[str, Any] = {
             "provider": "viewing_xunlei",
             "success": False,
             "message": "观影迅雷搜索失败",
         }
         successful: List[str] = []
-        for variant in variants:
+        for relative_index, variant in enumerate(variants):
+            absolute_index = start_index + relative_index
+            retry_local.last_attempted_index = absolute_index
             candidates, state = self._gying_xunlei_precise_variant_v1125(variant)
             last_state = dict(state or {})
             if not last_state.get("success"):
-                if len(successful) > 1:
-                    self._promote_search_bundle_v1125(variants[0], successful)
+                bundle_variants = [all_variants[0], *successful] if start_index else successful
+                if len(set(bundle_variants)) > 1:
+                    self._promote_search_bundle_v1125(all_variants[0], bundle_variants)
                 return candidates, last_state
             successful.append(variant)
 
-            matched: List[Dict[str, Any]] = list(candidates or [])
+            matched: List[Dict[str, Any]] = []
+            for row in list(candidates or []):
+                identity = str((row or {}).get("share_id") or (row or {}).get("identity") or "").strip()
+                if identity and identity in seen_identities:
+                    continue
+                matched.append(row)
+
             missing: Set[int] = set()
             if subscribe is not None:
                 # 不在这里重写标题/年份/季号规则；运行时 self 会优先解析到
@@ -157,48 +191,126 @@ class GuangYaGyingRecallGuardV1125Mixin:
             if matched:
                 if subscribe is not None and missing:
                     matched.sort(key=lambda row: self._xunlei_candidate_priority_v1125(subscribe, row, missing))
+                for row in matched:
+                    identity = str((row or {}).get("share_id") or (row or {}).get("identity") or "").strip()
+                    if identity:
+                        seen_identities.add(identity)
+                retry_local.seen_identities = seen_identities
                 last_state["matched_candidates"] = len(matched)
                 last_state["missing_candidates"] = len(matched)
-                if variant != variants[0]:
-                    self._promote_search_bundle_v1125(variants[0], successful)
-                    promoted = dict(getattr(self, "_gying_search_cache", {}).get(variants[0]) or {})
+                if absolute_index > 0:
+                    bundle_variants = [all_variants[0], *successful] if start_index else successful
+                    self._promote_search_bundle_v1125(all_variants[0], bundle_variants)
+                    promoted = dict(getattr(self, "_gying_search_cache", {}).get(all_variants[0]) or {})
                     promoted_state = promoted.get("state") if isinstance(promoted.get("state"), dict) else {}
                     if promoted_state:
                         last_state.update({
                             "search_bundle_v1125": True,
-                            "bundle_variants": list(promoted_state.get("bundle_variants") or successful),
+                            "bundle_variants": list(promoted_state.get("bundle_variants") or bundle_variants),
                             "bundle_resources": int(promoted_state.get("bundle_resources") or 0),
                         })
                     last_state["query_fallback"] = variant
                     last_state["message"] = (
                         f"{last_state.get('message') or '观影迅雷搜索成功'} · "
-                        f"严格关键词没有可覆盖当前缺集的迅雷，已降级到 {variant}"
+                        f"前一档迅雷未完成，已降级到 {variant}"
                     )
                 return matched, last_state
 
-        # 没有可用迅雷也要保留已实际请求过的宽关键词资源；否则 Magnet 会退回只看严格缓存。
-        if len(successful) > 1:
-            self._promote_search_bundle_v1125(variants[0], successful)
-            promoted = dict(getattr(self, "_gying_search_cache", {}).get(variants[0]) or {})
+        bundle_variants = [all_variants[0], *successful] if start_index else successful
+        if len(set(bundle_variants)) > 1:
+            self._promote_search_bundle_v1125(all_variants[0], bundle_variants)
+            promoted = dict(getattr(self, "_gying_search_cache", {}).get(all_variants[0]) or {})
             promoted_state = promoted.get("state") if isinstance(promoted.get("state"), dict) else {}
             if promoted_state:
                 last_state.update({
                     "search_bundle_v1125": True,
-                    "bundle_variants": list(promoted_state.get("bundle_variants") or successful),
+                    "bundle_variants": list(promoted_state.get("bundle_variants") or bundle_variants),
                     "bundle_resources": int(promoted_state.get("bundle_resources") or 0),
                 })
         last_state["searched_variants"] = list(successful)
         last_state["message"] = (
-            f"观影可访问，但 {len(successful)} 级关键词均没有当前订阅可用迅雷分享"
+            f"观影可访问，但本轮 {len(successful)} 级关键词均没有当前订阅可用迅雷分享"
             if last_state.get("success") else last_state.get("message")
         )
         return [], last_state
+
+    @staticmethod
+    def _merge_xunlei_rounds_v1125(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any]:
+        if not base:
+            return dict(extra or {})
+        if not extra:
+            return dict(base or {})
+        merged = {**dict(base), **dict(extra)}
+        for key in ("shares", "attempted_files", "successful_files"):
+            merged[key] = int((base or {}).get(key) or 0) + int((extra or {}).get(key) or 0)
+        merged["success"] = bool((base or {}).get("success")) or bool((extra or {}).get("success"))
+        merged["handled"] = bool((base or {}).get("handled")) or bool((extra or {}).get("handled"))
+        merged["movie"] = bool((base or {}).get("movie")) or bool((extra or {}).get("movie"))
+        merged["subscription_completed"] = bool((base or {}).get("subscription_completed")) or bool(
+            (extra or {}).get("subscription_completed")
+        )
+        episodes = {
+            int(value)
+            for value in [*((base or {}).get("episodes") or []), *((extra or {}).get("episodes") or [])]
+            if str(value).isdigit() and int(value) > 0
+        }
+        merged["episodes"] = sorted(episodes)
+        merged["errors"] = [
+            *list((base or {}).get("errors") or []),
+            *list((extra or {}).get("errors") or []),
+        ][:20]
+        messages = []
+        for row in (base, extra):
+            value = str((row or {}).get("message") or "").strip()
+            if value and value not in messages:
+                messages.append(value)
+        merged["message"] = "；".join(messages)[:800]
+        return merged
+
+    def _dispatch_xunlei_flash(self, subscribe: Any) -> Dict[str, Any]:
+        """真实秒传失败后才继续下一档关键词；同一档只执行一次。"""
+        all_variants = gying_keyword_variants(str(self._provider_keyword(subscribe) or ""))
+        local = self._recall_retry_local_v1125()
+        tracked = ("start_index", "last_attempted_index", "seen_identities")
+        previous = {
+            key: (hasattr(local, key), getattr(local, key, None))
+            for key in tracked
+        }
+        local.start_index = 0
+        local.last_attempted_index = -1
+        local.seen_identities = set()
+        combined: Dict[str, Any] = {}
+        try:
+            while True:
+                before_index = int(getattr(local, "start_index", 0) or 0)
+                current = dict(super()._dispatch_xunlei_flash(subscribe) or {})
+                combined = self._merge_xunlei_rounds_v1125(combined, current)
+                if bool(combined.get("handled")) or bool(combined.get("movie")):
+                    break
+                try:
+                    last_index = int(getattr(local, "last_attempted_index", before_index) or 0)
+                except (TypeError, ValueError):
+                    last_index = before_index
+                next_index = last_index + 1
+                if next_index <= before_index or next_index >= len(all_variants):
+                    break
+                local.start_index = next_index
+            return combined
+        finally:
+            for key, (had_value, value) in previous.items():
+                if had_value:
+                    setattr(local, key, value)
+                else:
+                    try:
+                        delattr(local, key)
+                    except AttributeError:
+                        pass
 
     def _viewing_external_candidates_v1113(
         self,
         subscribe: Any,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-        """严格关键词无可执行 Magnet/ED2K 时，才复用/补查宽关键词，且逐级短路。"""
+        """迅雷各级未完成后，严格关键词无 Magnet/ED2K 才逐级补查，且逐级短路。"""
         candidates, meta = super()._viewing_external_candidates_v1113(subscribe)
         candidates = list(candidates or [])
         meta = dict(meta or {})
