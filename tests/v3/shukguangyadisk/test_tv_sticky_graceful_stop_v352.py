@@ -73,7 +73,8 @@ def test_graceful_stop_api_and_ui_are_exposed():
         "/organize/monitor/graceful-stop",
         "安全停止并清理待执行",
         "当前完成后停止中",
-        "当前剧集目录",
+        "当前资源：",
+        "单 Worker 串行执行",
         "不会中断当前 move/rename",
     ):
         assert token in PAGE, token

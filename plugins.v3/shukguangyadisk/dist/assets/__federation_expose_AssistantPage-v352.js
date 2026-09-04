@@ -52,6 +52,10 @@ export default defineComponent({
     let timer=null;
     const running=computed(()=>Boolean(enabled.value));
     const blocked=computed(()=>Number(status.value?.state_blocked??status.value?.blocked??0));
+    const retryTotal=computed(()=>Number(status.value?.state_retry_total??status.value?.state_retry_wait??status.value?.retry_wait??0));
+    const retryWait=computed(()=>Number(status.value?.state_retry_wait??status.value?.retry_wait??0));
+    const retryDue=computed(()=>Number(status.value?.state_retry_due??0));
+    const retryMaxAttempts=computed(()=>Number(status.value?.state_retry_max_attempts??0));
     const runtimePhase=computed(()=>status.value?.runtime_phase||(!enabled.value?'disabled':'idle'));
     const gracefulStopping=computed(()=>['finishing_current','stopping'].includes(status.value?.graceful_stop_state));
     const gracefulStopped=computed(()=>status.value?.graceful_stop_state==='stopped');
@@ -70,7 +74,7 @@ export default defineComponent({
     async function save(){busy.value=true;setMsg('');try{const r=await postApi(props,'/organize/monitor/config',{enabled:enabled.value,path:monitorPath.value,interval:Number(interval.value||60),stability:Number(stability.value||0),batch_size:Number(batchSize.value||100),recursive:recursive.value});if(!r?.success)throw new Error(r?.message||'保存失败');applyConfig(r?.data?.config||{});mp.value=r?.data?.mp||mp.value;setMsg(r?.message||'设置已保存');await loadStatus(true);}catch(e){setMsg(e?.message||'保存自动整理设置失败','error');}finally{busy.value=false;}}
     async function scan(){busy.value=true;setMsg('');try{const r=await postApi(props,'/organize/monitor/scan',{});setMsg(r?.message||'扫描完成',r?.success?'ok':'error');await loadStatus(true);}catch(e){setMsg(e?.message||'立即扫描失败','error');}finally{busy.value=false;}}
     async function gracefulStop(){busy.value=true;setMsg('');try{const r=await postApi(props,'/organize/monitor/graceful-stop',{});if(!r?.success)throw new Error(r?.message||'安全停止失败');enabled.value=false;setMsg(r?.message||'已请求安全停止',r?.data?.state==='finishing_current'?'warn':'ok');await loadStatus(true);}catch(e){setMsg(e?.message||'安全停止失败','error');}finally{busy.value=false;}}
-    async function selfcheck(){busy.value=true;try{const r=await getApi(props,'/organize/monitor/selfcheck');if(!r?.success)throw new Error(r?.message||'自检失败');const d=r?.data||{};const c=d.checks||{};const lines=[`自动整理自检：${d.healthy?'正常':'存在异常'}`,`运行时桥：${c.runtime_bridge?'正常':'异常'}｜存储：${c.storage_ready?'正常':'未就绪'}｜监控目录：${c.monitor_path_exists?'正常':'异常'}`,`状态缓存：完成 ${c.state_completed||0}｜文件处理中 ${c.state_inflight||0}｜重试 ${c.state_retry_wait||0}｜门控 ${c.state_blocked||0}`];setMsg(lines.join('\n'),d.healthy?'ok':'warn');}catch(e){setMsg(e?.message||'自检失败','error');}finally{busy.value=false;}}
+    async function selfcheck(){busy.value=true;try{const r=await getApi(props,'/organize/monitor/selfcheck');if(!r?.success)throw new Error(r?.message||'自检失败');const d=r?.data||{};const c=d.checks||{};const rtotal=Number(c.state_retry_total??c.state_retry_wait??0),rwait=Number(c.state_retry_wait??0),rdue=Number(c.state_retry_due??0),rmax=Number(c.state_retry_max_attempts??0);const lines=[`自动整理自检：${d.healthy?'正常':'存在异常'}`,`运行时桥：${c.runtime_bridge?'正常':'异常'}｜存储：${c.storage_ready?'正常':'未就绪'}｜监控目录：${c.monitor_path_exists?'正常':'异常'}`,`状态缓存：完成 ${c.state_completed||0}｜处理中 ${c.state_inflight||0}｜重试总数 ${rtotal}｜退避中 ${rwait}｜已到期 ${rdue}｜最大尝试 ${rmax}｜门控 ${c.state_blocked||0}`];setMsg(lines.join('\n'),d.healthy?'ok':'warn');}catch(e){setMsg(e?.message||'自检失败','error');}finally{busy.value=false;}}
     async function unblock(){busy.value=true;try{const r=await postApi(props,'/organize/monitor/unblock',{});if(!r?.success)throw new Error(r?.message||'解除失败');setMsg(r?.message||'已解除门控等待');await loadStatus(true);}catch(e){setMsg(e?.message||'解除门控失败','error');}finally{busy.value=false;}}
     async function browse(path=browserPath.value){browserBusy.value=true;try{const r=await postApi(props,'/organize/folders',{path:path||'/'});if(!r?.success)throw new Error(r?.message||'目录读取失败');browserOpen.value=true;browserPath.value=r.data.path||'/';browserFolders.value=r.data.folders||[];}catch(e){setMsg(e?.message||'目录读取失败','error');}finally{browserBusy.value=false;}}
     async function openBrowser(){await browse(monitorPath.value||'/');}
@@ -91,7 +95,7 @@ export default defineComponent({
 
     const organizer=()=>h('div',{class:'gya-shell'},[
       h('div',{class:'gya-head'},[
-        h('div',[h('div',{class:'gya-title'},'自动整理监控'),h('div',{class:'gya-sub'},'资源发现 → MoviePilot 识别/预览 → 安全校验 → 真实整理 → MP历史落库。电影容器严格单任务；电视剧/Season 采用目录粘性事务，当前目录收口前不切换其它剧集。')])
+        h('div',[h('div',{class:'gya-title'},'自动整理监控'),h('div',{class:'gya-sub'},'资源发现 → MoviePilot 识别/预览 → 安全校验 → 真实整理 → MP历史落库。单 Worker 串行执行；等待资源优先复查，若当前没有活动执行，同一监控周期继续发现新资源。')])
       ]),
       h('div',{class:'gya-body'},[
         h('div',{class:'gya-card'},[
@@ -108,7 +112,7 @@ export default defineComponent({
         ]),
         h('div',{class:'gya-card'},[
           h('div',{class:'gya-card-title'},'2. 监控参数'),
-          h('div',{class:'gya-card-sub'},'电影容器一次只处理一个资源；电视剧/Season 作为一个文件夹事务整体预检并连续整理，失败重试期间也优先回到同一剧集目录。'),
+          h('div',{class:'gya-card-sub'},'单资源 Worker 保持串行执行；stabilizing/history/retry 等等待态会优先回访，但没有活动任务时会在同一轮继续 known/discovery，不再阻塞新增资源发现。'),
           h('div',{class:'gya-grid'},[
             h('div',{class:'gya-field'},[h('label','扫描间隔（秒）'),h('input',{class:'gya-input',type:'number',min:'30',max:'3600',value:interval.value,onInput:e=>interval.value=e.target.value})]),
             h('div',{class:'gya-field'},[h('label','文件稳定等待（秒）'),h('input',{class:'gya-input',type:'number',min:'0',max:'3600',value:stability.value,onInput:e=>stability.value=e.target.value})]),
@@ -130,12 +134,13 @@ export default defineComponent({
           h('button',{class:'gya-btn',disabled:busy.value,onClick:()=>loadStatus(false)},'刷新状态'),
           blocked.value>0?h('button',{class:'gya-btn warn',disabled:busy.value,onClick:unblock},`重新检查 MP 门控 (${blocked.value})`):null
         ]),
-        gracefulStopping.value||gracefulStopped.value?h('div',{class:'gya-msg warn'},status.value.graceful_stop_message||'安全停止不会中断当前 move/rename；电影完成当前电影，电视剧完成当前 Season 事务后再停止。重新启用请勾选自动监控并保存设置。'):null,
+        gracefulStopping.value||gracefulStopped.value?h('div',{class:'gya-msg warn'},status.value.graceful_stop_message||'安全停止不会中断当前 move/rename；当前资源完整收尾后再停止。重新启用请勾选自动监控并保存设置。'):null,
         h('div',{class:'gya-card'},[
           h('div',{class:'gya-card-title'},'运行状态'),
           h('div',{class:'gya-stats'},[
             ['当前任务',status.value.active_resource_tasks],['任务成员',status.value.current_task_members],['本轮已扫描',status.value.scan_files_seen],['当前待处理',status.value.changed],
-            ['累计完成',status.value.completed_total],['MP历史确认',status.value.mp_history_confirmed_total],['重试等待',status.value.state_retry_wait??status.value.retry_wait],['安全阻断',status.value.state_blocked??status.value.blocked]
+            ['累计完成',status.value.completed_total],['MP历史确认',status.value.mp_history_confirmed_total],['重试总数',retryTotal.value],['退避中',retryWait.value],
+            ['已到期',retryDue.value],['最大尝试',retryMaxAttempts.value],['状态处理中',status.value.state_inflight??status.value.inflight],['安全阻断',status.value.state_blocked??status.value.blocked]
           ].map(([k,v])=>h('div',{class:'gya-stat'},[h('span',k),h('b',String(v||0))]))),
           h('div',{class:'gya-statusline'},[
             h('span',{class:`gya-dot ${statusDot.value}`}),
@@ -143,12 +148,9 @@ export default defineComponent({
             h('span',`上次扫描：${status.value.last_scan||'尚未扫描'}`),
             status.value.duration_ms!=null?h('span',`扫描耗时：${status.value.duration_ms} ms`):null,
             Number(status.value.failed_total||0)>0?h('span',`累计失败：${status.value.failed_total}`):null,
+            retryDue.value>0?h('span',`已到期待重试：${retryDue.value}`):null,
             status.value.last_transfer_history_id?h('span',`最近MP历史：#${status.value.last_transfer_history_id}`):null
           ]),
-          status.value.sticky_tv_group_path?h('div',{class:'gya-statuspath'},[
-            h('b','当前剧集目录：'),h('span',status.value.sticky_tv_group_path),
-            h('div',{style:{marginTop:'4px',opacity:.68}},'该目录未完成前不会切换到其它剧集；若进入明确安全阻断则释放粘性，等待人工处理。')
-          ]):null,
           status.value.current_task_path?h('div',{class:'gya-statuspath'},[
             h('b',runtimePhase.value==='handoff'?'旧版本遗留任务正在安全收尾：':runtimePhase.value==='draining'?'安全停止正在收尾：':'当前资源：'),
             h('span',status.value.current_task_path),
