@@ -1,25 +1,31 @@
-"""v3.6.9：自动监控连续发现、远端读取故障隔离与状态局部回收。
+"""v3.6.9 / v3.6.13：自动监控连续发现、远端读取故障隔离与状态可达性回收。
 
 v3.6.6 引入 known-resource 增量索引后，已完成基线的日常 tick 只检查旧资源目录；新创建、
 从未进入 known 索引的资源只能等 30 分钟 full discovery。这让“60 秒监控”并不等价于
 “60 秒内发现新资源”，同时每轮最多检查 500 个旧目录会产生大量远端 API 请求。
 
-本层保持严格单任务流水与 MoviePilot 业务边界，只修发现/状态基础设施：
+v3.6.9 保持严格单任务流水与 MoviePilot 业务边界，只修发现/状态基础设施：
 - known-resource 每轮预算收敛到 24 个目录；
-- known 检查没有提交任务时，同一个 monitor tick 继续推进一页 50 目录 discovery 游标，
-  因而新目录发现真正跟随用户配置 interval；
-- v3.6 engine 目录读取改用 GuangYaApi.list_strict；网络/API 失败必须传播为扫描错误，绝不能
-  伪装成“目录为空”；若怀疑 fileId 缓存陈旧，只刷新当前目录一次后重试；
-- 每次成功完整读取一个目录后，只对该目录直属源文件做状态回收，清理已经搬走的
-  completed/blocked/retry/stabilizing/inflight/ignored，避免长期运行状态 JSON 无界增长；
-- 局部回收严格按直属 parent 匹配，不以祖先/子树推断，避免部分扫描误删未枚举状态。
+- known 检查没有提交任务时，同一个 monitor tick 继续推进一页 50 目录 discovery 游标；
+- v3.6 engine 目录读取改用 GuangYaApi.list_strict；网络/API 失败必须传播为扫描错误；
+- 成功读取目录后回收已经搬走的状态，避免长期运行状态 JSON 无界增长。
+
+v3.6.13 继续收口状态回收语义：旧实现只清“当前目录直属文件”，如果一个资源子目录整体
+被搬走，子目录内 completed/blocked/retry/stabilizing/inflight/ignored 永远没有机会再被直属
+回收；同时旧 helper 即使没有任何状态变化也会调用 state.mutate()，导致每成功读取一个目录
+都整份重写状态 JSON。本层现在基于严格完整目录列表做可达性证明：
+- 当前目录明确不存在/已变成非目录时，清理其整棵状态子树；
+- 当前目录存在时，只清直属已消失文件，以及“直属子目录已明确消失”之下的后代状态；
+- 仍存在的直属子目录整棵保留，等待后续扫描该子目录再细化，不做祖先猜测；
+- 网络/API失败绝不回收；非递归监控也使用原始完整 children 判断子目录是否存在；
+- 先只读预检是否真的有状态需要删除，无变化时不调用 mutate，避免空扫描反复写大 JSON。
 """
 
 from __future__ import annotations
 
 import time
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Sequence, Set, Tuple
 
 from app.sdk.logging import logger
 
@@ -52,33 +58,165 @@ def _direct_parent(plugin: Any, raw_path: str) -> str:
         return ""
 
 
-def _reconcile_direct_state(plugin: Any, group_path: str, direct_files: Sequence[Any]) -> int:
-    """成功列出一个目录后，仅回收该目录直属且已经不存在的状态记录。"""
-    group = plugin._v360_norm(group_path)
-    if not group:
-        return 0
-    present = {
-        plugin._v360_norm(getattr(item, "path", ""))
-        for item in direct_files
-        if getattr(item, "path", None)
-    }
+def _child_path(plugin: Any, group: str, child: Any) -> str:
+    raw_path = str(getattr(child, "path", "") or "")
+    if raw_path:
+        return plugin._v360_norm(raw_path)
+    name = str(getattr(child, "name", "") or "")
+    if not name:
+        return ""
+    try:
+        return plugin._v360_norm((PurePosixPath(group) / name).as_posix())
+    except Exception:
+        return ""
 
-    def apply(state: Dict[str, Any]) -> int:
-        removed = 0
+
+def _present_direct_children(
+    plugin: Any,
+    group: str,
+    children: Sequence[Any],
+) -> Tuple[Set[str], Set[str]]:
+    """从严格完整 children 提取真实直属目录/文件；不受 recursive 配置影响。"""
+    present_dirs: Set[str] = set()
+    present_files: Set[str] = set()
+    for child in children:
+        path = _child_path(plugin, group, child)
+        if not path or _direct_parent(plugin, path) != group:
+            continue
+        kind = str(getattr(child, "type", "") or "")
+        if kind == "dir":
+            present_dirs.add(path)
+        elif kind == "file":
+            present_files.add(path)
+    return present_dirs, present_files
+
+
+def _state_path_is_unreachable(
+    plugin: Any,
+    *,
+    group: str,
+    path: str,
+    directory_exists: bool,
+    present_dirs: Set[str],
+    present_files: Set[str],
+) -> Tuple[bool, str]:
+    """返回 (是否不可达, direct/subtree)。只使用已严格确认的直属目录事实。"""
+    normalized = plugin._v360_norm(path)
+    if not normalized:
+        return False, ""
+    prefix = group.rstrip("/") + "/" if group != "/" else "/"
+
+    if not directory_exists:
+        if normalized == group or normalized.startswith(prefix):
+            return True, "subtree"
+        return False, ""
+
+    parent = _direct_parent(plugin, normalized)
+    if parent == group:
+        if normalized not in present_files and normalized not in present_dirs:
+            return True, "direct"
+        return False, ""
+
+    if not normalized.startswith(prefix):
+        return False, ""
+    relative = normalized[len(prefix):]
+    if "/" not in relative:
+        return False, ""
+    first = relative.split("/", 1)[0]
+    if not first:
+        return False, ""
+    first_child = plugin._v360_norm((PurePosixPath(group) / first).as_posix())
+    if first_child not in present_dirs:
+        return True, "subtree"
+    return False, ""
+
+
+def _reconcile_reachable_state(
+    plugin: Any,
+    group_path: str,
+    children: Sequence[Any],
+    *,
+    directory_exists: bool,
+) -> Dict[str, Any]:
+    """按严格目录事实回收不可达状态；无变化时绝不写状态 JSON。"""
+    group = plugin._v360_norm(group_path)
+    empty = {"total": 0, "direct": 0, "subtree": 0, "by_state": {}}
+    if not group:
+        return empty
+
+    present_dirs, present_files = _present_direct_children(plugin, group, children)
+    store = plugin._state()
+
+    def inspect(state: Dict[str, Any]) -> Dict[str, Any]:
+        counts: Dict[str, int] = {}
+        direct = 0
+        subtree = 0
         for name in _STATE_NAMES:
             mapping = dict(state.get(name) or {})
-            for raw_path in list(mapping):
-                path = plugin._v360_norm(raw_path)
-                if _direct_parent(plugin, path) != group:
+            for raw_path in mapping:
+                remove, scope = _state_path_is_unreachable(
+                    plugin,
+                    group=group,
+                    path=str(raw_path or ""),
+                    directory_exists=directory_exists,
+                    present_dirs=present_dirs,
+                    present_files=present_files,
+                )
+                if not remove:
                     continue
-                if path in present:
+                counts[name] = counts.get(name, 0) + 1
+                if scope == "direct":
+                    direct += 1
+                else:
+                    subtree += 1
+        return {
+            "total": direct + subtree,
+            "direct": direct,
+            "subtree": subtree,
+            "by_state": counts,
+        }
+
+    # 绝大多数目录扫描没有状态变化。先 load + 只读判断，零变化时不进入 mutate，避免
+    # OrganizerStateStore.mutate() 无条件整份写回 JSON 的历史开销。
+    preview = inspect(store.load())
+    if int(preview.get("total") or 0) <= 0:
+        return preview
+
+    def apply(state: Dict[str, Any]) -> Dict[str, Any]:
+        counts: Dict[str, int] = {}
+        direct = 0
+        subtree = 0
+        for name in _STATE_NAMES:
+            mapping = dict(state.get(name) or {})
+            removed_here = 0
+            for raw_path in list(mapping):
+                remove, scope = _state_path_is_unreachable(
+                    plugin,
+                    group=group,
+                    path=str(raw_path or ""),
+                    directory_exists=directory_exists,
+                    present_dirs=present_dirs,
+                    present_files=present_files,
+                )
+                if not remove:
                     continue
                 mapping.pop(raw_path, None)
-                removed += 1
-            state[name] = mapping
-        return removed
+                removed_here += 1
+                if scope == "direct":
+                    direct += 1
+                else:
+                    subtree += 1
+            if removed_here:
+                counts[name] = removed_here
+                state[name] = mapping
+        return {
+            "total": direct + subtree,
+            "direct": direct,
+            "subtree": subtree,
+            "by_state": counts,
+        }
 
-    return int(plugin._state().mutate(apply) or 0)
+    return dict(store.mutate(apply) or empty)
 
 
 def _split_children(plugin: Any, children: Sequence[Any]) -> Tuple[List[Any], List[Any]]:
@@ -99,6 +237,34 @@ def _split_children(plugin: Any, children: Sequence[Any]) -> Tuple[List[Any], Li
     return dirs, files
 
 
+def _record_state_reconcile(plugin: Any, path: str, stats: Dict[str, Any], *, reason: str) -> None:
+    total = int(stats.get("total") or 0)
+    if total <= 0:
+        return
+    direct = int(stats.get("direct") or 0)
+    subtree = int(stats.get("subtree") or 0)
+    normalized = plugin._v360_norm(path)
+    now = time.time()
+    plugin._save_monitor_status(
+        state_direct_pruned=direct,
+        state_direct_pruned_at=now,
+        state_direct_pruned_path=normalized,
+        state_subtree_pruned=subtree,
+        state_reachability_pruned=total,
+        state_reachability_pruned_at=now,
+        state_reachability_pruned_path=normalized,
+    )
+    logger.info(
+        "【光鸭云盘助手】【v3.6.13】【状态回收】%s：总计=%s，直属=%s，缺失子目录后代=%s，状态=%s path=%s",
+        reason,
+        total,
+        direct,
+        subtree,
+        stats.get("by_state") or {},
+        normalized,
+    )
+
+
 def install_organizer_hardening_v369() -> None:
     """幂等包裹 v3.6 engine/monitor，不改变识别、分类、命名或整理策略。"""
     if getattr(GuangYaOrganizerMonitorV366Mixin, _PATCH_FLAG, False):
@@ -117,21 +283,18 @@ def install_organizer_hardening_v369() -> None:
 
         current = api.get_item(Path(path))
         if not current:
-            # get_item 明确完成远端解析并返回不存在，此时该目录直属状态可安全回收。
-            pruned = _reconcile_direct_state(plugin, path, [])
-            if pruned:
-                logger.info(
-                    "【光鸭云盘助手】【v3.6.9】【状态回收】目录已不存在，清理直属陈旧状态=%s: %s",
-                    pruned,
-                    path,
-                )
+            # get_item 经 v3.6.9 完整分页明确确认不存在，整棵状态子树都已不可达。
+            stats = _reconcile_reachable_state(plugin, path, [], directory_exists=False)
+            _record_state_reconcile(plugin, path, stats, reason="目录已确认不存在")
             return [], []
         if str(getattr(current, "type", "") or "") != "dir":
+            stats = _reconcile_reachable_state(plugin, path, [], directory_exists=False)
+            _record_state_reconcile(plugin, path, stats, reason="原目录路径已变为非目录")
             return [], []
 
         strict_list = getattr(api, "list_strict", None)
         if not callable(strict_list):
-            # 安装顺序异常时宁可保留旧语义，不在这里重写整个存储层。
+            # 安装顺序异常时宁可保留旧语义，不在这里基于不完整列表清理状态。
             return previous_list_directory(plugin, path)
 
         try:
@@ -145,14 +308,13 @@ def install_organizer_hardening_v369() -> None:
             except Exception:
                 raise first_error
             if not refreshed:
-                # 首次 list 失败后，重新按路径解析确认目录确实消失，才允许按空目录收口。
-                pruned = _reconcile_direct_state(plugin, path, [])
-                if pruned:
-                    logger.info(
-                        "【光鸭云盘助手】【v3.6.9】【状态回收】刷新确认目录已消失，清理直属状态=%s: %s",
-                        pruned,
-                        path,
-                    )
+                # 首次 list 失败后，重新按完整路径解析确认目录确实消失，才允许整棵收口。
+                stats = _reconcile_reachable_state(plugin, path, [], directory_exists=False)
+                _record_state_reconcile(plugin, path, stats, reason="刷新确认目录已消失")
+                return [], []
+            if str(getattr(refreshed, "type", "") or "") != "dir":
+                stats = _reconcile_reachable_state(plugin, path, [], directory_exists=False)
+                _record_state_reconcile(plugin, path, stats, reason="刷新确认原目录已变为非目录")
                 return [], []
             try:
                 children = list(strict_list(refreshed) or [])
@@ -161,19 +323,11 @@ def install_organizer_hardening_v369() -> None:
                     f"严格读取目录失败，已刷新 fileId 仍不可用: {path} - {retry_error}"
                 ) from retry_error
 
+        # children 是 list_strict 的完整分页结果。必须在 _split_children 之前做可达性判断，
+        # 因为 non-recursive 模式会故意不把存在的子目录加入 discovery dirs，但状态不能因此被删。
+        stats = _reconcile_reachable_state(plugin, path, children, directory_exists=True)
+        _record_state_reconcile(plugin, path, stats, reason="严格读取后清理不可达状态")
         dirs, files = _split_children(plugin, children)
-        pruned = _reconcile_direct_state(plugin, path, files)
-        if pruned:
-            plugin._save_monitor_status(
-                state_direct_pruned=pruned,
-                state_direct_pruned_at=time.time(),
-                state_direct_pruned_path=plugin._v360_norm(path),
-            )
-            logger.info(
-                "【光鸭云盘助手】【v3.6.9】【状态回收】成功读取目录后清理已消失直属状态=%s: %s",
-                pruned,
-                path,
-            )
         return dirs, files
 
     def run_monitor_scan(plugin: Any, manual: bool = False) -> Dict[str, Any]:
@@ -253,7 +407,8 @@ def install_organizer_hardening_v369() -> None:
     GuangYaOrganizerMonitorV366Mixin.run_organize_monitor_scan = run_monitor_scan
     setattr(GuangYaOrganizerMonitorV366Mixin, _PATCH_FLAG, True)
     logger.info(
-        "【光鸭云盘助手】【v3.6.9】监控硬化已启用：known预算=%s + 每周期连续50目录discovery + 严格远端读取 + 状态局部回收",
+        "【光鸭云盘助手】【v3.6.13】监控硬化已启用：known预算=%s + 每周期连续50目录discovery + "
+        "严格远端读取 + 缺失子树状态回收 + 无变化零状态写入",
         _v366._KNOWN_SCAN_LIMIT,
     )
 
