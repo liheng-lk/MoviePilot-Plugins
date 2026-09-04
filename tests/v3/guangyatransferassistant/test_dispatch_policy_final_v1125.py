@@ -64,7 +64,7 @@ def test_new_subscription_prime_refreshes_channel_once_without_direct_gying_forc
 
 
 def test_new_subscription_is_channel_first_then_date_gated_non_force_pull():
-    method = _method("_run_reliability_route_batch", "_refresh_airing_calendar_v1120")
+    method = _method("_run_reliability_route_batch", "_calendar_failure_payload_v1125")
     assert 'if "新订阅资源匹配" not in text:' in method
     channel = method.index('"新订阅资源匹配·频道阶段"')
     selector = method.index("_smart_pull_due_ids_v1125()")
@@ -77,12 +77,32 @@ def test_new_subscription_is_channel_first_then_date_gated_non_force_pull():
     assert '"subscription_prime"' not in method
 
 
+def test_calendar_failure_returns_truthy_sentinel_and_enters_short_backoff():
+    payload = _method("_calendar_failure_payload_v1125", "_refresh_airing_calendar_v1120")
+    refresh = _method("_refresh_airing_calendar_v1120", "_daily_full_catchup_v1110")
+    assert '"subscriptions": []' in payload
+    assert '"calendar_refresh_failed_v1125": True' in payload
+    assert "_calendar_refresh_failure_until_v1125" in refresh
+    assert "if failure_until > now:" in refresh
+    assert "return self._calendar_failure_payload_v1125()" in refresh
+    assert "except Exception as err:" in refresh
+    assert "now + max(" in refresh
+    assert "短退避避免按订阅重复请求" in refresh
+    assert "super()._refresh_airing_calendar_v1120(force=False)" in refresh
+
+
+def test_forced_calendar_refresh_is_not_hidden_by_failure_backoff():
+    refresh = _method("_refresh_airing_calendar_v1120", "_daily_full_catchup_v1110")
+    force_branch = refresh.index("if force:")
+    normal_backoff = refresh.index("failure_until = float", force_branch)
+    assert 'return dict(super()._refresh_airing_calendar_v1120(force=True) or {})' in refresh[force_branch:normal_backoff]
+
+
 def test_daily_calendar_network_refresh_is_deferred_until_channel_and_gying_finish():
     refresh = _method("_refresh_airing_calendar_v1120", "_daily_full_catchup_v1110")
     daily = _method("_daily_full_catchup_v1110")
     assert 'getattr(local, "defer_daily_calendar", False)' in refresh
     assert 'self.get_data("airing_calendar_v1120")' in refresh
-    assert "return dict(super()._refresh_airing_calendar_v1120(force=force) or {})" in refresh
     assert "local.defer_daily_calendar = True" in daily
     super_call = daily.index("super()._daily_full_catchup_v1110()")
     restore = daily.index("local.defer_daily_calendar = previous")
