@@ -82,6 +82,7 @@ def test_no_xunlei_match_still_promotes_successful_wide_queries_for_magnet():
 def test_failed_wide_query_does_not_claim_nonexistent_bundle_variant():
     search = _method("_search_viewing_xunlei", "_merge_xunlei_rounds_v1125")
     failure = search.split('if not last_state.get("success"):', 1)[1].split("successful.append(variant)", 1)[0]
+    assert "retry_local.stop_after_failure = True" in failure
     assert "bundle_variants" in failure
     assert "self._promote_search_bundle_v1125(all_variants[0], bundle_variants)" in failure
     assert "successful.append(variant)" not in failure
@@ -98,13 +99,14 @@ def test_retry_mode_skips_already_attempted_share_ids_without_persisting_them():
 
 
 def test_real_xunlei_failure_advances_to_next_keyword_only_after_dispatch_returns():
-    dispatch = _method("_dispatch_xunlei_flash", "_viewing_external_candidates_v1113")
+    dispatch = _method("_dispatch_xunlei_flash", "_dispatch_viewing_external_v1113")
     lower_call = dispatch.index("super()._dispatch_xunlei_flash(subscribe)")
     merge = dispatch.index("_merge_xunlei_rounds_v1125", lower_call)
     handled = dispatch.index('combined.get("handled")', merge)
-    next_index = dispatch.index("next_index = last_index + 1", handled)
+    failure_stop = dispatch.index('getattr(local, "stop_after_failure", False)', handled)
+    next_index = dispatch.index("next_index = last_index + 1", failure_stop)
     advance = dispatch.index("local.start_index = next_index", next_index)
-    assert lower_call < merge < handled < next_index < advance
+    assert lower_call < merge < handled < failure_stop < next_index < advance
     assert "while True:" in dispatch
     assert "next_index >= len(all_variants)" in dispatch
     assert "local.seen_identities = set()" in dispatch
@@ -119,19 +121,25 @@ def test_partial_xunlei_rounds_merge_success_episode_and_errors_without_losing_f
     assert 'merged["errors"] = [' in merge
 
 
-def test_magnet_broadening_runs_only_after_strict_external_candidates_are_empty_and_short_circuits():
-    method = _method("_viewing_external_candidates_v1113")
-    first_super = method.index("super()._viewing_external_candidates_v1113(subscribe)")
-    early_return = method.index("if candidates:")
-    variants = method.index("gying_keyword_variants(keyword)")
-    broaden = method.index("for variant in variants[1:]:")
-    second_super = method.index("super()._viewing_external_candidates_v1113(subscribe)", first_super + 1)
-    stop = method.index("if broadened:", second_super)
-    assert first_super < early_return < variants < broaden < second_super < stop
-    assert "_gying_xunlei_precise_variant_v1125(variant)" in method
-    assert "_promote_search_bundle_v1125(variants[0], successful)" in method
-    assert 'final_meta["query_fallback"] = variant' in method
-    assert "return broadened, final_meta" in method
+def test_magnet_broadening_waits_for_actual_dispatch_miss_not_candidate_presence():
+    method = _method("_dispatch_viewing_external_v1113")
+    first_dispatch = method.index("super()._dispatch_viewing_external_v1113(subscribe)")
+    first_stop = method.index('if bool(result.get("success")) or list(result.get("actions") or []):')
+    strict_cache = method.index("strict_entry =", first_stop)
+    broaden = method.index("for variant in variants[1:]:", strict_cache)
+    second_dispatch = method.index("super()._dispatch_viewing_external_v1113(subscribe)", first_dispatch + 1)
+    action_stop = method.index('if bool(current.get("success")) or list(current.get("actions") or []):', second_dispatch)
+    assert first_dispatch < first_stop < strict_cache < broaden < second_dispatch < action_stop
+    assert "def _viewing_external_candidates_v1113" not in guard_text
+
+
+def test_magnet_broadening_requires_successful_strict_search_and_stops_on_wide_search_failure():
+    method = _method("_dispatch_viewing_external_v1113")
+    assert 'if not strict_entry or strict_state.get("success") is False:' in method
+    failure = method.split('if not state.get("success"):', 1)[1].split("attempted.append(variant)", 1)[0]
+    assert "return last_result" in failure
+    assert "attempted.append(variant)" not in failure
+    assert "_promote_search_bundle_v1125(variants[0], attempted)" in method
 
 
 def test_fallback_stops_only_after_media_and_missing_coverage_filter():
