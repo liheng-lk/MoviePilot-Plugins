@@ -49,12 +49,30 @@ def test_recall_guard_reuses_single_media_identity_authority_instead_of_copying_
 
 
 def test_explicit_old_episode_cannot_stop_fallback_but_unknown_pack_can():
-    cover = _method("_candidate_can_cover_missing_v1125", "_search_viewing_xunlei")
+    cover = _method("_candidate_can_cover_missing_v1125", "_promote_search_bundle_v1125")
     assert "explicit = self._candidate_episode_hint_v1125" in cover
     assert "return not explicit or bool(explicit.intersection(missing))" in cover
     hint = _method("_candidate_episode_hint_v1125", "_candidate_can_cover_missing_v1125")
     assert "resolve_episode" in hint
     assert "reliable_episode_set" in hint
+
+
+def test_fallback_search_bundle_merges_already_fetched_rows_for_later_magnet():
+    bundle = _method("_promote_search_bundle_v1125", "_search_viewing_xunlei")
+    assert 'cache = getattr(self, "_gying_search_cache", None)' in bundle
+    assert 'entry = dict(cache.get(variant) or {})' in bundle
+    assert 'key = (url, passcode)' in bundle
+    assert '"search_bundle_v1125": True' in bundle
+    assert '"bundle_variants": attempted' in bundle
+    assert 'cache[primary] = {' in bundle
+    assert '"rows": merged[:800]' in bundle
+
+    search = _method("_search_viewing_xunlei")
+    promote = search.index("self._promote_search_bundle_v1125(variants[0], attempted)")
+    return_match = search.index("return matched, last_state", promote)
+    assert promote < return_match
+    assert 'promoted = dict(getattr(self, "_gying_search_cache", {}).get(variants[0]) or {})' in search
+    assert '"bundle_resources"' in search
 
 
 def test_fallback_stops_only_after_media_and_missing_coverage_filter():
