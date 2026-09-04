@@ -53,15 +53,22 @@ def test_page_check_missing_original_contract_is_force_true_and_async_trigger_re
     assert "pending_only=False" in dispatch
 
 
-def test_pending_recheck_keeps_force_false_contract_in_background():
+def test_pending_recheck_keeps_force_false_but_bypasses_airing_date_gate_only_in_its_thread():
     original = legacy_text.split("    def api_recheck_pending(", 1)[1].split("    def api_reset_state(", 1)[0]
     assert "_try_transfer_subscription(subscribe, force=False)" in original
     assert '"/recheck_pending": "状态页复查待落盘"' in page_auth_text
 
     dispatch = _method("_run_dispatch_trigger_v1125")
     runner = _method("_run_manual_api_v1125", "_run_route_activation_v1125")
+    gate = _method("_airing_gate_v1120", "_run_manual_api_v1125")
     assert "self.api_recheck_pending(subscribe_id=sid)" in runner
     assert "pending_only=True" in dispatch
+    assert 'local.pending_recheck = True' in runner
+    assert 'delattr(local, "pending_recheck")' in runner
+    assert 'getattr(local, "pending_recheck", False)' in gate
+    assert '"calendar_available": False' in gate
+    assert '"pending_recheck_bypass_v1125": True' in gate
+    assert "return dict(super()._airing_gate_v1120" in gate
     assert "force=True" not in runner
 
 
