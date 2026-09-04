@@ -60,10 +60,53 @@ def test_v361_directory_due_time_waits_for_latest_member():
     assert "return max(max(due_values or [now + _HISTORY_RECHECK_SECONDS]), now + 0.5)" in PATCH
 
 
-def test_v361_priority_revisit_never_breaks_50_directory_scan_bound():
-    assert "每次只回访 1 个目录，因此不会突破 50 目录上限" in PATCH
-    assert "self._v360_list_directory(group_path)" in PATCH
-    assert "while " not in PATCH[PATCH.index("def _v361_try_due_resource"):PATCH.index("def run_organize_monitor_scan")]
+def test_v368_stale_pending_is_pruned_by_direct_member_state_not_descendants():
+    assert "def _v361_direct_members" in PATCH
+    direct = PATCH[PATCH.index("def _v361_direct_members"):PATCH.index("def _v361_pending_has_state_evidence")]
+    assert "Path(path).parent.as_posix()" in direct
+    assert "if parent == group_path:" in direct
+    assert "_v360_is_under" not in direct
+
+
+def test_v368_local_prune_preserves_real_waiting_evidence_and_history_wait():
+    prune = PATCH[PATCH.index("def _v361_pending_has_state_evidence"):PATCH.index("def _v361_forget_known_resource")]
+    for state_name in ("stabilizing", "inflight", "retry"):
+        assert state_name in prune
+    assert 'phases.get("history_wait")' in prune
+    assert 'state.get("completed")' in prune
+    assert "def _v361_prune_stale_pending" in prune
+    assert "本地批量清理无等待态历史 pending" in prune
+
+
+def test_v368_priority_revisit_bulk_cleans_stale_empty_rows_but_schedules_only_one_live_resource():
+    revisit = PATCH[PATCH.index("def _v361_try_due_resource"):PATCH.index("def _record_terminal_transfer")]
+    assert "_PENDING_STALE_SWEEP_LIMIT = 50" in PATCH
+    assert "for _ in range(_PENDING_STALE_SWEEP_LIMIT):" in revisit
+    assert "if not self._v360_primary_files(direct_files):" in revisit
+    empty_branch = revisit[revisit.index("if not self._v360_primary_files(direct_files):"):revisit.index("result = dict(self._v360_schedule_resource")]
+    assert "self._v361_remove_pending(group_path)" in empty_branch
+    assert "self._v361_forget_known_resource(group_path)" in empty_branch
+    assert "continue" in empty_branch
+    # live resource仍立即return，保证一轮只提交一个真实任务。
+    live = revisit[revisit.index("result = dict(self._v360_schedule_resource"):]
+    assert '"scheduled": scheduled' in live
+    assert "return {" in live
+    assert "单轮已批量清理搬空 pending" in revisit
+
+
+def test_v368_terminal_success_immediately_closes_stale_pending():
+    terminal = PATCH[PATCH.index("def _record_terminal_transfer"):PATCH.index("def run_organize_monitor_scan")]
+    assert "super()._record_terminal_transfer(event, success)" in terminal
+    assert "if not success:" in terminal
+    assert "pruned = self._v361_prune_stale_pending()" in terminal
+    assert "MoviePilot 成功后即时移除陈旧 pending" in terminal
+
+
+def test_v368_empty_pending_also_forgets_v366_known_resource_index():
+    helper = PATCH[PATCH.index("def _v361_forget_known_resource"):PATCH.index("def _v361_seed_existing_stabilizing")]
+    assert 'getattr(self, "_v366_load_known", None)' in helper
+    assert 'getattr(self, "_v366_save_known", None)' in helper
+    assert "rows.pop(group_path, None)" in helper
 
 
 def test_v361_owner_and_worker_gate_still_precede_priority_revisit():
@@ -106,7 +149,9 @@ def test_v361_release_metadata_is_preserved_by_later_patch_versions():
     assert "v3.6.1" in plugin_meta["history"]
 
 
-def test_v361_startup_and_runtime_logs_are_observable():
+def test_v368_startup_and_runtime_logs_are_observable():
     assert "稳定资源优先回访已启用" in PATCH
-    assert "【v3.6.1】【优先回访】" in PATCH
+    assert "【v3.6.8】【优先回访】" in PATCH
     assert "pending 到期即优先处理，不等待整库 cycle" in PATCH
+    assert "【v3.6.8】【pending自愈】" in PATCH
+    assert "【v3.6.8】【终态清理】" in PATCH

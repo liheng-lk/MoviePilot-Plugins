@@ -1,18 +1,17 @@
-"""v3.6.1：稳定等待资源到期后优先回访。
+"""v3.6.1 / v3.6.8：稳定等待资源优先回访与陈旧 pending 自愈。
 
 3.6.0 已把自动整理收口为统一 discovery/scheduler/worker 状态机，但首次发现的资源在
 ``stabilizing`` 期间会随着 50 目录游标继续向后走，只能等整个 discovery cycle 绕回后
 再次检查。在大目录中这会让已经稳定的资源无谓等待数分钟。
 
-本层只修调度等待，不改变 MoviePilot 识别、分类、命名、season、冲突、安全预览或最终
-结果语义：
-- 每个进入 stabilizing/history_wait/retry_wait 的资源目录记录一个轻量 pending-resource；
-- 到期后下一次扫描优先回访该资源，成功入 Worker 后立即移除；
-- 每次优先回访只读取 1 个目录，仍满足单轮最多 50 个目录的边界；
-- 升级时从现有 stabilizing 文件直接种入 pending-resource，避免已有等待项再绕完整 cycle；
-- 修复 3.6.0 部分“回 discovery pending”路径把 ``first_seen=0`` 写入状态，而
-  ``OrganizerStateStore.classify`` 使用 ``row.get('first_seen') or now`` 导致每次重新从当前
-  时间开始稳定计时、理论上永久 stabilizing 的问题。
+v3.6.1 增加轻量 pending-resource，让 stabilizing/history_wait/retry_wait 到期后优先回访。
+v3.6.8 进一步修复终态清理：历史版本会让已经整理完成、已经搬空的资源继续留在 pending，
+而旧实现每个 monitor tick 只清 1 条，历史残留会长期抢占新资源扫描。本层现在：
+- 启动与最终成功后先用状态机证据批量剔除已经没有等待态的 pending；
+- 对仍需远端确认的陈旧记录，同一轮最多连续清理 50 个“已搬空/无主视频”目录；
+- 只要遇到一个仍有主视频的真实 pending，立即停止清理并按原语义调度该资源；
+- 清理 pending 时同步移除 v3.6.6 known-resource 陈旧索引，避免下一阶段再次检查同一路径；
+- 真正处于 stabilizing/history_wait/retry_wait/inflight 的资源仍保留，不清空有效等待。
 """
 
 from __future__ import annotations
@@ -28,6 +27,7 @@ _PENDING_KEY = "organize_v361_pending_resources"
 _PENDING_SCHEMA = 1
 _PENDING_LIMIT = 1000
 _HISTORY_RECHECK_SECONDS = 10.0
+_PENDING_STALE_SWEEP_LIMIT = 50
 
 
 class GuangYaOrganizerPendingRevisitV361Mixin:
@@ -42,10 +42,13 @@ class GuangYaOrganizerPendingRevisitV361Mixin:
         self._v361_initialized = True
         repaired = self._v361_repair_zero_first_seen()
         seeded = self._v361_seed_existing_stabilizing()
+        pruned = self._v361_prune_stale_pending()
         logger.info(
-            "【光鸭云盘助手】【v3.6.1】稳定资源优先回访已启用：pending 到期即优先处理，不等待整库 cycle；first_seen 修复=%s，升级种入资源=%s",
+            "【光鸭云盘助手】【v3.6.8】稳定资源优先回访已启用：pending 到期即优先处理，不等待整库 cycle；"
+            "first_seen 修复=%s，升级种入资源=%s，陈旧 pending 自愈=%s",
             repaired,
             seeded,
+            pruned,
         )
 
     # ------------------------------------------------------------------
@@ -141,6 +144,84 @@ class GuangYaOrganizerPendingRevisitV361Mixin:
                 "updated_at": time.time(),
             },
         )
+
+    def _v361_direct_members(self, mapping: Dict[str, Any], group_path: str) -> List[str]:
+        """返回状态表中直属于 group_path 的成员路径，避免父级目录误吸收其它资源。"""
+        group_path = self._v360_norm(group_path)
+        members: List[str] = []
+        for raw_path in mapping:
+            path = self._v360_norm(raw_path)
+            if not path:
+                continue
+            parent = self._v360_norm(Path(path).parent.as_posix())
+            if parent == group_path:
+                members.append(path)
+        return members
+
+    def _v361_pending_has_state_evidence(
+        self,
+        group_path: str,
+        row: Dict[str, Any],
+        state: Dict[str, Any],
+    ) -> bool:
+        """判断 pending 是否仍有本地等待态证据；只看直属成员，避免库根误保活。"""
+        for name in ("stabilizing", "inflight", "retry"):
+            if self._v361_direct_members(dict(state.get(name) or {}), group_path):
+                return True
+
+        # history_wait 的本地状态仍是 completed；历史接口暂不可用时必须保留回访。
+        phases = dict((row or {}).get("phases") or {})
+        if int(phases.get("history_wait") or 0) > 0:
+            completed = dict(state.get("completed") or {})
+            if self._v361_direct_members(completed, group_path):
+                return True
+        return False
+
+    def _v361_prune_stale_pending(self) -> int:
+        """纯本地批量清理已经没有任何等待态证据的历史 pending，不发远端请求。"""
+        rows = self._v361_load_pending()
+        if not rows:
+            return 0
+        state = self._state().load()
+        removed: List[str] = []
+        for group_path, row in list(rows.items()):
+            if self._v361_pending_has_state_evidence(group_path, dict(row or {}), state):
+                continue
+            rows.pop(group_path, None)
+            removed.append(group_path)
+        if not removed:
+            return 0
+        self._v361_save_pending(rows)
+        self._save_monitor_status(
+            pending_stale_local_pruned=len(removed),
+            pending_stale_local_pruned_at=time.time(),
+            pending_revisit_total=len(rows),
+        )
+        logger.info(
+            "【光鸭云盘助手】【v3.6.8】【pending自愈】本地批量清理无等待态历史 pending=%s，剩余=%s",
+            len(removed),
+            len(rows),
+        )
+        return len(removed)
+
+    def _v361_forget_known_resource(self, group_path: str) -> None:
+        """资源已搬空时同步清掉 v3.6.6 known-resource 索引，避免后续重复目录检查。"""
+        loader = getattr(self, "_v366_load_known", None)
+        saver = getattr(self, "_v366_save_known", None)
+        if not callable(loader) or not callable(saver):
+            return
+        try:
+            rows = dict(loader() or {})
+        except Exception:
+            return
+        group_path = self._v360_norm(group_path)
+        if group_path not in rows:
+            return
+        rows.pop(group_path, None)
+        try:
+            saver(rows)
+        except Exception:
+            return
 
     def _v361_seed_existing_stabilizing(self, only_paths: Iterable[str] | None = None) -> int:
         """把升级前已经存在的文件级 stabilizing 状态折叠成资源目录优先回访队列。"""
@@ -283,67 +364,121 @@ class GuangYaOrganizerPendingRevisitV361Mixin:
         return due[0]
 
     def _v361_try_due_resource(self) -> Dict[str, Any] | None:
-        group_path, pending_row = self._v361_next_due()
-        if not group_path:
-            return None
+        """优先处理真实等待资源；同轮批量扫掉已搬空历史 pending，避免一分钟只清一条。"""
+        local_pruned = self._v361_prune_stale_pending()
+        remote_pruned = 0
+        last_pruned_path = ""
 
-        try:
-            child_dirs, direct_files = self._v360_list_directory(group_path)
-            _ = child_dirs
-        except Exception as err:  # discovery problem is not task failure
-            rows = self._v361_load_pending()
-            rows[group_path] = {
-                **dict(pending_row or {}),
-                "due_at": time.time() + _HISTORY_RECHECK_SECONDS,
-                "last_error": str(err),
-                "updated_at": time.time(),
-            }
-            self._v361_save_pending(rows)
-            logger.warning(
-                "【光鸭云盘助手】【v3.6.1】【优先回访】资源目录读取失败，稍后再查，不写 retry: %s - %s",
-                group_path,
-                err,
-            )
-            return {
-                "success": True,
-                "message": "待稳定资源回访读取失败，已保留等待",
-                "data": {"priority_revisit": True, "scheduled": False, "path": group_path},
-            }
+        for _ in range(_PENDING_STALE_SWEEP_LIMIT):
+            group_path, pending_row = self._v361_next_due()
+            if not group_path:
+                if local_pruned or remote_pruned:
+                    self._save_monitor_status(
+                        pending_stale_remote_pruned=remote_pruned,
+                        pending_stale_remote_pruned_at=time.time(),
+                        pending_revisit_total=len(self._v361_load_pending()),
+                    )
+                return None
 
-        if not self._v360_primary_files(direct_files):
-            self._v361_remove_pending(group_path)
+            try:
+                child_dirs, direct_files = self._v360_list_directory(group_path)
+                _ = child_dirs
+            except Exception as err:  # discovery problem is not task failure
+                rows = self._v361_load_pending()
+                rows[group_path] = {
+                    **dict(pending_row or {}),
+                    "due_at": time.time() + _HISTORY_RECHECK_SECONDS,
+                    "last_error": str(err),
+                    "updated_at": time.time(),
+                }
+                self._v361_save_pending(rows)
+                logger.warning(
+                    "【光鸭云盘助手】【v3.6.8】【优先回访】资源目录读取失败，稍后再查，不写 retry: %s - %s",
+                    group_path,
+                    err,
+                )
+                return {
+                    "success": True,
+                    "message": "待稳定资源回访读取失败，已保留等待",
+                    "data": {"priority_revisit": True, "scheduled": False, "path": group_path},
+                }
+
+            if not self._v360_primary_files(direct_files):
+                self._v361_remove_pending(group_path)
+                self._v361_forget_known_resource(group_path)
+                remote_pruned += 1
+                last_pruned_path = group_path
+                continue
+
+            result = dict(self._v360_schedule_resource(group_path, direct_files) or {})
+            scheduled = bool(result.get("scheduled"))
+            if local_pruned or remote_pruned:
+                logger.info(
+                    "【光鸭云盘助手】【v3.6.8】【pending自愈】提交真实等待资源前已清理：本地=%s，搬空目录=%s",
+                    local_pruned,
+                    remote_pruned,
+                )
             logger.info(
-                "【光鸭云盘助手】【v3.6.1】【优先回访】资源已搬空/无主视频，移出 pending: %s",
+                "【光鸭云盘助手】【v3.6.8】【优先回访】%s -> scheduled=%s reason=%s phases=%s",
                 group_path,
+                scheduled,
+                result.get("reason"),
+                result.get("phases"),
             )
             return {
                 "success": True,
-                "message": "待稳定资源已无主视频",
-                "data": {"priority_revisit": True, "scheduled": False, "path": group_path},
+                "message": "待稳定资源已优先提交" if scheduled else "待稳定资源已优先复查",
+                "data": {
+                    "priority_revisit": True,
+                    "scheduled": scheduled,
+                    "path": group_path,
+                    "result": result,
+                    "stale_local_pruned": local_pruned,
+                    "stale_remote_pruned": remote_pruned,
+                },
             }
 
-        result = dict(self._v360_schedule_resource(group_path, direct_files) or {})
-        scheduled = bool(result.get("scheduled"))
-        logger.info(
-            "【光鸭云盘助手】【v3.6.1】【优先回访】%s -> scheduled=%s reason=%s phases=%s",
-            group_path,
-            scheduled,
-            result.get("reason"),
-            result.get("phases"),
-        )
-        return {
-            "success": True,
-            "message": "待稳定资源已优先提交" if scheduled else "待稳定资源已优先复查",
-            "data": {
-                "priority_revisit": True,
-                "scheduled": scheduled,
-                "path": group_path,
-                "result": result,
-            },
-        }
+        # 单轮最多 50 个远端陈旧目录，保护 API；下一 tick 继续，但已不再是一分钟只清 1 条。
+        if remote_pruned:
+            remaining = len(self._v361_load_pending())
+            self._save_monitor_status(
+                pending_stale_remote_pruned=remote_pruned,
+                pending_stale_remote_pruned_at=time.time(),
+                pending_revisit_total=remaining,
+            )
+            logger.info(
+                "【光鸭云盘助手】【v3.6.8】【pending自愈】单轮已批量清理搬空 pending=%s，剩余=%s，最后=%s",
+                remote_pruned,
+                remaining,
+                last_pruned_path,
+            )
+            return {
+                "success": True,
+                "message": "陈旧 pending 已批量清理",
+                "data": {
+                    "priority_revisit": True,
+                    "scheduled": False,
+                    "stale_local_pruned": local_pruned,
+                    "stale_remote_pruned": remote_pruned,
+                    "pending_remaining": remaining,
+                },
+            }
+        return None
+
+    def _record_terminal_transfer(self, event: Any, success: bool) -> None:
+        """最终成功落状态后立即做一次纯本地 pending 收口，避免等下一次扫描。"""
+        super()._record_terminal_transfer(event, success)
+        if not success:
+            return
+        pruned = self._v361_prune_stale_pending()
+        if pruned:
+            logger.info(
+                "【光鸭云盘助手】【v3.6.8】【终态清理】MoviePilot 成功后即时移除陈旧 pending=%s",
+                pruned,
+            )
 
     def run_organize_monitor_scan(self, manual: bool = False) -> Dict[str, Any]:
-        """到期 pending 优先于普通游标；每次只回访 1 个目录，因此不会突破 50 目录上限。"""
+        """到期 pending 优先于普通游标；陈旧项批量清理，真实资源仍只调度 1 个。"""
         self.init_organizer_monitor()
         if not manual and not getattr(self, "_organize_monitor_enabled", False):
             return super().run_organize_monitor_scan(manual=manual)
