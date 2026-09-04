@@ -16,6 +16,8 @@ jobs:
           python-version: '3.12'
       - name: Apply release migration
         run: python scripts/_prepare_guangya_v1126.py
+      - name: Patch release test contracts
+        run: python scripts/_patch_guangya_v1126_tests.py
       - name: Python syntax
         run: |
           python -m compileall -q plugins.v2 plugins.v3
