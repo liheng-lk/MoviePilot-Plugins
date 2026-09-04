@@ -4,6 +4,12 @@
 所有 CID 样本均使用 stream=True，单段最多读取 20KiB；非零 Range 若返回 200 立即放弃，
 绝不通过跳读整文件来计算 CID。另增加非破坏性的秒传预检 API，分别报告观影、迅雷身份和
 光鸭运行时是否就绪。
+
+v1.12.5 追加跨关键词重试边界：一次迅雷秒传调用内部即使会降级多个 GYING 关键词，
+只要底层迅雷分享 API 已打开 captcha 熔断，就把该熔断视为整个召回轮次的终止事实，
+不能因为下一档关键词重新进入 RuntimeFix 并重置 captcha circuit 后再次访问迅雷分享接口。
+同时把外部检索治理放在召回扩大之前：频道事件、外部冷却或自动搜索关闭时，RecallGuard
+不能利用旧搜索缓存直接发起宽关键词 GYING 请求。
 """
 
 from __future__ import annotations
@@ -21,7 +27,7 @@ _CONTENT_RANGE_RE = re.compile(r"bytes\s+(\d+)-(\d+)/(?:\d+|\*)", re.I)
 
 
 class GuangYaXunleiReliabilityV1100Mixin:
-    """最终 CID 采样边界与秒传链路预检。"""
+    """最终 CID 采样边界、秒传预检、外部检索治理与跨关键词 captcha 熔断保持。"""
 
     build_id = "20260901-r11"
     _CID_SAMPLE_SIZE = 20 * 1024
@@ -43,6 +49,65 @@ class GuangYaXunleiReliabilityV1100Mixin:
             if len(data) >= limit:
                 break
         return bytes(data)
+
+    def _merge_xunlei_rounds_v1125(self, base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any]:
+        """让一次秒传调用里的 captcha 熔断跨关键词保持，避免宽搜重新打迅雷分享 API。"""
+        merged = dict(super()._merge_xunlei_rounds_v1125(base, extra) or {})
+        captcha_open = bool((base or {}).get("captcha_circuit_open")) or bool(
+            (extra or {}).get("captcha_circuit_open")
+        )
+        if not captcha_open:
+            return merged
+
+        merged["captcha_circuit_open"] = True
+        # RecallGuard 的关键词循环在 merge 后会检查同一个 thread-local stop 标记。
+        # 这里不伪造 handled=True：captcha 失败只终止迅雷继续扩大搜索，后续 Magnet/ED2K
+        # 仍应按既有来源优先级继续执行。
+        local_getter = getattr(self, "_recall_retry_local_v1125", None)
+        if callable(local_getter):
+            try:
+                local_getter().stop_after_failure = True
+            except Exception:
+                pass
+        return merged
+
+    def _dispatch_viewing_external_v1113(self, subscribe: Any) -> Dict[str, Any]:
+        """RecallGuard 扩大关键词前再次执行外部治理，禁止频道/冷却路径绕过 GYING 门禁。"""
+        sid = int(getattr(subscribe, "id", 0) or 0)
+        if not bool(getattr(self, "_provider_auto_search", True)):
+            return {
+                "success": False,
+                "actions": [],
+                "message": "观影自动搜索已关闭",
+            }
+        if not bool(getattr(self, "_external_auto_dispatch", True)):
+            return {
+                "success": False,
+                "actions": [],
+                "message": "Magnet/ED2K 自动云添加已关闭",
+            }
+
+        mode_reader = getattr(self, "_route_source_mode_value_v1115", None)
+        mode = str(mode_reader() if callable(mode_reader) else getattr(self, "_route_source_mode_v1115", "") or "")
+        if mode == "channel_event":
+            return {
+                "success": False,
+                "actions": [],
+                "cooldown": True,
+                "channel_only": True,
+                "message": "频道事件只消费已到达资源，本轮禁止主动 GYING",
+            }
+
+        round_ok = getattr(self, "_external_round_ok_v1114", None)
+        if callable(round_ok) and not bool(round_ok(subscribe)):
+            return {
+                "success": False,
+                "actions": [],
+                "cooldown": True,
+                "subscribe_id": sid,
+                "message": "外部观影检索处于冷却/本轮未授权状态，不扩大 GYING 关键词",
+            }
+        return dict(super()._dispatch_viewing_external_v1113(subscribe) or {})
 
     def _xunlei_compute_triple_cid(self, download_url: str, file_size: int) -> str:
         download_url = str(download_url or "").strip()

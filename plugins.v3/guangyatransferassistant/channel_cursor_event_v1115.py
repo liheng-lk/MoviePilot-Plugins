@@ -93,8 +93,8 @@ class GuangYaChannelCursorEventV1115Mixin(GuangYaChannelEventGuardV1115Mixin):
         before_cursors = self._cursor_snapshot_v1115(self.get_data("channel_cursors") or {})
         rows = list(super().refresh_channels(force=force) or [])
 
-        # viewing_poll 的 super 已明确只读本地缓存，不产生频道事件。
-        if str(getattr(self, "_route_source_mode_v1115", "")) == "viewing_poll" and not force:
+        # 主动 Pull 的 super 已明确只读本地缓存，不产生频道事件。
+        if self._route_source_mode_value_v1115() in {"viewing_poll", "airing_pull", "daily_repair_pull"} and not force:
             self._channel_new_entries_v1115 = []
             return rows
 

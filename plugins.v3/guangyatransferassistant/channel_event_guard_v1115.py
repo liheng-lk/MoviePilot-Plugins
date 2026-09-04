@@ -22,7 +22,7 @@ class GuangYaChannelEventGuardV1115Mixin(GuangYaChannelEventV1115Mixin):
         subscribe: Any,
         uncovered: set[int],
     ) -> Optional[Dict[str, Any]]:
-        if str(getattr(self, "_route_source_mode_v1115", "")) == "channel_event":
+        if self._route_source_mode_value_v1115() == "channel_event":
             self._plugin_log(
                 "INFO",
                 "【光鸭转存助手】【频道事件】频道资源未完全覆盖当前缺集；本轮不主动调用观影/Provider，等待独立轮询",

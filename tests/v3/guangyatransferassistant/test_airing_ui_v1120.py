@@ -13,10 +13,14 @@ ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 def test_airing_ui_parses_and_is_below_receipt_without_stealing_scheduler_authority():
     ast.parse(UI)
     assert "from .airing_ui_v1120 import GuangYaAiringUiV1120Mixin" in ENTRY
+    assert "from .dispatch_policy_v1125 import GuangYaDispatchPolicyV1125Mixin" in ENTRY
+    assert "from .dispatch_policy_final_v1125 import GuangYaDispatchPolicyFinalV1125Mixin" in ENTRY
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     mixins = [line.strip().rstrip(",") for line in head.splitlines() if line.strip()]
-    assert mixins[:8] == [
+    assert mixins[:10] == [
         "GuangYaPagePerfV1123Mixin",
+        "GuangYaDispatchPolicyFinalV1125Mixin",
+        "GuangYaDispatchPolicyV1125Mixin",
         "GuangYaAiringWeeklyV1121Mixin",
         "GuangYaAiringSchedulerV1120Mixin",
         "GuangYaMediaIdentityGuardV1111Mixin",

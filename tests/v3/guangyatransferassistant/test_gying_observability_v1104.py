@@ -25,7 +25,7 @@ def test_observability_layer_parses_and_wraps_final_runtime():
 
 
 def test_observability_covers_all_real_gying_stages():
-    for token in ("运行时初始化", "节点刷新完成", "检测到浏览器 PoW", "PoW通过", "登录检查", "登录结果", "会话结果", "搜索开始", "搜索结果", "downurl成功", "候选提取：Magnet", "迅雷候选提取", "人工操作：测试观影会话", "viewing_observability_state"):
+    for token in ("运行时初始化", "节点刷新完成", "检测到浏览器 PoW", "PoW通过", "登录检查", "登录结果", "会话结果", "搜索开始", "搜索结果", "downurl成功", "候选提取：Magnet", "迅雷召回", "迅雷执行", "人工操作：测试观影会话", "viewing_observability_state"):
         assert token in text
 
 

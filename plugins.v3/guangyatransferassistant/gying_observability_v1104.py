@@ -4,8 +4,13 @@
 downurl 和故障切换缺少统一插件日志。这里仅补可观测性，不改变节点选择、认证、搜索、
 迅雷秒传或 Magnet/ED2K 业务决策。
 
+v1.12.5 追加“当前订阅召回”诊断：在不记录分享 ID、提取码、Cookie/Token 的前提下，
+把关键词、影视卡片数、实际展开数、迅雷候选数、媒体匹配数、当前真实缺集、直接覆盖数、
+关键词降级与最终秒传结果串成一条可定位日志，用来区分“搜索没召回 / 匹配被拦 / 缺集解析
+未覆盖 / 迅雷秒传失败”。
+
 日志和公开状态只记录节点、阶段、结果计数与错误摘要；Cookie、密码、Token、PoW 参数、
-迅雷提取码不会写入日志或公开状态。
+迅雷分享 ID 与提取码不会写入日志或公开状态。
 """
 
 from __future__ import annotations
@@ -20,7 +25,7 @@ from .gying_protocol_v1106 import extract_downlist_v1106, extract_panlist_v1106
 class GuangYaGyingObservabilityV1104Mixin:
     """给最终 GYING 调用链补齐可判断的过程日志与最近运行状态。"""
 
-    build_id = "20260901-r15"
+    build_id = "20260904-r51-preview"
 
     @staticmethod
     def _gying_node_label(value: Any) -> str:
@@ -65,7 +70,10 @@ class GuangYaGyingObservabilityV1104Mixin:
                 "updated_at": self._now_text(),
                 "updated_ts": time.time(),
             })
-            for key in ("mode", "cards", "resources", "pan", "magnet", "ed2k", "xunlei", "nodes"):
+            for key in (
+                "mode", "cards", "detail_cards", "resources", "pan", "magnet", "ed2k", "xunlei", "nodes",
+                "matched", "direct_cover", "missing", "query_fallback", "shares", "successful_files", "episodes",
+            ):
                 if key in extra:
                     value = extra.get(key)
                     if isinstance(value, (str, int, float, bool)) or value is None:
@@ -324,17 +332,123 @@ class GuangYaGyingObservabilityV1104Mixin:
         return rows, state
 
     def _search_viewing_xunlei(self, keyword: str):
+        started = time.monotonic()
         rows, state = super()._search_viewing_xunlei(keyword)
+        state = dict(state or {})
         count = len(rows or [])
-        self._gying_obs_log("INFO", "迅雷候选提取：数量=%s", count)
+
+        context = getattr(self, "_gying_xunlei_context_v1125", None)
+        subscribe = getattr(context, "subscribe", None) if context is not None else None
+        sid = int(getattr(subscribe, "id", 0) or 0) if subscribe is not None else 0
+        name = str(getattr(subscribe, "name", "") or "").strip() if subscribe is not None else ""
+        missing_values: List[int] = []
+        if subscribe is not None:
+            try:
+                if not self._is_movie_subscription(subscribe):
+                    missing_values = sorted({
+                        int(value)
+                        for value in (self._subscription_missing_episodes(subscribe) or [])
+                        if int(value or 0) > 0
+                    })
+            except Exception:
+                missing_values = []
+
+        direct_cover = 0
+        priority = getattr(self, "_xunlei_candidate_priority_v1125", None)
+        if callable(priority) and subscribe is not None and missing_values:
+            missing_set = set(missing_values)
+            for row in rows or []:
+                try:
+                    if int(priority(subscribe, row, missing_set)[0]) == 0:
+                        direct_cover += 1
+                except Exception:
+                    continue
+
+        fallback = str(state.get("query_fallback") or "").strip()
+        missing_text = ",".join(f"E{value:02d}" for value in missing_values[:20]) or ("movie" if subscribe is not None else "-")
+        self._gying_obs_log(
+            "INFO" if state.get("success") else "WARNING",
+            "迅雷召回：订阅=%s%s 关键词=%s 影视卡片=%s 展开=%s 迅雷原始=%s 媒体匹配=%s 当前缺集=%s 直接覆盖=%s 降级=%s 耗时=%.2fs",
+            f"#{sid} " if sid else "",
+            name or "-",
+            " ".join(str(keyword or "").split())[:120] or "-",
+            int(state.get("cards") or 0),
+            int(state.get("detail_cards") or 0),
+            int(state.get("xunlei_resources") or count),
+            count,
+            missing_text,
+            direct_cover,
+            fallback or "否",
+            time.monotonic() - started,
+        )
+        if rows:
+            preview = []
+            for row in list(rows)[:3]:
+                label = str((row or {}).get("name") or (row or {}).get("search_title") or "").strip()
+                if label:
+                    preview.append(label[:80])
+            if preview:
+                self._gying_obs_log("INFO", "迅雷候选预览：%s", " | ".join(preview))
+        elif state.get("success"):
+            self._gying_obs_log(
+                "INFO",
+                "迅雷未命中：订阅=%s%s 原因=%s",
+                f"#{sid} " if sid else "",
+                name or "-",
+                str(state.get("message") or "当前关键词没有可用迅雷分享")[:220],
+            )
+
         self._gying_obs_record(
-            "xunlei",
-            success=bool((state or {}).get("success")),
-            node=str((state or {}).get("node") or ""),
-            message=f"迅雷候选 {count}",
-            xunlei=count,
+            "xunlei_recall",
+            success=bool(state.get("success")),
+            node=str(state.get("node") or ""),
+            message=(
+                f"订阅 #{sid} {name} · 候选 {count} · 缺集 {missing_text} · 直接覆盖 {direct_cover}"
+                if sid else f"迅雷候选 {count}"
+            ),
+            cards=int(state.get("cards") or 0),
+            detail_cards=int(state.get("detail_cards") or 0),
+            xunlei=int(state.get("xunlei_resources") or count),
+            matched=count,
+            direct_cover=direct_cover,
+            missing=missing_text,
+            query_fallback=fallback,
         )
         return rows, state
+
+    def _dispatch_xunlei_flash(self, subscribe: Any) -> Dict[str, Any]:
+        started = time.monotonic()
+        result = dict(super()._dispatch_xunlei_flash(subscribe) or {})
+        sid = int(getattr(subscribe, "id", 0) or 0)
+        name = str(getattr(subscribe, "name", "") or "")
+        episodes = sorted({
+            int(value) for value in (result.get("episodes") or [])
+            if str(value).isdigit() and int(value) > 0
+        })
+        episode_text = ",".join(f"E{value:02d}" for value in episodes) or ("movie" if result.get("movie") else "无")
+        errors = list(result.get("errors") or [])
+        self._gying_obs_log(
+            "INFO" if result.get("success") else "WARNING",
+            "迅雷执行：订阅=#%s %s 尝试分享=%s 成功文件=%s 覆盖=%s handled=%s 错误数=%s 耗时=%.2fs 结果=%s",
+            sid,
+            name or "-",
+            int(result.get("shares") or 0),
+            int(result.get("successful_files") or 0),
+            episode_text,
+            bool(result.get("handled")),
+            len(errors),
+            time.monotonic() - started,
+            str(result.get("message") or "")[:220] or "-",
+        )
+        self._gying_obs_record(
+            "xunlei_dispatch",
+            success=bool(result.get("success")),
+            message=f"#{sid} {name} · 分享 {int(result.get('shares') or 0)} · 成功文件 {int(result.get('successful_files') or 0)} · 覆盖 {episode_text}",
+            shares=int(result.get("shares") or 0),
+            successful_files=int(result.get("successful_files") or 0),
+            episodes=episode_text,
+        )
+        return result
 
     def _status_overview_v191(self) -> Dict[str, Any]:
         overview = dict(super()._status_overview_v191() or {})
