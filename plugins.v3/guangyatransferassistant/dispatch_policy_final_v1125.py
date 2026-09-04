@@ -6,13 +6,16 @@
 - 新订阅仍立即响应：先查频道缓存，必要时只合并强刷频道一次，再消费频道；
   频道后仅对当前更新日/电影冷却允许的缺口主动 GYING，未来集/非更新日不能因新增订阅绕门禁；
 - 每日 04:10 的自动强制 GYING 虽可绕过冷却执行本轮，但执行后必须登记正常冷却，
-  避免 05:00 的小时 Pull 立刻再次访问观影；人工强制检查不受此规则影响。
+  避免 05:00 的小时 Pull 立刻再次访问观影；人工强制检查不受此规则影响；
+- 04:10 的强制日历刷新延后到频道 + GYING 两阶段结束后，避免 TMDB/每日助手慢响应
+  把本应最先执行的频道补漏阻塞在前面。
 
 本层是标准 cooperative mixin，不继承预览策略类；运行时由显式 MRO 把它放在
 GuangYaDispatchPolicyV1125Mixin 之前，所有 super() 都沿最终插件 MRO 继续下传。
 """
 from __future__ import annotations
 
+import threading
 import time
 from typing import Any, Dict, Iterable, List
 
@@ -21,6 +24,10 @@ class GuangYaDispatchPolicyFinalV1125Mixin:
     """最终发布前调度权威。"""
 
     build_id = "20260904-r51-preview"
+
+    def init_plugin(self, config: dict = None) -> None:
+        self._dispatch_final_local_v1125 = threading.local()
+        return super().init_plugin(config)
 
     def _airing_gate_v1120(self, subscribe: Any, payload: Dict[str, Any] = None) -> Dict[str, Any]:
         result = dict(super()._airing_gate_v1120(subscribe, payload=payload) or {})
@@ -140,6 +147,41 @@ class GuangYaDispatchPolicyFinalV1125Mixin:
                 force=False,
             )
         return None
+
+    def _refresh_airing_calendar_v1120(self, force: bool = False) -> Dict[str, Any]:
+        """04:10 两阶段运行中暂不做强制日历网络刷新，真正刷新在补漏完成后执行。"""
+        local = getattr(self, "_dispatch_final_local_v1125", None)
+        if (
+            force
+            and local is not None
+            and bool(getattr(local, "defer_daily_calendar", False))
+        ):
+            cached = self.get_data("airing_calendar_v1120") or {}
+            return dict(cached) if isinstance(cached, dict) else {}
+        return dict(super()._refresh_airing_calendar_v1120(force=force) or {})
+
+    def _daily_full_catchup_v1110(self) -> Dict[str, Any]:
+        """严格执行频道 -> 剩余 GYING -> 日历刷新，不让日历网络请求挡在频道前。"""
+        local = getattr(self, "_dispatch_final_local_v1125", None)
+        if local is None:
+            local = threading.local()
+            self._dispatch_final_local_v1125 = local
+        previous = bool(getattr(local, "defer_daily_calendar", False))
+        local.defer_daily_calendar = True
+        try:
+            result = super()._daily_full_catchup_v1110()
+        finally:
+            local.defer_daily_calendar = previous
+
+        try:
+            self._refresh_airing_calendar_v1120(force=True)
+        except Exception as err:
+            self._plugin_log(
+                "WARNING",
+                "【光鸭转存助手】【每日全员复核】两阶段补漏已完成，但末尾更新日历刷新失败：%s",
+                str(err)[:260],
+            )
+        return result
 
 
 __all__ = ["GuangYaDispatchPolicyFinalV1125Mixin"]
