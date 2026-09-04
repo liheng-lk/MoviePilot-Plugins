@@ -88,13 +88,16 @@ def test_failed_wide_query_does_not_claim_nonexistent_bundle_variant():
     assert "successful.append(variant)" not in failure
 
 
-def test_retry_mode_skips_already_attempted_share_ids_without_persisting_them():
+def test_retry_mode_skips_attempted_share_credentials_but_allows_same_share_new_passcode():
     search = _method("_search_viewing_xunlei", "_merge_xunlei_rounds_v1125")
     assert 'seen_identities = set(getattr(retry_local, "seen_identities", set()) or set())' in search
     assert 'identity = str((row or {}).get("share_id") or (row or {}).get("identity") or "").strip()' in search
-    assert "if identity and identity in seen_identities:" in search
-    assert "seen_identities.add(identity)" in search
+    assert 'passcode = str((row or {}).get("passcode") or "").strip()' in search
+    assert "retry_key = (identity, passcode)" in search
+    assert "if identity and retry_key in seen_identities:" in search
+    assert "seen_identities.add((identity, passcode))" in search
     assert "retry_local.seen_identities = seen_identities" in search
+    # 运行时去重只活在当前 dispatch 的 thread-local；不会写入持久状态。
     assert "save_data" not in search
 
 
