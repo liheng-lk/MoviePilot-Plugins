@@ -3,10 +3,15 @@
 该模块只负责自动整理状态，不依赖 MoviePilot 业务对象。扫描器、识别桥和 MoviePilot
 最终回执通过同一套原子状态转换协作，避免 ``seen/pending`` 的读改写竞态，也避免
 “已经进入队列”被误当成“已经整理完成”。
+
+v3.6.14 起状态事务采用 dirty-write：仍在同一把锁内完成 read/modify/compare/write，
+但 callback 没有改变规范化状态时不再整份重写 JSON。旧/非规范 schema 首次 mutate 仍会
+按原语义写回规范化结构，因此只优化稳定运行期的空写，不改变迁移和状态转换行为。
 """
 
 from __future__ import annotations
 
+import copy
 import threading
 import time
 from typing import Any, Callable, Dict, Iterable, Optional
@@ -60,11 +65,20 @@ class OrganizerStateStore:
         return normalized
 
     def mutate(self, callback: Callable[[Dict[str, Any]], Any]) -> Any:
-        """在同一把锁内完成读取、修改和持久化。"""
+        """锁内原子事务；仅状态真实变化或底层数据尚未规范化时持久化。"""
         with self._lock:
-            state = self.normalize(self._read(self._key))
+            # backend 可能返回其内部对象本身。先 deepcopy，避免 callback 修改嵌套 row 时
+            # 连带改动“读取前快照”，导致 dirty 比较失真。
+            raw = copy.deepcopy(self._read(self._key))
+            state = self.normalize(raw)
+            before = copy.deepcopy(state)
+            # 保留旧 mutate 的规范化副作用：旧/残缺 schema 即使 callback 不改状态，
+            # 第一次仍会写成标准 schema v3；已经规范化的数据才有资格走零写入。
+            canonical_dirty = raw != before
             result = callback(state)
-            self._write(self._key, self.normalize(state))
+            after = self.normalize(state)
+            if canonical_dirty or after != before:
+                self._write(self._key, after)
             return result
 
     @staticmethod

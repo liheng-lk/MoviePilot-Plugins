@@ -18,12 +18,14 @@ OrganizerStateStore = module.OrganizerStateStore
 class MemoryBackend:
     def __init__(self, initial=None):
         self.data = {"state": initial or {}}
+        self.write_count = 0
 
     def read(self, key):
         return self.data.get(key)
 
     def write(self, key, value):
         self.data[key] = value
+        self.write_count += 1
 
 
 class OrganizerStateStoreTest(unittest.TestCase):
@@ -98,6 +100,107 @@ class OrganizerStateStoreTest(unittest.TestCase):
         self.assertEqual(store.stats()["completed"], 1)
         store.reconcile_inventory([], truncated=False)
         self.assertEqual(store.stats()["completed"], 0)
+
+    def test_v3614_completed_classification_is_read_only_after_state_is_canonical(self):
+        store, backend = self.make_store({"schema_version": 3})
+        store.mark_completed(path="/TV/a.mkv", fingerprint="fp")
+        backend.write_count = 0
+        phase = store.classify(
+            path="/TV/a.mkv",
+            fingerprint="fp",
+            now=100,
+            stability_seconds=0,
+            inflight_lease_seconds=1800,
+        )
+        self.assertEqual(phase, "completed")
+        self.assertEqual(backend.write_count, 0)
+
+    def test_v3614_waiting_phases_do_not_rewrite_unchanged_state(self):
+        store, backend = self.make_store({"schema_version": 3})
+
+        # stabilizing: first classify creates the row; second classify is a pure read.
+        store.classify(
+            path="/TV/stable.mkv",
+            fingerprint="fp-s",
+            now=100,
+            stability_seconds=30,
+            inflight_lease_seconds=1800,
+        )
+        backend.write_count = 0
+        self.assertEqual(
+            store.classify(
+                path="/TV/stable.mkv",
+                fingerprint="fp-s",
+                now=110,
+                stability_seconds=30,
+                inflight_lease_seconds=1800,
+            ),
+            "stabilizing",
+        )
+        self.assertEqual(backend.write_count, 0)
+
+        # retry_wait: waiting for retry_at is also a pure classification.
+        store.mark_submitting(path="/TV/retry.mkv", fingerprint="fp-r", now=100)
+        store.mark_failed(path="/TV/retry.mkv", fingerprint="fp-r", now=101, reason="network")
+        backend.write_count = 0
+        self.assertEqual(
+            store.classify(
+                path="/TV/retry.mkv",
+                fingerprint="fp-r",
+                now=120,
+                stability_seconds=0,
+                inflight_lease_seconds=1800,
+            ),
+            "retry_wait",
+        )
+        self.assertEqual(backend.write_count, 0)
+
+        # blocked before recheck_at must not rewrite the same row every scan.
+        store.mark_blocked(path="/TV/blocked.mkv", fingerprint="fp-b", reason="retry exhausted", now=100)
+        backend.write_count = 0
+        self.assertEqual(
+            store.classify(
+                path="/TV/blocked.mkv",
+                fingerprint="fp-b",
+                now=200,
+                stability_seconds=0,
+                inflight_lease_seconds=1800,
+            ),
+            "blocked",
+        )
+        self.assertEqual(backend.write_count, 0)
+
+    def test_v3614_real_state_transition_still_writes_once(self):
+        store, backend = self.make_store({"schema_version": 3})
+        store.mark_submitting(path="/TV/a.mkv", fingerprint="fp", now=100)
+        backend.write_count = 0
+        self.assertEqual(
+            store.classify(
+                path="/TV/a.mkv",
+                fingerprint="fp",
+                now=2000,
+                stability_seconds=0,
+                inflight_lease_seconds=1800,
+            ),
+            "ready",
+        )
+        self.assertEqual(backend.write_count, 1)
+        state = store.load()
+        self.assertNotIn("/TV/a.mkv", state["inflight"])
+        self.assertIn("/TV/a.mkv", state["retry"])
+
+    def test_v3614_noncanonical_state_is_still_normalized_once(self):
+        store, backend = self.make_store({"schema_version": 3})
+        backend.write_count = 0
+        # 空 callback 仍应把缺少标准字段的底层 v3 数据规范化一次，保持旧 mutate 兼容语义。
+        store.mutate(lambda state: None)
+        self.assertEqual(backend.write_count, 1)
+        self.assertIn("completed", backend.data["state"])
+        self.assertIn("retry", backend.data["state"])
+
+        backend.write_count = 0
+        store.mutate(lambda state: None)
+        self.assertEqual(backend.write_count, 0)
 
 
 if __name__ == "__main__":
