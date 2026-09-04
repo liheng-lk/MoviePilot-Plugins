@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 
@@ -132,7 +133,8 @@ def test_v3611_wiring_is_lazy_and_after_v369_runtime_hardening():
     assert "from .organizer_durable_retry_v3611 import install_durable_retry_v3611" in init
     assert "install_durable_retry_v3611()" in init
     assert init.index("install_organizer_hardening_v369()") < init.index("install_durable_retry_v3611()")
-    assert '"runtime_hardening": "v3.6.11"' in EXECUTION
+    match = re.search(r'"runtime_hardening": "v3\.6\.(\d+)"', EXECUTION)
+    assert match and int(match.group(1)) >= 11
 
 
 def test_v3611_does_not_add_media_policy():
