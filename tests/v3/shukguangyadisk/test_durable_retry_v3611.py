@@ -119,7 +119,7 @@ def test_admission_conflict_fallback_becomes_persistent_and_only_evidence_change
 def test_bridge_never_directly_mutates_moviepilot_transferpending_database():
     for forbidden in (
         "TransferPendingOper",
-        "transferpending",
+        "from app.db",
         ".discard(",
         "delete_terminal_failure",
         "stage_request_execution_retry",
