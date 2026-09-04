@@ -10,9 +10,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 POLICY = PLUGIN / "dispatch_policy_v1125.py"
+FINAL_POLICY = PLUGIN / "dispatch_policy_final_v1125.py"
 ENTRY = PLUGIN / "__init__.py"
 
 policy_text = POLICY.read_text(encoding="utf-8")
+final_policy_text = FINAL_POLICY.read_text(encoding="utf-8")
 entry_text = ENTRY.read_text(encoding="utf-8")
 
 spec = importlib.util.spec_from_file_location("guangya_dispatch_policy_v1125_test", POLICY)
@@ -136,16 +138,19 @@ def _method(name: str, next_name: str | None = None) -> str:
     return policy_text[start:]
 
 
-def test_v1125_policy_parses_and_sits_between_page_and_weekly_scheduler():
+def test_v1125_policy_parses_and_sits_below_final_authority_above_weekly_scheduler():
     ast.parse(policy_text, filename=str(POLICY))
+    ast.parse(final_policy_text, filename=str(FINAL_POLICY))
     ast.parse(entry_text, filename=str(ENTRY))
     assert "from .dispatch_policy_v1125 import GuangYaDispatchPolicyV1125Mixin" in entry_text
+    assert "from .dispatch_policy_final_v1125 import GuangYaDispatchPolicyFinalV1125Mixin" in entry_text
     start = entry_text.index("class GuangYaTransferAssistant(")
     page = entry_text.index("GuangYaPagePerfV1123Mixin,", start)
+    final_policy = entry_text.index("GuangYaDispatchPolicyFinalV1125Mixin,", start)
     policy = entry_text.index("GuangYaDispatchPolicyV1125Mixin,", start)
     weekly = entry_text.index("GuangYaAiringWeeklyV1121Mixin,", start)
     scheduler = entry_text.index("GuangYaAiringSchedulerV1120Mixin,", start)
-    assert page < policy < weekly < scheduler
+    assert page < final_policy < policy < weekly < scheduler
     assert 'plugin_version = "1.12.4"' in entry_text
     assert 'build_id = "20260904-r50"' in entry_text
     assert 'build_id = "20260904-r51-preview"' in policy_text
