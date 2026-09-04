@@ -4,7 +4,7 @@
 - 数据页打开时不再同步逐个调用 MoviePilot 媒体库缺集检查；优先秒开最近快照，过期后后台刷新。
 - 追剧日历不再依赖 PageRender 无法共享的 VTabs/VWindow v-model，改成浏览器原生 details 日期组，点击即展开。
 - 日期明细使用轻量文本卡片，不在 7 个隐藏日期里预加载整套海报墙，保证切换即时且不拖慢首屏。
-- 配置页的大量订阅不再为每一项实时计算剧集进度，也不再铺满多选 chips。
+- 配置页的大量订阅改成“搜索一个 -> 添加/取消”的固定高度管理器，不再把全部已选订阅渲染进输入框。
 """
 
 from __future__ import annotations
@@ -51,46 +51,134 @@ class GuangYaPagePerfV1123Mixin:
             season_text = f" · S{season:02d}" if season > 0 else ""
             state_text = {"N": "新建", "R": "订阅中", "P": "待定", "S": "暂停"}.get(state, state or "-")
             picked = sid in selected
-            prefix = "✓ " if picked else ""
             rows.append({
-                "title": f"{prefix}{name} ({year}){season_text} · {media_type} · {state_text} · #{sid}",
+                "title": f"{name} ({year}){season_text} · {media_type} · {state_text} · #{sid}",
                 "value": sid,
                 "_picked": picked,
                 "_name": name.casefold(),
             })
+        # 已接管订阅仍排在前面，方便搜索确认；不再把 ✓ 写死在标题里，避免前端切换后出现旧状态文案。
         rows.sort(key=lambda row: (0 if row.get("_picked") else 1, str(row.get("_name") or ""), int(row.get("value") or 0)))
         for row in rows:
             row.pop("_picked", None)
             row.pop("_name", None)
         return rows
 
+    @classmethod
+    def _find_model_node_v1124(cls, node: Any, model: str) -> Optional[Dict[str, Any]]:
+        """返回表单里的真实节点引用；旧 _find_model_props 会 deepcopy，修改副本不会影响最终 UI。"""
+        if isinstance(node, dict):
+            props = node.get("props")
+            if isinstance(props, dict) and str(props.get("model") or "") == model:
+                return node
+            for value in node.values():
+                found = cls._find_model_node_v1124(value, model)
+                if found is not None:
+                    return found
+        elif isinstance(node, list):
+            for value in node:
+                found = cls._find_model_node_v1124(value, model)
+                if found is not None:
+                    return found
+        return None
+
+    def init_plugin(self, config=None):
+        """剔除只用于配置页交互的临时选择值，避免写入插件持久配置。"""
+        if isinstance(config, dict):
+            config = dict(config)
+            config.pop("_subscription_pick_v1124", None)
+        return super().init_plugin(config)
+
     def get_form(self):
         form, defaults = super().get_form()
+        defaults = dict(defaults or {})
+        defaults["_subscription_pick_v1124"] = None
         try:
-            props = self._find_model_props(form, "selected_subscriptions") or {}
-            selected_count = len({
-                int(value)
-                for value in (getattr(self, "_selected_subscriptions", []) or [])
-                if str(value).isdigit() and int(value) > 0
-            })
-            props.update({
-                "label": f"固定接管订阅 · 已选 {selected_count}",
-                "placeholder": "输入剧名 / 年份 / 季 / 订阅 ID 搜索",
-                "multiple": True,
-                # 大量 chips 会把配置页撑得很高；关闭 chips 后保持单行输入和搜索体验。
-                "chips": False,
-                "closable-chips": False,
-                # 已选项仍保留在下拉中，用户可以再次点击单独取消，不必只能“全部清空”。
-                "hide-selected": False,
-                "clearable": True,
-                "auto-select-first": True,
-                "menu-props": {"maxHeight": 420},
-                "no-data-text": "没有匹配的活跃订阅",
-                "hint": (
-                    f"当前固定接管 {selected_count} 个订阅。只列出活跃订阅和已接管订阅；"
-                    "输入关键词搜索添加，已选项带 ✓ 并可再次点击取消，页面不再铺满 chips。"
-                ),
-                "persistent-hint": True,
+            selected_node = self._find_model_node_v1124(form, "selected_subscriptions")
+            if selected_node is None:
+                return form, defaults
+
+            old_props = dict(selected_node.get("props") or {})
+            items = list(old_props.get("items") or self._subscription_options())
+
+            # 不再让 multiple VAutocomplete 直接绑定 selected_subscriptions。
+            # Vuetify 会把每个已选值渲染进输入区，订阅几十个后组件高度会持续增长。
+            # 改为单项搜索暂存 + 本地切换 selected_subscriptions，字段高度与订阅数量彻底解耦。
+            selected_node.clear()
+            selected_node.update({
+                "component": "VCard",
+                "props": {"variant": "outlined", "class": "pa-3"},
+                "content": [
+                    {
+                        "component": "VRow",
+                        "props": {"dense": True, "class": "align-center"},
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "sm": 8},
+                                "content": [{
+                                    "component": "VAutocomplete",
+                                    "props": {
+                                        "model": "_subscription_pick_v1124",
+                                        "label": "搜索要添加 / 取消接管的订阅",
+                                        "placeholder": "剧名 / 年份 / 季 / 订阅 ID",
+                                        "items": items,
+                                        "item-title": "title",
+                                        "item-value": "value",
+                                        "multiple": False,
+                                        "chips": False,
+                                        "clearable": True,
+                                        "auto-select-first": True,
+                                        "density": "compact",
+                                        "hide-details": True,
+                                        "prepend-inner-icon": "mdi-magnify",
+                                        "menu-props": {"maxHeight": 360},
+                                        "no-data-text": "没有匹配的活跃订阅",
+                                    },
+                                }],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "sm": 4},
+                                "content": [{
+                                    "component": "VBtn",
+                                    "props": {
+                                        "block": True,
+                                        "variant": "tonal",
+                                        "color": "primary",
+                                        "prepend-icon": "mdi-swap-horizontal",
+                                        "onClick": (
+                                            "function () { "
+                                            "const id = Number(_subscription_pick_v1124); "
+                                            "if (!id) return; "
+                                            "const source = Array.isArray(selected_subscriptions) ? selected_subscriptions : []; "
+                                            "const current = [...new Set(source.map(Number).filter(v => Number.isFinite(v) && v > 0))]; "
+                                            "selected_subscriptions = current.includes(id) ? current.filter(v => v !== id) : [...current, id]; "
+                                            "_subscription_pick_v1124 = null; "
+                                            "}"
+                                        ),
+                                    },
+                                    "text": "添加 / 取消接管",
+                                }],
+                            },
+                        ],
+                    },
+                    {
+                        "component": "VAlert",
+                        "props": {
+                            "type": "info",
+                            "variant": "tonal",
+                            "density": "compact",
+                            "class": "mt-2",
+                            "text": (
+                                "{{ !_subscription_pick_v1124 ? "
+                                "('已固定接管 ' + (Array.isArray(selected_subscriptions) ? selected_subscriptions.length : 0) + ' 个订阅。搜索一个订阅后点击“添加 / 取消接管”，保存后生效。') : "
+                                "((Array.isArray(selected_subscriptions) ? selected_subscriptions.map(Number) : []).includes(Number(_subscription_pick_v1124)) ? "
+                                "'当前选择已接管：点击按钮将取消接管。' : '当前选择未接管：点击按钮将加入接管。') }}"
+                            ),
+                        },
+                    },
+                ],
             })
         except Exception:
             pass
