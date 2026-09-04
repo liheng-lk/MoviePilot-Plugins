@@ -43,7 +43,7 @@ def test_recall_guard_reuses_single_media_identity_authority_instead_of_copying_
     assert "explicit_years_v1111" in identity_text
     assert "explicit_seasons_v1111" in identity_text
     assert "def _provider_candidate_matches(" not in guard_text
-    search = _method("_search_viewing_xunlei")
+    search = _method("_search_viewing_xunlei", "_viewing_external_candidates_v1113")
     assert "self._provider_candidate_matches(subscribe, row)" in search
     assert "不在这里重写标题/年份/季号规则" in search
 
@@ -57,26 +57,53 @@ def test_explicit_old_episode_cannot_stop_fallback_but_unknown_pack_can():
     assert "reliable_episode_set" in hint
 
 
-def test_fallback_search_bundle_merges_already_fetched_rows_for_later_magnet():
+def test_bundle_contains_only_real_successful_cache_entries_and_preserves_request_time():
     bundle = _method("_promote_search_bundle_v1125", "_search_viewing_xunlei")
-    assert 'cache = getattr(self, "_gying_search_cache", None)' in bundle
     assert 'entry = dict(cache.get(variant) or {})' in bundle
+    assert "if not entry:" in bundle
+    assert 'state.get("success") is False' in bundle
+    assert "valid_variants.append(variant)" in bundle
     assert 'key = (url, passcode)' in bundle
-    assert '"search_bundle_v1125": True' in bundle
-    assert '"bundle_variants": attempted' in bundle
-    assert 'cache[primary] = {' in bundle
+    assert '"bundle_variants": valid_variants' in bundle
     assert '"rows": merged[:800]' in bundle
+    assert '"ts": latest_ts or time.time()' in bundle
+    assert "max(time.time(), latest_ts)" not in bundle
 
-    search = _method("_search_viewing_xunlei")
-    promote = search.index("self._promote_search_bundle_v1125(variants[0], attempted)")
-    return_match = search.index("return matched, last_state", promote)
-    assert promote < return_match
-    assert 'promoted = dict(getattr(self, "_gying_search_cache", {}).get(variants[0]) or {})' in search
-    assert '"bundle_resources"' in search
+
+def test_no_xunlei_match_still_promotes_successful_wide_queries_for_magnet():
+    search = _method("_search_viewing_xunlei", "_viewing_external_candidates_v1113")
+    assert "successful: List[str] = []" in search
+    assert "successful.append(variant)" in search
+    assert "if len(successful) > 1:" in search
+    tail = search.split("# 没有可用迅雷也要保留", 1)[1]
+    assert "self._promote_search_bundle_v1125(variants[0], successful)" in tail
+    assert 'last_state["searched_variants"] = list(successful)' in tail
+
+
+def test_failed_wide_query_does_not_claim_nonexistent_bundle_variant():
+    search = _method("_search_viewing_xunlei", "_viewing_external_candidates_v1113")
+    failure = search.split('if not last_state.get("success"):', 1)[1].split("successful.append(variant)", 1)[0]
+    assert "self._promote_search_bundle_v1125(variants[0], successful)" in failure
+    assert "successful.append(variant)" not in failure
+
+
+def test_magnet_broadening_runs_only_after_strict_external_candidates_are_empty_and_short_circuits():
+    method = _method("_viewing_external_candidates_v1113")
+    first_super = method.index("super()._viewing_external_candidates_v1113(subscribe)")
+    early_return = method.index("if candidates:")
+    variants = method.index("gying_keyword_variants(keyword)")
+    broaden = method.index("for variant in variants[1:]:")
+    second_super = method.index("super()._viewing_external_candidates_v1113(subscribe)", first_super + 1)
+    stop = method.index("if broadened:", second_super)
+    assert first_super < early_return < variants < broaden < second_super < stop
+    assert "_gying_xunlei_precise_variant_v1125(variant)" in method
+    assert "_promote_search_bundle_v1125(variants[0], successful)" in method
+    assert 'final_meta["query_fallback"] = variant' in method
+    assert "return broadened, final_meta" in method
 
 
 def test_fallback_stops_only_after_media_and_missing_coverage_filter():
-    search = _method("_search_viewing_xunlei")
+    search = _method("_search_viewing_xunlei", "_viewing_external_candidates_v1113")
     media_filter = search.index("self._provider_candidate_matches(subscribe, row)")
     coverage_filter = search.index("self._candidate_can_cover_missing_v1125(subscribe, row, missing)")
     stop = search.index("if matched:")
