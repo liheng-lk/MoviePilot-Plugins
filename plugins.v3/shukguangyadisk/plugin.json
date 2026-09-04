@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
   "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
-  "version": "3.6.12",
+  "version": "3.6.13",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v3.6.13": "修复长期运行状态回收只清直属文件导致整目录搬走后 completed/blocked/retry/stabilizing/inflight/ignored 后代状态长期残留的问题；基于 v3.6.9 list_strict 完整分页事实，父目录确认直属子目录消失时安全清理其状态后代，目录自身明确不存在或已变成非目录时整棵状态子树收口；仍存在的子目录与网络/API失败场景全部保留。同时状态回收改为先 load 只读预检，无变化不进入 mutate，消除每成功读取一个目录都整份重写状态 JSON 的空写开销；新增可执行语义回归覆盖缺失子树、存在子树、non-recursive/hidden 目录和零写入。",
     "v3.6.12": "修复非真实等待资源被 member_wait/resource_wait 反复登记 pending、随后又被 v3.6.8 自愈删除的状态抖动；pending 最终落盘前必须由 phases 明确证明 stabilizing/history_wait/retry_wait/inflight，blocked/completed/ignored 等非等待态即时收口，不再每分钟重复写状态/刷自愈日志；真实 retry_wait 与 v3.6.11 durable active task 的 inflight 仍保留原优先回访语义，并增加去重诊断日志定位历史误登记来源。",
     "v3.6.11": "修复 MoviePilot durable 失败任务被自动整理重新构造 planning_input 后触发“整理源文件已按不同输入准入”的问题；失败历史在重试预算内且绑定 transfer_task_id 时，改为通过 TransferExecutionCommand.request_retry 复用原 durable task/checkpoint，不再新建 planning；retry_wait/running/settling 幂等等待，端口暂时失败回插件 retry；源文件版本变化时禁止复用旧冻结计划；既有准入冲突改为按 MoviePilot durable 证据持久阻断/变化后重评，不再每10分钟盲目重撞。",
     "v3.6.10": "修复 MoviePilot 存储快照在光鸭网络/API失败时把 legacy list 假空结果当成真实删除的问题；快照统一使用 v3.6.9 list_strict，子目录读取失败保留上一轮子树，根路径读取失败保留上一轮快照，只有严格读取成功后的空目录或完整分页明确不存在才允许删除快照项。",
