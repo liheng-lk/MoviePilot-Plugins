@@ -40,6 +40,7 @@ from .console_ui_v1100 import GuangYaConsoleUiV1100Mixin
 from .content_resilience_v1105 import GuangYaContentResilienceV1105Mixin
 from .diagnostics_v1100 import GuangYaDiagnosticsV1100Mixin
 from .dispatch_policy_v1125 import GuangYaDispatchPolicyV1125Mixin
+from .dispatch_policy_final_v1125 import GuangYaDispatchPolicyFinalV1125Mixin
 from .episode_fence_final_v1124 import GuangYaEpisodeFenceFinalV1124Mixin
 from .provider_reliability_v1100 import GuangYaProviderReliabilityV1100Mixin
 from .xunlei_reliability_v1100 import GuangYaXunleiReliabilityV1100Mixin
@@ -83,6 +84,7 @@ install_channel_multisource_compat(_legacy_module)
 
 class GuangYaTransferAssistant(
     GuangYaPagePerfV1123Mixin,
+    GuangYaDispatchPolicyFinalV1125Mixin,
     GuangYaDispatchPolicyV1125Mixin,
     GuangYaAiringWeeklyV1121Mixin,
     GuangYaAiringSchedulerV1120Mixin,
