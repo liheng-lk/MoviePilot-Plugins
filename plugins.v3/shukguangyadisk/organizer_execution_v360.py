@@ -4,13 +4,15 @@
 1. 导入阶段先安装 v3.6.9 光鸭路径分页/严格读取，以及 v3.6.10 MoviePilot 存储快照保护；
 2. monitor 初始化时安装 v3.6.9/v3.6.13 连续发现与状态可达性回收、v3.6.11 durable retry、
    v3.6.12 pending 真等待门禁与 v3.6.15 pending 公平调度，再安装 v3.6.0 move 终态修复与
-   v3.6.4 move 失败事务保护；v3.6.17 只读投影 blocked 诊断，不改变调度；
-3. 弱命名 folder envelope 内部逐文件执行时，最终状态统一回到 v3.6 fallback；
-4. 状态 API 最后投影 v3.6 Worker/discovery/blocked 事实，屏蔽旧 v3.5.9 cursor/sticky 的展示残留。
+   v3.6.4 move 失败事务保护；v3.6.17 只读投影 blocked 诊断；
+3. v3.6.18 在私有 Worker 调 MoviePilot 前强制刷新源路径，已明确消失的源直接终态清理，
+   并在“预检后刚好被搬走”的失败竞态里再次复核，禁止把不存在路径重新写入 retry；
+4. 弱命名 folder envelope 内部逐文件执行时，最终状态统一回到 v3.6 fallback；
+5. 状态 API 最后投影 v3.6 Worker/discovery/blocked 事实，屏蔽旧 v3.5.9 cursor/sticky 的展示残留。
 
 普通 MoviePilot 原生目录任务继续走旧安全预览/冲突/season 等 MoviePilot 安全链，不在这里
-重写业务规则。v3.6.9~v3.6.17 只修远端查询、发现调度、状态/快照可靠性、durable 任务身份
-衔接、pending 等待态语义、公平性、长期状态回收效率与只读运行诊断。
+重写业务规则。v3.6.9~v3.6.18 只修远端查询、发现调度、状态/快照可靠性、durable 任务身份
+衔接、pending 等待态语义、公平性、长期状态回收效率与 Worker 执行边界终态。
 """
 
 from __future__ import annotations
@@ -24,6 +26,12 @@ from .guangya_move_transaction_guard_v364 import install_move_transaction_guard_
 from .guangya_path_resolution_v369 import install_path_resolution_v369
 from .organizer_engine_v360 import GuangYaOrganizerEngineV360Mixin, _PAGE_DIR_LIMIT
 from .organizer_folder_batch_v342 import _FolderBatchEnvelope
+from .organizer_source_terminal_v3618 import (
+    SOURCE_MISSING_TERMINAL_V3618,
+    confirm_source_missing_v3618,
+    retire_missing_source_v3618,
+    source_missing_hint_v3618,
+)
 from .storage_snapshot_guard_v3610 import install_storage_snapshot_guard_v3610
 
 
@@ -90,7 +98,16 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
         return result
 
     def _execute_isolated_transfer(self, item: Any) -> Tuple[bool, str]:
-        if not isinstance(item, _FolderBatchEnvelope) or item.directory_mode:
+        if not isinstance(item, _FolderBatchEnvelope):
+            if confirm_source_missing_v3618(self, item):
+                retire_missing_source_v3618(self, item)
+                return True, SOURCE_MISSING_TERMINAL_V3618
+            return super()._execute_isolated_transfer(item)
+
+        if item.directory_mode:
+            if confirm_source_missing_v3618(self, item):
+                retire_missing_source_v3618(self, item, subtree=True)
+                return True, SOURCE_MISSING_TERMINAL_V3618
             # 原生目录模式继续经过现有 loss-guard / conflict / season 等 MoviePilot 安全链。
             return super()._execute_isolated_transfer(item)
 
@@ -103,20 +120,36 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
         )
         for member in item.members:
             try:
-                success, message = super()._execute_isolated_transfer(member)
+                if confirm_source_missing_v3618(self, member):
+                    retire_missing_source_v3618(self, member)
+                    success, message = True, SOURCE_MISSING_TERMINAL_V3618
+                else:
+                    success, message = super()._execute_isolated_transfer(member)
             except Exception as err:  # noqa: BLE001
                 success, message = False, str(err)
             # 每个成员在这里独立收口。TransferComplete/TransferFailed 如果已经先到，v3.6
             # fallback 会看到成员不再 inflight 并保持幂等，不覆盖真实 MP 最终事件。
             self._fallback_terminal_state(member, success=bool(success), message=str(message or ""))
             all_success = all_success and bool(success)
-            if message:
+            if message and message != SOURCE_MISSING_TERMINAL_V3618:
                 messages.append(str(message))
 
         return all_success, "；".join(messages[:3])
 
     def _fallback_terminal_state(self, item: Any, success: bool, message: str) -> None:
-        """弱命名 envelope 已逐成员收口，禁止 Worker 外层再用聚合 True/False 覆盖成员结果。"""
+        """统一收口弱命名成员与执行期间刚消失的源，缺失源绝不重新写 retry。"""
+        if str(message or "") == SOURCE_MISSING_TERMINAL_V3618:
+            return
+
+        # 预检时源仍存在，但在进入 MoviePilot 后刚好被其它流程搬走时，MoviePilot 会返回
+        # “没有找到可整理的媒体文件”。只有再次强制刷新确认真的不存在，才终态清理；
+        # 网络/API失败或媒体过滤仍沿用原失败语义。
+        if not success and source_missing_hint_v3618(message) and confirm_source_missing_v3618(self, item):
+            subtree = bool(isinstance(item, _FolderBatchEnvelope) and item.directory_mode)
+            retire_missing_source_v3618(self, item, subtree=subtree)
+            return
+
+        # 弱命名 envelope 已逐成员收口，禁止 Worker 外层再用聚合 True/False 覆盖成员结果。
         if isinstance(item, _FolderBatchEnvelope) and not item.directory_mode:
             logger.debug(
                 "【光鸭云盘助手】【v3.6.0】【最终结果】弱命名 envelope 已逐成员收口，跳过聚合 fallback: %s",
@@ -151,7 +184,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
             "sticky_tv_group_since": 0,
             "active_resource_tasks": 1 if running_path else 0,
             "worker_queue_depth": int(snapshot.get("queued") or 0),
-            "runtime_hardening": "v3.6.17",
+            "runtime_hardening": "v3.6.18",
         })
 
         if running_path:
