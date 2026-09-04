@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
   "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
-  "version": "3.6.11",
+  "version": "3.6.12",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v3.6.12": "修复非真实等待资源被 member_wait/resource_wait 反复登记 pending、随后又被 v3.6.8 自愈删除的状态抖动；pending 最终落盘前必须由 phases 明确证明 stabilizing/history_wait/retry_wait/inflight，blocked/completed/ignored 等非等待态即时收口，不再每分钟重复写状态/刷自愈日志；真实 retry_wait 与 v3.6.11 durable active task 的 inflight 仍保留原优先回访语义，并增加去重诊断日志定位历史误登记来源。",
     "v3.6.11": "修复 MoviePilot durable 失败任务被自动整理重新构造 planning_input 后触发“整理源文件已按不同输入准入”的问题；失败历史在重试预算内且绑定 transfer_task_id 时，改为通过 TransferExecutionCommand.request_retry 复用原 durable task/checkpoint，不再新建 planning；retry_wait/running/settling 幂等等待，端口暂时失败回插件 retry；源文件版本变化时禁止复用旧冻结计划；既有准入冲突改为按 MoviePilot durable 证据持久阻断/变化后重评，不再每10分钟盲目重撞。",
     "v3.6.10": "修复 MoviePilot 存储快照在光鸭网络/API失败时把 legacy list 假空结果当成真实删除的问题；快照统一使用 v3.6.9 list_strict，子目录读取失败保留上一轮子树，根路径读取失败保留上一轮快照，只有严格读取成功后的空目录或完整分页明确不存在才允许删除快照项。",
     "v3.6.9": "深度运行时硬化：修复路径逐级只读第一页导致大目录第二页以后误报不存在、GuangYaApi 类级缓存跨实例污染、网络/API失败被目录 list 伪装为空目录；known-resource 单轮远端预算从 500 收敛到 24，且每个监控周期在 known 检查后继续推进 50 目录 discovery 游标；成功完整读取目录后仅按直属路径局部回收已消失状态，提升短周期监控灵敏度与长期运行效率。",
