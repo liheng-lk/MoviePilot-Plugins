@@ -1,0 +1,91 @@
+name: Release ShukGuangYaDisk v3.6.10
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/release-shukguangyadisk-v3610.yml
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Bump ShukGuangYaDisk to v3.6.10
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          root = Path('.')
+          plugin = root / 'plugins.v3' / 'shukguangyadisk'
+          old_version = '3.6.9'
+          version = '3.6.10'
+          history = (
+              '修复 MoviePilot 存储快照在光鸭网络/API失败时把 legacy list 假空结果当成真实删除的问题；'
+              '快照统一使用 v3.6.9 list_strict，子目录读取失败保留上一轮子树，根路径读取失败保留上一轮快照，'
+              '只有严格读取成功后的空目录或完整分页明确不存在才允许删除快照项。'
+          )
+
+          local_meta_path = plugin / 'plugin.json'
+          local_meta = json.loads(local_meta_path.read_text(encoding='utf-8'))
+          assert local_meta['version'] == old_version, local_meta['version']
+          local_meta['version'] = version
+          local_meta['history'] = {f'v{version}': history, **dict(local_meta.get('history') or {})}
+          local_meta_path.write_text(json.dumps(local_meta, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          package_path = root / 'package.v3.json'
+          package = json.loads(package_path.read_text(encoding='utf-8'))
+          market = dict(package['ShukGuangYaDisk'])
+          assert market['version'] == old_version, market['version']
+          market['version'] = version
+          market['history'] = {f'v{version}': history, **dict(market.get('history') or {})}
+          package['ShukGuangYaDisk'] = market
+          package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          entry_path = plugin / '__init__.py'
+          entry = entry_path.read_text(encoding='utf-8')
+          old = f'plugin_version = "{old_version}"'
+          assert old in entry
+          entry_path.write_text(entry.replace(old, f'plugin_version = "{version}"', 1), encoding='utf-8')
+
+          remote_path = plugin / 'dist' / 'assets' / 'remoteEntry.js'
+          remote = remote_path.read_text(encoding='utf-8')
+          assert f'?v={old_version}' in remote
+          remote_path.write_text(remote.replace(f'?v={old_version}', f'?v={version}'), encoding='utf-8')
+          PY
+      - name: Validate release contracts
+        run: |
+          python -m compileall -q plugins.v3/shukguangyadisk
+          python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          python tests/v3/shukguangyadisk/run_contract_tests.py
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          root = Path('.')
+          plugin = root / 'plugins.v3' / 'shukguangyadisk'
+          assert json.loads((plugin / 'plugin.json').read_text(encoding='utf-8'))['version'] == '3.6.10'
+          assert json.loads((root / 'package.v3.json').read_text(encoding='utf-8'))['ShukGuangYaDisk']['version'] == '3.6.10'
+          assert 'plugin_version = "3.6.10"' in (plugin / '__init__.py').read_text(encoding='utf-8')
+          assert '?v=3.6.10' in (plugin / 'dist' / 'assets' / 'remoteEntry.js').read_text(encoding='utf-8')
+          PY
+      - name: Commit v3.6.10 release and remove one-time workflow
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/release-shukguangyadisk-v3610.yml
+          git add plugins.v3/shukguangyadisk/plugin.json \
+                  plugins.v3/shukguangyadisk/__init__.py \
+                  plugins.v3/shukguangyadisk/dist/assets/remoteEntry.js \
+                  package.v3.json
+          git commit -m "release(shukguangyadisk): v3.6.10 strict snapshot guard"
+          git push origin main
