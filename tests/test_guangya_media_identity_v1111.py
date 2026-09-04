@@ -21,12 +21,12 @@ class GuangYaMediaIdentityV1111Tests(unittest.TestCase):
             entry.index("GuangYaMediaIdentityGuardV1111Mixin,", start),
             entry.index("GuangYaReleaseV1110Mixin,", start),
         )
-        self.assertIn('plugin_version = "1.12.3"', entry)
-        self.assertIn('build_id = "20260904-r49"', entry)
+        self.assertIn('plugin_version = "1.12.4"', entry)
+        self.assertIn('build_id = "20260904-r50"', entry)
         package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
         local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(package["version"], "1.12.3")
-        self.assertEqual(local["version"], "1.12.3")
+        self.assertEqual(package["version"], "1.12.4")
+        self.assertEqual(local["version"], "1.12.4")
 
     def test_release_name_cleanup_keeps_real_title_and_rejects_related_title(self):
         self.assertTrue(mod.strong_title_match_v1111("The Last of Us", "The.Last.of.Us.2025.S02E03.2160p.WEB-DL.mkv", 2025))
