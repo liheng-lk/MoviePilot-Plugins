@@ -57,17 +57,21 @@ def test_explicit_old_episode_cannot_stop_fallback_but_unknown_pack_can():
     assert "reliable_episode_set" in hint
 
 
-def test_bundle_contains_only_real_successful_cache_entries_and_preserves_request_time():
-    bundle = _method("_promote_search_bundle_v1125", "_search_viewing_xunlei")
+def test_bundle_only_keeps_live_successful_entries_and_never_extends_oldest_member_ttl():
+    bundle = _method("_promote_search_bundle_v1125", "_gying_xunlei_precise_variant_v1125")
     assert 'entry = dict(cache.get(variant) or {})' in bundle
     assert "if not entry:" in bundle
     assert 'state.get("success") is False' in bundle
+    assert "entry_ts = float(entry.get(\"ts\") or 0)" in bundle
+    assert "if entry_ts <= 0 or now - entry_ts >= ttl:" in bundle
     assert "valid_variants.append(variant)" in bundle
+    assert "oldest_ts = entry_ts if oldest_ts <= 0 else min(oldest_ts, entry_ts)" in bundle
     assert 'key = (url, passcode)' in bundle
     assert '"bundle_variants": valid_variants' in bundle
     assert '"rows": merged[:800]' in bundle
-    assert '"ts": latest_ts or time.time()' in bundle
-    assert "max(time.time(), latest_ts)" not in bundle
+    assert '"ts": oldest_ts' in bundle
+    assert "latest_ts" not in bundle
+    assert "max(time.time()" not in bundle
 
 
 def test_no_xunlei_match_still_promotes_successful_wide_queries_for_magnet():
