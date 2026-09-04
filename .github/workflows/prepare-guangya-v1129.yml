@@ -25,10 +25,12 @@ jobs:
           for rel in (
               'tests/test_guangya_receipt_completion_v1124.py',
               'tests/test_guangya_release_v1110.py',
+              'tests/v3/guangyatransferassistant/test_airing_ui_v1120.py',
           ):
               path = Path(rel)
               text = path.read_text(encoding='utf-8')
               text = text.replace('self.assertEqual(mixins[:11], [', 'self.assertEqual(mixins[:12], [', 1)
+              text = text.replace('assert mixins[:12] == [', 'assert mixins[:13] == [', 1)
               anchor = '            "GuangYaPagePerfV1123Mixin",\n            "GuangYaResourceGateV1127Mixin",'
               replacement = '            "GuangYaPagePerfV1123Mixin",\n            "GuangYaMovieIdentityV1129Mixin",\n            "GuangYaResourceGateV1127Mixin",'
               if anchor not in text and replacement not in text:
