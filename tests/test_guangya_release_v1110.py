@@ -17,10 +17,12 @@ class GuangYaReleaseV1110Tests(unittest.TestCase):
         ast.parse(RELEASE)
         self.assertIn("from .release_v1110 import GuangYaReleaseV1110Mixin", ENTRY)
         self.assertIn("from .dispatch_policy_v1125 import GuangYaDispatchPolicyV1125Mixin", ENTRY)
+        self.assertIn("from .dispatch_policy_final_v1125 import GuangYaDispatchPolicyFinalV1125Mixin", ENTRY)
         head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
         mixins = [line.strip().rstrip(",") for line in head.splitlines() if line.strip()]
-        self.assertEqual(mixins[:8], [
+        self.assertEqual(mixins[:9], [
             "GuangYaPagePerfV1123Mixin",
+            "GuangYaDispatchPolicyFinalV1125Mixin",
             "GuangYaDispatchPolicyV1125Mixin",
             "GuangYaAiringWeeklyV1121Mixin",
             "GuangYaAiringSchedulerV1120Mixin",
