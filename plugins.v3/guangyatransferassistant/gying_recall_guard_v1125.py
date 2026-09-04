@@ -4,17 +4,18 @@
 - 标题/别名/年份/季号继续统一调用 v1.11.1 MediaIdentityGuard 的运行时权威；
 - TV 候选若显式标出了集号且与 MoviePilot 当前真实缺集完全不相交，视为不可用；
 - 未标集号的整季包/合集仍保留为潜在可用候选，避免为了扩大关键词无意义增加请求；
-- 关键词降级真正命中后，把本轮已经请求过的各级详情结果合并回原关键词 120 秒缓存，
-  后续 Magnet 可以直接复用同一个 SearchBundle，不再重复打开 downurl；
+- 关键词降级后，把本轮真正成功请求过的各级详情结果合并回原关键词 120 秒缓存，
+  即使没有可用迅雷，后续 Magnet 也能复用已经付出的 downurl 请求；
+- 严格迅雷候选最终秒传失败且严格关键词没有 Magnet/ED2K 时，才按宽关键词逐级补查，
+  每级请求成功后立即重建 SearchBundle，找到可执行外部候选即停止，避免请求风暴；
 - 真正的媒体身份与文件级缺集校验仍由现有迅雷 JSON / Episode Planner 最终确认。
 
-本层是标准 cooperative mixin，不继承旧 Hardening；运行时显式放在 Hardening 前面，
-super() 仅用于无关键词变体时继续走原 GYING 搜索实现。
+本层是标准 cooperative mixin，不继承旧 Hardening；运行时显式放在 Hardening 前面。
 """
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, Iterable, List, Set
+from typing import Any, Dict, Iterable, List, Set, Tuple
 
 from .episode_resolver_v190 import AUTO_SELECT_CONFIDENCE, reliable_episode_set, resolve_episode
 from .gying_hardening_v193 import gying_keyword_variants
@@ -53,30 +54,32 @@ class GuangYaGyingRecallGuardV1125Mixin:
         return not explicit or bool(explicit.intersection(missing))
 
     def _promote_search_bundle_v1125(self, primary: str, variants: Iterable[str]) -> None:
-        """把已实际请求过的降级结果合并到原关键词缓存，供后续 Magnet 无请求复用。"""
+        """只合并真实成功缓存；绝不把失败/不存在的关键词伪装成已请求成功。"""
         cache = getattr(self, "_gying_search_cache", None)
         primary = " ".join(str(primary or "").split())
         if not isinstance(cache, dict) or not primary:
             return
 
-        attempted: List[str] = []
+        valid_variants: List[str] = []
         merged: List[Dict[str, Any]] = []
         seen = set()
         final_state: Dict[str, Any] = {}
         latest_ts = 0.0
         for raw_variant in variants or []:
             variant = " ".join(str(raw_variant or "").split())
-            if not variant or variant in attempted:
+            if not variant or variant in valid_variants:
                 continue
-            attempted.append(variant)
             entry = dict(cache.get(variant) or {})
             if not entry:
                 continue
+            state = entry.get("state")
+            if isinstance(state, dict) and state.get("success") is False:
+                continue
+            valid_variants.append(variant)
             try:
                 latest_ts = max(latest_ts, float(entry.get("ts") or 0))
             except (TypeError, ValueError):
                 pass
-            state = entry.get("state")
             if isinstance(state, dict):
                 final_state = dict(state)
             for raw_row in entry.get("rows") or []:
@@ -91,24 +94,25 @@ class GuangYaGyingRecallGuardV1125Mixin:
                 seen.add(key)
                 merged.append(row)
 
-        if not merged:
+        if not valid_variants:
             return
-        effective = attempted[-1] if attempted else primary
+        effective = valid_variants[-1]
         final_state.update({
             "success": True,
             "query_fallback": effective if effective != primary else final_state.get("query_fallback"),
             "search_bundle_v1125": True,
-            "bundle_variants": attempted,
+            "bundle_variants": valid_variants,
             "bundle_resources": len(merged),
         })
         cache[primary] = {
-            "ts": max(time.time(), latest_ts),
+            # 保留真实请求时间，不能用“合并动作发生时间”延长旧缓存寿命。
+            "ts": latest_ts or time.time(),
             "rows": merged[:800],
             "state": final_state,
         }
 
     def _search_viewing_xunlei(self, keyword: str):
-        """关键词降级必须找到当前媒体且可能覆盖当前缺集的迅雷候选才停止。"""
+        """只有当前媒体且可能覆盖当前缺集的迅雷候选，才能停止关键词降级。"""
         variants = gying_keyword_variants(keyword)
         if not variants:
             return super()._search_viewing_xunlei(keyword)
@@ -120,13 +124,15 @@ class GuangYaGyingRecallGuardV1125Mixin:
             "success": False,
             "message": "观影迅雷搜索失败",
         }
-        attempted: List[str] = []
+        successful: List[str] = []
         for variant in variants:
-            attempted.append(variant)
             candidates, state = self._gying_xunlei_precise_variant_v1125(variant)
             last_state = dict(state or {})
             if not last_state.get("success"):
+                if len(successful) > 1:
+                    self._promote_search_bundle_v1125(variants[0], successful)
                 return candidates, last_state
+            successful.append(variant)
 
             matched: List[Dict[str, Any]] = list(candidates or [])
             missing: Set[int] = set()
@@ -154,15 +160,13 @@ class GuangYaGyingRecallGuardV1125Mixin:
                 last_state["matched_candidates"] = len(matched)
                 last_state["missing_candidates"] = len(matched)
                 if variant != variants[0]:
-                    # 当前轮已经付出的 downurl 请求不能浪费：把严格 + 降级级别的资源合并到
-                    # 原关键词缓存，后续 Magnet 直接读取，无需再请求 GYING。
-                    self._promote_search_bundle_v1125(variants[0], attempted)
+                    self._promote_search_bundle_v1125(variants[0], successful)
                     promoted = dict(getattr(self, "_gying_search_cache", {}).get(variants[0]) or {})
                     promoted_state = promoted.get("state") if isinstance(promoted.get("state"), dict) else {}
                     if promoted_state:
                         last_state.update({
                             "search_bundle_v1125": True,
-                            "bundle_variants": list(promoted_state.get("bundle_variants") or attempted),
+                            "bundle_variants": list(promoted_state.get("bundle_variants") or successful),
                             "bundle_resources": int(promoted_state.get("bundle_resources") or 0),
                         })
                     last_state["query_fallback"] = variant
@@ -172,12 +176,64 @@ class GuangYaGyingRecallGuardV1125Mixin:
                     )
                 return matched, last_state
 
-        last_state["searched_variants"] = variants
+        # 没有可用迅雷也要保留已实际请求过的宽关键词资源；否则 Magnet 会退回只看严格缓存。
+        if len(successful) > 1:
+            self._promote_search_bundle_v1125(variants[0], successful)
+            promoted = dict(getattr(self, "_gying_search_cache", {}).get(variants[0]) or {})
+            promoted_state = promoted.get("state") if isinstance(promoted.get("state"), dict) else {}
+            if promoted_state:
+                last_state.update({
+                    "search_bundle_v1125": True,
+                    "bundle_variants": list(promoted_state.get("bundle_variants") or successful),
+                    "bundle_resources": int(promoted_state.get("bundle_resources") or 0),
+                })
+        last_state["searched_variants"] = list(successful)
         last_state["message"] = (
-            f"观影可访问，但 {len(variants)} 级关键词均没有当前订阅可用迅雷分享"
+            f"观影可访问，但 {len(successful)} 级关键词均没有当前订阅可用迅雷分享"
             if last_state.get("success") else last_state.get("message")
         )
         return [], last_state
+
+    def _viewing_external_candidates_v1113(
+        self,
+        subscribe: Any,
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """严格关键词无可执行 Magnet/ED2K 时，才复用/补查宽关键词，且逐级短路。"""
+        candidates, meta = super()._viewing_external_candidates_v1113(subscribe)
+        candidates = list(candidates or [])
+        meta = dict(meta or {})
+        if candidates:
+            return candidates, meta
+
+        keyword = " ".join(str(self._provider_keyword(subscribe) or "").split())
+        variants = gying_keyword_variants(keyword)
+        if len(variants) <= 1:
+            return candidates, meta
+
+        successful: List[str] = [variants[0]]
+        for variant in variants[1:]:
+            _unused_xunlei, state = self._gying_xunlei_precise_variant_v1125(variant)
+            state = dict(state or {})
+            if not state.get("success"):
+                meta["fallback_error_v1125"] = str(state.get("message") or "宽关键词搜索失败")[:240]
+                break
+            successful.append(variant)
+            self._promote_search_bundle_v1125(variants[0], successful)
+
+            broadened, broadened_meta = super()._viewing_external_candidates_v1113(subscribe)
+            broadened = list(broadened or [])
+            if broadened:
+                final_meta = dict(broadened_meta or {})
+                final_meta["query_fallback"] = variant
+                final_meta["search_bundle_v1125"] = True
+                final_meta["bundle_variants"] = list(successful)
+                return broadened, final_meta
+
+        if len(successful) > 1:
+            self._promote_search_bundle_v1125(variants[0], successful)
+            meta["search_bundle_v1125"] = True
+            meta["bundle_variants"] = list(successful)
+        return candidates, meta
 
 
 __all__ = ["GuangYaGyingRecallGuardV1125Mixin"]
