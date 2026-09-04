@@ -42,7 +42,7 @@ def test_stable_weekday_is_schedule_fact_not_calendar_failure_fallback():
 
 
 def test_daily_automatic_force_records_cooldown_but_manual_force_does_not():
-    claim = _method("_claim_external_search_round_v1114", "_run_reliability_route_batch")
+    claim = _method("_claim_external_search_round_v1114", "_spawn_route_prime")
     record = _method("_record_auto_external_cooldown_v1125", "_claim_external_search_round_v1114")
     assert 'mode == "daily_repair_pull"' in claim
     assert "if not allowed or not force:" in claim
@@ -50,6 +50,16 @@ def test_daily_automatic_force_records_cooldown_but_manual_force_does_not():
     assert 'self.save_data("external_search_guard", state)' in record
     for manual in ("手动", "人工", "立即", "控制台"):
         assert manual not in claim
+
+
+def test_new_subscription_prime_refreshes_channel_once_without_direct_gying_force():
+    prime = _method("_spawn_route_prime", "_run_reliability_route_batch")
+    assert "_cached_matches_for_subscription(subscribe)" in prime
+    assert "self.refresh_channels(force=True)" in prime
+    assert 'trigger="新订阅资源匹配"' in prime
+    assert "仅按更新日历判断是否主动搜索" in prime
+    assert "观影立即搜索" not in prime
+    assert "_run_v1115_mode_batch" not in prime
 
 
 def test_new_subscription_is_channel_first_then_date_gated_non_force_pull():
