@@ -3,12 +3,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Migrate only public release-version expectations generically.
+# Migrate public release-version expectations and final runtime ENTRY build assertions.
 for path in (ROOT / "tests").rglob("test_*.py"):
     text = path.read_text(encoding="utf-8")
     original = text
     text = text.replace('"1.12.5"', '"1.12.6"')
     text = text.replace("'1.12.5'", "'1.12.6'")
+    lines = []
+    for line in text.splitlines(keepends=True):
+        if 'build_id = "20260904-r51"' in line and any(
+            token in line for token in (" in ENTRY", " in entry_text", " in entry", ", self.entry")
+        ):
+            line = line.replace('build_id = "20260904-r51"', 'build_id = "20260904-r52"')
+        lines.append(line)
+    text = "".join(lines)
     if text != original:
         path.write_text(text, encoding="utf-8")
 
@@ -49,16 +57,6 @@ add_fast_recall(
     "mixins[:10]",
     "mixins[:11]",
 )
-
-# Public runtime ENTRY moved to r52.
-for relative in (
-    "tests/test_guangya_episode_fence_v1124.py",
-    "tests/test_guangya_release_v1110.py",
-):
-    path = ROOT / relative
-    text = path.read_text(encoding="utf-8")
-    text = text.replace('build_id = "20260904-r51"', 'build_id = "20260904-r52"')
-    path.write_text(text, encoding="utf-8")
 
 # Historical v1.12.5 implementation files themselves remain r51; only ENTRY is r52.
 recall = ROOT / "tests/v3/guangyatransferassistant/test_gying_recall_guard_v1125.py"
