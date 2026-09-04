@@ -51,6 +51,7 @@ from .gying_failover_v193 import GuangYaGyingFailoverMixin
 from .gying_hardening_v193 import GuangYaGyingHardeningMixin
 from .gying_observability_v1104 import GuangYaGyingObservabilityV1104Mixin
 from .gying_protocol_v1106 import GuangYaGyingProtocolV1106Mixin
+from .gying_recall_guard_v1125 import GuangYaGyingRecallGuardV1125Mixin
 from .gying_runtime_v193 import GuangYaGyingRuntimeMixin
 from .gying_transport_v1108 import GuangYaGyingTransportV1108Mixin
 from .multisource_v180 import GuangYaMultiSourceMixin
@@ -102,6 +103,7 @@ class GuangYaTransferAssistant(
     GuangYaProviderReliabilityV1100Mixin,
     GuangYaXunleiReliabilityV1100Mixin,
     GuangYaConfigUiMixin,
+    GuangYaGyingRecallGuardV1125Mixin,
     GuangYaGyingHardeningMixin,
     GuangYaGyingFailoverMixin,
     GuangYaViewingLoggingV1113Mixin,
