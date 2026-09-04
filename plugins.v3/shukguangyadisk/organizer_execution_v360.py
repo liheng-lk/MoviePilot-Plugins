@@ -1,12 +1,14 @@
 """v3.6.0+：统一执行边界。
 
-该层显式位于插件 MRO 最前面：
-1. 先安装 v3.6.0 move 终态修复，再安装 v3.6.4 move 失败事务保护；
-2. 弱命名 folder envelope 内部逐文件执行时，最终状态统一回到 v3.6 fallback；
-3. 状态 API 最后投影 v3.6 Worker/discovery 事实，屏蔽旧 v3.5.9 cursor/sticky 的展示残留。
+该层显式位于插件 MRO 前部：
+1. 导入阶段先安装 v3.6.9 光鸭路径分页/严格读取基础补丁；
+2. monitor 初始化时安装 v3.6.9 连续发现/状态回收，再安装 v3.6.0 move 终态修复与
+   v3.6.4 move 失败事务保护；
+3. 弱命名 folder envelope 内部逐文件执行时，最终状态统一回到 v3.6 fallback；
+4. 状态 API 最后投影 v3.6 Worker/discovery 事实，屏蔽旧 v3.5.9 cursor/sticky 的展示残留。
 
-普通 MoviePilot 原生目录任务继续走旧安全预览/冲突/season 兼容链，不在这里重写业务规则。
-v3.6.4 只收紧存储失败事务：移动失败先确认/回滚，并阻止不确定文件被失败清理永久删除。
+普通 MoviePilot 原生目录任务继续走旧安全预览/冲突/season 等 MoviePilot 安全链，不在这里
+重写业务规则。v3.6.9 只修远端路径查询、发现调度和持久状态回收。
 """
 
 from __future__ import annotations
@@ -17,16 +19,30 @@ from app.sdk.logging import logger
 
 from .guangya_move_confirmation_v360 import install_move_confirmation_v360
 from .guangya_move_transaction_guard_v364 import install_move_transaction_guard_v364
+from .guangya_path_resolution_v369 import install_path_resolution_v369
 from .organizer_engine_v360 import GuangYaOrganizerEngineV360Mixin, _PAGE_DIR_LIMIT
 from .organizer_folder_batch_v342 import _FolderBatchEnvelope
+
+
+# 存储路径能力必须在插件实例开始 browse/monitor 之前生效；该 installer 只 patch 当前 V3 API，
+# 并且自身幂等，不需要等待 organizer MRO 全部加载完成。
+install_path_resolution_v369()
 
 
 class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
     """3.6 统一 worker 执行、最终状态回写与运行态展示边界。"""
 
     _v360_storage_patch_ready: bool = False
+    _v369_monitor_patch_ready: bool = False
 
     def init_organizer_monitor(self) -> None:
+        if not self._v369_monitor_patch_ready:
+            # 延迟到运行期导入，避免插件 __init__ 尚在装配 MRO 时让 v3.6.9 反向提前导入
+            # organizer_monitor_v366。此时所有类已经定义完成，patch 安装安全且可重复。
+            from .organizer_hardening_v369 import install_organizer_hardening_v369
+
+            install_organizer_hardening_v369()
+            self._v369_monitor_patch_ready = True
         if not self._v360_storage_patch_ready:
             # 安装顺序不可交换：v3.6.4 必须包在 v3.6.0 最终 move_item 外层，才能在
             # MoviePilot 收到失败前进行延长确认、回滚和 delete/purge 保护。
@@ -97,6 +113,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
             "sticky_tv_group_since": 0,
             "active_resource_tasks": 1 if running_path else 0,
             "worker_queue_depth": int(snapshot.get("queued") or 0),
+            "runtime_hardening": "v3.6.9",
         })
 
         if running_path:
