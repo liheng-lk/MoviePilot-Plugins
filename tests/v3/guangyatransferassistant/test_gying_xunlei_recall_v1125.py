@@ -39,6 +39,9 @@ def _rank_namespace():
         "Iterable": Iterable,
         "List": List,
         "Tuple": Tuple,
+        "_SEASON_EVIDENCE_RE_V1125": re.compile(
+            r"(?i)(?:\bS(?:eason)?[ ._-]*0*(\d{1,2})(?=[^0-9]|$)|第\s*0*(\d{1,2})\s*季)"
+        ),
     }
     exec(compile(module, str(HARDENING), "exec"), ns)
     return ns
@@ -70,6 +73,42 @@ def test_rank_moves_target_beyond_first_twenty_to_front():
     cards.append({"title": "完美世界", "year": "2021", "info": "S01", "type": "tv", "id": "target"})
     ranked = rank("完美世界 2021 S01", cards)
     assert ranked[0]["id"] == "target"
+
+
+def test_numeric_title_is_not_misread_as_metadata_year():
+    ns = _rank_namespace()
+    identity = ns["_gying_query_identity_v1125"]
+    assert identity("1984 2025 S01") == ("1984", "2025", 1)
+    assert identity("1899 2022 S01") == ("1899", "2022", 1)
+    assert identity("1984") == ("1984", "", 0)
+    assert identity("1899") == ("1899", "", 0)
+
+
+def test_numeric_title_correct_release_year_outranks_wrong_year_card():
+    rank = _rank_namespace()["rank_gying_cards_v1125"]
+    cards = [
+        {"title": "1984", "year": "1984", "info": "S01", "id": "wrong"},
+        {"title": "1984", "year": "2025", "info": "S01", "id": "right"},
+    ]
+    assert rank("1984 2025 S01", cards)[0]["id"] == "right"
+
+
+def test_s01e02_is_valid_season_evidence_for_ranking():
+    rank = _rank_namespace()["rank_gying_cards_v1125"]
+    cards = [
+        {"title": "示例剧", "year": "2026", "info": "S02E02", "id": "wrong-season"},
+        {"title": "示例剧", "year": "2026", "info": "S01E02", "id": "right-season"},
+    ]
+    assert rank("示例剧 2026 S01", cards)[0]["id"] == "right-season"
+
+
+def test_ranking_does_not_treat_title_digits_as_year_evidence():
+    score = text.split("def _gying_card_score_v1125", 1)[1].split("def rank_gying_cards_v1125", 1)[0]
+    assert "raw_info" in score
+    assert "year_evidence" in score
+    assert 're.fullmatch(r"(?:19|20)\\d{2}", actual_year)' in score
+    year_part = score.split("year_evidence =", 1)[1].split("seasons =", 1)[0]
+    assert "raw_title" not in year_part
 
 
 def test_one_downurl_response_keeps_more_than_generic_twenty_xunlei_candidates():
