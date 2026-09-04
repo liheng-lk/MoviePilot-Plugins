@@ -25,7 +25,7 @@ from .gying_protocol_v1106 import extract_downlist_v1106, extract_panlist_v1106
 class GuangYaGyingObservabilityV1104Mixin:
     """给最终 GYING 调用链补齐可判断的过程日志与最近运行状态。"""
 
-    build_id = "20260904-r51-preview"
+    build_id = "20260904-r51"
 
     @staticmethod
     def _gying_node_label(value: Any) -> str:

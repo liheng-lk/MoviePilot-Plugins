@@ -16,9 +16,9 @@ def test_v1124_page_layer_parses_and_is_outermost():
     assert "from .page_perf_v1123 import GuangYaPagePerfV1123Mixin" in ENTRY
     start = ENTRY.index("class GuangYaTransferAssistant(")
     assert ENTRY.index("GuangYaPagePerfV1123Mixin,", start) < ENTRY.index("GuangYaAiringWeeklyV1121Mixin,", start)
-    assert 'build_id = "20260904-r50-preview"' in PATCH
-    assert 'plugin_version = "1.12.4"' in ENTRY
-    assert 'build_id = "20260904-r50"' in ENTRY
+    assert 'build_id = "20260904-r51"' in PATCH
+    assert 'plugin_version = "1.12.5"' in ENTRY
+    assert 'build_id = "20260904-r51"' in ENTRY
 
 
 def test_data_page_reads_snapshot_first_and_moves_media_library_sync_to_background():

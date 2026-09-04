@@ -28,7 +28,7 @@ def test_recall_guard_parses_and_is_cooperative_above_existing_hardening():
     ast.parse(entry_text, filename=str(ENTRY))
     assert "class GuangYaGyingRecallGuardV1125Mixin:" in guard_text
     assert "GuangYaGyingHardeningMixin," not in guard_text
-    assert 'build_id = "20260904-r51-preview"' in guard_text
+    assert 'build_id = "20260904-r51"' in guard_text
     start = entry_text.index("class GuangYaTransferAssistant(")
     identity = entry_text.index("GuangYaMediaIdentityGuardV1111Mixin,", start)
     guard = entry_text.index("GuangYaGyingRecallGuardV1125Mixin,", start)

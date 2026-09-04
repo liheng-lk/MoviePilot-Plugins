@@ -33,7 +33,7 @@ from typing import Any, Dict, Iterable, List
 class GuangYaDispatchPolicyFinalV1125Mixin:
     """最终发布前调度权威。"""
 
-    build_id = "20260904-r51-preview"
+    build_id = "20260904-r51"
     _calendar_failure_backoff_seconds_v1125 = 60
     _async_trigger_bucket_limit_v1125 = 8
     _hourly_due_cooldown_seconds_v1125 = 60 * 60

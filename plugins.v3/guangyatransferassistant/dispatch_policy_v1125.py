@@ -1,4 +1,4 @@
-"""v1.12.5 预览：频道 Push / 观影 Pull 调度收口层。
+"""v1.12.5：频道 Push / 观影 Pull 调度收口层。
 
 原则：
 - 5 分钟 tick 只负责频道增量，不再同时启动主动 GYING；
@@ -25,7 +25,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 class GuangYaDispatchPolicyV1125Mixin:
     """最终触发策略：频道被动消费、日历主动拉取、每日两阶段修复。"""
 
-    build_id = "20260904-r51-preview"
+    build_id = "20260904-r51"
 
     def init_plugin(self, config: dict = None) -> None:
         # 两类线程局部状态分别保护：
