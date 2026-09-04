@@ -54,7 +54,7 @@ def test_daily_automatic_force_records_cooldown_but_manual_force_does_not():
 
 
 def test_new_subscription_prime_refreshes_channel_once_without_direct_gying_force():
-    prime = _method("_spawn_route_prime", "_run_reliability_route_batch")
+    prime = _method("_spawn_route_prime", "_queue_async_route_check")
     assert "_cached_matches_for_subscription(subscribe)" in prime
     assert "self.refresh_channels(force=True)" in prime
     assert 'trigger="新订阅资源匹配"' in prime
@@ -63,9 +63,52 @@ def test_new_subscription_prime_refreshes_channel_once_without_direct_gying_forc
     assert "_run_v1115_mode_batch" not in prime
 
 
+def test_async_queue_keeps_real_trigger_per_subscription_after_governance_filter_prediction():
+    queue = _method("_queue_async_route_check", "_ordered_async_triggers_v1125")
+    assert "accepted = set(ids)" in queue
+    assert 'getattr(self, "_automatic_trigger_v1114", None)' in queue
+    assert 'getattr(self, "_manual_trigger_v1114", None)' in queue
+    assert "accepted -= active" in queue
+    assert "_dispatch_triggers_v1125" in queue
+    assert 'if text == "后台合并补偿" and bucket:' in queue
+    assert "return super()._queue_async_route_check(ids, trigger=trigger)" in queue
+
+
+def test_async_trigger_order_is_channel_before_active_pull_and_prime_collapses_duplicate_auto_events():
+    order = _method("_ordered_async_triggers_v1125", "_take_async_route_triggers_v1125")
+    assert '"新订阅资源匹配" in value' in order
+    assert '"频道故障自动恢复" in value' in order
+    assert '"频道新增资源" in value' in order
+    assert '"观影定时轮询" in value' in order
+    assert "ordered.extend(active)" in order
+    assert order.index("ordered.append(recovery)") < order.index("ordered.extend(active)")
+    assert order.index("ordered.extend(channel)") < order.index("ordered.extend(active)")
+
+
+def test_worker_batch_is_regrouped_by_saved_trigger_instead_of_first_worker_trigger():
+    run = _method("_run_reliability_route_batch", "_calendar_failure_payload_v1125")
+    assert "trigger_map = self._take_async_route_triggers_v1125(ids, trigger)" in run
+    assert "groups: Dict[str, List[int]] = {}" in run
+    assert "groups.setdefault" in run
+    assert "_async_trigger_priority_v1125" in run
+    assert "self._run_dispatch_trigger_v1125(group_ids, value)" in run
+    # worker 传入的 fallback trigger 只能补缺，不能直接覆盖所有 ID 的来源语义。
+    assert "return super()._run_reliability_route_batch(batch, trigger)" not in run
+
+
+def test_channel_recovery_is_channel_only_and_never_becomes_active_gying_pull():
+    dispatch = _method("_run_dispatch_trigger_v1125", "_run_reliability_route_batch")
+    recovery = dispatch.split('if "频道故障自动恢复" in text:', 1)[1].split('if "新订阅资源匹配" in text:', 1)[0]
+    assert "self.refresh_channels(force=True)" in recovery
+    assert '"channel_event"' in recovery
+    assert "force=False" in recovery
+    assert "_smart_pull_due_ids_v1125" not in recovery
+    assert '"airing_pull"' not in recovery
+
+
 def test_new_subscription_is_channel_first_then_date_gated_non_force_pull():
-    method = _method("_run_reliability_route_batch", "_calendar_failure_payload_v1125")
-    assert 'if "新订阅资源匹配" not in text:' in method
+    dispatch = _method("_run_dispatch_trigger_v1125", "_run_reliability_route_batch")
+    method = dispatch.split('if "新订阅资源匹配" in text:', 1)[1]
     channel = method.index('"新订阅资源匹配·频道阶段"')
     selector = method.index("_smart_pull_due_ids_v1125()")
     pull = method.index('"新订阅资源匹配·更新日历主动拉取"')
