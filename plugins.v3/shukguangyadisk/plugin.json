@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
   "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
-  "version": "3.6.17",
+  "version": "3.6.18",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v3.6.18": "修复源文件/资源目录已被搬走或删除后仍被私有 Worker 反复送入 MoviePilot、继而出现“目录或文件不存在/没有找到可整理的媒体文件”并重新进入 retry 的循环：Worker 调 MoviePilot 前使用 v3.6.9 refresh_item 强制失效缓存并远端复核，只有明确不存在才终态清理对应 organizer 状态；网络/API异常绝不当作删除。同时覆盖预检后刚好被搬走的竞态，失败消息仅作为 hint，必须二次远端确认后才收口；文件只清自身状态，目录只清确认缺失子树，pending 交回 v3.6.8 按剩余直属等待事实自愈，不修改 MoviePilot durable task 或媒体业务规则。",
     "v3.6.17": "增加 blocked 只读诊断，定位仍存在但不应盲目清理的安全阻断成员：启动日志与状态 API 展示实际文件路径、阻断原因、是否为 v3.6.11 persistent admission、定时复核是否到期以及 MoviePilot history/task/revision 身份；最多展示 12 条。task id 缩短显示，reason 中 access/refresh token、Authorization/Bearer 自动遮罩。诊断严格只读 OrganizerStateStore，不调用 mutate/clear_blocked/mark_*，不修改 scheduler、durable retry、MoviePilot 媒体业务规则或文件操作。",
     "v3.6.16": "完善 v3.6.15 retry/pending 可观测性：状态页与自检直接展示重试总数、退避中、已到期和最大尝试次数，retry_due 大于 0 时明确提示已到期待重试，并兼容旧后端只有 state_retry_wait/retry_wait 的返回。同时移除 v3.5.x 已过时的“目录粘性事务/当前剧集目录”前端文案，改为当前单 Worker 串行、等待资源优先复查、无活动执行时同一监控周期继续 known/discovery 的真实语义；不修改后端调度、持久状态 schema 或 MoviePilot 媒体业务规则。",
     "v3.6.15": "修复真实等待 pending 仍会独占整个监控 tick、导致 known scan/continuous discovery 被长期饿死的问题：stabilizing/retry_wait/history_wait 等无活动执行等待态优先复查后，在同一 tick 继续既有 v3.6.9 known/discovery；scheduled、inflight/durable、目录/API失败与 worker_not_accept 仍保持单资源/故障阻断。retry 状态统计拆分 retry_total、未到期 retry_wait 与已到期 retry_due，并显示最大 attempts，避免将全部 retry 行误报为退避等待；不修改持久状态 schema、MoviePilot history/durable 判定或媒体业务规则。",

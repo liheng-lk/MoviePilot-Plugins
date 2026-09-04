@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / 'plugins.v3' / 'shukguangyadisk'
-FLOOR = (3, 6, 17)
+FLOOR = (3, 6, 18)
 
 
 def _json(path: Path):
