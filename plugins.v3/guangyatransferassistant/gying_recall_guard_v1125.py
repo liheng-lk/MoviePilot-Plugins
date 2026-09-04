@@ -31,7 +31,7 @@ from .gying_hardening_v193 import gying_keyword_variants
 class GuangYaGyingRecallGuardV1125Mixin:
     """最终迅雷召回门禁：预筛、真实执行失败后的渐进降级、SearchBundle 复用。"""
 
-    build_id = "20260904-r51-preview"
+    build_id = "20260904-r51"
 
     def _recall_retry_local_v1125(self):
         local = getattr(self, "_gying_recall_retry_local_v1125", None)

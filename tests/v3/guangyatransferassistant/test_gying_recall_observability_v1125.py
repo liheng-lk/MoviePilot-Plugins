@@ -15,7 +15,7 @@ def _method(name: str, next_name: str) -> str:
 
 def test_v1125_observability_parses_and_marks_preview_build():
     ast.parse(OBS)
-    assert 'build_id = "20260904-r51-preview"' in OBS
+    assert 'build_id = "20260904-r51"' in OBS
     assert "当前订阅召回" in OBS
 
 

@@ -213,7 +213,7 @@ def _xunlei_candidates_from_rows_v1125(rows: Iterable[Dict[str, Any]], limit: in
 class GuangYaGyingHardeningMixin:
     """最终 GYING 节点身份、Cookie 边界和搜索降级策略。"""
 
-    build_id = "20260904-r51-preview"
+    build_id = "20260904-r51"
 
     def init_plugin(self, config: dict = None) -> None:
         config = dict(config or {})

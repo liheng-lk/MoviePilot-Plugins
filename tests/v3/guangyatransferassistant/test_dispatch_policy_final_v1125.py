@@ -25,7 +25,7 @@ def test_final_dispatch_parses_and_is_cooperative_runtime_authority():
     ast.parse(entry_text, filename=str(ENTRY))
     assert "class GuangYaDispatchPolicyFinalV1125Mixin:" in final_text
     assert "_DispatchPolicyPreviewV1125" not in final_text
-    assert 'build_id = "20260904-r51-preview"' in final_text
+    assert 'build_id = "20260904-r51"' in final_text
     start = entry_text.index("class GuangYaTransferAssistant(")
     final_pos = entry_text.index("GuangYaDispatchPolicyFinalV1125Mixin,", start)
     preview_pos = entry_text.index("GuangYaDispatchPolicyV1125Mixin,", start)
