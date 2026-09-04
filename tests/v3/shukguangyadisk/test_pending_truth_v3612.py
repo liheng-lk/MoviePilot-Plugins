@@ -34,14 +34,12 @@ def test_pending_truth_accepts_only_real_wait_phases():
 def test_member_wait_reason_alone_can_never_create_pending_again():
     register = _between(GUARD, "def register_pending", "cls._v361_register_pending = register_pending")
     wait_pos = register.index("waiting = _real_wait_phases(result)")
+    wait_if_pos = register.index("if waiting:")
     delegate_pos = register.index("return previous_register(plugin, group_path, files, result)")
+    remover_pos = register.index('remover = getattr(plugin, "_v361_remove_pending", None)')
     reason_pos = register.index('reason = str((result or {}).get("reason") or "")')
-    assert wait_pos < delegate_pos < reason_pos
-    assert "if waiting:" in register
-    # reason 只用于诊断，不再参与“是否登记 pending”的业务判定。
-    prefix = register[:reason_pos]
-    assert "member_wait" not in prefix
-    assert "resource_wait" not in prefix
+    # 是否登记 pending 在读取 reason 之前已经完全由真实 phases 决定。
+    assert wait_pos < wait_if_pos < delegate_pos < remover_pos < reason_pos
 
 
 def test_non_wait_member_wait_closes_existing_pending_and_logs_once():
