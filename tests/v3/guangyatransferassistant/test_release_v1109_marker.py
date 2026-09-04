@@ -5,5 +5,5 @@ ENTRY = (ROOT / "plugins.v3" / "guangyatransferassistant" / "__init__.py").read_
 
 
 def test_v1109_release_marker():
-    assert 'plugin_version = "1.12.5"' in ENTRY
-    assert 'build_id = "20260904-r51"' in ENTRY
+    assert 'plugin_version = "1.12.6"' in ENTRY
+    assert 'build_id = "20260904-r52"' in ENTRY

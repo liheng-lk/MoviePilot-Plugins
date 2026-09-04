@@ -20,8 +20,9 @@ class GuangYaReleaseV1110Tests(unittest.TestCase):
         self.assertIn("from .dispatch_policy_final_v1125 import GuangYaDispatchPolicyFinalV1125Mixin", ENTRY)
         head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
         mixins = [line.strip().rstrip(",") for line in head.splitlines() if line.strip()]
-        self.assertEqual(mixins[:9], [
+        self.assertEqual(mixins[:10], [
             "GuangYaPagePerfV1123Mixin",
+            "GuangYaFastRecallV1126Mixin",
             "GuangYaDispatchPolicyFinalV1125Mixin",
             "GuangYaDispatchPolicyV1125Mixin",
             "GuangYaAiringWeeklyV1121Mixin",
@@ -31,8 +32,8 @@ class GuangYaReleaseV1110Tests(unittest.TestCase):
             "GuangYaEpisodeFenceFinalV1124Mixin",
             "GuangYaReceiptCompletionV1124Mixin",
         ])
-        self.assertIn('plugin_version = "1.12.5"', ENTRY)
-        self.assertIn('build_id = "20260904-r51"', ENTRY)
+        self.assertIn('plugin_version = "1.12.6"', ENTRY)
+        self.assertIn('build_id = "20260904-r52"', ENTRY)
 
     def test_daily_full_catchup_is_independent_of_new_channel_messages(self):
         self.assertIn('"id": "GuangYaTransferAssistantDailyCatchup"', RELEASE)
@@ -62,8 +63,8 @@ class GuangYaReleaseV1110Tests(unittest.TestCase):
     def test_calendar_page_and_current_metadata_are_published(self):
         self.assertIn("追更日历与每日补漏", RELEASE)
         package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
-        self.assertEqual(package["GuangYaTransferAssistant"]["version"], "1.12.5")
-        self.assertEqual(PLUGIN_JSON["version"], "1.12.5")
+        self.assertEqual(package["GuangYaTransferAssistant"]["version"], "1.12.6")
+        self.assertEqual(PLUGIN_JSON["version"], "1.12.6")
         self.assertIn("v1.12.5", package["GuangYaTransferAssistant"]["history"])
         self.assertIn("v1.12.3", package["GuangYaTransferAssistant"]["history"])
         self.assertIn("v1.12.2", package["GuangYaTransferAssistant"]["history"])

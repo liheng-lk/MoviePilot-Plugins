@@ -1,4 +1,4 @@
-"""光鸭转存助手 v1.12.5 运行入口。
+"""光鸭转存助手 v1.12.6 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
@@ -14,6 +14,7 @@ v1.12.2 收口追剧三态与来源轮询：日历仅显示已入库/转存中/�
 v1.12.3 优化大订阅页面体验：数据页优先读取周快照并后台校准媒体库，7 天日期可点击/滑动查看对应剧集；配置页改为轻量搜索选择器，不再逐订阅计算进度或铺满 chips。
 v1.12.4 修复实机交互：日期详情改为浏览器本地即时展开；固定接管订阅改为固定高度的单项搜索添加/取消管理器，不再随已选数量无限增长。
 v1.12.5 完成 Push/Pull 调度收口：5 分钟频道 Push 只消费已到达资源；每小时 AiringDue 只处理今日到期且仍未覆盖的媒体，并按观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K 跑完整来源链；同媒体小时复查窗口固定 60 分钟；04:10 每日全员复核继续先频道、再对真实剩余缺口强制补漏；稳定星期、日历故障退避、并发 trigger 与跨来源终止栅栏同步收口。
+v1.12.6 快速追更：当天应播 TV/动漫的 AiringDue 改为每 10 分钟唤醒并使用独立 10 分钟主动检索窗口；电影继续 60 分钟；命中、已入库或在途后立即退出快追。
 
 最终优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。
 后续 ResourceGroup 内部仍保持：光鸭直接转存 > Magnet > ED2K。
@@ -42,6 +43,7 @@ from .diagnostics_v1100 import GuangYaDiagnosticsV1100Mixin
 from .dispatch_policy_v1125 import GuangYaDispatchPolicyV1125Mixin
 from .dispatch_policy_final_v1125 import GuangYaDispatchPolicyFinalV1125Mixin
 from .episode_fence_final_v1124 import GuangYaEpisodeFenceFinalV1124Mixin
+from .fast_recall_v1126 import GuangYaFastRecallV1126Mixin
 from .provider_reliability_v1100 import GuangYaProviderReliabilityV1100Mixin
 from .xunlei_reliability_v1100 import GuangYaXunleiReliabilityV1100Mixin
 from .config_ui_v192 import GuangYaConfigUiMixin
@@ -84,6 +86,7 @@ install_channel_multisource_compat(_legacy_module)
 
 class GuangYaTransferAssistant(
     GuangYaPagePerfV1123Mixin,
+    GuangYaFastRecallV1126Mixin,
     GuangYaDispatchPolicyFinalV1125Mixin,
     GuangYaDispatchPolicyV1125Mixin,
     GuangYaAiringWeeklyV1121Mixin,
@@ -126,8 +129,8 @@ class GuangYaTransferAssistant(
 ):
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
 
-    plugin_version = "1.12.5"
-    build_id = "20260904-r51"
+    plugin_version = "1.12.6"
+    build_id = "20260904-r52"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
