@@ -2,21 +2,23 @@
 
 原则：
 - 5 分钟 tick 只负责频道增量，不再同时启动主动 GYING；
-- 频道是被动到达的资源，命中真实缺集后不受播出日期门禁限制，但仍受媒体身份、
-  reservation/source claim、episode fence 与质量门禁限制；频道批次继续禁止主动 GYING；
+- 频道是被动到达的资源，命中真实缺集后不受播出日期门禁限制，也不依赖日历服务可用，
+  但仍受媒体身份、reservation/source claim、episode fence 与质量门禁限制；频道批次继续禁止主动 GYING；
 - 主动 GYING 只由更新日历服务统一驱动：TV/动漫先按 due_uncovered 过滤，电影按外部
   检索冷却参与；日历不可用时才退回旧的“真实缺集 + 冷却”语义；
 - 每天 04:10 全员复核改为两阶段：先用频道缓存/现查补全，再只对仍未覆盖且不在途的
-  订阅做一次强制 GYING 补漏，避免频道已有资源时仍先打观影服务器。
+  订阅做一次强制 GYING 补漏，避免频道已有资源时仍先打观影服务器；
+- due scope 改为线程局部上下文，避免频道、日历、人工任务并发处理不同订阅时互相串集数范围。
 
-这个层只改“什么时候触发哪个来源”，不改变迅雷 JSON、媒体身份、资源质量、Episode
-Resolver、光鸭转存/cloudcollection 与 MoviePilot 完成事实的既有实现。
+这个层只改“什么时候触发哪个来源”和调度上下文隔离，不改变迅雷 JSON、媒体身份、资源质量、
+Episode Resolver、光鸭转存/cloudcollection 与 MoviePilot 完成事实的既有实现。
 """
 from __future__ import annotations
 
 import datetime
 import threading
 import time
+from contextlib import contextmanager
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 
@@ -26,9 +28,11 @@ class GuangYaDispatchPolicyV1125Mixin:
     build_id = "20260904-r51-preview"
 
     def init_plugin(self, config: dict = None) -> None:
-        # 仅用于抑制 lower channel-event tick 中的旧 viewing poll；使用 thread-local，
-        # 避免 5 分钟频道线程短暂运行时误伤并发的每小时日历服务。
+        # 两类线程局部状态分别保护：
+        # 1) 5 分钟 tick 只抑制当前 tick 线程的旧 viewing poll；
+        # 2) due scope 只约束当前来源执行线程，不能串到另一个订阅线程。
         self._dispatch_tick_local_v1125 = threading.local()
+        self._airing_scope_local_v1125 = threading.local()
         return super().init_plugin(config)
 
     @staticmethod
@@ -42,6 +46,66 @@ class GuangYaDispatchPolicyV1125Mixin:
             if value > 0:
                 result.add(value)
         return result
+
+    # ------------------------------------------------------------------
+    # due scope 并发隔离
+    # ------------------------------------------------------------------
+    def _airing_scope_local_value_v1125(self):
+        local = getattr(self, "_airing_scope_local_v1125", None)
+        if local is None:
+            local = threading.local()
+            self._airing_scope_local_v1125 = local
+        return local
+
+    @contextmanager
+    def _due_scope_v1120(self, subscribe: Any, episodes: Iterable[int]):
+        local = self._airing_scope_local_value_v1125()
+        had_scope = hasattr(local, "scope")
+        previous = getattr(local, "scope", None)
+        local.scope = {
+            "subscribe_id": int(getattr(subscribe, "id", 0) or 0),
+            "episodes": sorted(self._positive_ids_v1125(episodes)),
+        }
+        try:
+            yield
+        finally:
+            if had_scope:
+                local.scope = previous
+            else:
+                try:
+                    delattr(local, "scope")
+                except AttributeError:
+                    pass
+
+    @contextmanager
+    def _without_due_scope_v1120(self):
+        local = self._airing_scope_local_value_v1125()
+        had_scope = hasattr(local, "scope")
+        previous = getattr(local, "scope", None)
+        local.scope = None
+        try:
+            yield
+        finally:
+            if had_scope:
+                local.scope = previous
+            else:
+                try:
+                    delattr(local, "scope")
+                except AttributeError:
+                    pass
+
+    def _subscription_missing_episodes(self, subscribe: Any) -> List[int]:
+        # 下层 scheduler 的历史共享 scope 在最终运行时始终保持 None；最终裁剪只认本层 thread-local。
+        values = sorted(self._positive_ids_v1125(super()._subscription_missing_episodes(subscribe) or []))
+        local = self._airing_scope_local_value_v1125()
+        scope = getattr(local, "scope", None)
+        if not isinstance(scope, dict):
+            return values
+        sid = int(getattr(subscribe, "id", 0) or 0)
+        if sid != int(scope.get("subscribe_id") or 0):
+            return values
+        allowed = self._positive_ids_v1125(scope.get("episodes") or [])
+        return [value for value in values if value in allowed]
 
     def _active_selected_subscriptions_v1125(self) -> List[Any]:
         selected = self._positive_ids_v1125(getattr(self, "_selected_subscriptions", []) or [])
@@ -62,7 +126,8 @@ class GuangYaDispatchPolicyV1125Mixin:
         if self._is_movie_subscription(subscribe):
             return set()
         try:
-            missing = self._positive_ids_v1125(self._subscription_missing_episodes(subscribe) or [])
+            with self._without_due_scope_v1120():
+                missing = self._positive_ids_v1125(self._subscription_missing_episodes(subscribe) or [])
         except Exception:
             missing = set()
         if not missing:
@@ -102,38 +167,64 @@ class GuangYaDispatchPolicyV1125Mixin:
         return str(getattr(subscribe, "state", "") or "") in {"N", "R", ""}
 
     # ------------------------------------------------------------------
-    # 频道 Push：日期只控制主动搜索，不拒绝已经到达且匹配真实缺集的资源。
+    # 频道 Push：日期只控制主动搜索；被动资源完全不依赖日历服务。
     # ------------------------------------------------------------------
     def _airing_gate_v1120(self, subscribe: Any, payload: Dict[str, Any] = None) -> Dict[str, Any]:
-        result = dict(super()._airing_gate_v1120(subscribe, payload=payload) or {})
         if self._is_movie_subscription(subscribe):
-            return result
+            return dict(super()._airing_gate_v1120(subscribe, payload=payload) or {})
+
         mode_reader = getattr(self, "_route_source_mode_value_v1115", None)
         mode = str(mode_reader() if callable(mode_reader) else getattr(self, "_route_source_mode_v1115", "") or "")
         if mode != "channel_event":
-            return result
+            return dict(super()._airing_gate_v1120(subscribe, payload=payload) or {})
 
-        raw_missing = self._positive_ids_v1125(result.get("raw_missing") or [])
-        reserved = self._positive_ids_v1125(result.get("reserved") or [])
-        claimed = self._positive_ids_v1125(result.get("claimed") or [])
-        strict_due = list(result.get("due_uncovered") or [])
-        strict_future = list(result.get("future_missing") or [])
-        strict_off_day = list(result.get("off_day_missing") or [])
+        # 被动频道资源已经到达，本轮只需要 MoviePilot 真实缺集与在途事实；
+        # 不调用 super 的日历门禁，DailyAssistant/TMDB 故障也不能阻塞已到达资源。
+        try:
+            with self._without_due_scope_v1120():
+                raw_missing = self._positive_ids_v1125(self._subscription_missing_episodes(subscribe) or [])
+        except Exception:
+            raw_missing = set()
+        try:
+            reservations = dict(self._pending_reservations(subscribe) or {})
+            reserved = self._positive_ids_v1125(reservations.get("episodes") or [])
+        except Exception:
+            reserved = set()
+        sid = int(getattr(subscribe, "id", 0) or 0)
+        try:
+            claimed = self._positive_ids_v1125(self._active_source_claims(sid) or [])
+        except Exception:
+            claimed = set()
+        reserved &= raw_missing
+        claimed &= raw_missing
         passive_uncovered = raw_missing - reserved - claimed
-        result.update({
-            # 被动资源不依赖日历可用性；强制让 scheduler 继续走 due scope，而不是 legacy fallback。
+
+        # 仅把最近一次严格日历快照作为诊断信息，不让它参与频道准入。
+        strict_state = self.get_data("airing_gate_state_v1120") or {}
+        strict_row = dict(strict_state.get(str(sid)) or {}) if isinstance(strict_state, dict) else {}
+        return {
+            "subscribe_id": sid,
+            "name": str(getattr(subscribe, "name", "") or ""),
             "calendar_available": True,
+            "calendar_provider": str(strict_row.get("calendar_provider") or "passive_channel"),
+            "raw_missing": sorted(raw_missing),
             "due_missing": sorted(raw_missing),
             "due_uncovered": sorted(passive_uncovered),
+            "reserved": sorted(reserved),
+            "claimed": sorted(claimed),
             "future_missing": [],
             "unscheduled_missing": [],
             "off_day_missing": [],
+            "covered": not bool(passive_uncovered),
+            "next_episode": int(strict_row.get("next_episode") or 0),
+            "next_air_at": str(strict_row.get("next_air_at") or ""),
+            "next_precision": str(strict_row.get("next_precision") or ""),
             "passive_channel_bypass_v1125": True,
-            "strict_due_uncovered_v1125": strict_due,
-            "strict_future_missing_v1125": strict_future,
-            "strict_off_day_missing_v1125": strict_off_day,
-        })
-        return result
+            "strict_due_uncovered_v1125": list(strict_row.get("due_uncovered") or []),
+            "strict_future_missing_v1125": list(strict_row.get("future_missing") or []),
+            "strict_off_day_missing_v1125": list(strict_row.get("off_day_missing") or []),
+            "checked_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        }
 
     # ------------------------------------------------------------------
     # 5 分钟 tick：只保留频道刷新/事件匹配，旧 viewing poll 在本线程内返回空。
@@ -214,8 +305,9 @@ class GuangYaDispatchPolicyV1125Mixin:
             uncovered = self._uncovered_missing_v1125(subscribe)
             if not uncovered:
                 try:
-                    if not self._subscription_missing_episodes(subscribe):
-                        self._finish_subscription_if_complete(subscribe)
+                    with self._without_due_scope_v1120():
+                        if not self._subscription_missing_episodes(subscribe):
+                            self._finish_subscription_if_complete(subscribe)
                 except Exception:
                     pass
                 continue
@@ -338,7 +430,8 @@ class GuangYaDispatchPolicyV1125Mixin:
         if self._is_movie_subscription(subscribe):
             return ("movie",) if self._movie_needs_pull_v1125(subscribe) else tuple()
         try:
-            return tuple(sorted(self._positive_ids_v1125(self._subscription_missing_episodes(subscribe) or [])))
+            with self._without_due_scope_v1120():
+                return tuple(sorted(self._positive_ids_v1125(self._subscription_missing_episodes(subscribe) or [])))
         except Exception:
             return tuple()
 
@@ -421,6 +514,7 @@ class GuangYaDispatchPolicyV1125Mixin:
         final_rows = {int(getattr(subscribe, "id", 0) or 0): subscribe for subscribe in self._active_selected_subscriptions_v1125()}
         results: List[Dict[str, Any]] = []
         failed = changed = 0
+        remaining_set = set(remaining)
         for sid in initial_ids:
             subscribe = final_rows.get(sid) or self._find_subscription(sid)
             if subscribe:
@@ -442,7 +536,7 @@ class GuangYaDispatchPolicyV1125Mixin:
                 "missing_before": list(before.get(sid, tuple())),
                 "missing_after_channel": list(after_channel.get(sid, tuple())),
                 "missing_after": list(final_signature),
-                "gying_attempted": sid in set(remaining),
+                "gying_attempted": sid in remaining_set,
                 "success": not still_needs,
             })
 
