@@ -561,6 +561,15 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
                 "精确订阅：/gysub tmdb:438631 movie",
             )
             return
+        self._plugin_log(
+            "INFO",
+            "【光鸭转存助手】【消息命令v1.12.8】已收到 /gysub 请求，开始识别媒体",
+        )
+        self._post_command(
+            event_data,
+            "⏳ 已收到光鸭直订请求",
+            "正在识别媒体并创建订阅；识别完成后会继续回传结果。",
+        )
         try:
             candidates = self._search_direct_candidates(request)
         except Exception as err:
