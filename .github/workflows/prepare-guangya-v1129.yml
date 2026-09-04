@@ -21,6 +21,7 @@ jobs:
       - name: Migrate outer MRO contracts
         run: |
           python - <<'PY'
+          import re
           from pathlib import Path
           for rel in (
               'tests/test_guangya_receipt_completion_v1124.py',
@@ -31,11 +32,16 @@ jobs:
               text = path.read_text(encoding='utf-8')
               text = text.replace('self.assertEqual(mixins[:11], [', 'self.assertEqual(mixins[:12], [', 1)
               text = text.replace('assert mixins[:12] == [', 'assert mixins[:13] == [', 1)
-              anchor = '            "GuangYaPagePerfV1123Mixin",\n            "GuangYaResourceGateV1127Mixin",'
-              replacement = '            "GuangYaPagePerfV1123Mixin",\n            "GuangYaMovieIdentityV1129Mixin",\n            "GuangYaResourceGateV1127Mixin",'
-              if anchor not in text and replacement not in text:
-                  raise RuntimeError(f'MRO anchor missing: {rel}')
-              text = text.replace(anchor, replacement, 1)
+              if 'GuangYaMovieIdentityV1129Mixin' not in text:
+                  pattern = r'(?m)^(?P<i>\s*)"GuangYaPagePerfV1123Mixin",\n(?P=i)"GuangYaResourceGateV1127Mixin",'
+                  repl = lambda m: (
+                      f'{m.group("i")}"GuangYaPagePerfV1123Mixin",\n'
+                      f'{m.group("i")}"GuangYaMovieIdentityV1129Mixin",\n'
+                      f'{m.group("i")}"GuangYaResourceGateV1127Mixin",'
+                  )
+                  text, count = re.subn(pattern, repl, text, count=1)
+                  if count != 1:
+                      raise RuntimeError(f'MRO anchor missing: {rel}')
               path.write_text(text, encoding='utf-8')
           PY
       - name: Python syntax
