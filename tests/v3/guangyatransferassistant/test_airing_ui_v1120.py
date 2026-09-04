@@ -15,10 +15,12 @@ def test_airing_ui_parses_and_is_below_receipt_without_stealing_scheduler_author
     assert "from .airing_ui_v1120 import GuangYaAiringUiV1120Mixin" in ENTRY
     assert "from .dispatch_policy_v1125 import GuangYaDispatchPolicyV1125Mixin" in ENTRY
     assert "from .dispatch_policy_final_v1125 import GuangYaDispatchPolicyFinalV1125Mixin" in ENTRY
+    assert "from .manual_dispatch_v1125 import GuangYaManualDispatchV1125Mixin" in ENTRY
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     mixins = [line.strip().rstrip(",") for line in head.splitlines() if line.strip()]
-    assert mixins[:10] == [
+    assert mixins[:11] == [
         "GuangYaPagePerfV1123Mixin",
+        "GuangYaManualDispatchV1125Mixin",
         "GuangYaDispatchPolicyFinalV1125Mixin",
         "GuangYaDispatchPolicyV1125Mixin",
         "GuangYaAiringWeeklyV1121Mixin",
