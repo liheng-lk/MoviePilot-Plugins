@@ -5,7 +5,8 @@
 - TV 候选若显式标出了集号且与 MoviePilot 当前真实缺集完全不相交，视为不可用；
 - 未标集号的整季包/合集仍保留为潜在可用候选，避免为了扩大关键词无意义增加请求；
 - 关键词降级后，把本轮真正成功请求过的各级详情结果合并回原关键词 120 秒缓存，
-  即使没有可用迅雷，后续 Magnet 也能复用已经付出的 downurl 请求；
+  即使没有可用迅雷，后续 Magnet 也能复用已经付出的 downurl 请求；SearchBundle 使用
+  最老的有效成员请求时间作为 TTL，不把旧严格查询借较新的宽搜结果延寿；
 - 精准迅雷搜索保持原 GYING 节点故障切换：单节点搜索异常最多换 3 次节点，但账号/验证码
   或 viewing_session 已确认全节点不可用时立即停止，不能把认证故障放大成重试风暴；
 - 某一级迅雷候选通过预筛但实际秒传失败时，才继续下一档关键词；同一 share+passcode
@@ -67,7 +68,7 @@ class GuangYaGyingRecallGuardV1125Mixin:
         return not explicit or bool(explicit.intersection(missing))
 
     def _promote_search_bundle_v1125(self, primary: str, variants: Iterable[str]) -> None:
-        """只合并真实成功缓存；绝不把失败/不存在的关键词伪装成已请求成功。"""
+        """只合并仍在 TTL 内的真实成功缓存；任何成员都不能因 bundle 合并被延长寿命。"""
         cache = getattr(self, "_gying_search_cache", None)
         primary = " ".join(str(primary or "").split())
         if not isinstance(cache, dict) or not primary:
@@ -77,7 +78,9 @@ class GuangYaGyingRecallGuardV1125Mixin:
         merged: List[Dict[str, Any]] = []
         seen = set()
         final_state: Dict[str, Any] = {}
-        latest_ts = 0.0
+        oldest_ts = 0.0
+        now = time.time()
+        ttl = 120.0
         for raw_variant in variants or []:
             variant = " ".join(str(raw_variant or "").split())
             if not variant or variant in valid_variants:
@@ -88,11 +91,15 @@ class GuangYaGyingRecallGuardV1125Mixin:
             state = entry.get("state")
             if isinstance(state, dict) and state.get("success") is False:
                 continue
-            valid_variants.append(variant)
             try:
-                latest_ts = max(latest_ts, float(entry.get("ts") or 0))
+                entry_ts = float(entry.get("ts") or 0)
             except (TypeError, ValueError):
-                pass
+                entry_ts = 0.0
+            # Protocol 的普通读取也只接受 120 秒缓存；bundle 不能把已经过期的成员重新复活。
+            if entry_ts <= 0 or now - entry_ts >= ttl:
+                continue
+            valid_variants.append(variant)
+            oldest_ts = entry_ts if oldest_ts <= 0 else min(oldest_ts, entry_ts)
             if isinstance(state, dict):
                 final_state = dict(state)
             for raw_row in entry.get("rows") or []:
@@ -107,7 +114,7 @@ class GuangYaGyingRecallGuardV1125Mixin:
                 seen.add(key)
                 merged.append(row)
 
-        if not valid_variants:
+        if not valid_variants or oldest_ts <= 0:
             return
         effective = valid_variants[-1]
         final_state.update({
@@ -118,8 +125,8 @@ class GuangYaGyingRecallGuardV1125Mixin:
             "bundle_resources": len(merged),
         })
         cache[primary] = {
-            # 保留真实请求时间，不能用“合并动作发生时间”延长旧缓存寿命。
-            "ts": latest_ts or time.time(),
+            # 取最老有效成员的真实请求时间：所有合并行都会在各自原 TTL 之前一起失效。
+            "ts": oldest_ts,
             "rows": merged[:800],
             "state": final_state,
         }
