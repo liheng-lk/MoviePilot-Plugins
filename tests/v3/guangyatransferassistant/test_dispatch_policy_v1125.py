@@ -153,7 +153,7 @@ def test_v1125_policy_parses_and_sits_below_final_authority_above_weekly_schedul
     assert page < final_policy < policy < weekly < scheduler
     assert 'plugin_version = "1.12.5"' in entry_text
     assert 'build_id = "20260904-r51"' in entry_text
-    assert 'build_id = "20260904-r51"' in policy_text
+    assert 'build_id = "20260904-r51-preview"' in policy_text
 
 
 def test_passive_channel_uses_real_missing_and_never_calls_calendar_gate():
