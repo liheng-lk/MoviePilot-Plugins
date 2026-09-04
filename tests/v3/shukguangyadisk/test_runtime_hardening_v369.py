@@ -99,16 +99,32 @@ def test_v369_directory_read_refreshes_stale_fileid_once_but_propagates_real_fai
     assert "raise RuntimeError(" in block
 
 
-def test_v369_state_cleanup_is_direct_directory_only_and_requires_successful_listing():
-    helper = _between(MONITOR_PATCH, "def _reconcile_direct_state", "def _split_children")
-    assert "_direct_parent(plugin, path) != group" in helper
-    assert "if path in present:" in helper
-    assert "mapping.pop(raw_path, None)" in helper
-    assert "_v360_is_under" not in helper
-    # 成功 strict_list 后才对 files 做局部回收；失败分支不会以 [] 继续执行。
+def test_v3613_state_cleanup_uses_strict_reachability_and_zero_write_noop():
+    children = _between(MONITOR_PATCH, "def _present_direct_children", "def _state_path_is_unreachable")
+    assert "present_dirs.add(path)" in children
+    assert "present_files.add(path)" in children
+    assert "_organize_monitor_recursive" not in children
+
+    predicate = _between(MONITOR_PATCH, "def _state_path_is_unreachable", "def _reconcile_reachable_state")
+    assert "if not directory_exists:" in predicate
+    assert "normalized.startswith(prefix)" in predicate
+    assert "first_child not in present_dirs" in predicate
+
+    reconcile = _between(MONITOR_PATCH, "def _reconcile_reachable_state", "def _split_children")
+    load_pos = reconcile.index("preview = inspect(store.load())")
+    noop_pos = reconcile.index('if int(preview.get("total") or 0) <= 0:')
+    mutate_pos = reconcile.index("return dict(store.mutate(apply) or empty)")
+    assert load_pos < noop_pos < mutate_pos
+    assert "return preview" in reconcile
+
     listing = _between(MONITOR_PATCH, "def list_directory", "def run_monitor_scan")
-    assert "dirs, files = _split_children(plugin, children)" in listing
-    assert "pruned = _reconcile_direct_state(plugin, path, files)" in listing
+    strict_pos = listing.index("children = list(strict_list(current) or [])")
+    reconcile_pos = listing.index(
+        "stats = _reconcile_reachable_state(plugin, path, children, directory_exists=True)"
+    )
+    split_pos = listing.index("dirs, files = _split_children(plugin, children)")
+    assert strict_pos < reconcile_pos < split_pos
+    assert "_reconcile_reachable_state(plugin, path, [], directory_exists=False)" in listing
 
 
 def test_v369_network_unavailable_defers_continuous_discovery_without_state_loss():
