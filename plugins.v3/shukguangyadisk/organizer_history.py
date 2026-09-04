@@ -8,6 +8,10 @@
 history helper 的模块位置和公开程度可能不同，因此这里采用运行时惰性探测：宿主未
 暴露该 API 时直接把历史门控交回 TransferDispatcher，而不是在 import 阶段让整个插件
 无法安装。
+
+v3.6.11 起在不改变 MoviePilot history gate 判定的前提下，同时投影 durable 整理任务身份。
+失败历史如果绑定 ``transfer_task_id``，调度器必须复用 MoviePilot 自身 durable retry，
+禁止重新构造另一份 planning_input 再次 admit 同一源文件。
 """
 
 from __future__ import annotations
@@ -38,6 +42,33 @@ def _load_history_api() -> Optional[Tuple[Any, Any, Any, Any, Any, Any]]:
     )
 
 
+def _history_identity(history: Any) -> Dict[str, Any]:
+    """只投影宿主公开历史快照中的稳定身份，不泄漏 ORM/仓储对象。"""
+    if history is None:
+        return {
+            "history_id": 0,
+            "history_status": None,
+            "transfer_task_id": "",
+            "transfer_settlement_revision": 0,
+        }
+    try:
+        history_id = int(getattr(history, "id", 0) or 0)
+    except (TypeError, ValueError):
+        history_id = 0
+    try:
+        settlement_revision = int(
+            getattr(history, "transfer_settlement_revision", 0) or 0
+        )
+    except (TypeError, ValueError):
+        settlement_revision = 0
+    return {
+        "history_id": history_id,
+        "history_status": bool(getattr(history, "status", False)),
+        "transfer_task_id": str(getattr(history, "transfer_task_id", "") or ""),
+        "transfer_settlement_revision": settlement_revision,
+    }
+
+
 def inspect_moviepilot_history(
     *,
     storage: str,
@@ -51,6 +82,8 @@ def inspect_moviepilot_history(
     - 宿主支持当前 history gate：完全复用 MoviePilot 的判定。
     - 宿主未公开该 helper：返回 ``submit``，让 TransferDispatcher 自己做原生历史门控。
     - helper 存在但数据库/历史端口临时异常：返回 ``unknown``，保守等待重试。
+    - 返回值额外携带 ``history_id/transfer_task_id`` 等只读稳定身份；它们只用于选择
+      “复用 durable task”还是“新建 planning”，绝不改变 MoviePilot 的媒体业务判定。
     """
     api = _load_history_api()
     if not api:
@@ -58,6 +91,7 @@ def inspect_moviepilot_history(
             "decision": "submit",
             "action": "delegate_to_dispatcher",
             "message": "当前 MoviePilot 未暴露 history gate 预检 API，已交由原生 TransferDispatcher 进行历史门控",
+            **_history_identity(None),
         }
 
     (
@@ -93,24 +127,29 @@ def inspect_moviepilot_history(
             "decision": "unknown",
             "action": "history_unavailable",
             "message": f"MoviePilot 整理历史暂不可用：{err}",
+            **_history_identity(None),
         }
 
+    identity = _history_identity(history)
     if action == HistoryGateAction.SKIP:
         return {
             "decision": "completed",
             "action": action,
             "message": f"MoviePilot 已有有效成功历史：{description}",
+            **identity,
         }
     if action == HistoryGateAction.SKIP_RETRY_EXHAUSTED:
         return {
             "decision": "blocked",
             "action": action,
             "message": f"MoviePilot 失败重试预算已用尽：{description}",
+            **identity,
         }
     return {
         "decision": "submit",
         "action": action,
         "message": description,
+        **identity,
     }
 
 
