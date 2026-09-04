@@ -43,7 +43,7 @@ def test_recall_guard_reuses_single_media_identity_authority_instead_of_copying_
     assert "explicit_years_v1111" in identity_text
     assert "explicit_seasons_v1111" in identity_text
     assert "def _provider_candidate_matches(" not in guard_text
-    search = _method("_search_viewing_xunlei", "_viewing_external_candidates_v1113")
+    search = _method("_search_viewing_xunlei", "_merge_xunlei_rounds_v1125")
     assert "self._provider_candidate_matches(subscribe, row)" in search
     assert "不在这里重写标题/年份/季号规则" in search
 
@@ -71,20 +71,52 @@ def test_bundle_contains_only_real_successful_cache_entries_and_preserves_reques
 
 
 def test_no_xunlei_match_still_promotes_successful_wide_queries_for_magnet():
-    search = _method("_search_viewing_xunlei", "_viewing_external_candidates_v1113")
+    search = _method("_search_viewing_xunlei", "_merge_xunlei_rounds_v1125")
     assert "successful: List[str] = []" in search
     assert "successful.append(variant)" in search
-    assert "if len(successful) > 1:" in search
-    tail = search.split("# 没有可用迅雷也要保留", 1)[1]
-    assert "self._promote_search_bundle_v1125(variants[0], successful)" in tail
-    assert 'last_state["searched_variants"] = list(successful)' in tail
+    assert "bundle_variants = [all_variants[0], *successful] if start_index else successful" in search
+    assert "self._promote_search_bundle_v1125(all_variants[0], bundle_variants)" in search
+    assert 'last_state["searched_variants"] = list(successful)' in search
 
 
 def test_failed_wide_query_does_not_claim_nonexistent_bundle_variant():
-    search = _method("_search_viewing_xunlei", "_viewing_external_candidates_v1113")
+    search = _method("_search_viewing_xunlei", "_merge_xunlei_rounds_v1125")
     failure = search.split('if not last_state.get("success"):', 1)[1].split("successful.append(variant)", 1)[0]
-    assert "self._promote_search_bundle_v1125(variants[0], successful)" in failure
+    assert "bundle_variants" in failure
+    assert "self._promote_search_bundle_v1125(all_variants[0], bundle_variants)" in failure
     assert "successful.append(variant)" not in failure
+
+
+def test_retry_mode_skips_already_attempted_share_ids_without_persisting_them():
+    search = _method("_search_viewing_xunlei", "_merge_xunlei_rounds_v1125")
+    assert 'seen_identities = set(getattr(retry_local, "seen_identities", set()) or set())' in search
+    assert 'identity = str((row or {}).get("share_id") or (row or {}).get("identity") or "").strip()' in search
+    assert "if identity and identity in seen_identities:" in search
+    assert "seen_identities.add(identity)" in search
+    assert "retry_local.seen_identities = seen_identities" in search
+    assert "save_data" not in search
+
+
+def test_real_xunlei_failure_advances_to_next_keyword_only_after_dispatch_returns():
+    dispatch = _method("_dispatch_xunlei_flash", "_viewing_external_candidates_v1113")
+    lower_call = dispatch.index("super()._dispatch_xunlei_flash(subscribe)")
+    merge = dispatch.index("_merge_xunlei_rounds_v1125", lower_call)
+    handled = dispatch.index('combined.get("handled")', merge)
+    next_index = dispatch.index("next_index = last_index + 1", handled)
+    advance = dispatch.index("local.start_index = next_index", next_index)
+    assert lower_call < merge < handled < next_index < advance
+    assert "while True:" in dispatch
+    assert "next_index >= len(all_variants)" in dispatch
+    assert "local.seen_identities = set()" in dispatch
+
+
+def test_partial_xunlei_rounds_merge_success_episode_and_errors_without_losing_first_round():
+    merge = _method("_merge_xunlei_rounds_v1125", "_dispatch_xunlei_flash")
+    assert 'for key in ("shares", "attempted_files", "successful_files")' in merge
+    assert 'merged["success"] = bool((base or {}).get("success")) or bool((extra or {}).get("success"))' in merge
+    assert 'merged["handled"] = bool((base or {}).get("handled")) or bool((extra or {}).get("handled"))' in merge
+    assert 'merged["episodes"] = sorted(episodes)' in merge
+    assert 'merged["errors"] = [' in merge
 
 
 def test_magnet_broadening_runs_only_after_strict_external_candidates_are_empty_and_short_circuits():
@@ -103,18 +135,18 @@ def test_magnet_broadening_runs_only_after_strict_external_candidates_are_empty_
 
 
 def test_fallback_stops_only_after_media_and_missing_coverage_filter():
-    search = _method("_search_viewing_xunlei", "_viewing_external_candidates_v1113")
+    search = _method("_search_viewing_xunlei", "_merge_xunlei_rounds_v1125")
     media_filter = search.index("self._provider_candidate_matches(subscribe, row)")
     coverage_filter = search.index("self._candidate_can_cover_missing_v1125(subscribe, row, missing)")
     stop = search.index("if matched:")
     assert media_filter < coverage_filter < stop
-    assert "for variant in variants:" in search
+    assert "for relative_index, variant in enumerate(variants):" in search
     assert "_gying_xunlei_precise_variant_v1125(variant)" in search
     assert "_xunlei_candidate_priority_v1125" in search
     assert "query_fallback" in search
 
 
-def test_recall_guard_does_not_reimplement_xunlei_transfer_or_local_downloader():
+def test_recall_guard_does_not_reimplement_xunlei_share_protocol_or_local_downloader():
     lowered = guard_text.lower()
     for forbidden in (
         "downloadchain(",
