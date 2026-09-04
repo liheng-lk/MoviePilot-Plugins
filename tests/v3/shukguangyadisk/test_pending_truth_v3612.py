@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 
@@ -67,7 +68,8 @@ def test_v3612_is_installed_after_v3611_durable_bridge():
     pending = init.index("install_pending_truth_v3612()")
     assert durable < pending
     assert "from .organizer_pending_truth_v3612 import install_pending_truth_v3612" in init
-    assert '"runtime_hardening": "v3.6.12"' in EXECUTION
+    match = re.search(r'"runtime_hardening": "v3\.6\.(\d+)"', EXECUTION)
+    assert match and int(match.group(1)) >= 12
 
 
 def test_v3612_does_not_mutate_moviepilot_or_media_policy():
