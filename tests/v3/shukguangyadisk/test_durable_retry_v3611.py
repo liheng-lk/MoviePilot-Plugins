@@ -34,7 +34,6 @@ def test_history_preflight_exposes_durable_identity_without_changing_gate():
         "describe_history_gate(",
     ):
         assert token in HISTORY
-    # 插件仍只消费宿主 gate，不自行实现失败次数或媒体规则。
     assert "record_transfer_failure" not in HISTORY
     assert "max_failed_retries" not in HISTORY
 
@@ -44,7 +43,6 @@ def test_failed_durable_history_requests_existing_moviepilot_task_not_new_planni
     assert "TransferExecutionCommand(repository).request_retry(" in block
     assert 'requested_by="shukguangyadisk_auto"' in block
     assert 'task_id=task_id' in block
-    # durable bridge 本身绝不能重新调用整理链形成第二份 planning_input。
     assert "do_transfer(" not in block
     assert "planning_input" not in block
     assert "admit(" not in block
@@ -63,7 +61,7 @@ def test_durable_request_is_idempotent_for_moviepilot_active_states_and_never_re
     block = _between(BRIDGE, "def _request_durable_retry", "def install_durable_retry_v3611")
     assert "if accepted or state in _ACTIVE_DURABLE_STATES:" in block
     assert 'return "inflight", None' in block
-    assert "已在等待重试" not in BRIDGE  # 不匹配文案，按 typed state/accepted 判定。
+    assert "已在等待重试" not in BRIDGE
 
 
 def test_durable_retry_port_failure_returns_plugin_retry_instead_of_fresh_planning():
@@ -138,6 +136,7 @@ def test_v3611_wiring_is_lazy_and_after_v369_runtime_hardening():
 
 
 def test_v3611_does_not_add_media_policy():
+    # 检查实际业务 API/字段，而不是文档里“不会修改 overwrite”这类否定说明。
     for forbidden in (
         "target_directory",
         "rename_format",
@@ -146,7 +145,7 @@ def test_v3611_does_not_add_media_policy():
         "recognize_by_meta",
         "MediaType.TV",
         "MediaType.MOVIE",
-        "overwrite",
-        "scrape",
+        "overwrite_mode",
+        "scrape=",
     ):
         assert forbidden not in BRIDGE, forbidden
