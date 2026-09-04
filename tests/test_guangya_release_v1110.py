@@ -27,8 +27,8 @@ class GuangYaReleaseV1110Tests(unittest.TestCase):
             "GuangYaEpisodeFenceFinalV1124Mixin",
             "GuangYaReceiptCompletionV1124Mixin",
         ])
-        self.assertIn('plugin_version = "1.12.3"', ENTRY)
-        self.assertIn('build_id = "20260904-r49"', ENTRY)
+        self.assertIn('plugin_version = "1.12.4"', ENTRY)
+        self.assertIn('build_id = "20260904-r50"', ENTRY)
 
     def test_daily_full_catchup_is_independent_of_new_channel_messages(self):
         self.assertIn('"id": "GuangYaTransferAssistantDailyCatchup"', RELEASE)
@@ -58,8 +58,9 @@ class GuangYaReleaseV1110Tests(unittest.TestCase):
     def test_calendar_page_and_current_metadata_are_published(self):
         self.assertIn("追更日历与每日补漏", RELEASE)
         package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
-        self.assertEqual(package["GuangYaTransferAssistant"]["version"], "1.12.3")
-        self.assertEqual(PLUGIN_JSON["version"], "1.12.3")
+        self.assertEqual(package["GuangYaTransferAssistant"]["version"], "1.12.4")
+        self.assertEqual(PLUGIN_JSON["version"], "1.12.4")
+        self.assertIn("v1.12.4", package["GuangYaTransferAssistant"]["history"])
         self.assertIn("v1.12.3", package["GuangYaTransferAssistant"]["history"])
         self.assertIn("v1.12.2", package["GuangYaTransferAssistant"]["history"])
         self.assertIn("v1.12.1", package["GuangYaTransferAssistant"]["history"])

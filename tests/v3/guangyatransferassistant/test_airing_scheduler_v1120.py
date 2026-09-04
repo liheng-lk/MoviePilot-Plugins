@@ -21,8 +21,8 @@ def test_v1120_scheduler_parses_and_is_first_runtime_authority():
     identity_pos = ENTRY.index("GuangYaMediaIdentityGuardV1111Mixin,", start)
     release_pos = ENTRY.index("GuangYaReleaseV1110Mixin,", start)
     assert weekly_pos < scheduler_pos < identity_pos < release_pos
-    assert 'plugin_version = "1.12.3"' in ENTRY
-    assert 'build_id = "20260904-r49"' in ENTRY
+    assert 'plugin_version = "1.12.4"' in ENTRY
+    assert 'build_id = "20260904-r50"' in ENTRY
 
 
 def test_v1120_prefers_dailyassistant_and_keeps_tmdb_fallback():
@@ -95,8 +95,18 @@ def test_v1120_due_scope_does_not_corrupt_completion_or_receipt_facts():
         "def _commit_episode_receipt_v1124",
     ):
         start = SCHEDULER.index(method)
-        block = SCHEDULER[start:start + 500]
+        block = SCHEDULER[start:start + 700]
         assert "with self._without_due_scope_v1120():" in block
+
+
+def test_v1124_completion_wrapper_preserves_channel_state_abi():
+    method = SCHEDULER[
+        SCHEDULER.index("def _finish_subscription_if_complete"):
+        SCHEDULER.index("def _commit_episode_receipt_v1124")
+    ]
+    assert "channel_state: Optional[Dict[str, Any]] = None" in method
+    assert "channel_state=channel_state" in method
+    assert "with self._without_due_scope_v1120():" in method
 
 
 def test_v1120_serializes_whole_subscription_source_chain():

@@ -300,9 +300,19 @@ class GuangYaAiringSchedulerV1120Mixin:
         with self._without_due_scope_v1120():
             return super()._sync_media_facts_progress(subscribe)
 
-    def _finish_subscription_if_complete(self, subscribe: Any) -> bool:
+    def _finish_subscription_if_complete(
+        self,
+        subscribe: Any,
+        channel_state: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """退出 due scope 做真实完成检查，并完整保留 legacy 的 channel_state ABI。"""
         with self._without_due_scope_v1120():
-            return bool(super()._finish_subscription_if_complete(subscribe))
+            return bool(
+                super()._finish_subscription_if_complete(
+                    subscribe,
+                    channel_state=channel_state,
+                )
+            )
 
     def _commit_episode_receipt_v1124(self, subscribe: Any, episodes: Iterable[int], origin: str) -> None:
         with self._without_due_scope_v1120():
