@@ -1,0 +1,152 @@
+name: Release ShukGuangYaDisk v3.6.18
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/release-shukguangyadisk-v3618.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-shukguangyadisk
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify v3.6.18 code is on current main
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path('.')
+          plugin = root / 'plugins.v3' / 'shukguangyadisk'
+          assert (plugin / 'organizer_source_terminal_v3618.py').exists(), 'v3.6.18 source terminal guard missing'
+          execution = (plugin / 'organizer_execution_v360.py').read_text(encoding='utf-8')
+          assert 'runtime_hardening": "v3.6.18' in execution
+          assert 'confirm_source_missing_v3618' in execution
+          assert 'retire_missing_source_v3618' in execution
+          meta = json.loads((plugin / 'plugin.json').read_text(encoding='utf-8'))
+          market = json.loads((root / 'package.v3.json').read_text(encoding='utf-8'))
+          assert meta['version'] == '3.6.17', meta['version']
+          assert market['ShukGuangYaDisk']['version'] == '3.6.17', market['ShukGuangYaDisk']['version']
+          PY
+
+      - name: Bump ShukGuangYaDisk to v3.6.18
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          root = Path('.')
+          plugin = root / 'plugins.v3' / 'shukguangyadisk'
+          version = '3.6.18'
+          history_text = (
+              '修复源文件/资源目录已被搬走或删除后仍被私有 Worker 反复送入 MoviePilot、继而出现“目录或文件不存在/没有找到可整理的媒体文件”并重新进入 retry 的循环：'
+              'Worker 调 MoviePilot 前使用 v3.6.9 refresh_item 强制失效缓存并远端复核，只有明确不存在才终态清理对应 organizer 状态；网络/API异常绝不当作删除。'
+              '同时覆盖预检后刚好被搬走的竞态，失败消息仅作为 hint，必须二次远端确认后才收口；文件只清自身状态，目录只清确认缺失子树，pending 交回 v3.6.8 按剩余直属等待事实自愈，不修改 MoviePilot durable task 或媒体业务规则。'
+          )
+
+          plugin_json_path = plugin / 'plugin.json'
+          plugin_meta = json.loads(plugin_json_path.read_text(encoding='utf-8'))
+          plugin_meta['version'] = version
+          old_history = dict(plugin_meta.get('history') or {})
+          plugin_meta['history'] = {f'v{version}': history_text, **{k: v for k, v in old_history.items() if k != f'v{version}'}}
+          plugin_json_path.write_text(json.dumps(plugin_meta, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          package_path = root / 'package.v3.json'
+          package = json.loads(package_path.read_text(encoding='utf-8'))
+          shuk = dict(package['ShukGuangYaDisk'])
+          shuk['version'] = version
+          market_history = dict(shuk.get('history') or {})
+          shuk['history'] = {f'v{version}': history_text, **{k: v for k, v in market_history.items() if k != f'v{version}'}}
+          package['ShukGuangYaDisk'] = shuk
+          package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          entry_path = plugin / '__init__.py'
+          entry = entry_path.read_text(encoding='utf-8')
+          entry, count = re.subn(r'plugin_version\s*=\s*["\']3\.6\.17["\']', 'plugin_version = "3.6.18"', entry, count=1)
+          assert count == 1, 'plugin_version 3.6.17 marker not found'
+          entry_path.write_text(entry, encoding='utf-8')
+
+          remote_path = plugin / 'dist' / 'assets' / 'remoteEntry.js'
+          remote = remote_path.read_text(encoding='utf-8')
+          remote, count = re.subn(r'AssistantPage-v352\.js\?v=3\.6\.17', 'AssistantPage-v352.js?v=3.6.18', remote, count=1)
+          assert count == 1, 'remoteEntry 3.6.17 cache marker not found'
+          remote_path.write_text(remote, encoding='utf-8')
+
+          floor_path = root / 'tests' / 'v3' / 'shukguangyadisk' / 'test_release_floor_v3617.py'
+          floor = floor_path.read_text(encoding='utf-8')
+          floor, count = re.subn(r'FLOOR\s*=\s*\(3,\s*6,\s*17\)', 'FLOOR = (3, 6, 18)', floor, count=1)
+          assert count == 1, 'v3.6.17 release floor marker not found'
+          floor_path.write_text(floor, encoding='utf-8')
+          PY
+
+      - name: Validate v3.6.18 release contracts
+        run: |
+          set -euo pipefail
+          python -m compileall -q plugins.v3/shukguangyadisk
+          find plugins.v3/shukguangyadisk -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v3/shukguangyadisk -type f -name '*.pyc' -delete
+          python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          python tests/v3/shukguangyadisk/run_contract_tests.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('.')
+          plugin = root / 'plugins.v3' / 'shukguangyadisk'
+          package = json.loads((root / 'package.v3.json').read_text(encoding='utf-8'))
+          meta = json.loads((plugin / 'plugin.json').read_text(encoding='utf-8'))
+          assert meta['version'] == '3.6.18'
+          assert package['ShukGuangYaDisk']['version'] == '3.6.18'
+          assert 'v3.6.18' in meta['history']
+          assert 'v3.6.18' in package['ShukGuangYaDisk']['history']
+          assert 'plugin_version = "3.6.18"' in (plugin / '__init__.py').read_text(encoding='utf-8')
+          assert 'AssistantPage-v352.js?v=3.6.18' in (plugin / 'dist' / 'assets' / 'remoteEntry.js').read_text(encoding='utf-8')
+          assert 'FLOOR = (3, 6, 18)' in (root / 'tests/v3/shukguangyadisk/test_release_floor_v3617.py').read_text(encoding='utf-8')
+          PY
+
+      - name: Commit release and self-delete workflow
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/release-shukguangyadisk-v3618.yml
+          git add package.v3.json \
+                  plugins.v3/shukguangyadisk/plugin.json \
+                  plugins.v3/shukguangyadisk/__init__.py \
+                  plugins.v3/shukguangyadisk/dist/assets/remoteEntry.js \
+                  tests/v3/shukguangyadisk/test_release_floor_v3617.py
+          git commit -m "release(shukguangyadisk): v3.6.18 missing source terminal guard"
+
+          # Another plugin may publish while this workflow runs. Rebase the release commit onto the
+          # newest main instead of force-pushing an old lineage. Any real conflict fails closed.
+          git fetch origin main
+          git rebase origin/main
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('.')
+          assert json.loads((root/'package.v3.json').read_text())['ShukGuangYaDisk']['version'] == '3.6.18'
+          assert json.loads((root/'plugins.v3/shukguangyadisk/plugin.json').read_text())['version'] == '3.6.18'
+          assert 'plugin_version = "3.6.18"' in (root/'plugins.v3/shukguangyadisk/__init__.py').read_text()
+          assert '?v=3.6.18' in (root/'plugins.v3/shukguangyadisk/dist/assets/remoteEntry.js').read_text()
+          PY
+          git push origin HEAD:main

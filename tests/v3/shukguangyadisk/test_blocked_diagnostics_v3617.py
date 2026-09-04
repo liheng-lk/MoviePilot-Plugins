@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 
@@ -14,6 +15,10 @@ def _between(text: str, start_token: str, end_token: str) -> str:
     start = text.index(start_token)
     end = text.index(end_token, start + len(start_token))
     return text[start:end]
+
+
+def _version(value: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in value.split("."))
 
 
 def test_v3617_sources_parse():
@@ -80,9 +85,11 @@ def test_v3617_status_projects_blocked_summary_without_changing_scheduler():
         'status["blocked_persistent"]',
         'status["blocked_due"]',
         'status["blocked_timed"]',
-        '"runtime_hardening": "v3.6.17"',
     ):
         assert token in status, token
+    runtime = re.search(r'"runtime_hardening": "v([0-9]+\.[0-9]+\.[0-9]+)"', status)
+    assert runtime, "runtime_hardening version missing"
+    assert _version(runtime.group(1)) >= (3, 6, 17)
     for forbidden in (
         "clear_blocked(",
         "mark_blocked(",

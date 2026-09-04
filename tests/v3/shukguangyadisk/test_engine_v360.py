@@ -92,12 +92,22 @@ def test_v360_only_real_execution_failure_creates_retry():
 
 
 def test_v360_weak_name_execution_uses_member_results_only():
-    assert "if not isinstance(item, _FolderBatchEnvelope) or item.directory_mode:" in EXECUTION
-    assert "self._fallback_terminal_state(member" in EXECUTION
-    assert "TransferComplete/TransferFailed" in EXECUTION
-    assert "def _fallback_terminal_state(self, item: Any, success: bool, message: str)" in EXECUTION
-    assert "isinstance(item, _FolderBatchEnvelope) and not item.directory_mode" in EXECUTION
-    assert "跳过聚合 fallback" in EXECUTION
+    execution = EXECUTION[EXECUTION.index("def _execute_isolated_transfer"):EXECUTION.index("def _fallback_terminal_state")]
+    assert "if not isinstance(item, _FolderBatchEnvelope):" in execution
+    assert "if item.directory_mode:" in execution
+    assert "for member in item.members:" in execution
+    assert "self._fallback_terminal_state(member" in execution
+    assert "TransferComplete/TransferFailed" in execution
+    # v3.6.18 can terminally retire a confirmed missing member before MoviePilot, but the envelope
+    # still aggregates only per-member results and never lets its outer result overwrite members.
+    assert "confirm_source_missing_v3618(self, member)" in execution
+    assert "success, message = super()._execute_isolated_transfer(member)" in execution
+    assert "all_success = all_success and bool(success)" in execution
+
+    fallback = EXECUTION[EXECUTION.index("def _fallback_terminal_state"):EXECUTION.index("def api_organize_monitor_status")]
+    assert "def _fallback_terminal_state(self, item: Any, success: bool, message: str)" in fallback
+    assert "isinstance(item, _FolderBatchEnvelope) and not item.directory_mode" in fallback
+    assert "跳过聚合 fallback" in fallback
 
 
 def test_v360_status_overrides_legacy_sticky_and_cursor_projection():
