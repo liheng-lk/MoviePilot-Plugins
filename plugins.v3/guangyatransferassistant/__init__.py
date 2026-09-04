@@ -13,6 +13,7 @@ v1.12.1 新增周视图追剧日历和严格星期门禁：普通后台仅在对
 v1.12.2 收口追剧三态与来源轮询：日历仅显示已入库/转存中/待补；频道缓存按最后可见时间续期；频道事件后继续观影常规轮询；新订阅缓存未命中时补一次频道现查；当天缺集按外部搜索冷却继续重试，跨日后由每日04:10全员补漏兜底。
 v1.12.3 优化大订阅页面体验：数据页优先读取周快照并后台校准媒体库，7 天日期可点击/滑动查看对应剧集；配置页改为轻量搜索选择器，不再逐订阅计算进度或铺满 chips。
 v1.12.4 修复实机交互：日期详情改为浏览器本地即时展开；固定接管订阅改为固定高度的单项搜索添加/取消管理器，不再随已选数量无限增长。
+v1.12.5-preview 收口触发语义：5 分钟只消费频道 Push；常规 GYING 只由更新日历 Pull；频道被动资源不受日期门禁；04:10 先频道后 GYING 补漏。
 
 最终优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。
 后续 ResourceGroup 内部仍保持：光鸭直接转存 > Magnet > ED2K。
@@ -38,6 +39,7 @@ from .config_ui_v1100 import GuangYaConfigUiV1100Mixin
 from .console_ui_v1100 import GuangYaConsoleUiV1100Mixin
 from .content_resilience_v1105 import GuangYaContentResilienceV1105Mixin
 from .diagnostics_v1100 import GuangYaDiagnosticsV1100Mixin
+from .dispatch_policy_v1125 import GuangYaDispatchPolicyV1125Mixin
 from .episode_fence_final_v1124 import GuangYaEpisodeFenceFinalV1124Mixin
 from .provider_reliability_v1100 import GuangYaProviderReliabilityV1100Mixin
 from .xunlei_reliability_v1100 import GuangYaXunleiReliabilityV1100Mixin
@@ -80,6 +82,7 @@ install_channel_multisource_compat(_legacy_module)
 
 class GuangYaTransferAssistant(
     GuangYaPagePerfV1123Mixin,
+    GuangYaDispatchPolicyV1125Mixin,
     GuangYaAiringWeeklyV1121Mixin,
     GuangYaAiringSchedulerV1120Mixin,
     GuangYaMediaIdentityGuardV1111Mixin,
