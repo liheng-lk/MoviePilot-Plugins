@@ -49,8 +49,10 @@ def test_daily_automatic_force_records_cooldown_but_manual_force_does_not():
     assert "if not allowed or not force:" in claim
     assert '_record_auto_external_cooldown_v1125(subscribe, "daily_repair_pull")' in claim
     assert 'self.save_data("external_search_guard", state)' in record
-    for manual in ("手动", "人工", "立即", "控制台"):
-        assert manual not in claim
+    # 人工 force 不需要在这里维护第二套触发词；只有明确的 daily_repair_pull 模式
+    # 才会在 super() force 成功后登记自动冷却。其它 force 直接沿用 Governance 结果。
+    assert '_manual_trigger_v1114' not in claim
+    assert '_automatic_trigger_v1114' not in claim
 
 
 def test_new_subscription_prime_refreshes_channel_once_without_direct_gying_force():
