@@ -16,8 +16,8 @@ def test_v1105_layer_parses_and_is_outer_runtime_guard():
     start = ENTRY.index("class GuangYaTransferAssistant")
     assert "from .content_resilience_v1105 import GuangYaContentResilienceV1105Mixin" in ENTRY
     assert ENTRY.index("GuangYaContentResilienceV1105Mixin,", start) < ENTRY.index("GuangYaGyingObservabilityV1104Mixin,", start)
-    assert 'plugin_version = "1.12.5"' in ENTRY
-    assert 'build_id = "20260904-r51"' in ENTRY
+    assert 'plugin_version = "1.12.6"' in ENTRY
+    assert 'build_id = "20260904-r52"' in ENTRY
 
 
 def test_share_episode_floor_is_raised_before_legacy_range_filter():
