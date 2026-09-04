@@ -1,14 +1,14 @@
 """v3.6.0+：统一执行边界。
 
 该层显式位于插件 MRO 前部：
-1. 导入阶段先安装 v3.6.9 光鸭路径分页/严格读取基础补丁；
+1. 导入阶段先安装 v3.6.9 光鸭路径分页/严格读取，以及 v3.6.10 MoviePilot 存储快照保护；
 2. monitor 初始化时安装 v3.6.9 连续发现/状态回收，再安装 v3.6.0 move 终态修复与
    v3.6.4 move 失败事务保护；
 3. 弱命名 folder envelope 内部逐文件执行时，最终状态统一回到 v3.6 fallback；
 4. 状态 API 最后投影 v3.6 Worker/discovery 事实，屏蔽旧 v3.5.9 cursor/sticky 的展示残留。
 
 普通 MoviePilot 原生目录任务继续走旧安全预览/冲突/season 等 MoviePilot 安全链，不在这里
-重写业务规则。v3.6.9 只修远端路径查询、发现调度和持久状态回收。
+重写业务规则。v3.6.9/v3.6.10 只修远端查询、发现调度、状态回收与存储快照可靠性。
 """
 
 from __future__ import annotations
@@ -22,11 +22,12 @@ from .guangya_move_transaction_guard_v364 import install_move_transaction_guard_
 from .guangya_path_resolution_v369 import install_path_resolution_v369
 from .organizer_engine_v360 import GuangYaOrganizerEngineV360Mixin, _PAGE_DIR_LIMIT
 from .organizer_folder_batch_v342 import _FolderBatchEnvelope
+from .storage_snapshot_guard_v3610 import install_storage_snapshot_guard_v3610
 
 
-# 存储路径能力必须在插件实例开始 browse/monitor 之前生效；该 installer 只 patch 当前 V3 API，
-# 并且自身幂等，不需要等待 organizer MRO 全部加载完成。
+# 存储查询/快照能力必须在插件实例开始 browse/snapshot/monitor 之前生效；installer 均幂等。
 install_path_resolution_v369()
+install_storage_snapshot_guard_v3610()
 
 
 class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
@@ -113,7 +114,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
             "sticky_tv_group_since": 0,
             "active_resource_tasks": 1 if running_path else 0,
             "worker_queue_depth": int(snapshot.get("queued") or 0),
-            "runtime_hardening": "v3.6.9",
+            "runtime_hardening": "v3.6.10",
         })
 
         if running_path:
