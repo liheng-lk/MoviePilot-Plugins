@@ -96,14 +96,15 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "更新日历驱动的固定分流助手：5 分钟频道 Push 被动消费；当天应播 TV/动漫每 10 分钟快速追更；电影每 60 分钟复查并在新订阅时立即进入资源链。v1.12.9 修复电影观影已命中但真实迅雷包使用英文原名/官方原名时被媒体身份门禁误杀：仅按订阅精确 TMDB ID 通过 MoviePilot MediaChain 补全官方 title/en_title/original_title 等可信别名；错误 TMDB/年份仍拒绝。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+    "description": "更新日历驱动的固定分流助手：5 分钟频道 Push 被动消费；当天应播 TV/动漫每 10 分钟快速追更；电影每 60 分钟复查并在新订阅时立即进入资源链。v1.12.10 新增迅雷跨季物理资源栅栏：无季号整包先校验本季总集数，同一系列的同一真实迅雷 share 只允许首个成功 season 消费，阻止 01.mp4 / 01(1).mp4 等跨季重复入库；保留 v1.12.9 精确 TMDB 电影官方别名。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
     "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,PanSou,CloakBrowser,自动登录,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流,质量过滤,字幕过滤,检索冷却,更新日历,每小时补漏,10分钟追更,快速追更,资源门禁,季发行年份,合法别名,拆包恢复,needs_review",
-    "version": "1.12.9",
+    "version": "1.12.10",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v1.12.10": "修复同一真实迅雷分享被同一剧集多个 season 订阅重复消费、产生 01.mp4/01(1).mp4 等物理重复文件：TV 无明确季号的包在秒传前先校验完整集号结构，若解析集号超过当前季总集数则整包拒绝，禁止裁剪目标集后冒充当前季；同一系列+同一 seasonless share 在首个真实秒传成功后写入持久 season claim，其它订阅/season 不得再次消费；升级时可从旧 xunlei_flash_state completed 事实恢复 claim，同系列迅雷 dispatch 串行化关闭并发竞态；显式带 Sxx/Season/第x季 的真实多季包继续交给既有媒体身份与文件级 planner，电影、GYING、迅雷 JSON 协议和来源优先级不变。",
       "v1.12.9": "修复电影观影已搜索到资源但真实迅雷包使用英文原名/官方原名时被媒体身份门禁误杀；仅按订阅精确 TMDB ID 通过 MoviePilot MediaChain 补全官方 title/en_title/original_title 等可信别名，并继续严格校验 TMDB 身份、年份与电影季号冲突，不引入模糊电影匹配。",
       "v1.12.8": "修复升级后 /gysub 等 routing 消息命令可能完全无反馈的问题：在最终 GuangYaTransferAssistant 类上显式注册 action_event_handler，通过当前 runtime-owner 可靠性层继续落到 routing handler，不再依赖 mixin 继承层的隐式事件绑定；合法 /gysub 请求在调用 TMDB 媒体搜索前先立即回执，即使上游识别变慢也不会表现为消息黑洞。资源门禁、拆包和来源优先级不变。",
       "v1.12.7": "修复“资源已找到/缺集已识别但没有秒传或云添加”的后置门禁误杀：TV S02+ 若季号与剧集结构明确吻合，资源中的本季发行年份可不同于 MoviePilot 系列首播年份；GYING 搜索标题命中订阅、真实分享顶层名与内部文件名一致且年/季无冲突时，允许安全合法别名桥接（不做编辑距离模糊匹配，电影/错误季/S01 错年份继续硬拒绝）；Magnet/ED2K 拆包 needs_review 不再永久死亡，缺集/季/目标证据变化立即重评，证据不变每 6 小时最多复核一次；新增 missing/reserved/target/resolved/indexes/ambiguous 拆包日志。",
