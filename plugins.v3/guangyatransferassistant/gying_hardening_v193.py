@@ -44,6 +44,9 @@ _XUNLEI_PASSCODE_RE_V1125 = re.compile(
     r"(?:提取码|访问码|密码|口令|pass\s*code|passcode|pwd)\s*[:：=]?\s*([A-Za-z0-9]{1,16})",
     re.I,
 )
+_SEASON_EVIDENCE_RE_V1125 = re.compile(
+    r"(?i)(?:\bS(?:eason)?[ ._-]*0*(\d{1,2})(?=[^0-9]|$)|第\s*0*(\d{1,2})\s*季)"
+)
 
 
 def canonical_gying_node(value: str) -> str:
@@ -94,13 +97,28 @@ def _gying_rank_text_v1125(value: Any) -> str:
 
 
 def _gying_query_identity_v1125(keyword: str) -> Tuple[str, str, int]:
+    """解析插件生成的 `标题 年份 Sxx`，避免把《1984》《1899》这种数字片名当年份。"""
     raw = " ".join(str(keyword or "").split())
-    season_match = re.search(r"(?i)\bS0*(\d{1,2})\b", raw)
-    season = int(season_match.group(1)) if season_match else 0
-    year_match = re.search(r"(?<!\d)((?:19|20)\d{2})(?!\d)", raw)
-    year = year_match.group(1) if year_match else ""
-    title = re.sub(r"(?i)\s+S\d{1,2}\s*$", "", raw).strip()
-    title = re.sub(r"\s+(?:19|20)\d{2}\s*$", "", title).strip()
+    season = 0
+    season_match = _SEASON_EVIDENCE_RE_V1125.search(raw)
+    if season_match:
+        for value in season_match.groups():
+            if value:
+                season = int(value)
+                break
+
+    without_season = re.sub(
+        r"(?i)\s+(?:S(?:eason)?[ ._-]*0*\d{1,2}(?:[ ._-]*E0*\d{1,4})?|第\s*0*\d{1,2}\s*季)\s*$",
+        "",
+        raw,
+    ).strip()
+    year = ""
+    title = without_season
+    # 年份只认“非空标题 + 末尾 4 位年份”这一结构；单独的 1984/1899 永远保留为片名。
+    year_match = re.match(r"^(?P<title>.+?)\s+(?P<year>(?:19|20)\d{2})$", without_season)
+    if year_match:
+        title = str(year_match.group("title") or "").strip()
+        year = str(year_match.group("year") or "").strip()
     return _gying_rank_text_v1125(title), year, season
 
 
@@ -119,20 +137,20 @@ def _gying_card_score_v1125(keyword: str, item: Dict[str, Any]) -> int:
         elif len(actual_title) >= 3 and actual_title in expected_title:
             score += 700
 
+    # 排序阶段只把结构化 year 和 info 中的年份当元数据；标题里的 1984/1899 可能就是片名。
     actual_year = str((item or {}).get("year") or "").strip()
-    text_years = set(re.findall(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)", f"{raw_title} {raw_info}"))
+    year_evidence = set(re.findall(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)", raw_info))
+    if re.fullmatch(r"(?:19|20)\d{2}", actual_year):
+        year_evidence.add(actual_year)
     if expected_year:
-        if actual_year == expected_year or expected_year in text_years:
+        if expected_year in year_evidence:
             score += 120
-        elif actual_year or text_years:
+        elif year_evidence:
             score -= 240
 
     seasons = {
         int(value)
-        for pair in re.findall(
-            r"(?i)(?:\bS(?:eason)?\s*0*(\d{1,2})\b|第\s*0*(\d{1,2})\s*季)",
-            f"{raw_title} {raw_info}",
-        )
+        for pair in _SEASON_EVIDENCE_RE_V1125.findall(f"{raw_title} {raw_info}")
         for value in pair if value
     }
     if expected_season:
