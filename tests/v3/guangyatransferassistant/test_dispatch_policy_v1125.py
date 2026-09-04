@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import threading
 import time
 from pathlib import Path
 
@@ -49,11 +50,14 @@ class _Base:
             3: {"calendar_available": False, "raw_missing": [3], "due_uncovered": [], "reserved": [], "claimed": []},
             5: {"calendar_available": True, "raw_missing": [5], "due_uncovered": [5], "reserved": [], "claimed": []},
         }
+        self.reservations = {}
+        self.claims = {}
         self.external_state = {"5": {"last_at": time.time()}}
         self.saved = {}
         self.mode_batches = []
         self.base_batches = []
         self.tick_due = None
+        self.gate_calls = 0
 
     def init_plugin(self, config=None):
         return None
@@ -71,10 +75,13 @@ class _Base:
         return list(subscribe.missing)
 
     def _pending_reservations(self, subscribe):
-        return {"episodes": [], "movie": False}
+        return {
+            "episodes": set(self.reservations.get(int(subscribe.id), [])),
+            "movie": False,
+        }
 
     def _active_source_claims(self, sid):
-        return []
+        return list(self.claims.get(int(sid), []))
 
     def _movie_transfer_confirmed(self, subscribe):
         return False
@@ -89,6 +96,7 @@ class _Base:
         return {"subscriptions": []}
 
     def _airing_gate_v1120(self, subscribe, payload=None):
+        self.gate_calls += 1
         return dict(self.gates.get(subscribe.id) or {})
 
     def _route_source_mode_value_v1115(self):
@@ -143,32 +151,88 @@ def test_v1125_policy_parses_and_sits_between_page_and_weekly_scheduler():
     assert 'build_id = "20260904-r51-preview"' in policy_text
 
 
-def test_passive_channel_bypasses_date_only_for_real_uncovered_missing():
+def test_passive_channel_uses_real_missing_and_never_calls_calendar_gate():
     harness = _Harness()
     harness.mode = "channel_event"
-    harness.gates[1] = {
-        "calendar_available": True,
-        "raw_missing": [1, 2, 3],
-        "due_uncovered": [],
-        "future_missing": [1, 2],
-        "off_day_missing": [3],
-        "reserved": [2],
-        "claimed": [3],
+    harness.subs[1].missing = [1, 2, 3]
+    harness.reservations[1] = [2]
+    harness.claims[1] = [3]
+    harness.saved["airing_gate_state_v1120"] = {
+        "1": {
+            "due_uncovered": [],
+            "future_missing": [1, 2],
+            "off_day_missing": [3],
+            "next_episode": 4,
+            "next_air_at": "2026-09-10T20:00",
+        }
     }
     result = harness._airing_gate_v1120(harness.subs[1])
+    assert harness.gate_calls == 0
     assert result["passive_channel_bypass_v1125"] is True
     assert result["calendar_available"] is True
     assert result["due_missing"] == [1, 2, 3]
     assert result["due_uncovered"] == [1]
+    assert result["reserved"] == [2]
+    assert result["claimed"] == [3]
     assert result["strict_due_uncovered_v1125"] == []
+    assert result["strict_future_missing_v1125"] == [1, 2]
     assert result["future_missing"] == []
     assert result["off_day_missing"] == []
 
     harness.mode = "airing_pull"
     strict = harness._airing_gate_v1120(harness.subs[1])
+    assert harness.gate_calls == 1
     assert "passive_channel_bypass_v1125" not in strict
-    assert strict["due_uncovered"] == []
-    assert strict["future_missing"] == [1, 2]
+    assert strict["due_uncovered"] == [1]
+
+
+def test_passive_channel_survives_even_if_strict_calendar_gate_would_raise():
+    class _BrokenCalendarBase(_Base):
+        def _airing_gate_v1120(self, subscribe, payload=None):
+            raise RuntimeError("calendar unavailable")
+
+    class _BrokenHarness(PolicyMixin, _BrokenCalendarBase):
+        pass
+
+    harness = _BrokenHarness()
+    harness.mode = "channel_event"
+    result = harness._airing_gate_v1120(harness.subs[1])
+    assert result["passive_channel_bypass_v1125"] is True
+    assert result["due_uncovered"] == [1]
+
+    harness.mode = "airing_pull"
+    try:
+        harness._airing_gate_v1120(harness.subs[1])
+    except RuntimeError as err:
+        assert "calendar unavailable" in str(err)
+    else:
+        raise AssertionError("主动日历模式必须继续尊重严格日历 gate")
+
+
+def test_due_scope_is_thread_local_between_concurrent_subscriptions():
+    harness = _Harness()
+    harness.subs[1].missing = [1, 9]
+    harness.subs[2].missing = [2, 8]
+    barrier = threading.Barrier(2)
+    results = {}
+
+    def worker(sid: int, episode: int):
+        subscribe = harness.subs[sid]
+        with harness._due_scope_v1120(subscribe, [episode]):
+            barrier.wait(timeout=2)
+            results[sid] = harness._subscription_missing_episodes(subscribe)
+            barrier.wait(timeout=2)
+
+    first = threading.Thread(target=worker, args=(1, 1))
+    second = threading.Thread(target=worker, args=(2, 2))
+    first.start()
+    second.start()
+    first.join(timeout=3)
+    second.join(timeout=3)
+    assert not first.is_alive() and not second.is_alive()
+    assert results == {1: [1], 2: [2]}
+    assert harness._subscription_missing_episodes(harness.subs[1]) == [1, 9]
+    assert harness._subscription_missing_episodes(harness.subs[2]) == [2, 8]
 
 
 def test_smart_pull_filters_off_day_before_execution_and_falls_back_only_when_calendar_unavailable():
