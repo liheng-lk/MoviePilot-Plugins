@@ -69,19 +69,37 @@ def test_every_date_uses_lightweight_rows_and_three_state_summary():
 
 
 def test_large_subscription_picker_does_not_compute_episode_progress_per_option():
-    options = PATCH[PATCH.index("def _subscription_options"):PATCH.index("def get_form")]
+    options = PATCH[PATCH.index("def _subscription_options"):PATCH.index("def _find_model_node_v1124")]
     assert "_list_subscriptions(None)" in options
     assert "state not in {\"N\", \"R\"} and sid not in selected" in options
     assert "_subscription_episode_progress" not in options
-    assert 'prefix = "✓ " if picked else ""' in options
+    assert 'prefix = "✓ "' not in options
+    assert "不再把 ✓ 写死在标题里" in options
 
 
-def test_large_subscription_picker_is_single_line_search_not_chip_wall():
+def test_large_subscription_manager_replaces_real_form_node_instead_of_mutating_deepcopy():
+    helper = PATCH[PATCH.index("def _find_model_node_v1124"):PATCH.index("def init_plugin")]
     form = PATCH[PATCH.index("def get_form"):PATCH.index("# ------------------------------------------------------------------\n    # 数据页：快照秒开")]
+    assert "返回表单里的真实节点引用" in helper
+    assert "return node" in helper
+    assert 'self._find_model_node_v1124(form, "selected_subscriptions")' in form
+    assert 'self._find_model_props(form, "selected_subscriptions")' not in form
+    assert "selected_node.clear()" in form
+    assert "selected_node.update" in form
+
+
+def test_large_subscription_manager_has_constant_height_single_item_toggle_workflow():
+    form = PATCH[PATCH.index("def get_form"):PATCH.index("# ------------------------------------------------------------------\n    # 数据页：快照秒开")]
+    init = PATCH[PATCH.index("def init_plugin"):PATCH.index("def get_form")]
+    assert '"model": "_subscription_pick_v1124"' in form
+    assert '"multiple": False' in form
     assert '"chips": False' in form
-    assert '"closable-chips": False' in form
-    assert '"hide-selected": False' in form
-    assert '"menu-props": {"maxHeight": 420}' in form
-    assert '"no-data-text": "没有匹配的活跃订阅"' in form
-    assert "输入剧名 / 年份 / 季 / 订阅 ID 搜索" in form
-    assert "已选项带 ✓ 并可再次点击取消" in form
+    assert '"hide-details": True' in form
+    assert '"menu-props": {"maxHeight": 360}' in form
+    assert '"component": "VBtn"' in form
+    assert "添加 / 取消接管" in form
+    assert "selected_subscriptions = current.includes(id)" in form
+    assert "_subscription_pick_v1124 = null" in form
+    assert "已固定接管" in form
+    assert "字段高度与订阅数量彻底解耦" in form
+    assert 'config.pop("_subscription_pick_v1124", None)' in init
