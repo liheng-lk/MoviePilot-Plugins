@@ -19,8 +19,12 @@ def test_route_source_mode_is_thread_local_truth_not_shared_string():
     assert "self._route_source_local_v1115 = threading.local()" in CHANNEL
     assert "def _route_source_mode_value_v1115" in CHANNEL
     helper = CHANNEL.split("    def _route_source_mode_value_v1115(", 1)[1].split("    # ------------------------------------------------------------------", 1)[0]
-    assert 'hasattr(local, "mode")' in helper
+    assert "if local is not None:" in helper
+    assert 'getattr(local, "mode", "")' in helper
     assert 'getattr(self, "_route_source_mode_v1115"' in helper
+    # thread-local 已初始化后，本线程缺少 mode 必须返回空，不能误读其它线程写入的共享兼容字段。
+    assert 'if local is not None and hasattr(local, "mode")' not in helper
+    assert helper.index('getattr(local, "mode", "")') < helper.index('getattr(self, "_route_source_mode_v1115"')
 
 
 def test_mode_batch_sets_and_restores_thread_local_context():
