@@ -11,6 +11,13 @@ MONITOR_PATCH = (PLUGIN / "organizer_hardening_v369.py").read_text(encoding="utf
 EXECUTION = (PLUGIN / "organizer_execution_v360.py").read_text(encoding="utf-8")
 
 
+def _between(text: str, start_token: str, end_token: str) -> str:
+    """从 start_token 之后继续寻找 end_token，避免命中函数之前的引用。"""
+    start = text.index(start_token)
+    end = text.index(end_token, start + len(start_token))
+    return text[start:end]
+
+
 def test_v369_modules_are_valid_python():
     ast.parse(PATH_PATCH)
     ast.parse(MONITOR_PATCH)
@@ -18,7 +25,7 @@ def test_v369_modules_are_valid_python():
 
 
 def test_v369_path_resolution_paginates_every_parent_segment():
-    block = PATH_PATCH[PATH_PATCH.index("def _path_to_id"):PATH_PATCH.index("def list_strict")]
+    block = _between(PATH_PATCH, "def _path_to_id", "def list_strict")
     assert "page = 0" in block
     assert "while True:" in block
     assert "page=page" in block
@@ -38,7 +45,7 @@ def test_v369_path_resolution_can_find_items_beyond_first_100_children():
 
 
 def test_v369_guangya_cache_is_instance_scoped_not_shared_across_hot_reload():
-    init = PATH_PATCH[PATH_PATCH.index("def __init__(self: GuangYaApi"):PATH_PATCH.index("def _path_to_id")]
+    init = _between(PATH_PATCH, "def __init__(self: GuangYaApi", "def _path_to_id")
     assert "previous_init(self, *args, **kwargs)" in init
     assert "self._id_cache = {}" in init
     assert "self._item_cache = {}" in init
@@ -46,7 +53,7 @@ def test_v369_guangya_cache_is_instance_scoped_not_shared_across_hot_reload():
 
 
 def test_v369_strict_list_never_turns_upstream_error_into_empty_directory():
-    block = PATH_PATCH[PATH_PATCH.index("def list_strict"):PATH_PATCH.index("def get_item")]
+    block = _between(PATH_PATCH, "def list_strict", "def get_item")
     assert "if not _response_success(response):" in block
     assert "raise RuntimeError(" in block
     assert "page += 1" in block
@@ -54,11 +61,11 @@ def test_v369_strict_list_never_turns_upstream_error_into_empty_directory():
 
 
 def test_v369_get_item_reuses_path_resolution_cache_and_has_explicit_refresh():
-    block = PATH_PATCH[PATH_PATCH.index("def get_item"):PATH_PATCH.index("def refresh_item")]
+    block = _between(PATH_PATCH, "def get_item", "def refresh_item")
     assert "self._path_to_id(normalized)" in block
     assert "resolved = self._restore_cached_item(normalized)" in block
     assert "return resolved" in block
-    refresh = PATH_PATCH[PATH_PATCH.index("def refresh_item"):PATH_PATCH.index("GuangYaApi.__init__")]
+    refresh = _between(PATH_PATCH, "def refresh_item", "GuangYaApi.__init__ =")
     assert "self._invalidate_path_cache(normalized)" in refresh
 
 
@@ -69,7 +76,11 @@ def test_v369_known_resource_remote_budget_is_bounded():
 
 
 def test_v369_unchanged_known_scan_still_advances_new_resource_discovery():
-    block = MONITOR_PATCH[MONITOR_PATCH.index("def run_monitor_scan"):MONITOR_PATCH.index("GuangYaOrganizerEngineV360Mixin._v360_list_directory")]
+    block = _between(
+        MONITOR_PATCH,
+        "def run_monitor_scan",
+        "GuangYaOrganizerEngineV360Mixin._v360_list_directory =",
+    )
     assert "result = previous_monitor_scan(plugin, manual=manual)" in block
     assert 'if not data.get("known_scan"):' in block
     assert "GuangYaOrganizerEngineV360Mixin.run_organize_monitor_scan(plugin, manual=False)" in block
@@ -80,7 +91,7 @@ def test_v369_unchanged_known_scan_still_advances_new_resource_discovery():
 
 
 def test_v369_directory_read_refreshes_stale_fileid_once_but_propagates_real_failure():
-    block = MONITOR_PATCH[MONITOR_PATCH.index("def list_directory"):MONITOR_PATCH.index("def run_monitor_scan")]
+    block = _between(MONITOR_PATCH, "def list_directory", "def run_monitor_scan")
     assert 'strict_list = getattr(api, "list_strict", None)' in block
     assert 'refresher = getattr(api, "refresh_item", None)' in block
     assert "refresher(Path(path))" in block
@@ -89,21 +100,25 @@ def test_v369_directory_read_refreshes_stale_fileid_once_but_propagates_real_fai
 
 
 def test_v369_state_cleanup_is_direct_directory_only_and_requires_successful_listing():
-    helper = MONITOR_PATCH[MONITOR_PATCH.index("def _reconcile_direct_state"):MONITOR_PATCH.index("def _split_children")]
+    helper = _between(MONITOR_PATCH, "def _reconcile_direct_state", "def _split_children")
     assert "_direct_parent(plugin, path) != group" in helper
     assert "if path in present:" in helper
     assert "mapping.pop(raw_path, None)" in helper
     assert "_v360_is_under" not in helper
     # 成功 strict_list 后才对 files 做局部回收；失败分支不会以 [] 继续执行。
-    listing = MONITOR_PATCH[MONITOR_PATCH.index("def list_directory"):MONITOR_PATCH.index("def run_monitor_scan")]
+    listing = _between(MONITOR_PATCH, "def list_directory", "def run_monitor_scan")
     assert "dirs, files = _split_children(plugin, children)" in listing
     assert "pruned = _reconcile_direct_state(plugin, path, files)" in listing
 
 
 def test_v369_network_unavailable_defers_continuous_discovery_without_state_loss():
-    block = MONITOR_PATCH[MONITOR_PATCH.index("def run_monitor_scan"):MONITOR_PATCH.index("GuangYaOrganizerEngineV360Mixin._v360_list_directory")]
+    block = _between(
+        MONITOR_PATCH,
+        "def run_monitor_scan",
+        "GuangYaOrganizerEngineV360Mixin._v360_list_directory =",
+    )
     assert "network = _network_status(plugin)" in block
-    assert "if not network.get(\"available\", True):" in block
+    assert 'if not network.get("available", True):' in block
     assert '"network_deferred": True' in block
     assert "保留状态" in block
 
@@ -114,7 +129,7 @@ def test_v369_wiring_applies_path_patch_before_runtime_operations_and_monitor_pa
     install_pos = EXECUTION.index("install_path_resolution_v369()")
     class_pos = EXECUTION.index("class GuangYaOrganizerExecutionV360Mixin")
     assert import_pos < install_pos < class_pos
-    init = EXECUTION[EXECUTION.index("def init_organizer_monitor"):EXECUTION.index("def _execute_isolated_transfer")]
+    init = _between(EXECUTION, "def init_organizer_monitor", "def _execute_isolated_transfer")
     assert "from .organizer_hardening_v369 import install_organizer_hardening_v369" in init
     assert "install_organizer_hardening_v369()" in init
     assert init.index("install_organizer_hardening_v369()") < init.index("install_move_confirmation_v360()")
