@@ -95,14 +95,15 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "更新日历驱动的固定分流助手：5 分钟频道 Push 只消费已到达资源；当天应播 TV/动漫由 AiringDue 每 10 分钟快速追更，每轮仍严格经过真实缺集、reservation/source claim 与终止栅栏，并按观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K 执行完整来源链；电影继续 60 分钟主动复查；非更新日剧集不主动访问外部资源站；04:10 每日全员复核继续兜底。",
-    "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,PanSou,CloakBrowser,自动登录,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流,质量过滤,字幕过滤,检索冷却,更新日历,每小时补漏,10分钟追更,快速追更",
-    "version": "1.12.6",
+    "description": "更新日历驱动的固定分流助手：5 分钟频道 Push 被动消费；当天应播 TV/动漫每 10 分钟快速追更；v1.12.7 修复观影已找到资源、缺集也已识别却未提交光鸭的问题，支持 S02+ 季发行年份与系列首播年份差异、强证据合法别名桥接，并让拆包 needs_review 在证据变化后自动恢复；来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K；非更新日不主动访问外部资源站，04:10 每日全员复核兜底。",
+    "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,PanSou,CloakBrowser,自动登录,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流,质量过滤,字幕过滤,检索冷却,更新日历,每小时补漏,10分钟追更,快速追更,资源门禁,季发行年份,合法别名,拆包恢复,needs_review",
+    "version": "1.12.7",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v1.12.7": "修复“资源已找到/缺集已识别但没有秒传或云添加”的后置门禁误杀：TV S02+ 若季号与剧集结构明确吻合，资源中的本季发行年份可不同于 MoviePilot 系列首播年份；GYING 搜索标题命中订阅、真实分享顶层名与内部文件名一致且年/季无冲突时，允许安全合法别名桥接（不做编辑距离模糊匹配，电影/错误季/S01 错年份继续硬拒绝）；Magnet/ED2K 拆包 needs_review 不再永久死亡，缺集/季/目标证据变化立即重评，证据不变每 6 小时最多复核一次；新增 missing/reserved/target/resolved/indexes/ambiguous 拆包日志。",
       "v1.12.6": "修复新剧集资源已经快速发布但插件最长接近 60 分钟才再次检索的问题：AiringDue 从每小时改为每 10 分钟唤醒；TV/动漫 airing_pull 使用独立 10 分钟外部检索窗口，电影仍维持 60 分钟；是否真正访问外部来源仍严格由 due_uncovered、reservation、source claim、episode fence 与媒体库完成事实决定，因此非更新日、已入库和在途订阅不会因高频时钟产生搜索；GYING 120 秒短缓存小于快追窗口，下一轮会重新获取站点结果；来源优先级保持观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
       "v1.12.5": "发布 Push/Pull 最终调度：5 分钟频道 tick 只消费被动到达资源；每小时 AiringDue 仅选择今日应播、仍缺失且未被 reservation/source claim 覆盖的媒体，并通过既有完整来源链依次尝试观影迅雷秒传、光鸭直接转存、Magnet、ED2K；Airing Pull 使用独立 60 分钟检索窗口，不再被旧 180 分钟全局冷却降频；非更新日剧集不主动打外部资源站；稳定星期可作为调度事实；日历刷新失败进入 60 秒退避；04:10 每日全员复核继续先频道、重算真实缺口后再强制补漏；并发 Reliability trigger 按真实来源重新分组，频道恢复不会偷偷启动 GYING。",
       "v1.12.4": "修复实机前端交互：追剧日期详情改为 PageRender 可直接渲染的原生 details/summary，本地即时展开且不再等待 VWindow；日期明细使用轻量剧集行避免隐藏海报预加载；固定接管订阅彻底取消多选 chip 墙，改为固定高度的单项搜索添加/取消管理器，并直接修改真实表单节点，已接管数量再多也不会把配置页无限撑高。",
