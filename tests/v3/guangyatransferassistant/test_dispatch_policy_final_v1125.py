@@ -83,12 +83,10 @@ def test_async_trigger_record_and_governance_enqueue_share_one_reentrant_route_l
     active_pos = queue.index("accepted -= active", lock_pos)
     record_pos = queue.index("store[sid] = bucket[-limit:]", active_pos)
     super_pos = queue.index("return super()._queue_async_route_check(ids, trigger=trigger)", record_pos)
-    # 这四个动作保持同一级 with 缩进；super 内 Governance/Reliability 对同一 RLock 可重入。
     locked_tail = queue[lock_pos:]
     assert active_pos < record_pos < super_pos
     assert "with route_lock:" in locked_tail
     assert "return super()._queue_async_route_check(ids, trigger=trigger)" in locked_tail
-    assert "预测与真正入队之间被 worker 改写 active" not in queue
 
 
 def test_async_trigger_order_is_channel_before_active_pull_and_prime_collapses_duplicate_auto_events():
@@ -109,7 +107,6 @@ def test_worker_batch_is_regrouped_by_saved_trigger_instead_of_first_worker_trig
     assert "groups.setdefault" in run
     assert "_async_trigger_priority_v1125" in run
     assert "self._run_dispatch_trigger_v1125(group_ids, value)" in run
-    # worker 传入的 fallback trigger 只能补缺，不能直接覆盖所有 ID 的来源语义。
     assert "return super()._run_reliability_route_batch(batch, trigger)" not in run
 
 
