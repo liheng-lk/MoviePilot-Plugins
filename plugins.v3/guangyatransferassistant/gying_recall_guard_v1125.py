@@ -6,11 +6,13 @@
 - 未标集号的整季包/合集仍保留为潜在可用候选，避免为了扩大关键词无意义增加请求；
 - 关键词降级后，把本轮真正成功请求过的各级详情结果合并回原关键词 120 秒缓存，
   即使没有可用迅雷，后续 Magnet 也能复用已经付出的 downurl 请求；
-- 某一级迅雷候选通过预筛但实际秒传失败时，才继续下一档关键词；已失败分享只保存在
-  thread-local 去重集合中，本轮不会因宽关键词再次返回同一分享而重复尝试；
-- 若某一级搜索本身失败（节点/登录/HTTP），立即停止继续放宽，不能把服务异常放大成请求风暴；
+- 精准迅雷搜索保持原 GYING 节点故障切换：单节点搜索异常最多换 3 次节点，但账号/验证码
+  或 viewing_session 已确认全节点不可用时立即停止，不能把认证故障放大成重试风暴；
+- 某一级迅雷候选通过预筛但实际秒传失败时，才继续下一档关键词；同一 share+passcode
+  本轮不重复尝试，但同一分享在宽关键词补出了新的提取码时允许重试；
+- 若某一级搜索本身失败（节点/登录/HTTP 且节点切换仍失败），立即停止继续放宽；
 - Magnet/ED2K 以“实际执行结果”为准：严格候选存在但因旧集、错媒体或历史失败未产生 action 时，
-  才逐级补查宽关键词；若严格搜索本身没有成功缓存则不继续放宽。
+  才逐级补查宽关键词；若严格搜索本身没有成功缓存则不继续放宽；
 - 真正的媒体身份与文件级缺集校验仍由现有迅雷 JSON / Episode Planner 最终确认。
 
 本层是标准 cooperative mixin，不继承旧 Hardening；运行时显式放在 Hardening 前面。
@@ -122,6 +124,47 @@ class GuangYaGyingRecallGuardV1125Mixin:
             "state": final_state,
         }
 
+    def _gying_xunlei_precise_variant_v1125(self, keyword: str):
+        """给精准搜索补回 Failover 语义；认证失败和全节点不可用不做无意义重试。"""
+        if not bool(getattr(self, "_viewing_auto_switch", True)):
+            return super()._gying_xunlei_precise_variant_v1125(keyword)
+
+        attempted_nodes = set()
+        last_candidates: List[Dict[str, Any]] = []
+        last_state: Dict[str, Any] = {"success": False, "message": "观影迅雷搜索失败"}
+        for _attempt in range(3):
+            candidates, state = super()._gying_xunlei_precise_variant_v1125(keyword)
+            last_candidates, last_state = list(candidates or []), dict(state or {})
+            if last_state.get("success"):
+                return last_candidates, last_state
+
+            mode = str(last_state.get("mode") or "").lower()
+            message = str(last_state.get("message") or "")
+            bad_credentials = getattr(self, "_gying_bad_credentials", None)
+            if mode in {"disabled", "unavailable"} or (
+                callable(bad_credentials) and bool(bad_credentials(message))
+            ):
+                return last_candidates, last_state
+
+            failed_node = str(last_state.get("node") or "").strip()
+            if not failed_node or failed_node in attempted_nodes:
+                return last_candidates, last_state
+            attempted_nodes.add(failed_node)
+
+            # Hardening 已把当前节点标记为 search_error；这里清掉 active 粘性并清理本关键词缓存，
+            # 下一轮 _viewing_session 会按 Failover 健康顺序选择其它节点。
+            try:
+                store = dict(self._gying_state() or {})
+                if str(store.get("active_node") or "") == failed_node:
+                    store["active_node"] = ""
+                    self._save_gying_state(store)
+            except Exception:
+                pass
+            cache = getattr(self, "_gying_search_cache", None)
+            if isinstance(cache, dict):
+                cache.pop(" ".join(str(keyword or "").split()), None)
+        return last_candidates, last_state
+
     def _search_viewing_xunlei(self, keyword: str):
         """只有当前媒体且可能覆盖当前缺集的迅雷候选，才能停止当前一档搜索。"""
         all_variants = gying_keyword_variants(keyword)
@@ -168,7 +211,9 @@ class GuangYaGyingRecallGuardV1125Mixin:
             matched: List[Dict[str, Any]] = []
             for row in list(candidates or []):
                 identity = str((row or {}).get("share_id") or (row or {}).get("identity") or "").strip()
-                if identity and identity in seen_identities:
+                passcode = str((row or {}).get("passcode") or "").strip()
+                retry_key = (identity, passcode)
+                if identity and retry_key in seen_identities:
                     continue
                 matched.append(row)
 
@@ -196,8 +241,9 @@ class GuangYaGyingRecallGuardV1125Mixin:
                     matched.sort(key=lambda row: self._xunlei_candidate_priority_v1125(subscribe, row, missing))
                 for row in matched:
                     identity = str((row or {}).get("share_id") or (row or {}).get("identity") or "").strip()
+                    passcode = str((row or {}).get("passcode") or "").strip()
                     if identity:
-                        seen_identities.add(identity)
+                        seen_identities.add((identity, passcode))
                 retry_local.seen_identities = seen_identities
                 last_state["matched_candidates"] = len(matched)
                 last_state["missing_candidates"] = len(matched)
