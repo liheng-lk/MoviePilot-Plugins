@@ -34,7 +34,7 @@ def test_xunlei_recall_circuit_patch_parses_and_sits_above_recall_guard():
 
 
 def test_captcha_circuit_is_sticky_across_keyword_rounds_without_faking_handled():
-    merge = _method(reliability_text, "_merge_xunlei_rounds_v1125", "_xunlei_compute_triple_cid")
+    merge = _method(reliability_text, "_merge_xunlei_rounds_v1125", "_dispatch_viewing_external_v1113")
     assert "super()._merge_xunlei_rounds_v1125(base, extra)" in merge
     assert '(base or {}).get("captcha_circuit_open")' in merge
     assert '(extra or {}).get("captcha_circuit_open")' in merge
@@ -60,6 +60,30 @@ def test_runtimefix_circuit_reset_cannot_escape_one_top_level_recall_round():
     lower_dispatch = _method(runtime_fix, "_dispatch_xunlei_flash", "_notify_cloud_completed_v1113")
     assert "self._xunlei_captcha_circuit_open_v1113 = False" in lower_dispatch
     # 这个历史每次下层调用重置仍保留，但上层 reliability merge 会把返回事实提升到整个 recall round。
-    merge = _method(reliability_text, "_merge_xunlei_rounds_v1125", "_xunlei_compute_triple_cid")
+    merge = _method(reliability_text, "_merge_xunlei_rounds_v1125", "_dispatch_viewing_external_v1113")
     assert 'captcha_open = bool((base or {}).get("captcha_circuit_open")) or bool(' in merge
     assert "stop_after_failure = True" in merge
+
+
+def test_external_governance_blocks_recall_guard_before_any_wide_gying_request():
+    guard = _method(reliability_text, "_dispatch_viewing_external_v1113", "_xunlei_compute_triple_cid")
+    assert 'not bool(getattr(self, "_provider_auto_search", True))' in guard
+    assert 'not bool(getattr(self, "_external_auto_dispatch", True))' in guard
+    assert 'mode == "channel_event"' in guard
+    assert 'getattr(self, "_external_round_ok_v1114", None)' in guard
+    assert 'not bool(round_ok(subscribe))' in guard
+    assert '"cooldown": True' in guard
+    # 只有全部治理条件允许后才进入 RecallGuard 的实际扩词逻辑。
+    super_pos = guard.index("super()._dispatch_viewing_external_v1113(subscribe)")
+    channel_pos = guard.index('mode == "channel_event"')
+    cooldown_pos = guard.index("not bool(round_ok(subscribe))")
+    assert channel_pos < super_pos
+    assert cooldown_pos < super_pos
+
+
+def test_channel_event_cannot_use_stale_search_bundle_to_reenter_gying():
+    guard = _method(reliability_text, "_dispatch_viewing_external_v1113", "_xunlei_compute_triple_cid")
+    channel = guard.split('if mode == "channel_event":', 1)[1].split("round_ok =", 1)[0]
+    assert '"channel_only": True' in channel
+    assert "禁止主动 GYING" in channel
+    assert "super()._dispatch_viewing_external_v1113" not in channel
