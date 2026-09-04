@@ -58,4 +58,4 @@ def test_runtime_entry_installs_compat_patch_and_new_build():
     text = ENTRY.read_text(encoding="utf-8")
     assert "install_episode_filename_compat(_legacy_module)" in text
     assert "collapse_unparsed_failure_notice" in text
-    assert 'build_id = "20260905-r54"' in text
+    assert 'build_id = "20260905-r55"' in text

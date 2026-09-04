@@ -271,9 +271,9 @@ def test_needs_review_same_evidence_can_be_rechecked_after_six_hours():
 def test_v1127_public_metadata_keeps_v1126_history():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     plugin = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == plugin["version"] == "1.12.8"
+    assert package["version"] == plugin["version"] == "1.12.9"
     assert "v1.12.7" in package["history"]
     assert "v1.12.6" in package["history"]
     entry = ENTRY.read_text(encoding="utf-8")
-    assert 'plugin_version = "1.12.8"' in entry
-    assert 'build_id = "20260905-r54"' in entry
+    assert 'plugin_version = "1.12.9"' in entry
+    assert 'build_id = "20260905-r55"' in entry

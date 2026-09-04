@@ -236,3 +236,11 @@ Magnet/ED2K 继续复用 `光鸭云盘助手 (ShukGuangYaDisk)` 登录态与目�
 需要安装并登录同仓库的 `光鸭云盘助手 (ShukGuangYaDisk)`。本插件复用其运行时客户端、Token 刷新、目录创建、分享转存、userres 秒传和 cloudcollection 能力，不保存第二份光鸭登录凭据。
 
 CI 可以覆盖协议解析、PoW 算法、节点切换、隐私边界、缺集筛选和秒传调用契约；**真实 GYING 账号登录 → 搜索 → 迅雷分享 → 光鸭账号秒传**仍需在实际 MoviePilot 环境用测试账号/Cookie 做生产烟测，因为站点节点、出口与会话验证会动态变化。
+
+## v1.12.9：电影精确 TMDB 官方别名桥接
+
+- 修复电影在观影已经命中，但迅雷真实资源使用英文原名/官方原名时被最终媒体身份门禁误杀的问题。
+- 仅当订阅具备明确 TMDB 身份时，通过 MoviePilot `MediaChain.recognize_media` 按同一 TMDB ID 读取官方 `title/en_title/original_title/original_name` 等字段作为可信别名。
+- 返回 TMDB ID 或年份与订阅冲突时不采纳别名；电影资源出现季号仍按原门禁拒绝。
+- 不使用编辑距离或模糊标题救回，因此不会因相似片名放宽跨媒体安全边界。
+- 典型修复场景：订阅中文名“失控陪审团”，真实资源 `Runaway.Jury.2003...`。
