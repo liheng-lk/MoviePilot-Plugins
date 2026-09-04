@@ -25,6 +25,11 @@ def _mixin_class(fake_media_chain):
     class _MediaSource:
         TMDB = "tmdb"
 
+    class _XunleiFenceBase:
+        """测试只隔离 v1.12.9 电影别名行为；v1.12.10 season fence 由独立测试覆盖。"""
+
+        pass
+
     ns: Dict[str, Any] = {
         "Any": Any,
         "Dict": Dict,
@@ -35,6 +40,7 @@ def _mixin_class(fake_media_chain):
         "MediaChain": fake_media_chain,
         "MediaType": _MediaType,
         "MediaSource": _MediaSource,
+        "GuangYaXunleiSeasonFenceV11210Mixin": _XunleiFenceBase,
     }
     exec(compile(module, str(PATCH), "exec"), ns)
     return ns["GuangYaMovieIdentityV1129Mixin"]
