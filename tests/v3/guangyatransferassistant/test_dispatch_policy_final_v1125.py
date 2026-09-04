@@ -64,7 +64,7 @@ def test_new_subscription_prime_refreshes_channel_once_without_direct_gying_forc
 
 
 def test_new_subscription_is_channel_first_then_date_gated_non_force_pull():
-    method = _method("_run_reliability_route_batch")
+    method = _method("_run_reliability_route_batch", "_refresh_airing_calendar_v1120")
     assert 'if "新订阅资源匹配" not in text:' in method
     channel = method.index('"新订阅资源匹配·频道阶段"')
     selector = method.index("_smart_pull_due_ids_v1125()")
@@ -75,6 +75,20 @@ def test_new_subscription_is_channel_first_then_date_gated_non_force_pull():
     assert method.count("force=False") >= 2
     assert "pull_ids = [sid for sid in ids if sid in allowed]" in method
     assert '"subscription_prime"' not in method
+
+
+def test_daily_calendar_network_refresh_is_deferred_until_channel_and_gying_finish():
+    refresh = _method("_refresh_airing_calendar_v1120", "_daily_full_catchup_v1110")
+    daily = _method("_daily_full_catchup_v1110")
+    assert 'getattr(local, "defer_daily_calendar", False)' in refresh
+    assert 'self.get_data("airing_calendar_v1120")' in refresh
+    assert "return dict(super()._refresh_airing_calendar_v1120(force=force) or {})" in refresh
+    assert "local.defer_daily_calendar = True" in daily
+    super_call = daily.index("super()._daily_full_catchup_v1110()")
+    restore = daily.index("local.defer_daily_calendar = previous")
+    trailing_refresh = daily.index("self._refresh_airing_calendar_v1120(force=True)")
+    assert super_call < restore < trailing_refresh
+    assert "两阶段补漏已完成" in daily
 
 
 def test_final_dispatch_does_not_reimplement_download_or_transfer_business_chain():
