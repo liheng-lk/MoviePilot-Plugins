@@ -24,7 +24,7 @@ def test_search_failure_marks_retry_round_as_terminal():
 
 
 def test_dispatch_never_widens_after_node_login_or_http_search_failure():
-    dispatch = _method("_dispatch_xunlei_flash", "_viewing_external_candidates_v1113")
+    dispatch = _method("_dispatch_xunlei_flash", "_dispatch_viewing_external_v1113")
     lower = dispatch.index("super()._dispatch_xunlei_flash(subscribe)")
     stop = dispatch.index('getattr(local, "stop_after_failure", False)', lower)
     next_index = dispatch.index("next_index = last_index + 1", stop)
