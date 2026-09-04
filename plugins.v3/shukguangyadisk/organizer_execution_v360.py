@@ -2,14 +2,14 @@
 
 该层显式位于插件 MRO 前部：
 1. 导入阶段先安装 v3.6.9 光鸭路径分页/严格读取，以及 v3.6.10 MoviePilot 存储快照保护；
-2. monitor 初始化时安装 v3.6.9 连续发现/状态回收、v3.6.11 durable retry bridge 和
-   v3.6.12 pending 真等待门禁，再安装 v3.6.0 move 终态修复与 v3.6.4 move 失败事务保护；
+2. monitor 初始化时安装 v3.6.9/v3.6.13 连续发现与状态可达性回收、v3.6.11 durable retry
+   bridge 和 v3.6.12 pending 真等待门禁，再安装 v3.6.0 move 终态修复与 v3.6.4 move 失败事务保护；
 3. 弱命名 folder envelope 内部逐文件执行时，最终状态统一回到 v3.6 fallback；
 4. 状态 API 最后投影 v3.6 Worker/discovery 事实，屏蔽旧 v3.5.9 cursor/sticky 的展示残留。
 
 普通 MoviePilot 原生目录任务继续走旧安全预览/冲突/season 等 MoviePilot 安全链，不在这里
-重写业务规则。v3.6.9~v3.6.12 只修远端查询、发现调度、状态/快照可靠性、durable 任务身份
-衔接及 pending 等待态语义。
+重写业务规则。v3.6.9~v3.6.13 只修远端查询、发现调度、状态/快照可靠性、durable 任务身份
+衔接、pending 等待态语义与长期状态回收效率。
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
             install_organizer_hardening_v369()
             self._v369_monitor_patch_ready = True
         if not self._v3611_retry_patch_ready:
-            # durable retry bridge 必须在 v3.6.9 monitor patch 之后安装：它包裹最终
+            # durable retry bridge 必须在 v3.6.9/v3.6.13 monitor patch 之后安装：它包裹最终
             # _v360_prepare_member / admission fallback，避免失败历史重新生成 planning_input。
             from .organizer_durable_retry_v3611 import install_durable_retry_v3611
 
@@ -131,7 +131,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
             "sticky_tv_group_since": 0,
             "active_resource_tasks": 1 if running_path else 0,
             "worker_queue_depth": int(snapshot.get("queued") or 0),
-            "runtime_hardening": "v3.6.12",
+            "runtime_hardening": "v3.6.13",
         })
 
         if running_path:
