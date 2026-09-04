@@ -5,16 +5,19 @@
 - TV 候选若显式标出了集号且与 MoviePilot 当前真实缺集完全不相交，视为不可用；
 - 未标集号的整季包/合集仍保留为潜在可用候选，避免为了扩大关键词无意义增加请求；
 - 真正的媒体身份与文件级缺集校验仍由现有迅雷 JSON / Episode Planner 最终确认。
+
+本层是标准 cooperative mixin，不继承旧 Hardening；运行时显式放在 Hardening 前面，
+super() 仅用于无关键词变体时继续走原 GYING 搜索实现。
 """
 from __future__ import annotations
 
 from typing import Any, Dict, List, Set
 
 from .episode_resolver_v190 import AUTO_SELECT_CONFIDENCE, reliable_episode_set, resolve_episode
-from .gying_hardening_v193 import GuangYaGyingHardeningMixin, gying_keyword_variants
+from .gying_hardening_v193 import gying_keyword_variants
 
 
-class GuangYaGyingRecallGuardV1125Mixin(GuangYaGyingHardeningMixin):
+class GuangYaGyingRecallGuardV1125Mixin:
     """最终迅雷召回门禁：明确旧集不能提前终止关键词降级。"""
 
     build_id = "20260904-r51-preview"
