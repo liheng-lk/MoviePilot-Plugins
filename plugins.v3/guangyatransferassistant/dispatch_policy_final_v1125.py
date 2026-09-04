@@ -8,13 +8,16 @@
 - 每日 04:10 的自动强制 GYING 虽可绕过冷却执行本轮，但执行后必须登记正常冷却，
   避免 05:00 的小时 Pull 立刻再次访问观影；人工强制检查不受此规则影响；
 - 04:10 的强制日历刷新延后到频道 + GYING 两阶段结束后，避免 TMDB/每日助手慢响应
-  把本应最先执行的频道补漏阻塞在前面。
+  把本应最先执行的频道补漏阻塞在前面；
+- 常规日历刷新若抛异常，60 秒内返回显式“不可用”哨兵，避免 selector 首次失败后
+  每个订阅的 gate 又各自触发一次网络刷新形成故障风暴。
 
 本层是标准 cooperative mixin，不继承预览策略类；运行时由显式 MRO 把它放在
 GuangYaDispatchPolicyV1125Mixin 之前，所有 super() 都沿最终插件 MRO 继续下传。
 """
 from __future__ import annotations
 
+import datetime
 import threading
 import time
 from typing import Any, Dict, Iterable, List
@@ -24,9 +27,12 @@ class GuangYaDispatchPolicyFinalV1125Mixin:
     """最终发布前调度权威。"""
 
     build_id = "20260904-r51-preview"
+    _calendar_failure_backoff_seconds_v1125 = 60
 
     def init_plugin(self, config: dict = None) -> None:
         self._dispatch_final_local_v1125 = threading.local()
+        self._calendar_refresh_failure_until_v1125 = 0.0
+        self._calendar_refresh_failure_message_v1125 = ""
         return super().init_plugin(config)
 
     def _airing_gate_v1120(self, subscribe: Any, payload: Dict[str, Any] = None) -> Dict[str, Any]:
@@ -126,8 +132,6 @@ class GuangYaDispatchPolicyFinalV1125Mixin:
         if not ids:
             return None
 
-        # 新订阅入口已经完成必要的合并频道现查；异步执行阶段先只消费频道。
-        # channel_event 会禁止任何 GYING 调用，并绕过日期门禁处理已经到达的真实资源。
         self._run_v1115_mode_batch(
             ids,
             "新订阅资源匹配·频道阶段",
@@ -135,8 +139,6 @@ class GuangYaDispatchPolicyFinalV1125Mixin:
             force=False,
         )
 
-        # 频道处理完成后重新读 MoviePilot 缺集/在途事实，再套当前更新日 + 外部冷却。
-        # 只允许本次新订阅集合进入主动 Pull，不能顺带触发其它订阅。
         allowed = set(self._smart_pull_due_ids_v1125())
         pull_ids = [sid for sid in ids if sid in allowed]
         if pull_ids:
@@ -148,8 +150,18 @@ class GuangYaDispatchPolicyFinalV1125Mixin:
             )
         return None
 
+    def _calendar_failure_payload_v1125(self) -> Dict[str, Any]:
+        """必须保持 truthy，避免下层 `payload or refresh()` 再次发起网络请求。"""
+        return {
+            "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            "subscriptions": [],
+            "count": 0,
+            "calendar_refresh_failed_v1125": True,
+            "errors": [str(getattr(self, "_calendar_refresh_failure_message_v1125", "") or "calendar unavailable")[:240]],
+        }
+
     def _refresh_airing_calendar_v1120(self, force: bool = False) -> Dict[str, Any]:
-        """04:10 两阶段运行中暂不做强制日历网络刷新，真正刷新在补漏完成后执行。"""
+        """每日阶段支持延迟强刷；普通刷新异常进入短退避，防止每订阅重复打日历服务。"""
         local = getattr(self, "_dispatch_final_local_v1125", None)
         if (
             force
@@ -157,8 +169,39 @@ class GuangYaDispatchPolicyFinalV1125Mixin:
             and bool(getattr(local, "defer_daily_calendar", False))
         ):
             cached = self.get_data("airing_calendar_v1120") or {}
-            return dict(cached) if isinstance(cached, dict) else {}
-        return dict(super()._refresh_airing_calendar_v1120(force=force) or {})
+            if isinstance(cached, dict) and cached:
+                return dict(cached)
+            return self._calendar_failure_payload_v1125()
+
+        if force:
+            return dict(super()._refresh_airing_calendar_v1120(force=True) or {})
+
+        now = time.time()
+        try:
+            failure_until = float(getattr(self, "_calendar_refresh_failure_until_v1125", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            failure_until = 0.0
+        if failure_until > now:
+            return self._calendar_failure_payload_v1125()
+
+        try:
+            result = dict(super()._refresh_airing_calendar_v1120(force=False) or {})
+        except Exception as err:
+            self._calendar_refresh_failure_until_v1125 = now + max(
+                15,
+                int(getattr(self, "_calendar_failure_backoff_seconds_v1125", 60) or 60),
+            )
+            self._calendar_refresh_failure_message_v1125 = str(err)[:240]
+            self._plugin_log(
+                "WARNING",
+                "【光鸭转存助手】【更新日历】常规刷新异常，进入短退避避免按订阅重复请求：%s",
+                str(err)[:240],
+            )
+            return self._calendar_failure_payload_v1125()
+
+        self._calendar_refresh_failure_until_v1125 = 0.0
+        self._calendar_refresh_failure_message_v1125 = ""
+        return result
 
     def _daily_full_catchup_v1110(self) -> Dict[str, Any]:
         """严格执行频道 -> 剩余 GYING -> 日历刷新，不让日历网络请求挡在频道前。"""
