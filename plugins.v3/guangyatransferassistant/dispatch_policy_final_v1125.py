@@ -7,16 +7,17 @@
   频道后仅对当前更新日/电影冷却允许的缺口主动 GYING，未来集/非更新日不能因新增订阅绕门禁；
 - 每日 04:10 的自动强制 GYING 虽可绕过冷却执行本轮，但执行后必须登记正常冷却，
   避免 05:00 的小时 Pull 立刻再次访问观影；人工强制检查不受此规则影响。
+
+本层是标准 cooperative mixin，不继承预览策略类；运行时由显式 MRO 把它放在
+GuangYaDispatchPolicyV1125Mixin 之前，所有 super() 都沿最终插件 MRO 继续下传。
 """
 from __future__ import annotations
 
 import time
 from typing import Any, Dict, Iterable, List
 
-from .dispatch_policy_v1125 import GuangYaDispatchPolicyV1125Mixin as _DispatchPolicyPreviewV1125
 
-
-class GuangYaDispatchPolicyFinalV1125Mixin(_DispatchPolicyPreviewV1125):
+class GuangYaDispatchPolicyFinalV1125Mixin:
     """最终发布前调度权威。"""
 
     build_id = "20260904-r51-preview"
