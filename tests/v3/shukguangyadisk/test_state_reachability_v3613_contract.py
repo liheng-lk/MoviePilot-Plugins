@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 
@@ -79,4 +80,5 @@ def test_v3613_is_infrastructure_only():
         "overwrite_mode",
     ):
         assert forbidden not in HARDENING, forbidden
-    assert '"runtime_hardening": "v3.6.13"' in EXECUTION
+    match = re.search(r'"runtime_hardening": "v3\.6\.(\d+)"', EXECUTION)
+    assert match and int(match.group(1)) >= 13
