@@ -10,19 +10,20 @@ PATCH = (PLUGIN / "page_perf_v1123.py").read_text(encoding="utf-8")
 ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 
 
-def test_v1123_page_layer_parses_and_is_outermost():
+def test_v1124_page_layer_parses_and_is_outermost():
     ast.parse(PATCH)
     ast.parse(ENTRY)
     assert "from .page_perf_v1123 import GuangYaPagePerfV1123Mixin" in ENTRY
     start = ENTRY.index("class GuangYaTransferAssistant(")
     assert ENTRY.index("GuangYaPagePerfV1123Mixin,", start) < ENTRY.index("GuangYaAiringWeeklyV1121Mixin,", start)
-    assert 'build_id = "20260904-r49"' in PATCH
+    assert 'build_id = "20260904-r50-preview"' in PATCH
+    # 预览修复分支不提前发布市场版本；正式发布时再统一升版本号和入口 build。
     assert 'plugin_version = "1.12.3"' in ENTRY
     assert 'build_id = "20260904-r49"' in ENTRY
 
 
 def test_data_page_reads_snapshot_first_and_moves_media_library_sync_to_background():
-    method = PATCH[PATCH.index("def _weekly_calendar_snapshot_v1121"):PATCH.index("# ------------------------------------------------------------------\n    # 数据页：真正可交互的日期 Tabs")]
+    method = PATCH[PATCH.index("def _weekly_calendar_snapshot_v1121"):PATCH.index("# ------------------------------------------------------------------\n    # 数据页：PageRender 原生即时日期切换")]
     assert 'self.get_data("airing_week_view_v1121")' in method
     assert "_weekly_snapshot_usable_v1123" in method
     assert "_weekly_snapshot_stale_v1123" in method
@@ -36,29 +37,35 @@ def test_data_page_reads_snapshot_first_and_moves_media_library_sync_to_backgrou
     assert "_weekly_page_refreshing_v1123" in worker
 
 
-def test_interactive_weekday_page_uses_real_vuetify_tabs_and_window():
+def test_date_switch_uses_native_details_not_unbound_vtabs_window_model():
     page = PATCH[PATCH.index("def _weekly_page_v1121"):]
-    assert '"component": "VTabs"' in page
-    assert '"component": "VTab"' in page
-    assert '"component": "VWindow"' in page
-    assert '"component": "VWindowItem"' in page
-    assert '"model": "_airing_day_tab"' in page
-    assert '"show-arrows": True' in page
-    assert '"touch": True' in page
+    assert '"component": "details"' in page
+    assert '"component": "summary"' in page
+    assert '"name": "guangya-airing-day"' in page
+    assert '"open": is_today' in page
     assert "ordered_days = days[today_index:] + days[:today_index]" in page
-    assert "点击日期查看当天剧集" in page
-    assert "移动端也可左右滑动日期内容" in page
+    assert "PageRender 只会 v-bind props" in page
+    assert "点击任意日期立即展开对应剧集" in page
+    assert "不发接口请求、不等待后台" in page
+    for forbidden in ('"component": "VTabs"', '"component": "VTab"', '"component": "VWindow"', '"component": "VWindowItem"', '"model": "_airing_day_tab"'):
+        assert forbidden not in page
 
 
-def test_every_date_has_its_own_episode_cards_and_three_state_summary():
+def test_every_date_uses_lightweight_rows_and_three_state_summary():
     page = PATCH[PATCH.index("def _weekly_page_v1121"):]
-    assert "self._weekly_day_cards_v1123(day)" in page
+    rows = PATCH[PATCH.index("def _weekly_day_rows_v1124"):PATCH.index("def _weekly_page_v1121")]
+    assert "self._weekly_day_rows_v1124(day)" in page
     assert "已入库" in page
     assert "转存中" in page
     assert "待补" in page
     assert "day.get('library')" in page
     assert "day.get('inflight')" in page
     assert "day.get('pending')" in page
+    assert '"component": "VCard"' in rows
+    assert "S{season:02d}E{episode:02d}" in rows
+    # 7 天隐藏内容不再调用海报卡，避免首次切日期才加载大批 VImg。
+    assert "_episode_card_v1121" not in rows
+    assert '"VImg"' not in rows
 
 
 def test_large_subscription_picker_does_not_compute_episode_progress_per_option():
