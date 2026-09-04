@@ -4,8 +4,10 @@
 - 没有逐集日期、但历史更新星期已经稳定时，仍把星期规则视为有效调度事实；
   不能误判“日历不可用”后回退为全量缺集主动搜索；
 - 新订阅仍立即响应：先查频道缓存，必要时只合并强刷频道一次，再消费频道；
-  频道后仅对当前更新日/电影冷却允许的缺口主动 GYING，未来集/非更新日不能因新增订阅绕门禁；
-- 每日 04:10 的自动强制 GYING 虽可绕过冷却执行本轮，但执行后必须登记正常冷却，
+  频道后仅对当前更新日/电影待处理缺口进入主动完整资源链，未来集/非更新日不能因新增订阅绕门禁；
+- 每小时 AiringDue 只处理今天应更新且仍未覆盖的媒体，并给这些媒体独立的 60 分钟外部检索窗口；
+  执行仍复用既有完整链路：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K；
+- 每日 04:10 的自动强制 GYING 虽可绕过冷却执行本轮，但执行后必须登记冷却时间，
   避免 05:00 的小时 Pull 立刻再次访问观影；人工强制检查不受此规则影响；
 - 04:10 的强制日历刷新延后到频道 + GYING 两阶段结束后，避免 TMDB/每日助手慢响应
   把本应最先执行的频道补漏阻塞在前面；
@@ -34,6 +36,7 @@ class GuangYaDispatchPolicyFinalV1125Mixin:
     build_id = "20260904-r51-preview"
     _calendar_failure_backoff_seconds_v1125 = 60
     _async_trigger_bucket_limit_v1125 = 8
+    _hourly_due_cooldown_seconds_v1125 = 60 * 60
 
     def init_plugin(self, config: dict = None) -> None:
         self._dispatch_final_local_v1125 = threading.local()
@@ -56,6 +59,21 @@ class GuangYaDispatchPolicyFinalV1125Mixin:
             result["calendar_available"] = True
             result["calendar_available_basis_v1125"] = "stable_weekday"
         return result
+
+    def _external_cooldown_due_v1125(
+        self,
+        sid: int,
+        state: Dict[str, Any],
+        now: float,
+    ) -> bool:
+        """AiringDue 每小时只允许同一媒体进入一次主动资源复查窗口。"""
+        row = dict(state.get(str(sid)) or {})
+        try:
+            last_at = float(row.get("last_at") or 0)
+        except (TypeError, ValueError):
+            last_at = 0.0
+        cooldown = max(60, int(getattr(self, "_hourly_due_cooldown_seconds_v1125", 60 * 60) or 60 * 60))
+        return not last_at or now - last_at >= cooldown
 
     def _record_auto_external_cooldown_v1125(self, subscribe: Any, origin: str) -> None:
         sid = int(getattr(subscribe, "id", 0) or 0)
@@ -83,11 +101,58 @@ class GuangYaDispatchPolicyFinalV1125Mixin:
         self.save_data("external_search_guard", state)
 
     def _claim_external_search_round_v1114(self, subscribe: Any, force: bool = False) -> bool:
+        reader = getattr(self, "_route_source_mode_value_v1115", None)
+        mode = str(reader() if callable(reader) else getattr(self, "_route_source_mode_v1115", "") or "")
+
+        # AiringDue 已经由逐集日历/星期门禁证明“今天应该处理”。此时不能再套默认 180 分钟
+        # external_search_guard，否则“每小时检查”实际会变成三小时才访问一次 GYING/迅雷。
+        # 这里只把该模式收敛到 60 分钟；频道、人工、普通后台以及每日修复继续沿用原 Governance。
+        if not force and mode == "airing_pull":
+            sid = int(getattr(subscribe, "id", 0) or 0)
+            if sid <= 0:
+                return False
+            try:
+                state = dict(self._external_search_state_v1114() or {})
+            except Exception:
+                state = {}
+            row = dict(state.get(str(sid)) or {})
+            try:
+                last_at = float(row.get("last_at") or 0)
+            except (TypeError, ValueError):
+                last_at = 0.0
+            now = time.time()
+            cooldown = max(60, int(getattr(self, "_hourly_due_cooldown_seconds_v1125", 60 * 60) or 60 * 60))
+            allowed = not last_at or now - last_at >= cooldown
+            self._external_round_allowed_v1114[sid] = allowed
+            if allowed:
+                state[str(sid)] = {
+                    **row,
+                    "last_at": now,
+                    "last_time": self._now_text(),
+                    "cooldown_minutes": max(1, int(cooldown / 60)),
+                    "origin": "airing_full_chain_v1125",
+                }
+                if len(state) > 1000:
+                    state = dict(sorted(
+                        state.items(),
+                        key=lambda pair: float((pair[1] or {}).get("last_at") or 0),
+                        reverse=True,
+                    )[:1000])
+                self.save_data("external_search_guard", state)
+            else:
+                remaining = max(1, int((cooldown - (now - last_at)) / 60))
+                self._plugin_log(
+                    "INFO",
+                    "【光鸭转存助手】【今日资源复查】#%s %s 本小时已执行过完整资源链，约 %s 分钟后再复查",
+                    sid,
+                    str(getattr(subscribe, "name", "") or ""),
+                    remaining,
+                )
+            return allowed
+
         allowed = bool(super()._claim_external_search_round_v1114(subscribe, force=force))
         if not allowed or not force:
             return allowed
-        reader = getattr(self, "_route_source_mode_value_v1115", None)
-        mode = str(reader() if callable(reader) else getattr(self, "_route_source_mode_v1115", "") or "")
         if mode == "daily_repair_pull":
             self._record_auto_external_cooldown_v1125(subscribe, "daily_repair_pull")
         return allowed
