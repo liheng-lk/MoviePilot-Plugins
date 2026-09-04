@@ -25,8 +25,8 @@ def test_v1121_parses_and_is_above_v1120_scheduler():
     weekly = ENTRY.index("GuangYaAiringWeeklyV1121Mixin,", start)
     scheduler = ENTRY.index("GuangYaAiringSchedulerV1120Mixin,", start)
     assert weekly < scheduler
-    assert 'plugin_version = "1.12.4"' in ENTRY
-    assert 'build_id = "20260904-r50"' in ENTRY
+    assert 'plugin_version = "1.12.5"' in ENTRY
+    assert 'build_id = "20260904-r51"' in ENTRY
     assert 'build_id = "20260903-r48-preview"' in GATE
 
 
@@ -137,8 +137,6 @@ def test_v1122_same_day_miss_retries_after_external_cooldown_until_day_gate_clos
     assert "now - last_at >= cooldown" in claim
     assert "self.save_data(\"external_search_guard\", state)" in claim
 
-    # 只有“已经没有缺集”才完成订阅；仍缺集的搜索 miss 只进入冷却。
-    # 只要当天门禁仍开放，下一次 tick 达到冷却后会再次进入观影；跨日后停止普通重试。
     assert "off_day_missing" in GATE
 
 
