@@ -1,0 +1,45 @@
+name: Prepare GuangYa v1.12.9 release
+on:
+  push:
+    branches: [fix/guangya-v1.12.9-movie-tmdb-alias]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/guangya-v1.12.9-movie-tmdb-alias
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply v1.12.9 migration
+        run: python tools/_prepare_guangya_v1129.py
+      - name: Python syntax
+        run: |
+          python -m compileall -q plugins.v2 plugins.v3
+          find plugins.v2 plugins.v3 -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v2 plugins.v3 -type f -name '*.pyc' -delete
+      - name: Root unit tests
+        run: python -m unittest discover -s tests -v
+      - name: GuangYa V3 contract tests
+        run: python tests/v3/guangyatransferassistant/run_contract_tests.py
+      - name: JSON metadata checks
+        run: python -c "import json; [json.load(open(p,encoding='utf-8')) for p in ['plugin.json','package.v2.json','package.v3.json']]"
+      - name: Remove one-shot release tooling
+        run: |
+          rm -f tools/_prepare_guangya_v1129.py .github/workflows/prepare-guangya-v1129.yml
+      - name: Commit validated v1.12.9
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No validated changes to commit'
+            exit 0
+          fi
+          git commit -m 'release(guangya): finalize v1.12.9 exact movie TMDB aliases'
+          git push origin HEAD:fix/guangya-v1.12.9-movie-tmdb-alias
