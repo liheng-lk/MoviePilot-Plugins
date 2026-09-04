@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import re
 import time
 from pathlib import Path
 
@@ -187,7 +188,9 @@ def test_v3615_is_installed_after_pending_truth_and_reports_runtime_hardening():
     fairness = init.index("install_pending_fairness_v3615()")
     assert pending < fairness
     assert "from .organizer_pending_fairness_v3615 import install_pending_fairness_v3615" in init
-    assert '"runtime_hardening": "v3.6.15"' in EXECUTION
+    match = re.search(r'"runtime_hardening": "v3\.6\.(\d+)"', EXECUTION)
+    assert match is not None
+    assert int(match.group(1)) >= 15
 
 
 def test_v3615_does_not_reimplement_media_or_destructive_policy():

@@ -4,13 +4,13 @@
 1. 导入阶段先安装 v3.6.9 光鸭路径分页/严格读取，以及 v3.6.10 MoviePilot 存储快照保护；
 2. monitor 初始化时安装 v3.6.9/v3.6.13 连续发现与状态可达性回收、v3.6.11 durable retry、
    v3.6.12 pending 真等待门禁与 v3.6.15 pending 公平调度，再安装 v3.6.0 move 终态修复与
-   v3.6.4 move 失败事务保护；
+   v3.6.4 move 失败事务保护；v3.6.17 只读投影 blocked 诊断，不改变调度；
 3. 弱命名 folder envelope 内部逐文件执行时，最终状态统一回到 v3.6 fallback；
-4. 状态 API 最后投影 v3.6 Worker/discovery 事实，屏蔽旧 v3.5.9 cursor/sticky 的展示残留。
+4. 状态 API 最后投影 v3.6 Worker/discovery/blocked 事实，屏蔽旧 v3.5.9 cursor/sticky 的展示残留。
 
 普通 MoviePilot 原生目录任务继续走旧安全预览/冲突/season 等 MoviePilot 安全链，不在这里
-重写业务规则。v3.6.9~v3.6.15 只修远端查询、发现调度、状态/快照可靠性、durable 任务身份
-衔接、pending 等待态语义、公平性与长期状态回收效率。
+重写业务规则。v3.6.9~v3.6.17 只修远端查询、发现调度、状态/快照可靠性、durable 任务身份
+衔接、pending 等待态语义、公平性、长期状态回收效率与只读运行诊断。
 """
 
 from __future__ import annotations
@@ -40,6 +40,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
     _v3611_retry_patch_ready: bool = False
     _v3612_pending_patch_ready: bool = False
     _v3615_fairness_patch_ready: bool = False
+    _v3617_blocked_diag_logged: bool = False
 
     def init_organizer_monitor(self) -> None:
         if not self._v369_monitor_patch_ready:
@@ -76,7 +77,17 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
             install_move_confirmation_v360()
             install_move_transaction_guard_v364()
             self._v360_storage_patch_ready = True
-        return super().init_organizer_monitor()
+
+        result = super().init_organizer_monitor()
+        if not self._v3617_blocked_diag_logged:
+            self._v3617_blocked_diag_logged = True
+            try:
+                from .organizer_blocked_diagnostics_v3617 import log_blocked_diagnostics
+
+                log_blocked_diagnostics(self)
+            except Exception as err:  # noqa: BLE001 - diagnostics can never fail plugin init
+                logger.debug("【光鸭云盘助手】【v3.6.17】【blocked诊断】启动诊断失败但不影响监控: %s", err)
+        return result
 
     def _execute_isolated_transfer(self, item: Any) -> Tuple[bool, str]:
         if not isinstance(item, _FolderBatchEnvelope) or item.directory_mode:
@@ -115,7 +126,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
         return super()._fallback_terminal_state(item, success=success, message=message)
 
     def api_organize_monitor_status(self) -> Dict[str, Any]:
-        """旧兼容层先补历史，最后由 3.6 用真实 Worker/cursor 事实覆盖调度展示。"""
+        """旧兼容层先补历史，最后由 3.6 用真实 Worker/cursor/blocked 事实覆盖调度展示。"""
         response = super().api_organize_monitor_status()
         if not isinstance(response, dict) or not response.get("success"):
             return response
@@ -140,7 +151,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
             "sticky_tv_group_since": 0,
             "active_resource_tasks": 1 if running_path else 0,
             "worker_queue_depth": int(snapshot.get("queued") or 0),
-            "runtime_hardening": "v3.6.15",
+            "runtime_hardening": "v3.6.17",
         })
 
         if running_path:
@@ -160,6 +171,17 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
             })
         except Exception as err:  # noqa: BLE001 - status must remain observable
             status["scan_cursor_error"] = str(err)
+
+        try:
+            from .organizer_blocked_diagnostics_v3617 import blocked_diagnostics
+
+            blocked_diag = blocked_diagnostics(self)
+            status["blocked_diagnostics"] = blocked_diag
+            status["blocked_persistent"] = int(blocked_diag.get("persistent") or 0)
+            status["blocked_due"] = int(blocked_diag.get("due") or 0)
+            status["blocked_timed"] = int(blocked_diag.get("timed") or 0)
+        except Exception as err:  # noqa: BLE001 - read-only diagnostics must never break status
+            status["blocked_diagnostics"] = {"rows": [], "error": str(err)[:240]}
 
         return response
 
