@@ -1,0 +1,120 @@
+name: Restore ShukGuangYaDisk v3.6.17 publish
+
+on:
+  push:
+    branches: [fix/restore-shuk-v3617-publish]
+    paths:
+      - .github/workflows/restore-shuk-v3617-publish.yml
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/restore-shuk-v3617-publish
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Restore v3.6.17 Shuk files on current main lineage
+        run: |
+          set -euo pipefail
+          RELEASE=3854f92fe0b96fee4d3ea597eb4653bf3d131709
+          git fetch origin "$RELEASE"
+          git checkout "$RELEASE" -- \
+            plugins.v3/shukguangyadisk/__init__.py \
+            plugins.v3/shukguangyadisk/dist/assets/remoteEntry.js \
+            plugins.v3/shukguangyadisk/organizer_blocked_diagnostics_v3617.py \
+            plugins.v3/shukguangyadisk/organizer_execution_v360.py \
+            plugins.v3/shukguangyadisk/plugin.json \
+            tests/v3/shukguangyadisk/test_blocked_diagnostics_v3617.py \
+            tests/v3/shukguangyadisk/test_pending_fairness_v3615.py
+
+          python - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          release = '3854f92fe0b96fee4d3ea597eb4653bf3d131709'
+          package_path = Path('package.v3.json')
+          current = json.loads(package_path.read_text(encoding='utf-8'))
+          released = json.loads(subprocess.check_output(
+              ['git', 'show', f'{release}:package.v3.json'], text=True
+          ))
+          current['ShukGuangYaDisk'] = released['ShukGuangYaDisk']
+          package_path.write_text(
+              json.dumps(current, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8',
+          )
+          PY
+
+          cat > tests/v3/shukguangyadisk/test_release_floor_v3617.py <<'PY'
+          from __future__ import annotations
+
+          import json
+          import re
+          from pathlib import Path
+
+          from packaging.version import Version
+
+
+          ROOT = Path(__file__).resolve().parents[3]
+          PLUGIN = ROOT / 'plugins.v3' / 'shukguangyadisk'
+          FLOOR = Version('3.6.17')
+
+
+          def _json(path: Path):
+              return json.loads(path.read_text(encoding='utf-8'))
+
+
+          def test_v3617_release_floor_prevents_normal_ci_version_rollback():
+              plugin_version = Version(str(_json(PLUGIN / 'plugin.json')['version']))
+              market_version = Version(str(_json(ROOT / 'package.v3.json')['ShukGuangYaDisk']['version']))
+              entry = (PLUGIN / '__init__.py').read_text(encoding='utf-8')
+              remote = (PLUGIN / 'dist' / 'assets' / 'remoteEntry.js').read_text(encoding='utf-8')
+              match = re.search(r'plugin_version\s*=\s*["\']([^"\']+)', entry)
+              assert match, 'plugin_version not found'
+              entry_version = Version(match.group(1))
+              cache = re.search(r'AssistantPage-v352\.js\?v=([0-9.]+)', remote)
+              assert cache, 'AssistantPage cache version not found'
+              cache_version = Version(cache.group(1))
+              assert plugin_version >= FLOOR
+              assert market_version >= FLOOR
+              assert entry_version >= FLOOR
+              assert cache_version >= FLOOR
+              assert plugin_version == market_version == entry_version == cache_version
+          PY
+
+      - name: Validate restored Shuk contracts
+        run: |
+          python -m compileall -q plugins.v3/shukguangyadisk
+          python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          python tests/v3/shukguangyadisk/run_contract_tests.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('.')
+          assert json.loads((root/'package.v3.json').read_text())['ShukGuangYaDisk']['version'] == '3.6.17'
+          assert json.loads((root/'plugins.v3/shukguangyadisk/plugin.json').read_text())['version'] == '3.6.17'
+          assert 'plugin_version = "3.6.17"' in (root/'plugins.v3/shukguangyadisk/__init__.py').read_text()
+          assert '?v=3.6.17' in (root/'plugins.v3/shukguangyadisk/dist/assets/remoteEntry.js').read_text()
+          PY
+
+      - name: Commit restored release and remove helper workflow
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/restore-shuk-v3617-publish.yml
+          git add package.v3.json \
+                  plugins.v3/shukguangyadisk \
+                  tests/v3/shukguangyadisk/test_blocked_diagnostics_v3617.py \
+                  tests/v3/shukguangyadisk/test_pending_fairness_v3615.py \
+                  tests/v3/shukguangyadisk/test_release_floor_v3617.py
+          git commit -m "fix(shukguangyadisk): restore v3.6.17 on current main lineage"
+          git push origin HEAD:fix/restore-shuk-v3617-publish
