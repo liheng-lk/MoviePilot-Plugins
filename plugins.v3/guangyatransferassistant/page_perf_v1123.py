@@ -1,8 +1,9 @@
-"""光鸭转存助手 v1.12.3：数据页性能、星期交互与大订阅配置体验。
+"""光鸭转存助手 v1.12.4-preview：数据页性能、即时日期交互与大订阅配置体验。
 
 目标：
 - 数据页打开时不再同步逐个调用 MoviePilot 媒体库缺集检查；优先秒开最近快照，过期后后台刷新。
-- 追剧日历改成可点击/可滑动的 7 天 VTabs + VWindow，真正查看对应日期剧集。
+- 追剧日历不再依赖 PageRender 无法共享的 VTabs/VWindow v-model，改成浏览器原生 details 日期组，点击即展开。
+- 日期明细使用轻量文本卡片，不在 7 个隐藏日期里预加载整套海报墙，保证切换即时且不拖慢首屏。
 - 配置页的大量订阅不再为每一项实时计算剧集进度，也不再铺满多选 chips。
 """
 
@@ -16,7 +17,7 @@ from typing import Any, Dict, List, Optional, Set
 class GuangYaPagePerfV1123Mixin:
     """页面只读快照层：把耗时校准移出 HTTP 页面加载路径。"""
 
-    build_id = "20260904-r49"
+    build_id = "20260904-r50-preview"
     _weekly_page_cache_seconds_v1123 = 600
 
     # ------------------------------------------------------------------
@@ -193,79 +194,104 @@ class GuangYaPagePerfV1123Mixin:
         return self._empty_week_snapshot_v1123()
 
     # ------------------------------------------------------------------
-    # 数据页：真正可交互的日期 Tabs
+    # 数据页：PageRender 原生即时日期切换
     # ------------------------------------------------------------------
-    def _weekly_day_cards_v1123(self, day: Dict[str, Any]) -> List[Dict[str, Any]]:
-        cards = [
-            {
-                "component": "VCol",
-                "props": {"cols": 6, "sm": 4, "md": 3, "lg": 2},
-                "content": [self._episode_card_v1121(row)],
-            }
-            for row in (day.get("items") or [])
-            if isinstance(row, dict)
-        ]
-        if cards:
-            return cards
-        return [{
-            "component": "VCol",
-            "props": {"cols": 12},
-            "content": [{
+    def _weekly_day_rows_v1124(self, day: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """生成不含海报请求的轻量剧集行，确保 7 天内容预渲染也不会卡顿。"""
+        items = [row for row in (day.get("items") or []) if isinstance(row, dict)]
+        if not items:
+            return [{
                 "component": "VAlert",
                 "props": {
                     "type": "info",
                     "variant": "tonal",
+                    "density": "compact",
                     "text": f"{day.get('weekday_label') or '该日'}没有进入排期的剧集。",
                 },
-            }],
-        }]
+            }]
+
+        palette = {"library": "success", "inflight": "warning", "pending": "error"}
+        rows: List[Dict[str, Any]] = []
+        for item in items:
+            status = str(item.get("status") or "pending")
+            label = str(item.get("status_label") or "待补")
+            title = str(item.get("title") or "未知剧集")
+            try:
+                season = int(item.get("season") or 1)
+            except (TypeError, ValueError):
+                season = 1
+            try:
+                episode = int(item.get("episode") or 0)
+            except (TypeError, ValueError):
+                episode = 0
+            schedule = str(item.get("air_at") or item.get("air_date") or "排期未知")
+            rows.append({
+                "component": "VCard",
+                "props": {"variant": "tonal", "class": "mb-2"},
+                "content": [{
+                    "component": "VCardText",
+                    "props": {"class": "py-2 px-3"},
+                    "content": [
+                        {
+                            "component": "div",
+                            "props": {"class": "d-flex align-center justify-space-between ga-2"},
+                            "content": [
+                                {"component": "div", "props": {"class": "text-body-2 font-weight-medium text-truncate flex-grow-1"}, "text": title},
+                                {"component": "VChip", "props": {"size": "x-small", "variant": "tonal", "color": palette.get(status, "error")}, "text": label},
+                            ],
+                        },
+                        {"component": "div", "props": {"class": "text-caption text-medium-emphasis mt-1"}, "text": f"S{season:02d}E{episode:02d} · {schedule}"},
+                    ],
+                }],
+            })
+        return rows
 
     def _weekly_page_v1121(self, snapshot: Dict[str, Any]) -> Dict[str, Any]:
         days = [dict(day) for day in (snapshot.get("days") or []) if isinstance(day, dict)]
         today_index = int(snapshot.get("today_index") or 0)
-        # 数据页没有独立 defaults，故把“今天”放在第一个 Tab，确保默认打开就是今天；其余日期仍可直接点击查看。
+        # 今天始终排第一并默认展开，其余六天按顺序紧跟；点击由浏览器本地 details 原生状态处理。
         if days and 0 <= today_index < len(days):
             ordered_days = days[today_index:] + days[:today_index]
         else:
             ordered_days = days
 
-        tabs: List[Dict[str, Any]] = []
-        windows: List[Dict[str, Any]] = []
+        day_details: List[Dict[str, Any]] = []
         for day in ordered_days:
             date_text = str(day.get("date") or "")
-            value = f"airing_{date_text}"
             short_date = date_text[5:].replace("-", "/") if len(date_text) >= 10 else date_text
             is_today = bool(day.get("is_today"))
             label = f"今天 {short_date}" if is_today else f"{day.get('weekday_label') or ''} {short_date}"
             count = int(day.get("count") or len(day.get("items") or []))
-            tabs.append({
-                "component": "VTab",
-                "props": {"value": value, "class": "text-none"},
-                "text": f"{label} · {count}",
-            })
-            windows.append({
-                "component": "VWindowItem",
-                "props": {"value": value},
-                "content": [{
-                    "component": "VCard",
-                    "props": {"variant": "flat", "class": "mt-3"},
-                    "content": [{
-                        "component": "VCardText",
-                        "content": [
-                            {
-                                "component": "div",
-                                "props": {"class": "d-flex flex-wrap align-center ga-2 mb-3"},
-                                "content": [
-                                    {"component": "VChip", "props": {"size": "small", "variant": "tonal", "color": "primary"}, "text": f"{day.get('weekday_label') or ''} · {date_text}"},
-                                    {"component": "VChip", "props": {"size": "small", "variant": "tonal", "color": "success"}, "text": f"已入库 {int(day.get('library') or 0)}"},
-                                    {"component": "VChip", "props": {"size": "small", "variant": "tonal", "color": "warning"}, "text": f"转存中 {int(day.get('inflight') or 0)}"},
-                                    {"component": "VChip", "props": {"size": "small", "variant": "tonal", "color": "error"}, "text": f"待补 {int(day.get('pending') or 0)}"},
-                                ],
-                            },
-                            {"component": "VRow", "props": {"dense": True}, "content": self._weekly_day_cards_v1123(day)},
-                        ],
-                    }],
-                }],
+            day_details.append({
+                # PageRender 只会 v-bind props，不支持 FormRender 那套共享 v-model；
+                # 原生 details 不需要 Vue model、API 请求或 VWindow 过渡，点击即刻生效。
+                "component": "details",
+                "props": {
+                    "name": "guangya-airing-day",
+                    "open": is_today,
+                    "class": "mb-2 rounded-lg border-sm",
+                },
+                "content": [
+                    {
+                        "component": "summary",
+                        "props": {"class": "px-3 py-3 cursor-pointer"},
+                        "content": [{
+                            "component": "div",
+                            "props": {"class": "d-flex flex-wrap align-center ga-2"},
+                            "content": [
+                                {"component": "span", "props": {"class": "text-body-2 font-weight-bold"}, "text": f"{label} · {count}"},
+                                {"component": "VChip", "props": {"size": "x-small", "variant": "tonal", "color": "success"}, "text": f"已入库 {int(day.get('library') or 0)}"},
+                                {"component": "VChip", "props": {"size": "x-small", "variant": "tonal", "color": "warning"}, "text": f"转存中 {int(day.get('inflight') or 0)}"},
+                                {"component": "VChip", "props": {"size": "x-small", "variant": "tonal", "color": "error"}, "text": f"待补 {int(day.get('pending') or 0)}"},
+                            ],
+                        }],
+                    },
+                    {
+                        "component": "div",
+                        "props": {"class": "px-3 pb-2"},
+                        "content": self._weekly_day_rows_v1124(day),
+                    },
+                ],
             })
 
         loading_alert: List[Dict[str, Any]] = []
@@ -285,7 +311,7 @@ class GuangYaPagePerfV1123Mixin:
             "props": {"variant": "outlined", "class": "mb-3"},
             "content": [
                 {"component": "VCardTitle", "text": "追剧日历"},
-                {"component": "VCardSubtitle", "text": "点击日期查看当天剧集；移动端也可左右滑动日期内容。页面读取快照，不再阻塞等待逐剧媒体库校准。"},
+                {"component": "VCardSubtitle", "text": "点击任意日期立即展开对应剧集；当天默认展开。切换只发生在浏览器本地，不发接口请求、不等待后台。"},
                 {"component": "VCardText", "content": [
                     *loading_alert,
                     {
@@ -300,22 +326,7 @@ class GuangYaPagePerfV1123Mixin:
                             self._metric_chip_v1121("电影待匹配", snapshot.get("movie_count") or 0, "mdi-movie-open-outline"),
                         ],
                     },
-                    {
-                        "component": "VTabs",
-                        "props": {
-                            "model": "_airing_day_tab",
-                            "show-arrows": True,
-                            "center-active": True,
-                            "color": "primary",
-                            "density": "comfortable",
-                        },
-                        "content": tabs,
-                    },
-                    {
-                        "component": "VWindow",
-                        "props": {"model": "_airing_day_tab", "touch": True},
-                        "content": windows,
-                    },
+                    *day_details,
                     {
                         "component": "VAlert",
                         "props": {
