@@ -69,9 +69,11 @@ class GuangYaChannelEventV1115Mixin(GuangYaXunleiFinalV1114Mixin):
         return super().init_plugin(config)
 
     def _route_source_mode_value_v1115(self) -> str:
-        """当前线程的来源模式是真相；共享字段只保留给旧代码/诊断兼容。"""
+        """当前线程的来源模式是真相；共享字段只在 thread-local 尚未初始化时兼容旧入口。"""
         local = getattr(self, "_route_source_local_v1115", None)
-        if local is not None and hasattr(local, "mode"):
+        if local is not None:
+            # 关键并发语义：thread-local 已存在时，本线程没有 mode 就必须视为空模式，
+            # 绝不能回退到另一个线程刚写入的共享兼容字段。
             return str(getattr(local, "mode", "") or "")
         return str(getattr(self, "_route_source_mode_v1115", "") or "")
 
