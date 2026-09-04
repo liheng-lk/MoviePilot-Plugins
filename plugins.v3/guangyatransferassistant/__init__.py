@@ -1,4 +1,4 @@
-"""光鸭转存助手 v1.12.7 运行入口。
+"""光鸭转存助手 v1.12.8 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
@@ -16,6 +16,7 @@ v1.12.4 修复实机交互：日期详情改为浏览器本地即时展开；固
 v1.12.5 完成 Push/Pull 调度收口：5 分钟频道 Push 只消费已到达资源；每小时 AiringDue 只处理今日到期且仍未覆盖的媒体，并按观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K 跑完整来源链；同媒体小时复查窗口固定 60 分钟；04:10 每日全员复核继续先频道、再对真实剩余缺口强制补漏；稳定星期、日历故障退避、并发 trigger 与跨来源终止栅栏同步收口。
 v1.12.6 快速追更：当天应播 TV/动漫的 AiringDue 改为每 10 分钟唤醒并使用独立 10 分钟主动检索窗口；电影继续 60 分钟；命中、已入库或在途后立即退出快追。
 v1.12.7 修复“已找到资源/缺集但未提交光鸭”：S02+ 季发行年份不再被系列首播年份误杀；GYING 已命中且真实分享顶层名/文件结构一致时允许合法别名桥接；拆包 needs_review 在证据变化或 6 小时后自动重评，并补齐拆包决策日志。
+v1.12.8 修复 /gysub 消息入口：最终插件类显式注册 routing PluginAction 桥，不再依赖继承层隐式事件绑定；合法直订请求先即时回执，再执行 TMDB 识别和订阅创建，避免上游变慢时消息端表现为无响应。
 
 最终优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。
 后续 ResourceGroup 内部仍保持：光鸭直接转存 > Magnet > ED2K。
@@ -132,8 +133,8 @@ class GuangYaTransferAssistant(
 ):
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
 
-    plugin_version = "1.12.7"
-    build_id = "20260905-r53"
+    plugin_version = "1.12.8"
+    build_id = "20260905-r54"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
@@ -147,6 +148,19 @@ class GuangYaTransferAssistant(
         if str(kwargs.get("title") or "") == "⚠️ 光鸭转存失败" and kwargs.get("text"):
             kwargs["text"] = collapse_unparsed_failure_notice(kwargs.get("text"))
         return super().post_message(*args, **kwargs)
+
+    @eventmanager.register(EventType.PluginAction)
+    def action_event_handler(self, event: Event) -> None:
+        """把 routing 层的 /gysub 等 PluginAction 显式绑定到最终插件类。"""
+        event_data = event.event_data or {}
+        action = str(event_data.get("action") or "")
+        try:
+            return super().action_event_handler(event)
+        except Exception as err:
+            self._plugin_log("EXCEPTION", "【光鸭转存助手】【消息命令v1.12.8】action=%s 处理异常：%s", action, err)
+            if action in {"guangya_direct_subscribe", "guangya_route_status", "guangya_release_native"}:
+                self._post_command(event_data, "光鸭命令处理失败", str(err)[:500])
+            return None
 
     @eventmanager.register(EventType.PluginAction)
     def experience_action_event_handler(self, event: Event) -> None:
