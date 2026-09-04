@@ -8,6 +8,7 @@
   即使没有可用迅雷，后续 Magnet 也能复用已经付出的 downurl 请求；
 - 某一级迅雷候选通过预筛但实际秒传失败时，才继续下一档关键词；已失败分享只保存在
   thread-local 去重集合中，本轮不会因宽关键词再次返回同一分享而重复尝试；
+- 若某一级搜索本身失败（节点/登录/HTTP），立即停止继续放宽，不能把服务异常放大成请求风暴；
 - 迅雷各级都未完成后，Magnet/ED2K 只在严格缓存为空时逐级补查，找到可执行候选即停止；
 - 真正的媒体身份与文件级缺集校验仍由现有迅雷 JSON / Episode Planner 最终确认。
 
@@ -156,6 +157,7 @@ class GuangYaGyingRecallGuardV1125Mixin:
             candidates, state = self._gying_xunlei_precise_variant_v1125(variant)
             last_state = dict(state or {})
             if not last_state.get("success"):
+                retry_local.stop_after_failure = True
                 bundle_variants = [all_variants[0], *successful] if start_index else successful
                 if len(set(bundle_variants)) > 1:
                     self._promote_search_bundle_v1125(all_variants[0], bundle_variants)
@@ -268,10 +270,10 @@ class GuangYaGyingRecallGuardV1125Mixin:
         return merged
 
     def _dispatch_xunlei_flash(self, subscribe: Any) -> Dict[str, Any]:
-        """真实秒传失败后才继续下一档关键词；同一档只执行一次。"""
+        """真实秒传失败后才继续下一档关键词；搜索本身失败则立即停止。"""
         all_variants = gying_keyword_variants(str(self._provider_keyword(subscribe) or ""))
         local = self._recall_retry_local_v1125()
-        tracked = ("start_index", "last_attempted_index", "seen_identities")
+        tracked = ("start_index", "last_attempted_index", "seen_identities", "stop_after_failure")
         previous = {
             key: (hasattr(local, key), getattr(local, key, None))
             for key in tracked
@@ -279,13 +281,17 @@ class GuangYaGyingRecallGuardV1125Mixin:
         local.start_index = 0
         local.last_attempted_index = -1
         local.seen_identities = set()
+        local.stop_after_failure = False
         combined: Dict[str, Any] = {}
         try:
             while True:
                 before_index = int(getattr(local, "start_index", 0) or 0)
+                local.stop_after_failure = False
                 current = dict(super()._dispatch_xunlei_flash(subscribe) or {})
                 combined = self._merge_xunlei_rounds_v1125(combined, current)
                 if bool(combined.get("handled")) or bool(combined.get("movie")):
+                    break
+                if bool(getattr(local, "stop_after_failure", False)):
                     break
                 try:
                     last_index = int(getattr(local, "last_attempted_index", before_index) or 0)
