@@ -9,7 +9,8 @@
 - 某一级迅雷候选通过预筛但实际秒传失败时，才继续下一档关键词；已失败分享只保存在
   thread-local 去重集合中，本轮不会因宽关键词再次返回同一分享而重复尝试；
 - 若某一级搜索本身失败（节点/登录/HTTP），立即停止继续放宽，不能把服务异常放大成请求风暴；
-- 迅雷各级都未完成后，Magnet/ED2K 只在严格缓存为空时逐级补查，找到可执行候选即停止；
+- Magnet/ED2K 以“实际执行结果”为准：严格候选存在但因旧集、错媒体或历史失败未产生 action 时，
+  才逐级补查宽关键词；若严格搜索本身没有成功缓存则不继续放宽。
 - 真正的媒体身份与文件级缺集校验仍由现有迅雷 JSON / Episode Planner 最终确认。
 
 本层是标准 cooperative mixin，不继承旧 Hardening；运行时显式放在 Hardening 前面。
@@ -18,7 +19,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any, Dict, Iterable, List, Set, Tuple
+from typing import Any, Dict, Iterable, List, Set
 
 from .episode_resolver_v190 import AUTO_SELECT_CONFIDENCE, reliable_episode_set, resolve_episode
 from .gying_hardening_v193 import gying_keyword_variants
@@ -312,46 +313,41 @@ class GuangYaGyingRecallGuardV1125Mixin:
                     except AttributeError:
                         pass
 
-    def _viewing_external_candidates_v1113(
-        self,
-        subscribe: Any,
-    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-        """迅雷各级未完成后，严格关键词无 Magnet/ED2K 才逐级补查，且逐级短路。"""
-        candidates, meta = super()._viewing_external_candidates_v1113(subscribe)
-        candidates = list(candidates or [])
-        meta = dict(meta or {})
-        if candidates:
-            return candidates, meta
+    def _dispatch_viewing_external_v1113(self, subscribe: Any) -> Dict[str, Any]:
+        """只有实际没有产生可用 Magnet/ED2K action，才逐级扩大关键词。"""
+        result = dict(super()._dispatch_viewing_external_v1113(subscribe) or {})
+        if bool(result.get("success")) or list(result.get("actions") or []):
+            return result
 
-        keyword = " ".join(str(self._provider_keyword(subscribe) or "").split())
-        variants = gying_keyword_variants(keyword)
+        primary = " ".join(str(self._provider_keyword(subscribe) or "").split())
+        variants = gying_keyword_variants(primary)
         if len(variants) <= 1:
-            return candidates, meta
+            return result
 
-        successful: List[str] = [variants[0]]
+        # 没有“严格关键词成功搜索”的事实时，不能因为资源站故障继续扩大请求。
+        cache = getattr(self, "_gying_search_cache", None)
+        strict_entry = dict(cache.get(variants[0]) or {}) if isinstance(cache, dict) else {}
+        strict_state = strict_entry.get("state") if isinstance(strict_entry.get("state"), dict) else {}
+        if not strict_entry or strict_state.get("success") is False:
+            return result
+
+        attempted: List[str] = [variants[0]]
+        last_result = result
         for variant in variants[1:]:
             _unused_xunlei, state = self._gying_xunlei_precise_variant_v1125(variant)
             state = dict(state or {})
             if not state.get("success"):
-                meta["fallback_error_v1125"] = str(state.get("message") or "宽关键词搜索失败")[:240]
-                break
-            successful.append(variant)
-            self._promote_search_bundle_v1125(variants[0], successful)
-
-            broadened, broadened_meta = super()._viewing_external_candidates_v1113(subscribe)
-            broadened = list(broadened or [])
-            if broadened:
-                final_meta = dict(broadened_meta or {})
-                final_meta["query_fallback"] = variant
-                final_meta["search_bundle_v1125"] = True
-                final_meta["bundle_variants"] = list(successful)
-                return broadened, final_meta
-
-        if len(successful) > 1:
-            self._promote_search_bundle_v1125(variants[0], successful)
-            meta["search_bundle_v1125"] = True
-            meta["bundle_variants"] = list(successful)
-        return candidates, meta
+                return last_result
+            attempted.append(variant)
+            self._promote_search_bundle_v1125(variants[0], attempted)
+            current = dict(super()._dispatch_viewing_external_v1113(subscribe) or {})
+            current["query_fallback_v1125"] = variant
+            current["search_bundle_v1125"] = True
+            current["bundle_variants_v1125"] = list(attempted)
+            last_result = current
+            if bool(current.get("success")) or list(current.get("actions") or []):
+                return current
+        return last_result
 
 
 __all__ = ["GuangYaGyingRecallGuardV1125Mixin"]
