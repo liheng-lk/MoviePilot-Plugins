@@ -4,7 +4,8 @@
 队列化只能改变执行线程，不能改变原动作语义：
 - “立即检查缺集”与 /gycheck 仍是人工 force 检查，允许绕过自动检索冷却与更新日门禁，
   但继续经过真实缺集、媒体身份、reservation/source claim、Episode Fence 和质量门禁；
-- “复查待落盘”继续调用原有 force=False 复查入口，绝不能被误升级成人工强制重提；
+- “复查待落盘”继续调用原有 force=False 复查入口；已经提交的任务核验不属于“寻找新资源”，
+  因此只在该复查线程内绕过上映日期门禁，仍不允许 force 重提；
 - 页面/消息把已有订阅切到光鸭路线时，语义与新订阅 prime 一致：缓存 miss 时只合并刷新频道一次，
   先消费已经到达的频道 Push，再仅对当前日历允许的缺口做非 force 主动 Pull。
 
@@ -12,7 +13,8 @@
 """
 from __future__ import annotations
 
-from typing import Any, Iterable, List
+import threading
+from typing import Any, Dict, Iterable, List
 
 
 class GuangYaManualDispatchV1125Mixin:
@@ -44,6 +46,26 @@ class GuangYaManualDispatchV1125Mixin:
                 result.add(value)
         return sorted(result)
 
+    def _manual_dispatch_local_v1125(self):
+        local = getattr(self, "_manual_dispatch_context_v1125", None)
+        if local is None:
+            local = threading.local()
+            self._manual_dispatch_context_v1125 = local
+        return local
+
+    def _airing_gate_v1120(self, subscribe: Any, payload: Dict[str, Any] = None) -> Dict[str, Any]:
+        """待落盘核验不受“今天是否更新”阻断；仅让 Scheduler 走其非 force legacy fallback。"""
+        local = self._manual_dispatch_local_v1125()
+        if bool(getattr(local, "pending_recheck", False)):
+            return {
+                "subscribe_id": int(getattr(subscribe, "id", 0) or 0),
+                "name": str(getattr(subscribe, "name", "") or ""),
+                "calendar_available": False,
+                "due_uncovered": [],
+                "pending_recheck_bypass_v1125": True,
+            }
+        return dict(super()._airing_gate_v1120(subscribe, payload=payload) or {})
+
     def _run_manual_api_v1125(self, ids: List[int], *, pending_only: bool) -> None:
         """在后台 worker 中调用未包装的真实插件方法，完整保留 legacy API 合同。"""
         for sid in ids:
@@ -54,7 +76,20 @@ class GuangYaManualDispatchV1125Mixin:
                 return
             try:
                 if pending_only:
-                    result = dict(self.api_recheck_pending(subscribe_id=sid) or {})
+                    local = self._manual_dispatch_local_v1125()
+                    had_pending = hasattr(local, "pending_recheck")
+                    previous_pending = bool(getattr(local, "pending_recheck", False))
+                    local.pending_recheck = True
+                    try:
+                        result = dict(self.api_recheck_pending(subscribe_id=sid) or {})
+                    finally:
+                        if had_pending:
+                            local.pending_recheck = previous_pending
+                        else:
+                            try:
+                                delattr(local, "pending_recheck")
+                            except AttributeError:
+                                pass
                     action = "复查待落盘"
                 else:
                     # legacy.api_check_missing 本身包含人工门禁、缓存优先频道补查，最终明确
