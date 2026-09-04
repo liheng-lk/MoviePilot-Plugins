@@ -1,4 +1,4 @@
-"""光鸭转存助手 v1.12.8 运行入口。
+"""光鸭转存助手 v1.12.9 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
@@ -17,6 +17,7 @@ v1.12.5 完成 Push/Pull 调度收口：5 分钟频道 Push 只消费已到达�
 v1.12.6 快速追更：当天应播 TV/动漫的 AiringDue 改为每 10 分钟唤醒并使用独立 10 分钟主动检索窗口；电影继续 60 分钟；命中、已入库或在途后立即退出快追。
 v1.12.7 修复“已找到资源/缺集但未提交光鸭”：S02+ 季发行年份不再被系列首播年份误杀；GYING 已命中且真实分享顶层名/文件结构一致时允许合法别名桥接；拆包 needs_review 在证据变化或 6 小时后自动重评，并补齐拆包决策日志。
 v1.12.8 修复 /gysub 消息入口：最终插件类显式注册 routing PluginAction 桥，不再依赖继承层隐式事件绑定；合法直订请求先即时回执，再执行 TMDB 识别和订阅创建，避免上游变慢时消息端表现为无响应。
+v1.12.9 修复电影观影已命中但真实英文原名被媒体身份门禁误杀：仅按订阅精确 TMDB ID 从 MoviePilot MediaChain 补全官方 title/en_title/original_title 等可信别名；错误 TMDB/年份仍拒绝，不引入模糊电影匹配。
 
 最终优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。
 后续 ResourceGroup 内部仍保持：光鸭直接转存 > Magnet > ED2K。
@@ -46,6 +47,7 @@ from .dispatch_policy_v1125 import GuangYaDispatchPolicyV1125Mixin
 from .dispatch_policy_final_v1125 import GuangYaDispatchPolicyFinalV1125Mixin
 from .episode_fence_final_v1124 import GuangYaEpisodeFenceFinalV1124Mixin
 from .fast_recall_v1126 import GuangYaFastRecallV1126Mixin
+from .movie_identity_v1129 import GuangYaMovieIdentityV1129Mixin
 from .resource_gate_v1127 import GuangYaResourceGateV1127Mixin
 from .provider_reliability_v1100 import GuangYaProviderReliabilityV1100Mixin
 from .xunlei_reliability_v1100 import GuangYaXunleiReliabilityV1100Mixin
@@ -89,6 +91,7 @@ install_channel_multisource_compat(_legacy_module)
 
 class GuangYaTransferAssistant(
     GuangYaPagePerfV1123Mixin,
+    GuangYaMovieIdentityV1129Mixin,
     GuangYaResourceGateV1127Mixin,
     GuangYaFastRecallV1126Mixin,
     GuangYaDispatchPolicyFinalV1125Mixin,
@@ -133,8 +136,8 @@ class GuangYaTransferAssistant(
 ):
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
 
-    plugin_version = "1.12.8"
-    build_id = "20260905-r54"
+    plugin_version = "1.12.9"
+    build_id = "20260905-r55"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""

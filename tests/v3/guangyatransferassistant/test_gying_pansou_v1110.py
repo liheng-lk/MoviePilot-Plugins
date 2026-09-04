@@ -57,9 +57,9 @@ def test_v1110_release_and_layer_parse():
         ast.parse(text)
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.12.8"
-    assert 'plugin_version = "1.12.8"' in ENTRY
-    assert 'build_id = "20260905-r54"' in ENTRY
+    assert package["version"] == local["version"] == "1.12.9"
+    assert 'plugin_version = "1.12.9"' in ENTRY
+    assert 'build_id = "20260905-r55"' in ENTRY
     assert "v1.12.5" in package.get("history", {})
     assert "v1.12.3" in package.get("history", {})
     assert "v1.10.16" in package.get("history", {})
