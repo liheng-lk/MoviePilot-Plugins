@@ -13,6 +13,8 @@
   每个订阅的 gate 又各自触发一次网络刷新形成故障风暴；
 - Reliability 仍按订阅 ID 合并后台任务，但每个订阅额外保存真实 trigger；同一 worker 中同时到达
   频道 Push / Airing Pull / 新订阅时按真实来源重新分组，不能被第一个 worker trigger 串改执行模式；
+- trigger 记录与 Governance/可靠性队列共用同一 RLock 完成原子入队，避免“刚判断未 active，下一瞬
+  被其它线程抢先 active”后留下陈旧 trigger 污染下一轮；
 - 频道故障恢复只恢复并消费频道，不得借恢复任务偷偷启动主动 GYING。
 
 本层是标准 cooperative mixin，不继承预览策略类；运行时由显式 MRO 把它放在
@@ -140,48 +142,47 @@ class GuangYaDispatchPolicyFinalV1125Mixin:
         if callable(current) and not bool(current()):
             return
 
-        # Governance 在后续 MRO 会把“自动触发 + 当前正在执行”的 ID 丢弃。
-        # 这里先做同样的只读预测，只为真正会进入 Reliability 的 ID 记录 trigger，
-        # 避免被 Governance 丢弃的事件留下陈旧来源污染下一轮。
-        accepted = set(ids)
-        automatic = getattr(self, "_automatic_trigger_v1114", None)
-        manual = getattr(self, "_manual_trigger_v1114", None)
-        is_automatic = bool(automatic(trigger)) if callable(automatic) else False
-        is_manual = bool(manual(trigger)) if callable(manual) else False
-        if is_automatic and not is_manual:
-            try:
-                self._ensure_reliability_state()
-                lock = getattr(self, "_async_route_lock", None)
-                if lock is not None:
-                    with lock:
-                        active = set(getattr(self, "_async_route_active", set()) or set())
-                    accepted -= active
-            except Exception:
-                pass
+        # _async_route_lock 在 Experience 初始化为 RLock。整个“看 active -> 记录 trigger ->
+        # Governance 再过滤 -> Reliability 入 pending/recheck”都在同一把锁里完成；后续 super
+        # 会可重入地拿同一 RLock，因此不会在预测与真正入队之间被 worker 改写 active。
+        route_lock = getattr(self, "_async_route_lock", None)
+        if route_lock is None:
+            route_lock = threading.RLock()
+            self._async_route_lock = route_lock
 
-        if accepted:
-            lock = getattr(self, "_dispatch_trigger_lock_v1125", None)
-            if lock is None:
-                lock = threading.RLock()
-                self._dispatch_trigger_lock_v1125 = lock
-            store = getattr(self, "_dispatch_triggers_v1125", None)
-            if not isinstance(store, dict):
-                store = {}
-                self._dispatch_triggers_v1125 = store
-            text = str(trigger or "后台检查")
-            with lock:
-                for sid in sorted(accepted):
-                    bucket = list(store.get(sid) or [])
-                    # Reliability finally 的“后台合并补偿”只是内部重拉起标识；真实来源还在桶中时
-                    # 绝不能覆盖成 generic trigger。
-                    if text == "后台合并补偿" and bucket:
-                        continue
-                    if text not in bucket:
-                        bucket.append(text)
-                    limit = max(2, int(getattr(self, "_async_trigger_bucket_limit_v1125", 8) or 8))
-                    store[sid] = bucket[-limit:]
+        with route_lock:
+            accepted = set(ids)
+            automatic = getattr(self, "_automatic_trigger_v1114", None)
+            manual = getattr(self, "_manual_trigger_v1114", None)
+            is_automatic = bool(automatic(trigger)) if callable(automatic) else False
+            is_manual = bool(manual(trigger)) if callable(manual) else False
+            if is_automatic and not is_manual:
+                active = set(getattr(self, "_async_route_active", set()) or set())
+                accepted -= active
 
-        return super()._queue_async_route_check(ids, trigger=trigger)
+            if accepted:
+                lock = getattr(self, "_dispatch_trigger_lock_v1125", None)
+                if lock is None:
+                    lock = threading.RLock()
+                    self._dispatch_trigger_lock_v1125 = lock
+                store = getattr(self, "_dispatch_triggers_v1125", None)
+                if not isinstance(store, dict):
+                    store = {}
+                    self._dispatch_triggers_v1125 = store
+                text = str(trigger or "后台检查")
+                with lock:
+                    for sid in sorted(accepted):
+                        bucket = list(store.get(sid) or [])
+                        # Reliability finally 的“后台合并补偿”只是内部重拉起标识；真实来源还在桶中时
+                        # 绝不能覆盖成 generic trigger。
+                        if text == "后台合并补偿" and bucket:
+                            continue
+                        if text not in bucket:
+                            bucket.append(text)
+                        limit = max(2, int(getattr(self, "_async_trigger_bucket_limit_v1125", 8) or 8))
+                        store[sid] = bucket[-limit:]
+
+            return super()._queue_async_route_check(ids, trigger=trigger)
 
     @staticmethod
     def _ordered_async_triggers_v1125(values: Iterable[str], fallback: str) -> List[str]:
