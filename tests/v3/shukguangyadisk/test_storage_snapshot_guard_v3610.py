@@ -73,7 +73,8 @@ def test_v3610_is_installed_after_v369_strict_path_capability():
     install_snapshot = EXECUTION.index("install_storage_snapshot_guard_v3610()")
     class_pos = EXECUTION.index("class GuangYaOrganizerExecutionV360Mixin")
     assert import_path < import_snapshot < install_path < install_snapshot < class_pos
-    assert '"runtime_hardening": "v3.6.10"' in EXECUTION
+    # 后续 patch 可以提升状态页版本；v3.6.10 合同只要求 strict path 在 snapshot guard 之前安装。
+    assert '"runtime_hardening": "v3.6.' in EXECUTION
 
 
 def test_v3610_does_not_change_media_or_destructive_operations():
