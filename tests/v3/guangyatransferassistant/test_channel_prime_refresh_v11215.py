@@ -12,6 +12,7 @@ PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 SOURCE = (PLUGIN / "channel_reconcile_v11215.py").read_text(encoding="utf-8")
 MANUAL = (PLUGIN / "manual_check_v11211.py").read_text(encoding="utf-8")
 MOVIE = (PLUGIN / "movie_identity_v1129.py").read_text(encoding="utf-8")
+BILINGUAL = (PLUGIN / "movie_bilingual_identity_v11216.py").read_text(encoding="utf-8")
 ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 
 
@@ -154,7 +155,8 @@ def _load_mixin():
 
 def test_new_subscription_prime_override_is_before_v1125_dispatch_final_in_runtime_chain():
     assert "class GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin):" in MANUAL
-    assert "class GuangYaMovieIdentityV1129Mixin(GuangYaManualCheckV11211Mixin):" in MOVIE
+    assert "class GuangYaMovieIdentityV1129Mixin(GuangYaMovieBilingualIdentityV11216Mixin):" in MOVIE
+    assert "class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaManualCheckV11211Mixin):" in BILINGUAL
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     assert head.index("GuangYaMovieIdentityV1129Mixin") < head.index("GuangYaDispatchPolicyFinalV1125Mixin")
     assert "def _spawn_route_prime(" in SOURCE
