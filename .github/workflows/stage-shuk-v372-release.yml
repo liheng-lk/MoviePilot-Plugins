@@ -6,6 +6,7 @@ on:
       - refactor/shukguangya-organizer-core-v372
     paths:
       - tools/stage_shuk_v372_release.py
+      - tools/fix_shuk_v372_release_contracts.py
       - .github/workflows/stage-shuk-v372-release.yml
 
 permissions:
@@ -24,6 +25,8 @@ jobs:
           python-version: '3.12'
       - name: Stage v3.7.2 metadata
         run: python tools/stage_shuk_v372_release.py
+      - name: Update prior release floor contracts
+        run: python tools/fix_shuk_v372_release_contracts.py
       - name: Python syntax
         run: python -m compileall -q plugins.v3/shukguangyadisk
       - name: Full Shuk tests and contracts
@@ -49,7 +52,7 @@ jobs:
           PY
       - name: Commit release staging and remove one-time tooling
         run: |
-          rm -f tools/stage_shuk_v372_release.py .github/workflows/stage-shuk-v372-release.yml
+          rm -f tools/stage_shuk_v372_release.py tools/fix_shuk_v372_release_contracts.py .github/workflows/stage-shuk-v372-release.yml
           find plugins.v3 tests -type d -name '__pycache__' -prune -exec rm -rf {} +
           find plugins.v3 tests -type f -name '*.pyc' -delete
           git config user.name 'github-actions[bot]'
