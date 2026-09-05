@@ -4,7 +4,8 @@ import ast
 import html
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Set
+from types import SimpleNamespace
+from typing import Any, Dict, Iterable, List, Sequence, Set
 from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -17,6 +18,7 @@ MANUAL = (PLUGIN / "manual_check_v11211.py").read_text(encoding="utf-8")
 ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 XUNLEI = (PLUGIN / "xunlei_existing_fence_v11213.py").read_text(encoding="utf-8")
 VIEWING = (PLUGIN / "viewing_dispatch_v1113.py").read_text(encoding="utf-8")
+PLANNER = (PLUGIN / "resource_planner_v190.py").read_text(encoding="utf-8")
 MULTI = (PLUGIN / "multisource_v180.py").read_text(encoding="utf-8")
 LEGACY = (PLUGIN / "legacy.py").read_text(encoding="utf-8")
 
@@ -39,6 +41,61 @@ def _exec_functions(source: str, names: set[str], namespace: dict) -> dict:
     ast.fix_missing_locations(module)
     exec(compile(module, "<v11214-contract>", "exec"), namespace)
     return namespace
+
+
+class _FinalCoreBase:
+    @staticmethod
+    def _direct_share_primary_roots_v11214(paths: Sequence[str], expected_year: Any = None) -> List[str]:
+        return []
+
+
+def _exec_final_mixin():
+    tree = ast.parse(FINAL, filename=str(PLUGIN / "core_pipeline_final_v11214.py"))
+    nodes = []
+    for node in tree.body:
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = []
+            if isinstance(node, ast.Assign):
+                targets = [target.id for target in node.targets if isinstance(target, ast.Name)]
+            elif isinstance(node.target, ast.Name):
+                targets = [node.target.id]
+            if any(name.startswith("_ACTUAL_") or name.startswith("_GENERIC_ACTUAL_") for name in targets):
+                nodes.append(node)
+        elif isinstance(node, ast.ClassDef) and node.name == "GuangYaCorePipelineFinalV11214Mixin":
+            nodes.append(node)
+    module = ast.Module(body=nodes, type_ignores=[])
+    ast.fix_missing_locations(module)
+
+    def positive(values):
+        result = set()
+        for raw in values or []:
+            try:
+                value = int(raw or 0)
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                result.add(value)
+        return result
+
+    def title_key(value, expected_year=None):
+        text = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]+", "", str(value or "")).casefold()
+        year = str(expected_year or "")
+        if year:
+            text = text.replace(year.casefold(), "")
+        return text
+
+    ns = {
+        "re": re,
+        "Any": Any,
+        "List": List,
+        "Sequence": Sequence,
+        "Set": Set,
+        "GuangYaCorePipelineV11214Mixin": _FinalCoreBase,
+        "_positive_episode_set_v11214": positive,
+        "title_key_v1111": title_key,
+    }
+    exec(compile(module, str(PLUGIN / "core_pipeline_final_v11214.py"), "exec"), ns)
+    return ns["GuangYaCorePipelineFinalV11214Mixin"]
 
 
 def test_v11214_sources_parse_and_nesting_does_not_move_top_level_mro():
@@ -102,7 +159,6 @@ def test_channel_xunlei_never_turns_passive_push_into_gying_poll():
     assert 'round_state.get("mode")' in method
     assert '== "channel_event"' in method
     assert "不主动访问 GYING" in method
-    # super search exists only after the channel_event early return.
     assert method.index('== "channel_event"') < method.rindex("return super()._search_viewing_xunlei(keyword)")
 
 
@@ -143,6 +199,23 @@ def test_physical_file_must_be_complete_subset_not_merely_intersect_target():
     assert ns["_physical_episode_subset_v11214"](set(), allowed) is False
 
 
+def test_mixed_sources_only_allow_indivisible_files_fully_inside_e11_gap():
+    ns = {"Any": Any, "Iterable": Iterable, "Set": Set}
+    _exec_functions(CORE, {"_positive_episode_set_v11214", "_physical_episode_subset_v11214"}, ns)
+    subset = ns["_physical_episode_subset_v11214"]
+    allowed = {11}
+    candidates = [
+        ("xunlei", set(range(1, 13))),       # 一个不可分割的 E01-E12 文件/合辑
+        ("guangya", {11}),                  # 精确单集
+        ("magnet", {9, 10, 11, 12}),        # 一个不可分割的 E09-E12 文件
+        ("ed2k", {11}),                     # 精确单集
+    ]
+    admissible = [source for source, physical in candidates if subset(physical, allowed)]
+    assert admissible == ["guangya", "ed2k"]
+    priority = {"xunlei": 0, "guangya": 1, "magnet": 2, "ed2k": 3}
+    assert min(admissible, key=lambda source: priority[source]) == "guangya"
+
+
 def test_authoritative_gap_is_library_intersection_logical_minus_reservations_and_other_claims():
     method = FINAL.split("    def _authoritative_missing_v11214(", 1)[1]
     assert "_sync_media_library_progress" in method
@@ -154,6 +227,68 @@ def test_authoritative_gap_is_library_intersection_logical_minus_reservations_an
     assert "fail closed" in method
 
 
+def test_authoritative_gap_executes_as_library_and_logical_intersection_and_excludes_current_source():
+    Mixin = _exec_final_mixin()
+
+    class Probe(Mixin):
+        def __init__(self):
+            self.claim_calls = []
+
+        @staticmethod
+        def _is_movie_subscription(subscribe):
+            return False
+
+        @staticmethod
+        def _sync_media_library_progress(subscribe):
+            return {"success": True, "existing": list(range(1, 11)), "missing": [11, 12]}
+
+        @staticmethod
+        def _base_missing_without_due_scope_v11213(subscribe):
+            return {10, 11, 12}
+
+        @staticmethod
+        def _pending_reservations(subscribe):
+            return {"episodes": {12}}
+
+        def _other_source_claims_v11214(self, sid, current_source_id=""):
+            self.claim_calls.append((sid, current_source_id))
+            return {10}
+
+    subscribe = SimpleNamespace(id=501, type="TV")
+    probe = Probe()
+    assert probe._authoritative_missing_v11214(subscribe, current_source_id="magnet-current") == {11}
+    assert probe.claim_calls == [(501, "magnet-current")]
+
+
+def test_authoritative_gap_fails_closed_when_moviepilot_library_truth_is_unavailable():
+    Mixin = _exec_final_mixin()
+
+    class Probe(Mixin):
+        @staticmethod
+        def _is_movie_subscription(subscribe):
+            return False
+
+        @staticmethod
+        def _sync_media_library_progress(subscribe):
+            return {"success": False, "missing": [], "message": "library unavailable"}
+
+    probe = Probe()
+    try:
+        probe._authoritative_missing_v11214(SimpleNamespace(id=502, type="TV"))
+    except RuntimeError as err:
+        assert "fail closed" in str(err)
+        assert "library unavailable" in str(err)
+    else:
+        raise AssertionError("MoviePilot library truth failure must never fall back to a wider missing set")
+
+
+def test_rootless_direct_share_uses_only_title_prefix_before_episode_marker():
+    Mixin = _exec_final_mixin()
+    assert Mixin._direct_share_primary_roots_v11214(["Other.Show.S01E11.mkv"], 2026) == ["Other.Show"]
+    assert Mixin._direct_share_primary_roots_v11214(["S01E11.mkv"], 2026) == []
+    assert Mixin._direct_share_primary_roots_v11214(["Show.Name.S01E11-GROUP.mkv"], 2026) == ["Show.Name"]
+
+
 def test_direct_share_actual_content_and_physical_missing_are_final_gates():
     method = CORE.split("    def _plan_incremental_files(", 1)[1].split("    # ------------------------------------------------------------------\n    # Magnet", 1)[0]
     assert "assess_media_identity_v1111" in method
@@ -162,6 +297,7 @@ def test_direct_share_actual_content_and_physical_missing_are_final_gates():
     assert "_physical_episode_subset_v11214" in method
     assert "光鸭分享拒绝不可分割文件" in method
     assert "safe_videos" in method
+    assert "_ACTUAL_EP_MARKER_V11214" in FINAL
 
 
 def test_magnet_and_ed2k_share_same_physical_final_fence():
@@ -188,9 +324,16 @@ def test_source_priority_and_short_circuit_contract_remain_unchanged():
     assert "flash = self._dispatch_xunlei_flash(subscribe)" in xunlei_flash
     assert 'if flash.get("handled")' in xunlei_flash
     assert "lower = super()._try_transfer_subscription_inner" in xunlei_flash
-    dispatch = VIEWING.split("    def _dispatch_viewing_external_v1113(", 1)[1]
-    assert 'ordered = sorted(candidates, key=lambda row: 0 if row.get("type") == "magnet" else 1)' in dispatch
-    assert "if not uncovered" in dispatch
+
+    # Direct GuangYa share is always evaluated before channel Magnet/ED2K planner.
+    planner_dispatch = PLANNER.split("    def _try_transfer_subscription_inner(", 1)[1].split("    # ------------------------------------------------------------------\n    # API", 1)[0]
+    assert planner_dispatch.index("share_result = super()._try_transfer_subscription_inner") < planner_dispatch.index("_dispatch_channel_external_candidates")
+
+    # Both GYING and channel fallback keep Magnet before ED2K, then stop when uncovered reaches zero.
+    assert "executable.sort" in VIEWING
+    assert '0 if str(row.get("type") or "") == "magnet" else 1' in VIEWING
+    assert 'external.sort(key=lambda row: 0 if str(row.get("type") or "") == "magnet" else 1)' in PLANNER
+    assert "if is_movie or not uncovered" in PLANNER
 
 
 def test_every_storage_path_reuses_guangya_target_and_no_moviepilot_downloader():
@@ -202,7 +345,6 @@ def test_every_storage_path_reuses_guangya_target_and_no_moviepilot_downloader()
 
 
 def test_current_public_release_remains_v11213_until_full_gate_passes():
-    # Candidate core is intentionally not published merely because source files exist.
     assert 'plugin_version = "1.12.13"' in ENTRY
     assert 'build_id = "20260905-r59"' in ENTRY
     assert 'plugin_version = "1.12.14"' in CORE
