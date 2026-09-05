@@ -6,6 +6,7 @@ on:
       - refactor/shukguangya-organizer-core-v372
     paths:
       - tools/migrate_shuk_v372_phase2.py
+      - tools/update_shuk_v372_contracts.py
       - .github/workflows/migrate-shuk-v372-phase2.yml
 
 permissions:
@@ -24,6 +25,8 @@ jobs:
           python-version: '3.12'
       - name: Apply migration
         run: python tools/migrate_shuk_v372_phase2.py
+      - name: Update architecture contracts
+        run: python tools/update_shuk_v372_contracts.py
       - name: Python syntax
         run: python -m compileall -q plugins.v3/shukguangyadisk
       - name: Shuk unit tests
@@ -36,7 +39,7 @@ jobs:
         run: python tests/v3/guangyatransferassistant/run_contract_tests.py
       - name: Remove one-time tooling and commit
         run: |
-          rm -f tools/migrate_shuk_v372_phase2.py .github/workflows/migrate-shuk-v372-phase2.yml
+          rm -f tools/migrate_shuk_v372_phase2.py tools/update_shuk_v372_contracts.py .github/workflows/migrate-shuk-v372-phase2.yml
           find plugins.v3 tests -type d -name '__pycache__' -prune -exec rm -rf {} +
           find plugins.v3 tests -type f -name '*.pyc' -delete
           git config user.name 'github-actions[bot]'
