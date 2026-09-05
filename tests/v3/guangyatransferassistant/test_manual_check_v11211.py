@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 SOURCE = (PLUGIN / "manual_check_v11211.py").read_text(encoding="utf-8")
 MOVIE = (PLUGIN / "movie_identity_v1129.py").read_text(encoding="utf-8")
+BILINGUAL = (PLUGIN / "movie_bilingual_identity_v11216.py").read_text(encoding="utf-8")
 SEASON = (PLUGIN / "xunlei_season_fence_v11210.py").read_text(encoding="utf-8")
 ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 
@@ -111,6 +112,7 @@ class _Probe(Mixin):
 def test_v11211_layer_parses_and_is_nested_before_resource_gate_without_dropping_v11210():
     ast.parse(SOURCE)
     ast.parse(MOVIE)
+    ast.parse(BILINGUAL)
     ast.parse(SEASON)
     reconcile = (PLUGIN / "channel_reconcile_v11215.py").read_text(encoding="utf-8")
     final = (PLUGIN / "core_pipeline_final_v11214.py").read_text(encoding="utf-8")
@@ -126,8 +128,10 @@ def test_v11211_layer_parses_and_is_nested_before_resource_gate_without_dropping
     assert "class GuangYaXunleiExistingEpisodeFenceV11213Mixin(GuangYaGyingAliasQueryV11212Mixin):" in fence
     assert "from .xunlei_season_fence_v11210 import GuangYaXunleiSeasonFenceV11210Mixin" in alias
     assert "class GuangYaGyingAliasQueryV11212Mixin(GuangYaXunleiSeasonFenceV11210Mixin):" in alias
-    assert "from .manual_check_v11211 import GuangYaManualCheckV11211Mixin" in MOVIE
-    assert "class GuangYaMovieIdentityV1129Mixin(GuangYaManualCheckV11211Mixin):" in MOVIE
+    assert "from .movie_bilingual_identity_v11216 import GuangYaMovieBilingualIdentityV11216Mixin" in MOVIE
+    assert "class GuangYaMovieIdentityV1129Mixin(GuangYaMovieBilingualIdentityV11216Mixin):" in MOVIE
+    assert "from .manual_check_v11211 import GuangYaManualCheckV11211Mixin" in BILINGUAL
+    assert "class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaManualCheckV11211Mixin):" in BILINGUAL
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     assert head.index("GuangYaMovieIdentityV1129Mixin") < head.index("GuangYaResourceGateV1127Mixin")
     assert 'plugin_version = "1.12.10"' in SEASON
