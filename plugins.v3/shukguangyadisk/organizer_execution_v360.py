@@ -2,16 +2,19 @@
 
 该层显式位于插件 MRO 前部：
 1. 导入阶段先安装 v3.6.9 光鸭路径分页/严格读取，以及 v3.6.10 MoviePilot 存储快照保护；
-2. monitor 初始化时安装 v3.6.9/v3.6.13 连续发现与状态可达性回收、v3.6.11 durable retry、
-   v3.6.12 pending 真等待门禁与 v3.6.15 pending 公平调度，再安装 v3.6.0 move 终态修复与
-   v3.6.4 move 失败事务保护；v3.6.17 只读投影 blocked 诊断；
+2. monitor 初始化时安装 v3.6.9/v3.6.13 连续发现与状态可达性回收，随后安装 v3.6.19
+   终态索引收口，再安装 v3.6.11 durable retry、v3.6.12 pending 真等待门禁与 v3.6.15
+   pending 公平调度，最后安装 v3.6.0 move 终态修复与 v3.6.4 move 失败事务保护；
+   v3.6.17 只读投影 blocked 诊断；
 3. v3.6.18 在私有 Worker 调 MoviePilot 前强制刷新源路径，已明确消失的源直接终态清理，
    并在“预检后刚好被搬走”的失败竞态里再次复核，禁止把不存在路径重新写入 retry；
-4. 弱命名 folder envelope 内部逐文件执行时，最终状态统一回到 v3.6 fallback；
-5. 状态 API 最后投影 v3.6 Worker/discovery/blocked 事实，屏蔽旧 v3.5.9 cursor/sticky 的展示残留。
+4. v3.6.19 在 v3.6.13 已严格确认目录/子树消失时，同步清理 known-resource 与
+   pending-resource 调度索引，避免已搬走历史路径仍被后续增量扫描触碰；
+5. 弱命名 folder envelope 内部逐文件执行时，最终状态统一回到 v3.6 fallback；
+6. 状态 API 最后投影 v3.6 Worker/discovery/blocked 事实，屏蔽旧 v3.5.9 cursor/sticky 的展示残留。
 
 普通 MoviePilot 原生目录任务继续走旧安全预览/冲突/season 等 MoviePilot 安全链，不在这里
-重写业务规则。v3.6.9~v3.6.18 只修远端查询、发现调度、状态/快照可靠性、durable 任务身份
+重写业务规则。v3.6.9~v3.6.19 只修远端查询、发现调度、状态/快照可靠性、durable 任务身份
 衔接、pending 等待态语义、公平性、长期状态回收效率与 Worker 执行边界终态。
 """
 
@@ -45,6 +48,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
 
     _v360_storage_patch_ready: bool = False
     _v369_monitor_patch_ready: bool = False
+    _v3619_index_gc_ready: bool = False
     _v3611_retry_patch_ready: bool = False
     _v3612_pending_patch_ready: bool = False
     _v3615_fairness_patch_ready: bool = False
@@ -58,6 +62,13 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
 
             install_organizer_hardening_v369()
             self._v369_monitor_patch_ready = True
+        if not self._v3619_index_gc_ready:
+            # v3.6.19 必须在 v3.6.13 hardening 已安装后包裹其 reachability helper，
+            # 才能复用同一次 list_strict 的完整直属目录事实，不增加第二次远端读取。
+            from .organizer_terminal_index_gc_v3619 import install_terminal_index_gc_v3619
+
+            install_terminal_index_gc_v3619()
+            self._v3619_index_gc_ready = True
         if not self._v3611_retry_patch_ready:
             # durable retry bridge 必须在 v3.6.9/v3.6.13 monitor patch 之后安装：它包裹最终
             # _v360_prepare_member / admission fallback，避免失败历史重新生成 planning_input。
@@ -184,7 +195,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
             "sticky_tv_group_since": 0,
             "active_resource_tasks": 1 if running_path else 0,
             "worker_queue_depth": int(snapshot.get("queued") or 0),
-            "runtime_hardening": "v3.6.18",
+            "runtime_hardening": "v3.6.19",
         })
 
         if running_path:
