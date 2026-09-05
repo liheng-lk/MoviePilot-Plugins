@@ -53,6 +53,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
     _v369_monitor_patch_ready: bool = False
     _v3619_index_gc_ready: bool = False
     _v3611_retry_patch_ready: bool = False
+    _v3621_admission_probe_ready: bool = False
     _v3612_pending_patch_ready: bool = False
     _v3615_fairness_patch_ready: bool = False
     _v3620_terminal_scope_ready: bool = False
@@ -80,6 +81,13 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
 
             install_durable_retry_v3611()
             self._v3611_retry_patch_ready = True
+        if not self._v3621_admission_probe_ready:
+            # v3.6.21 必须晚于 v3.6.11：它要包住 durable bridge 已安装后的最终
+            # monitor fallback，才能找回被 MoviePilot 同步工作流泛化掉的精确准入冲突。
+            from .organizer_admission_conflict_probe_v3621 import install_admission_conflict_probe_v3621
+
+            install_admission_conflict_probe_v3621()
+            self._v3621_admission_probe_ready = True
         if not self._v3612_pending_patch_ready:
             # pending 门禁放在最终 monitor/durable patch 之后：所有 scheduler 都可以继续返回
             # 兼容 reason，但真正写 pending 前必须由最终 phases 证明存在真实等待态。

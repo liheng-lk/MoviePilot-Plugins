@@ -248,6 +248,7 @@ def test_real_datang_two_conflicts_hidden_by_generic_message_become_blocked_not_
     _reset_repo_class(Repo)
     module._admission_repo_class = lambda: Repo
     module._execution_class = lambda: Exec
+    module._monitor_class = lambda: Exec
 
     def persist(plugin, row, member):
         plugin.store.inflight.discard(member.path)
@@ -306,6 +307,7 @@ def test_mixed_batch_blocks_exact_conflict_but_preserves_real_retry_for_other_fa
     _reset_repo_class(Repo)
     module._admission_repo_class = lambda: Repo
     module._execution_class = lambda: Exec
+    module._monitor_class = lambda: Exec
 
     def persist(plugin, row, member):
         plugin.store.inflight.discard(member.path)
@@ -377,6 +379,7 @@ def test_status_projection_reports_v3621_probe_active():
     _reset_repo_class(Repo)
     module._admission_repo_class = lambda: Repo
     module._execution_class = lambda: Exec
+    module._monitor_class = lambda: Exec
     module.install_admission_conflict_probe_v3621()
     response = Exec.api_organize_monitor_status(_Plugin([]))
     status = response["data"]["status"]
