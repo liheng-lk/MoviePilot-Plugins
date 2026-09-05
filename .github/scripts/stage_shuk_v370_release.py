@@ -10,8 +10,8 @@ HISTORY = (
     "不移动、不删除、不改名、不进入 retry；源明确消失只退休本地状态，不再制造 completed 历史。"
     "MoviePilot Preview 已确定最终目标时，目标存在且源/目标精确字节大小一致才允许删除重复源，删除前"
     "再次复核大小与 fileId；大小不同统一通过 MoviePilot TransferRename 生成版本N并二次 Preview 确认，"
-    "大小未知或目标事实不可读一律保持原位。该规则覆盖单文件与 Season 批次每个成员，duplicate_targets"
-    " 不再绕过已有目标策略。自动整理本地历史从 1000 条收敛为近期 120 条，状态页仅展示最近 20 条；"
+    "大小未知或目标事实不可读一律保持原位。该规则覆盖单文件与 Season 批次每个成员，duplicate_targets "
+    "不再绕过已有目标策略。自动整理本地历史从 1000 条收敛为近期 120 条，状态页仅展示最近 20 条；"
     "新增 ORGANIZER_RULES.md 冻结规则，后续不再新增 v3.x 行为补丁模块，逐步迁移旧兼容层到统一五层核心。"
 )
 
@@ -42,6 +42,7 @@ marker = '"ShukGuangYaDisk": {'
 marker_pos = package_text.index(marker)
 brace_start = package_text.index("{", marker_pos)
 
+
 def matching_brace(text: str, start: int) -> int:
     depth = 0
     in_string = False
@@ -65,6 +66,7 @@ def matching_brace(text: str, start: int) -> int:
             if depth == 0:
                 return idx
     raise AssertionError("unterminated ShukGuangYaDisk object")
+
 
 brace_end = matching_brace(package_text, brace_start)
 section = package_text[marker_pos:brace_end + 1]
@@ -105,9 +107,10 @@ path = ROOT / "organizer_conflict_resolution_v353.py"
 text = path.read_text(encoding="utf-8")
 old = '    logger.info("【光鸭云盘助手】【v3.5.3】电影重复目标与剧集局部冲突消歧已启用")\n'
 new = (
-    '    logger.info("【光鸭云盘助手】【整理策略 v3.7.0】统一文件处置已启用："
-'
-    '                "未识别原地保留；同大小精准去重；不同大小多版本；未知事实安全阻断")\n'
+    '    logger.info(\n'
+    '        "【光鸭云盘助手】【整理策略 v3.7.0】统一文件处置已启用："\n'
+    '        "未识别原地保留；同大小精准去重；不同大小多版本；未知事实安全阻断"\n'
+    '    )\n'
 )
 assert old in text, "legacy startup banner changed"
 path.write_text(text.replace(old, new, 1), encoding="utf-8")
