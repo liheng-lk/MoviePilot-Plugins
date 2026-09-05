@@ -177,13 +177,17 @@ def test_v11210_source_parses_and_is_between_movie_identity_and_resource_gate():
     assert 'plugin_version = "1.12.10"' in patch
     assert 'build_id = "20260905-r56"' in patch
     manual = (PLUGIN / "manual_check_v11211.py").read_text(encoding="utf-8")
+    fence = (PLUGIN / "xunlei_existing_fence_v11213.py").read_text(encoding="utf-8")
     alias = (PLUGIN / "gying_alias_query_v11212.py").read_text(encoding="utf-8")
     ast.parse(manual, filename=str(PLUGIN / "manual_check_v11211.py"))
+    ast.parse(fence, filename=str(PLUGIN / "xunlei_existing_fence_v11213.py"))
     ast.parse(alias, filename=str(PLUGIN / "gying_alias_query_v11212.py"))
     assert "from .manual_check_v11211 import GuangYaManualCheckV11211Mixin" in movie
     assert "class GuangYaMovieIdentityV1129Mixin(GuangYaManualCheckV11211Mixin):" in movie
-    assert "from .gying_alias_query_v11212 import GuangYaGyingAliasQueryV11212Mixin" in manual
-    assert "class GuangYaManualCheckV11211Mixin(GuangYaGyingAliasQueryV11212Mixin):" in manual
+    assert "from .xunlei_existing_fence_v11213 import GuangYaXunleiExistingEpisodeFenceV11213Mixin" in manual
+    assert "class GuangYaManualCheckV11211Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixin):" in manual
+    assert "from .gying_alias_query_v11212 import GuangYaGyingAliasQueryV11212Mixin" in fence
+    assert "class GuangYaXunleiExistingEpisodeFenceV11213Mixin(GuangYaGyingAliasQueryV11212Mixin):" in fence
     assert "from .xunlei_season_fence_v11210 import GuangYaXunleiSeasonFenceV11210Mixin" in alias
     assert "class GuangYaGyingAliasQueryV11212Mixin(GuangYaXunleiSeasonFenceV11210Mixin):" in alias
     head = entry.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
