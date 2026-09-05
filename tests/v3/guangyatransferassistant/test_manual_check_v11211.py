@@ -1,24 +1,17 @@
 from __future__ import annotations
 
 import ast
-import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, Dict, Iterable, List
 
 
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 SOURCE = (PLUGIN / "manual_check_v11211.py").read_text(encoding="utf-8")
+MOVIE = (PLUGIN / "movie_identity_v1129.py").read_text(encoding="utf-8")
+SEASON = (PLUGIN / "xunlei_season_fence_v11210.py").read_text(encoding="utf-8")
 ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
-
-
-def _mixin_class():
-    path = PLUGIN / "manual_check_v11211.py"
-    spec = importlib.util.spec_from_file_location("gy_manual_check_v11211_test", path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
-    spec.loader.exec_module(module)
-    return module.GuangYaManualCheckV11211Mixin
 
 
 class _Base:
@@ -92,18 +85,40 @@ class _Base:
         self.posts.append((title, text))
 
 
+def _mixin_class():
+    tree = ast.parse(SOURCE, filename=str(PLUGIN / "manual_check_v11211.py"))
+    cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "GuangYaManualCheckV11211Mixin")
+    module = ast.Module(body=[cls], type_ignores=[])
+    ast.fix_missing_locations(module)
+    ns = {
+        "Any": Any,
+        "Dict": Dict,
+        "Iterable": Iterable,
+        "List": List,
+        "GuangYaXunleiSeasonFenceV11210Mixin": _Base,
+    }
+    exec(compile(module, str(PLUGIN / "manual_check_v11211.py"), "exec"), ns)
+    return ns["GuangYaManualCheckV11211Mixin"]
+
+
 Mixin = _mixin_class()
 
 
-class _Probe(Mixin, _Base):
+class _Probe(Mixin):
     pass
 
 
-def test_v11211_layer_parses_and_is_wired_before_final_dispatch():
+def test_v11211_layer_parses_and_is_nested_before_resource_gate_without_dropping_v11210():
     ast.parse(SOURCE)
-    assert "from .manual_check_v11211 import GuangYaManualCheckV11211Mixin" in ENTRY
+    ast.parse(MOVIE)
+    ast.parse(SEASON)
+    assert "from .xunlei_season_fence_v11210 import GuangYaXunleiSeasonFenceV11210Mixin" in SOURCE
+    assert "class GuangYaManualCheckV11211Mixin(GuangYaXunleiSeasonFenceV11210Mixin):" in SOURCE
+    assert "from .manual_check_v11211 import GuangYaManualCheckV11211Mixin" in MOVIE
+    assert "class GuangYaMovieIdentityV1129Mixin(GuangYaManualCheckV11211Mixin):" in MOVIE
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
-    assert head.index("GuangYaManualCheckV11211Mixin") < head.index("GuangYaDispatchPolicyFinalV1125Mixin")
+    assert head.index("GuangYaMovieIdentityV1129Mixin") < head.index("GuangYaResourceGateV1127Mixin")
+    assert 'plugin_version = "1.12.10"' in SEASON
 
 
 def test_gycheck_movie_runs_channel_then_forced_full_chain():
