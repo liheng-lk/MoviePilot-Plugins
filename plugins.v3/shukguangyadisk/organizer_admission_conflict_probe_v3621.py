@@ -9,7 +9,7 @@ MoviePilot 当前同步 ``do_transfer(background=False)`` 会在内部记录完�
 - 在宿主 ``TransactionalTransferAdmissionRepository.admit`` 异常边界记录精确冲突；
 - 异常原样重新抛出，不改变宿主 admission / planning / lease / settlement；
 - 记录存在线程本地，并在每个光鸭私有 Worker 执行前清空，绝不跨任务串线；
-- 宿主随后即使只返回通用失败，光鸭 fallback 仍按精确 ``storage + src_path`` 找回冲突；
+- 宿主随后即使只返回通用失败，光鸭最终 monitor fallback 仍按精确 ``storage + src_path`` 找回冲突；
 - 命中的成员写入 v3.6.11 persistent blocked 后，再调用原 fallback，让同批其它普通失败成员
   继续按原语义 retry；已 blocked 成员因为不再 inflight，不会被二次写 retry；
 - 其它存储、其它路径、普通执行异常均零行为变化。
@@ -43,6 +43,13 @@ def _execution_class() -> Any:
     from .organizer_execution_v360 import GuangYaOrganizerExecutionV360Mixin
 
     return GuangYaOrganizerExecutionV360Mixin
+
+
+def _monitor_class() -> Any:
+    # 最终 _fallback_terminal_state 属于 MRO 更前面的 monitor 层；v3.6.11 也会直接包它。
+    from .organizer_monitor_v366 import GuangYaOrganizerMonitorV366Mixin
+
+    return GuangYaOrganizerMonitorV366Mixin
 
 
 def _thread_local() -> threading.local:
@@ -214,14 +221,15 @@ def _persist_probe_conflict(plugin: Any, row: Dict[str, Any], member: Any) -> st
 
 
 def install_admission_conflict_probe_v3621() -> None:
-    """安装精确异常探针，并包住最终 execution fallback。"""
+    """在 v3.6.11 之后安装精确异常探针，包住最终 monitor fallback。"""
     install_moviepilot_admission_probe_v3621()
     execution_cls = _execution_class()
+    monitor_cls = _monitor_class()
     if bool(getattr(execution_cls, _EXEC_PATCH_FLAG, False)):
         return
 
     previous_execute = execution_cls._execute_isolated_transfer
-    previous_fallback = execution_cls._fallback_terminal_state
+    previous_fallback = monitor_cls._fallback_terminal_state
     previous_status = execution_cls.api_organize_monitor_status
 
     def execute(plugin: Any, item: Any):
@@ -273,7 +281,7 @@ def install_admission_conflict_probe_v3621() -> None:
         return response
 
     execution_cls._execute_isolated_transfer = execute
-    execution_cls._fallback_terminal_state = fallback
+    monitor_cls._fallback_terminal_state = fallback
     execution_cls.api_organize_monitor_status = api_status
     setattr(execution_cls, _EXEC_PATCH_FLAG, True)
     logger.info(
