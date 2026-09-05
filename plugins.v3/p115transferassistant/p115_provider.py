@@ -47,11 +47,16 @@ class P115TransferProvider:
             "receive_code": receive_code,
             "file_id": ",".join(ids),
             "cid": int(target_cid),
+            "is_check": 0,
         }
         resp = method(payload)
         return resp if isinstance(resp, dict) else {"state": bool(resp)}
 
     def offline_add_url(self, *, uri: str, target_cid: int) -> Dict[str, Any]:
+        """提交 HTTP/HTTPS/FTP/Magnet/ED2K 单链接离线任务。
+
+        当前 115 接口明确支持 ED2K，因此 ED2K 不需要额外转换。
+        """
         method = getattr(self.client, "clouddownload_task_add_url", None)
         if not callable(method):
             raise RuntimeError("p115client 缺少 clouddownload_task_add_url")
@@ -64,7 +69,9 @@ class P115TransferProvider:
         info_hash: str,
         target_cid: int,
         wanted: Optional[Iterable[int]] = None,
+        savepath: str = "",
     ) -> Dict[str, Any]:
+        """添加 BT 离线任务；``wanted`` 为从 0 开始的种子文件索引。"""
         method = getattr(self.client, "clouddownload_task_add_bt", None)
         if not callable(method):
             raise RuntimeError("p115client 缺少 clouddownload_task_add_bt")
@@ -76,16 +83,31 @@ class P115TransferProvider:
             wanted_values = [str(int(index)) for index in wanted]
             if wanted_values:
                 payload["wanted"] = ",".join(wanted_values)
+        if savepath:
+            payload["savepath"] = str(savepath)
         resp = method(payload)
         return resp if isinstance(resp, dict) else {"state": bool(resp)}
 
-    def list_offline_tasks(self) -> Dict[str, Any]:
-        method = getattr(self.client, "clouddownload_task_list", None)
-        if callable(method):
-            resp = method({})
-            return resp if isinstance(resp, dict) else {}
+    def get_offline_task(self, info_hash: str) -> Dict[str, Any]:
         method = getattr(self.client, "clouddownload_task", None)
-        if callable(method):
-            resp = method({})
-            return resp if isinstance(resp, dict) else {}
-        return {}
+        if not callable(method):
+            return {}
+        resp = method({"info_hash": info_hash})
+        return resp if isinstance(resp, dict) else {}
+
+    def list_offline_tasks(self, *, page: int = 1, page_size: int = 30, stat: int | None = None) -> Dict[str, Any]:
+        method = getattr(self.client, "clouddownload_task_list", None)
+        if not callable(method):
+            return {}
+        payload: Dict[str, Any] = {"page": max(1, int(page)), "page_size": max(1, int(page_size))}
+        if stat is not None:
+            payload["stat"] = int(stat)
+        resp = method(payload)
+        return resp if isinstance(resp, dict) else {}
+
+    def restart_offline_task(self, info_hash: str) -> Dict[str, Any]:
+        method = getattr(self.client, "clouddownload_task_restart", None)
+        if not callable(method):
+            raise RuntimeError("p115client 缺少 clouddownload_task_restart")
+        resp = method({"info_hash": info_hash})
+        return resp if isinstance(resp, dict) else {"state": bool(resp)}
