@@ -1,0 +1,425 @@
+name: Refactor Shuk organizer core v3.7
+
+on:
+  push:
+    branches: [refactor/shukguangya-organizer-core-v370]
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Consolidate organizer policy consumers
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('plugins.v3/shukguangyadisk')
+
+          # 1) OrganizerStateStore: recognition-failed files get a stable non-actionable state;
+          # deleted/moved duplicate sources are retired instead of becoming historical completed rows.
+          path = root / 'organizer_state.py'
+          text = path.read_text(encoding='utf-8')
+          needle = '''        self.mutate(_apply)\n\n    def mark_blocked(\n'''
+          insert = '''        self.mutate(_apply)\n\n    def mark_non_actionable(self, *, path: str, fingerprint: str) -> bool:\n        \"\"\"源仍存在但当前无法可靠识别/规划时原地停放；同指纹只记录一次。\n\n        复用 ignored 持久槽以避免 schema 扩张；与 unsupported 的共同语义都是“当前内容不再\n        自动提交”。文件指纹变化仍由 ``_drop_other_versions`` 自动重新开放。\n        \"\"\"\n\n        def _apply(state: Dict[str, Any]) -> bool:\n            self._drop_other_versions(state, path, fingerprint)\n            existed = state[\"ignored\"].get(path) == fingerprint\n            state[\"ignored\"][path] = fingerprint\n            state[\"blocked\"].pop(path, None)\n            for name in (\"stabilizing\", \"inflight\", \"retry\"):\n                state[name].pop(path, None)\n            return not existed\n\n        return bool(self.mutate(_apply))\n\n    def retire_path(self, *, path: str) -> bool:\n        \"\"\"源已经被移动/删除后的唯一终态：从所有本地状态槽移除，不制造 completed 历史。\"\"\"\n\n        def _apply(state: Dict[str, Any]) -> bool:\n            removed = False\n            for name in (\"completed\", \"ignored\", \"blocked\", \"stabilizing\", \"inflight\", \"retry\"):\n                mapping = state[name]\n                if path in mapping:\n                    mapping.pop(path, None)\n                    removed = True\n            return removed\n\n        return bool(self.mutate(_apply))\n\n    def mark_blocked(\n'''
+          assert needle in text, 'organizer_state insertion point changed'
+          path.write_text(text.replace(needle, insert, 1), encoding='utf-8')
+
+          # 2) History is observability, not a second media database. Compact persisted rows at init.
+          path = root / 'organizer_folder_history.py'
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              '''    _monitor_history_limit = 1000\n    _folder_history_group_limit = 40\n    _folder_history_detail_limit = 80\n''',
+              '''    _monitor_history_limit = 120\n    _folder_history_group_limit = 12\n    _folder_history_detail_limit = 20\n    _history_compacted_v370: bool = False\n\n    def init_organizer_monitor(self, *args: Any, **kwargs: Any):\n        result = super().init_organizer_monitor(*args, **kwargs)\n        if not self._history_compacted_v370:\n            self._history_compacted_v370 = True\n            raw = list(self.get_data(self._monitor_history_key) or [])\n            compact = raw[-self._monitor_history_limit :]\n            if len(compact) != len(raw):\n                self.save_data(self._monitor_history_key, compact)\n        return result\n''',
+              1,
+          )
+          text = text.replace('data["history"] = raw_history[-40:][::-1]', 'data["history"] = raw_history[-20:][::-1]', 1)
+          path.write_text(text, encoding='utf-8')
+
+          # 3) Final execution fallback consumes the canonical policy. Recognition failure with a
+          # confirmed-present source becomes untouched/non-actionable instead of retry noise.
+          path = root / 'organizer_execution_v360.py'
+          text = path.read_text(encoding='utf-8')
+          text = text.replace('from __future__ import annotations\n\nfrom typing', 'from __future__ import annotations\n\nimport time\nfrom typing', 1)
+          old_import = '''from .organizer_source_terminal_v3618 import (\n    SOURCE_MISSING_TERMINAL_V3618,\n    confirm_source_missing_v3618,\n    retire_missing_source_v3618,\n    source_missing_hint_v3618,\n)\n'''
+          new_import = '''from .organizer_policy import (\n    FileDisposition,\n    decide_failed_execution,\n    should_probe_source_presence,\n)\nfrom .organizer_source_terminal_v3618 import (\n    SOURCE_MISSING_TERMINAL_V3618,\n    confirm_source_missing_v3618,\n    probe_source_presence_v3618,\n    retire_missing_source_v3618,\n)\n'''
+          assert old_import in text, 'execution import block changed'
+          text = text.replace(old_import, new_import, 1)
+          old = '''        # 预检时源仍存在，但在进入 MoviePilot 后刚好被其它流程搬走时，MoviePilot 会返回\n        # “没有找到可整理的媒体文件”。只有再次强制刷新确认真的不存在，才终态清理；\n        # 网络/API失败或媒体过滤仍沿用原失败语义。\n        if not success and source_missing_hint_v3618(message) and confirm_source_missing_v3618(self, item):\n            subtree = bool(isinstance(item, _FolderBatchEnvelope) and item.directory_mode)\n            retire_missing_source_v3618(self, item, subtree=subtree)\n            return\n'''
+          new = '''        # v3.7 文件处理策略：只有语义可能依赖源存在性时才额外访问远端。\n        # present + 明确认识失败 => 原地停放，不 move/delete/rename，也不进入 retry；\n        # missing => 只退休本地状态；unknown => 保持普通 retry，网络异常绝不伪装成未识别。\n        if not success and should_probe_source_presence(message):\n            presence = probe_source_presence_v3618(self, item)\n            disposition = decide_failed_execution(message, presence)\n            if disposition == FileDisposition.RETIRE_MISSING:\n                subtree = bool(isinstance(item, _FolderBatchEnvelope) and item.directory_mode)\n                retire_missing_source_v3618(self, item, subtree=subtree)\n                return\n            if disposition == FileDisposition.LEAVE_UNRECOGNIZED:\n                parked = 0\n                for member in self._v360_members(item):\n                    try:\n                        path, fingerprint = self._v360_member_identity(member)\n                    except Exception:\n                        continue\n                    if self._state().mark_non_actionable(path=path, fingerprint=fingerprint):\n                        parked += 1\n                if parked:\n                    group_path = str(getattr(item, \"path\", \"\") or \"\")\n                    self._append_monitor_history({\n                        \"time\": time.strftime(\"%Y-%m-%d %H:%M:%S\"),\n                        \"path\": group_path,\n                        \"name\": str(getattr(item, \"name\", \"\") or group_path.rsplit(\"/\", 1)[-1]),\n                        \"size\": int(getattr(item, \"size\", 0) or 0),\n                        \"result\": \"unrecognized_untouched\",\n                        \"group_path\": group_path if isinstance(item, _FolderBatchEnvelope) else \"\",\n                        \"message\": f\"MoviePilot 未形成可靠媒体/目标，源文件原地保留；成员={parked}；不进入重试\",\n                    })\n                    logger.warning(\n                        \"【光鸭云盘助手】【整理策略】【未识别保留】源文件不移动、不删除、不改名、不重试: %s；%s\",\n                        group_path,\n                        message,\n                    )\n                return\n'''
+          assert old in text, 'execution fallback block changed'
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+
+          # 4) Partial preview: one bad/unrecognized episode must stay in place without poisoning the
+          # whole Season or entering blocked/retry loops. Transient errors remain inflight -> retry.
+          path = root / 'organizer_preview_partial_v355.py'
+          text = path.read_text(encoding='utf-8')
+          old_import = '''from .organizer_queue_recovery import GuangYaQueueRecoveryMixin\n'''
+          new_import = '''from .organizer_policy import (\n    FileDisposition,\n    decide_failed_execution,\n    should_probe_source_presence,\n)\nfrom .organizer_queue_recovery import GuangYaQueueRecoveryMixin\nfrom .organizer_source_terminal_v3618 import (\n    probe_source_presence_v3618,\n    retire_missing_source_v3618,\n)\n'''
+          assert old_import in text
+          text = text.replace(old_import, new_import, 1)
+          old_loop = '''    # 逐文件预览仍失败的成员单独隔离，不再把整个 Season 放回 retry。\n    for path, reason in errors.items():\n        _block_member(\n            plugin,\n            candidates[path],\n            f\"完整目录预览缺员，逐文件补预览仍无法确认：{reason}\",\n            result=\"preview_member_isolated\",\n        )\n'''
+          new_loop = '''    # 逐文件失败也统一交给 v3.7 policy：明确未识别原地停放；明确消失退休；\n    # 网络/API等暂时失败保留 inflight，外层完成态会把它送回 retry；其它安全冲突才 blocked。\n    unrecognized = missing_sources = transient_errors = blocked_errors = 0\n    for path, reason in errors.items():\n        member = candidates[path]\n        if should_probe_source_presence(reason):\n            presence = probe_source_presence_v3618(plugin, member)\n            disposition = decide_failed_execution(reason, presence)\n        else:\n            disposition = FileDisposition.RETRY_TRANSIENT\n        if disposition == FileDisposition.LEAVE_UNRECOGNIZED:\n            fingerprint = plugin._fingerprint(member)\n            if plugin._state().mark_non_actionable(path=path, fingerprint=fingerprint):\n                plugin._append_monitor_history({\n                    \"time\": time.strftime(\"%Y-%m-%d %H:%M:%S\"),\n                    \"path\": path,\n                    \"name\": str(getattr(member, \"name\", \"\") or PurePosixPath(path).name),\n                    \"size\": int(getattr(member, \"size\", 0) or 0),\n                    \"result\": \"unrecognized_untouched\",\n                    \"group_path\": item.path,\n                    \"group_name\": item.name,\n                    \"message\": f\"逐文件 MoviePilot 识别/预览无法形成可靠目标，源原地保留：{reason}\",\n                })\n            unrecognized += 1\n            continue\n        if disposition == FileDisposition.RETIRE_MISSING:\n            retire_missing_source_v3618(plugin, member)\n            missing_sources += 1\n            continue\n        if disposition == FileDisposition.RETRY_TRANSIENT:\n            transient_errors += 1\n            continue\n        blocked_errors += 1\n        _block_member(\n            plugin,\n            member,\n            f\"完整目录预览缺员，逐文件补预览仍无法确认：{reason}\",\n            result=\"preview_member_isolated\",\n        )\n'''
+          assert old_loop in text, 'partial preview error loop changed'
+          text = text.replace(old_loop, new_loop, 1)
+          text = text.replace(
+              'f"调用失败={call_failed}，单独隔离={len(errors) + len(collision_sources)}"',
+              'f"调用失败={call_failed}，未识别保留={unrecognized}，源消失={missing_sources}，"\n            f"暂时失败={transient_errors}，安全阻断={blocked_errors + len(collision_sources)}"',
+              1,
+          )
+          text = text.replace(
+              '"调用失败=%s，隔离=%s；不再因单个缺员拖死整个资源",\n        item.path,\n        len(rows),\n        attempted,\n        call_failed,\n        len(errors) + len(collision_sources),',
+              '"调用失败=%s，未识别保留=%s，暂时失败=%s，安全阻断=%s；不再因单个缺员拖死整个资源",\n        item.path,\n        len(rows),\n        attempted,\n        call_failed,\n        unrecognized,\n        transient_errors,\n        blocked_errors + len(collision_sources),',
+              1,
+          )
+          text = text.replace(
+              'f"隔离 {len(errors) + len(collision_sources)}"',
+              'f"未识别保留 {unrecognized}，暂时失败 {transient_errors}，安全阻断 {blocked_errors + len(collision_sources)}"',
+              1,
+          )
+          path.write_text(text, encoding='utf-8')
+
+          # 5) Existing target policy closes the old v3.5.3 gap: single-source collision is now
+          # same-size => safe delete, different-size => versioned transfer, unknown size => block.
+          path = root / 'organizer_conflict_resolution_v353.py'
+          text = path.read_text(encoding='utf-8')
+          old_import = '''from .organizer_queue_recovery import GuangYaQueueRecoveryMixin\n'''
+          new_import = '''from .organizer_policy import FileDisposition, decide_existing_target\nfrom .organizer_queue_recovery import GuangYaQueueRecoveryMixin\n'''
+          assert old_import in text
+          text = text.replace(old_import, new_import, 1)
+
+          marker = '''def _block_guard_failure(\n'''
+          helper = r'''def _handle_single_existing_target(
+    plugin: Any,
+    item: _FolderBatchEnvelope,
+    transfer_chain: Any,
+    base_kwargs: Dict[str, Any],
+    rows: Dict[str, Dict[str, Any]],
+) -> Optional[Tuple[bool, str]]:
+    """单主视频已存在最终目标时执行唯一大小策略；没有已有目标则返回 None。"""
+    members = _member_map(plugin, item)
+    if len(members) != 1:
+        return None
+    source, member = next(iter(members.items()))
+    row = rows.get(source) or {}
+    if not bool(row.get("success")):
+        return None
+    target = _norm(plugin, row.get("target"))
+    if not target:
+        return None
+    api = getattr(plugin, "_guangya_api", None)
+    if not api:
+        return None
+    try:
+        existing = api.get_item(Path(target))
+    except Exception as err:  # noqa: BLE001
+        _mark_blocked(
+            plugin,
+            member,
+            f"无法可靠读取 MoviePilot 最终目标，禁止覆盖/删除: {target} - {err}",
+            result="existing_target_probe_blocked",
+        )
+        return True, "已有目标检查失败，源文件保持原位"
+    if not existing:
+        return None
+    if str(getattr(existing, "type", "file") or "file") != "file":
+        _mark_blocked(plugin, member, f"MoviePilot 最终目标已存在但不是文件: {target}", result="existing_target_probe_blocked")
+        return True, "已有目标类型异常，源文件保持原位"
+
+    disposition = decide_existing_target(_member_size(member), _member_size(existing))
+    if disposition == FileDisposition.BLOCK_SAFETY:
+        _mark_blocked(
+            plugin,
+            member,
+            f"已有目标但源/目标字节大小无法可靠取得，禁止自动删除或覆盖: {target}",
+            result="existing_target_size_unknown",
+        )
+        return True, "已有目标大小未知，源文件保持原位"
+
+    if disposition == FileDisposition.DELETE_DUPLICATE:
+        # 删除前再次刷新源与目标并重算大小，避免 preview 后文件发生变化。
+        try:
+            refresh = getattr(api, "refresh_item", None)
+            current_source = refresh(Path(source)) if callable(refresh) else api.get_item(Path(source))
+            current_target = api.get_item(Path(target))
+        except Exception as err:  # noqa: BLE001
+            _mark_blocked(plugin, member, f"重复删除前复核失败，源文件保持原位: {err}", result="duplicate_delete_blocked")
+            return True, "重复删除前复核失败"
+        if not current_source:
+            retire = getattr(plugin._state(), "retire_path", None)
+            if callable(retire):
+                retire(path=source)
+            return True, "重复源已不存在"
+        if not current_target or decide_existing_target(_member_size(current_source), _member_size(current_target)) != FileDisposition.DELETE_DUPLICATE:
+            _mark_blocked(plugin, member, "重复删除前源/目标大小事实已变化，拒绝删除", result="duplicate_delete_blocked")
+            return True, "重复删除前事实变化"
+        expected_fileid = str(getattr(member, "fileid", "") or "")
+        current_fileid = str(getattr(current_source, "fileid", "") or "")
+        if expected_fileid and current_fileid and expected_fileid != current_fileid:
+            _mark_blocked(plugin, member, "重复删除前 fileId 已变化，拒绝删除", result="duplicate_delete_blocked")
+            return True, "重复删除前 fileId 变化"
+        if not api.delete(current_source):
+            _mark_blocked(plugin, member, "确认同大小重复，但移入回收站失败，源文件保持原位", result="duplicate_delete_blocked")
+            return True, "重复文件删除失败"
+        retire = getattr(plugin._state(), "retire_path", None)
+        if callable(retire):
+            retire(path=source)
+        plugin._append_monitor_history({
+            "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "path": source,
+            "name": str(getattr(member, "name", "") or PurePosixPath(source).name),
+            "size": int(_member_size(member) or 0),
+            "result": "duplicate_deleted_existing_target",
+            "group_path": item.path,
+            "group_name": item.name,
+            "message": f"MoviePilot 已确认最终目标且字节大小完全一致，重复源已安全移入回收站: {target}",
+            "target": target,
+        })
+        logger.info(
+            "【光鸭云盘助手】【整理策略】【同大小去重】目标已存在且字节完全一致，删除重复源: %s -> %s",
+            source,
+            target,
+        )
+        return True, "同大小重复源已删除"
+
+    # 大小不同不是重复，使用现有 TransferRename 事件形成稳定版本文件名，再次 preview 确认。
+    numbers = _next_version_numbers(plugin, target, 1)
+    if not numbers:
+        _mark_blocked(plugin, member, f"已有目标大小不同，但无法可靠分配版本号: {target}", result="version_target_blocked")
+        return True, "不同大小版本无法分配版本号"
+    version = numbers[0]
+    version_target, error = _single_preview_target(plugin, transfer_chain, base_kwargs, member, version)
+    if not version_target or f"版本{version}" not in PurePosixPath(version_target).stem:
+        _mark_blocked(plugin, member, error or "不同大小版本未形成唯一版本目标", result="version_target_blocked")
+        return True, "版本目标预览失败"
+    try:
+        version_existing = api.get_item(Path(version_target))
+    except Exception as err:  # noqa: BLE001
+        _mark_blocked(plugin, member, f"无法确认版本目标是否存在: {version_target} - {err}", result="version_target_blocked")
+        return True, "版本目标检查失败"
+    if version_existing:
+        _mark_blocked(plugin, member, f"版本目标已存在，拒绝覆盖: {version_target}", result="version_target_blocked")
+        return True, "版本目标已存在"
+    logger.info(
+        "【光鸭云盘助手】【整理策略】【不同大小多版本】原目标已存在但大小不同，保留为版本%s: %s -> %s",
+        version,
+        source,
+        version_target,
+    )
+    return _execute_member(plugin, transfer_chain, base_kwargs, member, version)
+
+
+'''
+          assert marker in text
+          text = text.replace(marker, helper + marker, 1)
+
+          old_rows = '''    rows, row_error = _preview_member_rows(plugin, item, preview)\n    if row_error:\n        return _block_guard_failure(plugin, item, row_error, details)\n\n    collisions = _collision_groups(plugin, item, rows)\n'''
+          new_rows = '''    rows, row_error = _preview_member_rows(plugin, item, preview)\n    if row_error:\n        return _block_guard_failure(plugin, item, row_error, details)\n\n    # v3.7 补齐旧 v3.5.3 只处理“同批多个源撞目标”的缺口：单个新文件如果 MoviePilot\n    # 最终目标已经存在，也必须先按统一大小策略决定去重或多版本，禁止直接交给 overwrite。\n    if safe and len(list(getattr(item, \"members\", None) or [])) == 1:\n        handled = _handle_single_existing_target(plugin, item, transfer_chain, kwargs, rows)\n        if handled is not None:\n            return handled\n\n    collisions = _collision_groups(plugin, item, rows)\n'''
+          assert old_rows in text, 'conflict rows insertion point changed'
+          text = text.replace(old_rows, new_rows, 1)
+
+          old_install = '''        # 单主视频不可能发生“本批多个源映射同目标”，继续原有最快路径。\n        if len(list(getattr(item, "members", None) or [])) < 2:\n            return previous_execute(self, item)\n        return _execute_conflict_aware(self, item)\n'''
+          new_install = '''        # v3.7 起单主视频也进入同一 policy：它可能与媒体库已有最终目标发生冲突。\n        return _execute_conflict_aware(self, item)\n'''
+          assert old_install in text
+          text = text.replace(old_install, new_install, 1)
+
+          # Duplicate source is physically gone after deletion: retire state instead of adding another completed tombstone.
+          text = text.replace(
+              'plugin._state().mark_completed(path=path, fingerprint=str(record.get("fingerprint") or ""))',
+              'plugin._state().retire_path(path=path)',
+          )
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Add v3.7 policy contracts
+        run: |
+          cat > tests/v3/shukguangyadisk/test_organizer_policy_v370.py <<'PY'
+          from __future__ import annotations
+
+          import importlib.util
+          from pathlib import Path
+
+          ROOT = Path(__file__).resolve().parents[3]
+          POLICY_PATH = ROOT / "plugins.v3" / "shukguangyadisk" / "organizer_policy.py"
+
+
+          def _policy():
+              spec = importlib.util.spec_from_file_location("shuk_policy_v370_test", POLICY_PATH)
+              module = importlib.util.module_from_spec(spec)
+              assert spec and spec.loader
+              spec.loader.exec_module(module)
+              return module
+
+
+          def test_present_unrecognized_source_is_left_untouched_not_retry():
+              p = _policy()
+              assert p.decide_failed_execution("E01.mkv 没有找到可整理的媒体文件", p.SourcePresence.PRESENT) == p.FileDisposition.LEAVE_UNRECOGNIZED
+
+
+          def test_unknown_presence_never_turns_network_uncertainty_into_unrecognized_terminal():
+              p = _policy()
+              assert p.decide_failed_execution("E01.mkv 没有找到可整理的媒体文件", p.SourcePresence.UNKNOWN) == p.FileDisposition.RETRY_TRANSIENT
+              assert p.is_unrecognized_message("MoviePilot 目录标题识别异常：timeout") is False
+
+
+          def test_missing_source_is_retired_not_completed_or_retried():
+              p = _policy()
+              assert p.decide_failed_execution("目录或文件不存在", p.SourcePresence.MISSING) == p.FileDisposition.RETIRE_MISSING
+
+
+          def test_equal_known_byte_size_is_duplicate_delete():
+              p = _policy()
+              assert p.decide_existing_target(123456789, 123456789) == p.FileDisposition.DELETE_DUPLICATE
+
+
+          def test_different_known_byte_size_is_multi_version_not_duplicate():
+              p = _policy()
+              assert p.decide_existing_target(123456789, 987654321) == p.FileDisposition.ORGANIZE_VERSION
+
+
+          def test_unknown_size_can_never_authorize_delete():
+              p = _policy()
+              assert p.decide_existing_target(None, 987654321) == p.FileDisposition.BLOCK_SAFETY
+              assert p.decide_existing_target(123456789, None) == p.FileDisposition.BLOCK_SAFETY
+          PY
+
+          cat > tests/v3/shukguangyadisk/test_organizer_core_v370_contract.py <<'PY'
+          from pathlib import Path
+
+          ROOT = Path(__file__).resolve().parents[3]
+          PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
+          POLICY = (PLUGIN / "organizer_policy.py").read_text(encoding="utf-8")
+          STATE = (PLUGIN / "organizer_state.py").read_text(encoding="utf-8")
+          EXEC = (PLUGIN / "organizer_execution_v360.py").read_text(encoding="utf-8")
+          HISTORY = (PLUGIN / "organizer_folder_history.py").read_text(encoding="utf-8")
+          CONFLICT = (PLUGIN / "organizer_conflict_resolution_v353.py").read_text(encoding="utf-8")
+          SOURCE = (PLUGIN / "organizer_source_terminal_v3618.py").read_text(encoding="utf-8")
+
+
+          def test_v370_has_one_canonical_file_disposition_table():
+              for token in (
+                  'LEAVE_UNRECOGNIZED = "leave_unrecognized"',
+                  'DELETE_DUPLICATE = "delete_duplicate"',
+                  'ORGANIZE_VERSION = "organize_version"',
+                  'RETRY_TRANSIENT = "retry_transient"',
+                  'BLOCK_SAFETY = "block_safety"',
+              ):
+                  assert token in POLICY
+
+
+          def test_unrecognized_present_source_is_parked_without_retry():
+              assert "probe_source_presence_v3618" in EXEC
+              assert "FileDisposition.LEAVE_UNRECOGNIZED" in EXEC
+              assert "mark_non_actionable" in EXEC
+              assert "不移动、不删除、不改名、不重试" in EXEC
+              assert "def mark_non_actionable" in STATE
+
+
+          def test_source_presence_is_three_state_and_missing_retirement_stays_history_free():
+              for token in ("SourcePresence.PRESENT", "SourcePresence.MISSING", "SourcePresence.UNKNOWN"):
+                  assert token in SOURCE
+              assert "def retire_path" in STATE
+
+
+          def test_single_existing_target_uses_same_size_delete_different_size_version_policy():
+              assert "def _handle_single_existing_target" in CONFLICT
+              assert "FileDisposition.DELETE_DUPLICATE" in CONFLICT
+              assert "【整理策略】【同大小去重】" in CONFLICT
+              assert "FileDisposition.ORGANIZE_VERSION" in POLICY
+              assert "【整理策略】【不同大小多版本】" in CONFLICT
+              assert "plugin._state().retire_path(path=path)" in CONFLICT
+
+
+          def test_history_is_bounded_observability_not_second_database():
+              assert "_monitor_history_limit = 120" in HISTORY
+              assert "_folder_history_group_limit = 12" in HISTORY
+              assert "_folder_history_detail_limit = 20" in HISTORY
+              assert 'data["history"] = raw_history[-20:][::-1]' in HISTORY
+              assert "_history_compacted_v370" in HISTORY
+          PY
+
+      - name: Rewrite organizer architecture rules
+        run: |
+          cat > plugins.v3/shukguangyadisk/ORGANIZER_RULES.md <<'MD'
+          # 光鸭云盘助手自动整理不可变规则
+
+          本文件从 v3.7.0 起是自动整理功能的行为契约。后续任何修复先修改/验证这里的规则，禁止用新的版本补丁模块绕开这些约束。
+
+          ## 一条流水线
+
+          `发现 → 稳定确认 → MoviePilot 识别/预览 → organizer_policy 决策 → 执行 → 终态/简洁日志`
+
+          ### 文件处理矩阵
+
+          | MoviePilot/远端事实 | 决策 | 允许的动作 |
+          | --- | --- | --- |
+          | 识别成功、目标可靠、目标不存在 | ORGANIZE | 按 MoviePilot 规划精准整理 |
+          | 识别失败且源确认仍存在 | LEAVE_UNRECOGNIZED | 原地保留；不移动、不删除、不改名、不 retry |
+          | 识别失败但源存在性未知 | RETRY_TRANSIENT | 仅退避重试，不做文件写操作 |
+          | 源明确不存在 | RETIRE_MISSING | 只清本地调度状态 |
+          | 最终目标已存在，双方字节大小已知且完全相同 | DELETE_DUPLICATE | 删除源重复文件；删除前再次核对大小/fileId |
+          | 最终目标已存在，双方字节大小已知且不同 | ORGANIZE_VERSION | 生成稳定版本名后二次 preview，确认唯一再整理 |
+          | 任一大小未知 | BLOCK_SAFETY | 不删除、不覆盖，源保持原位 |
+
+          ## 不允许破坏的边界
+
+          1. 媒体身份、分类目录、普通重命名模板、目标存储、move/copy、刮削仍由 MoviePilot 决定。
+          2. 光鸭插件只在“安全终态”上补充：识别失败原地停放、同大小去重、不同大小多版本、远端真实性确认。
+          3. 删除必须有比“文件名相同”更强的证据：MoviePilot 已确认同一最终目标 + 两边精确字节大小相同 + 删除前二次远端核验。
+          4. 未识别文件不是失败队列任务。内容不变时只记录一次；文件指纹变化后可以重新进入识别。
+          5. `completed` 是短期调度缓存，不是历史数据库；真正整理历史属于 MoviePilot。光鸭 UI 只保留有限的近期流水。
+          6. 网络/API异常永远不能转换成“文件不存在”“未识别”或“重复”。
+
+          ## 重构约束
+
+          v3.6 及更早的 `install_*_vXXXX()` 图从这里起冻结：**不得继续新增同类行为补丁**。
+
+          后续分阶段把旧能力迁入五层核心：
+
+          1. `discovery`：发现/分页/稳定性；
+          2. `recognition`：MoviePilot 身份与 preview；
+          3. `organizer_policy.py`：唯一文件决策；
+          4. `executor`：光鸭 move/delete/version 与真实性确认；
+          5. `state/reporting`：仅活动调度状态 + 有界近期日志。
+
+          每迁移一个旧 installer，必须先有等价行为测试，再删除旧安装入口；禁止“新核心 + 旧补丁同时各做一遍”。
+          MD
+
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('plugins.v3/shukguangyadisk/ARCHITECTURE.md')
+          text = p.read_text(encoding='utf-8')
+          banner = '''> **v3.7 重构规则**：自动整理的文件终态统一由 `organizer_policy.py` 决定，详细不可变规则见 `ORGANIZER_RULES.md`。v3.6 以前的 `install_*_vXXXX()` 行为图已冻结，不再新增版本补丁；后续只允许把已有能力逐步迁移进 discovery / recognition / policy / executor / state-reporting 五层核心。\n\n'''
+          if banner not in text:
+              text = text.replace('# 光鸭云盘助手 V3 架构\n\n', '# 光鸭云盘助手 V3 架构\n\n' + banner, 1)
+          p.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Validate refactor
+        run: |
+          python -m compileall -q plugins.v3/shukguangyadisk
+          find plugins.v3/shukguangyadisk -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v3/shukguangyadisk -type f -name '*.pyc' -delete
+          python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          python tests/v3/shukguangyadisk/run_contract_tests.py
+          python -m unittest discover -s tests -v
+          python tests/v3/guangyatransferassistant/run_contract_tests.py
+
+      - name: Commit refactor and self-delete
+        run: |
+          rm -f .github/workflows/dev-refactor-shuk-v370.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add plugins.v3/shukguangyadisk tests/v3/shukguangyadisk .github/workflows/dev-refactor-shuk-v370.yml
+          git commit -m "refactor(shuk): centralize organizer file policy for v3.7"
+          git push origin HEAD:refactor/shukguangya-organizer-core-v370
