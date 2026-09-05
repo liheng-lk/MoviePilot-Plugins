@@ -1,4 +1,4 @@
-"""光鸭转存助手 v1.12.10 运行入口。
+"""光鸭转存助手 v1.12.11 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
@@ -19,6 +19,7 @@ v1.12.7 修复“已找到资源/缺集但未提交光鸭”：S02+ 季发行年
 v1.12.8 修复 /gysub 消息入口：最终插件类显式注册 routing PluginAction 桥，不再依赖继承层隐式事件绑定；合法直订请求先即时回执，再执行 TMDB 识别和订阅创建，避免上游变慢时消息端表现为无响应。
 v1.12.9 修复电影观影已命中但真实英文原名被媒体身份门禁误杀：仅按订阅精确 TMDB ID 从 MoviePilot MediaChain 补全官方 title/en_title/original_title 等可信别名；错误 TMDB/年份仍拒绝，不引入模糊电影匹配。
 v1.12.10 修复同一迅雷分享被同媒体不同季重复消费：无季号整包先校验完整集号结构，成功后持久占用真实 share，同系列迅雷流程串行化；显式多季包仍由既有 planner 拆分。
+v1.12.11 修复 /gycheck 只检查频道却未保证主动资源链的问题：人工立即检查先强刷并消费频道，频道仍未覆盖时以 force=True 立即执行观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K；人工操作绕过自动检索冷却，但继续保留媒体身份、年份、质量、Episode Fence、reservation/source claim 与 v1.12.10 迅雷跨季物理资源栅栏。
 
 最终优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。
 后续 ResourceGroup 内部仍保持：光鸭直接转存 > Magnet > ED2K。
@@ -137,8 +138,8 @@ class GuangYaTransferAssistant(
 ):
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
 
-    plugin_version = "1.12.10"
-    build_id = "20260905-r56"
+    plugin_version = "1.12.11"
+    build_id = "20260905-r57"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""

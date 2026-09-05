@@ -21,8 +21,8 @@ def test_v1120_scheduler_parses_and_is_first_runtime_authority():
     identity_pos = ENTRY.index("GuangYaMediaIdentityGuardV1111Mixin,", start)
     release_pos = ENTRY.index("GuangYaReleaseV1110Mixin,", start)
     assert weekly_pos < scheduler_pos < identity_pos < release_pos
-    assert 'plugin_version = "1.12.10"' in ENTRY
-    assert 'build_id = "20260905-r56"' in ENTRY
+    assert 'plugin_version = "1.12.11"' in ENTRY
+    assert 'build_id = "20260905-r57"' in ENTRY
 
 
 def test_v1120_prefers_dailyassistant_and_keeps_tmdb_fallback():

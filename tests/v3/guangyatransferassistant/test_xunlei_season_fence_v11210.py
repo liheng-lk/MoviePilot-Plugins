@@ -176,8 +176,12 @@ def test_v11210_source_parses_and_is_between_movie_identity_and_resource_gate():
     ast.parse(movie, filename=str(MOVIE_IDENTITY))
     assert 'plugin_version = "1.12.10"' in patch
     assert 'build_id = "20260905-r56"' in patch
-    assert "from .xunlei_season_fence_v11210 import GuangYaXunleiSeasonFenceV11210Mixin" in movie
-    assert "class GuangYaMovieIdentityV1129Mixin(GuangYaXunleiSeasonFenceV11210Mixin):" in movie
+    manual = (PLUGIN / "manual_check_v11211.py").read_text(encoding="utf-8")
+    ast.parse(manual, filename=str(PLUGIN / "manual_check_v11211.py"))
+    assert "from .manual_check_v11211 import GuangYaManualCheckV11211Mixin" in movie
+    assert "class GuangYaMovieIdentityV1129Mixin(GuangYaManualCheckV11211Mixin):" in movie
+    assert "from .xunlei_season_fence_v11210 import GuangYaXunleiSeasonFenceV11210Mixin" in manual
+    assert "class GuangYaManualCheckV11211Mixin(GuangYaXunleiSeasonFenceV11210Mixin):" in manual
     head = entry.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     assert head.index("GuangYaMovieIdentityV1129Mixin") < head.index("GuangYaResourceGateV1127Mixin")
 
