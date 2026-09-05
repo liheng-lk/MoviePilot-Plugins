@@ -20,7 +20,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Apply audited release migration
-        run: python scripts/_prepare_guangya_v11215_release.py
+        run: |
+          python scripts/_prepare_guangya_v11215_release.py
+          python scripts/_patch_guangya_v11215_v3_release_tests.py
       - name: Validate release migration
         run: |
           python -m compileall -q plugins.v2 plugins.v3
@@ -38,7 +40,7 @@ jobs:
           find . -type f -name '*.pyc' -delete
       - name: Commit validated release
         run: |
-          rm -f .github/workflows/_prepare-guangya-v11215-release.yml .github/workflows/_prepare-guangya-v11215-release-r2.yml scripts/_prepare_guangya_v11215_release.py
+          rm -f .github/workflows/_prepare-guangya-v11215-release.yml .github/workflows/_prepare-guangya-v11215-release-r2.yml scripts/_prepare_guangya_v11215_release.py scripts/_patch_guangya_v11215_v3_release_tests.py
           git config user.name "liheng-lk"
           git config user.email "69590718+liheng-lk@users.noreply.github.com"
           git add -A
