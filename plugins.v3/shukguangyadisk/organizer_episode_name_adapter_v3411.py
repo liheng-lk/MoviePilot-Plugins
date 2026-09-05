@@ -28,7 +28,6 @@ from app.sdk.logging import logger
 from .organizer_empty_folder_guard_v3410 import _runtime_media_exts
 from .organizer_mp_folder_context_v346 import (
     _is_tv_media,
-    _moviepilot_directory_context,
     _moviepilot_tv_context_from_directory_meta,
 )
 
@@ -373,17 +372,20 @@ def _fallback_episode_format(item: Any) -> Tuple[Optional[EpisodeFormat], Dict[s
     return None, {}, "no_common_template"
 
 
-def _ensure_tv_context(item: Any, kwargs: Dict[str, Any]) -> Tuple[bool, str]:
+def _ensure_tv_context(
+    item: Any,
+    kwargs: Dict[str, Any],
+    directory_meta: Any,
+) -> Tuple[bool, str]:
     media = kwargs.get("mediainfo")
     if _is_tv_media(media):
         kwargs["mtype"] = MediaType.TV
         return True, ""
 
-    context, error = _moviepilot_directory_context(str(getattr(item, "path", "") or ""))
-    meta = getattr(context, "meta_info", None) if context else None
-    tv_media, tv_error = _moviepilot_tv_context_from_directory_meta(meta)
+    # 复用本轮唯一一次 MoviePilot 路径识别得到的 meta；禁止在同一 Preview 构建里二次 recognize_by_path。
+    tv_media, tv_error = _moviepilot_tv_context_from_directory_meta(directory_meta)
     if not tv_media:
-        return False, str(tv_error or error or "MoviePilot 电视剧识别未确认")
+        return False, str(tv_error or "MoviePilot 电视剧识别未确认")
     kwargs["mediainfo"] = tv_media
     kwargs["mtype"] = MediaType.TV
     return True, ""
@@ -429,6 +431,7 @@ def apply_episode_name_adapter(
     transfer_chain: Any,
     directory_item: Any,
     kwargs: Dict[str, Any],
+    directory_meta: Any,
 ) -> Tuple[Dict[str, Any], Optional[str], str]:
     """显式构建 MoviePilot 集数上下文，不改写其它模块函数。"""
     resolved = dict(kwargs or {})
@@ -449,7 +452,7 @@ def apply_episode_name_adapter(
         item,
     )
     if epformat:
-        ok, error = _ensure_tv_context(item, resolved)
+        ok, error = _ensure_tv_context(item, resolved, directory_meta)
         if not ok:
             return resolved, error, source
         resolved["epformat"] = epformat
@@ -473,7 +476,7 @@ def apply_episode_name_adapter(
         )
         return resolved, None, f"{source};fallback={fallback_reason}"
 
-    ok, error = _ensure_tv_context(item, resolved)
+    ok, error = _ensure_tv_context(item, resolved, directory_meta)
     if not ok:
         return resolved, error, fallback_reason
     resolved["epformat"] = fallback

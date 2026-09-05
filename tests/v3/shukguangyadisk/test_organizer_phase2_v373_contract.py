@@ -36,6 +36,15 @@ def test_v373_helpers_are_pure_and_do_not_patch_runtime_functions():
     assert "ContextVar" not in EPISODE
 
 
+def test_v373_reuses_one_moviepilot_directory_recognition_context():
+    build = LOSS[LOSS.index("def _build_moviepilot_kwargs"):LOSS.index("def _defer_unconfirmed_members")]
+    assert build.count("_moviepilot_directory_context(") == 1
+    assert 'meta = getattr(context, "meta_info", None)' in build
+    assert "directory_meta=meta" in build
+    assert "_moviepilot_directory_context(" not in EPISODE
+    assert "_moviepilot_tv_context_from_directory_meta(directory_meta)" in EPISODE
+
+
 def test_v373_preserves_moviepilot_authority_and_fail_closed_boundaries():
     assert "recommend_episode_format(" in EPISODE
     assert "FormatParser(eformat=template)" in EPISODE

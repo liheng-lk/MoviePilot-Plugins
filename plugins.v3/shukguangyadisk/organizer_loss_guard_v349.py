@@ -22,17 +22,12 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.chain.transfer import TransferChain
-from app.schemas.types import MediaType
 from app.sdk.logging import logger
 
 from .organizer_folder_batch_v342 import _FolderBatchEnvelope
 from .organizer_mp_folder_context_v346 import (
     _directory_fileitem,
-    _is_monitor_root_folder_task,
-    _is_tv_media,
     _moviepilot_directory_context,
-    _moviepilot_tv_context_from_directory_meta,
-    _normalize_result,
 )
 
 from .organizer_episode_name_adapter_v3411 import (
@@ -153,6 +148,7 @@ def _build_moviepilot_kwargs(plugin: Any, item: _FolderBatchEnvelope) -> Tuple[T
 
     context, recognize_error = _moviepilot_directory_context(directory_item.path)
     media = getattr(context, "media_info", None) if context else None
+    meta = getattr(context, "meta_info", None) if context else None
 
     kwargs: Dict[str, Any] = {
         "fileitem": directory_item,
@@ -172,6 +168,7 @@ def _build_moviepilot_kwargs(plugin: Any, item: _FolderBatchEnvelope) -> Tuple[T
         transfer_chain,
         directory_item,
         kwargs,
+        directory_meta=meta,
     )
     if episode_error:
         return transfer_chain, directory_item, {}, episode_error
