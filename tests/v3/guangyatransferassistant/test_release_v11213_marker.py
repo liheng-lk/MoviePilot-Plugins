@@ -27,9 +27,11 @@ def test_v11213_hard_fence_is_nested_without_moving_top_level_mro():
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     assert "GuangYaXunleiExistingEpisodeFenceV11213Mixin" not in head
     manual = (PLUGIN / "manual_check_v11211.py").read_text(encoding="utf-8")
+    reconcile = (PLUGIN / "channel_reconcile_v11215.py").read_text(encoding="utf-8")
     core_final = (PLUGIN / "core_pipeline_final_v11214.py").read_text(encoding="utf-8")
     core = (PLUGIN / "core_pipeline_v11214.py").read_text(encoding="utf-8")
-    assert "class GuangYaManualCheckV11211Mixin(GuangYaCorePipelineFinalV11214Mixin):" in manual
+    assert "class GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin):" in manual
+    assert "class GuangYaChannelReconcileV11215Mixin(GuangYaCorePipelineFinalV11214Mixin):" in reconcile
     assert "class GuangYaCorePipelineFinalV11214Mixin(GuangYaCorePipelineV11214Mixin):" in core_final
     assert "class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixin):" in core
 
