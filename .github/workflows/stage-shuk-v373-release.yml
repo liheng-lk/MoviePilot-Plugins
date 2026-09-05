@@ -1,0 +1,66 @@
+name: Stage ShukGuangYaDisk v3.7.3 release
+
+on:
+  push:
+    branches:
+      - refactor/shukguangya-organizer-core-v373-work
+    paths:
+      - tools/stage_shuk_v373_release.py
+      - .github/workflows/stage-shuk-v373-release.yml
+
+permissions:
+  contents: write
+
+jobs:
+  stage-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/shukguangya-organizer-core-v373-work
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Stage v3.7.3 metadata
+        run: python tools/stage_shuk_v373_release.py
+      - name: Python syntax
+        run: python -m compileall -q plugins.v3/shukguangyadisk
+      - name: Full Shuk tests and contracts
+        run: |
+          python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          python tests/v3/shukguangyadisk/run_contract_tests.py
+      - name: Repository regression
+        run: python -m unittest discover -s tests -v
+      - name: GuangYa transfer regression
+        run: python tests/v3/guangyatransferassistant/run_contract_tests.py
+      - name: Validate release surfaces
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('.')
+          plugin = json.loads((root/'plugins.v3/shukguangyadisk/plugin.json').read_text(encoding='utf-8'))
+          package = json.loads((root/'package.v3.json').read_text(encoding='utf-8'))
+          init = (root/'plugins.v3/shukguangyadisk/__init__.py').read_text(encoding='utf-8')
+          remote = (root/'plugins.v3/shukguangyadisk/dist/assets/remoteEntry.js').read_text(encoding='utf-8')
+          execution = (root/'plugins.v3/shukguangyadisk/organizer_execution_v360.py').read_text(encoding='utf-8')
+          assert plugin['version'] == '3.7.3'
+          assert package['ShukGuangYaDisk']['version'] == '3.7.3'
+          assert 'plugin_version = "3.7.3"' in init
+          assert '?v=3.7.3' in remote
+          assert '"organizer_policy_version": "v3.7.3"' in execution
+          assert 'v3.7.3' in plugin['history'] and 'v3.7.3' in package['ShukGuangYaDisk']['history']
+          assert tuple(map(int, package['GuangYaTransferAssistant']['version'].split('.'))) >= (1, 12, 14)
+          assert not (root/'plugins.v3/shukguangyadisk/organizer_episode_sample_bridge_v3411.py').exists()
+          PY
+      - name: Commit staged release and self-delete
+        run: |
+          rm -f tools/stage_shuk_v373_release.py .github/workflows/stage-shuk-v373-release.yml
+          find plugins.v3 tests -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v3 tests -type f -name '*.pyc' -delete
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'release(shukguangyadisk): stage v3.7.3 explicit recognition preview core'
+          git push origin HEAD:refactor/shukguangya-organizer-core-v373-work
