@@ -1,0 +1,63 @@
+name: GuangYa v1.12.16 contract migration
+
+on:
+  push:
+    branches:
+      - fix/guangya-v1.12.16-bilingual-identity
+    paths:
+      - .github/workflows/guangya-v11216-test-migrate.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/guangya-v1.12.16-bilingual-identity
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Migrate only historical structure assertion
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tests/v3/guangyatransferassistant/test_xunlei_season_fence_v11210.py')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              'MOVIE_IDENTITY = PLUGIN / "movie_identity_v1129.py"\nENTRY = PLUGIN / "__init__.py"',
+              'MOVIE_IDENTITY = PLUGIN / "movie_identity_v1129.py"\nBILINGUAL_IDENTITY = PLUGIN / "movie_bilingual_identity_v11216.py"\nENTRY = PLUGIN / "__init__.py"',
+          )
+          text = text.replace(
+              '    movie = MOVIE_IDENTITY.read_text(encoding="utf-8")\n    entry = ENTRY.read_text(encoding="utf-8")',
+              '    movie = MOVIE_IDENTITY.read_text(encoding="utf-8")\n    bilingual = BILINGUAL_IDENTITY.read_text(encoding="utf-8")\n    entry = ENTRY.read_text(encoding="utf-8")',
+          )
+          text = text.replace(
+              '    ast.parse(movie, filename=str(MOVIE_IDENTITY))\n    assert \'plugin_version = "1.12.10"\' in patch',
+              '    ast.parse(movie, filename=str(MOVIE_IDENTITY))\n    ast.parse(bilingual, filename=str(BILINGUAL_IDENTITY))\n    assert \'plugin_version = "1.12.10"\' in patch',
+          )
+          old = '''    assert "from .manual_check_v11211 import GuangYaManualCheckV11211Mixin" in movie\n    assert "class GuangYaMovieIdentityV1129Mixin(GuangYaManualCheckV11211Mixin):" in movie'''
+          new = '''    assert "from .movie_bilingual_identity_v11216 import GuangYaMovieBilingualIdentityV11216Mixin" in movie\n    assert "class GuangYaMovieIdentityV1129Mixin(GuangYaMovieBilingualIdentityV11216Mixin):" in movie\n    assert "from .manual_check_v11211 import GuangYaManualCheckV11211Mixin" in bilingual\n    assert "class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaManualCheckV11211Mixin):" in bilingual'''
+          if old not in text:
+              raise SystemExit('old v1.12.10 structure assertion not found')
+          text = text.replace(old, new)
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Validate GuangYa contracts
+        run: |
+          python -m compileall -q plugins.v3/guangyatransferassistant tests/v3/guangyatransferassistant
+          find plugins.v3 tests/v3/guangyatransferassistant -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v3 tests/v3/guangyatransferassistant -type f -name '*.pyc' -delete
+          python tests/v3/guangyatransferassistant/run_contract_tests.py
+      - name: Commit validated migration and remove one-shot workflow
+        run: |
+          rm -f .github/workflows/guangya-v11216-test-migrate.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add tests/v3/guangyatransferassistant/test_xunlei_season_fence_v11210.py .github/workflows/guangya-v11216-test-migrate.yml
+          git diff --cached --quiet && exit 0
+          git commit -m 'test(guangya): preserve v1.12.10 fence under bilingual bridge'
+          git push origin HEAD:fix/guangya-v1.12.16-bilingual-identity
