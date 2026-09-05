@@ -17,7 +17,7 @@ from p115client import P115Client
 class P115ClientConfig:
     cookies: str = ""
     cookies_file: str = ""
-    app: str = "115android"
+    app: str = "qandroid"
 
 
 class P115Gateway:
@@ -25,11 +25,12 @@ class P115Gateway:
 
     def __init__(self, config: P115ClientConfig):
         self.config = config
-        cookies: Any
         if config.cookies_file:
-            cookies = Path(config.cookies_file).expanduser()
+            cookies: Any = Path(config.cookies_file).expanduser()
+        elif config.cookies:
+            cookies = config.cookies
         else:
-            cookies = config.cookies or None
+            raise RuntimeError("115 尚未登录，请先扫码登录或填写 Cookie")
         self.client = P115Client(cookies)
 
     @staticmethod
@@ -54,7 +55,7 @@ class P115Gateway:
 
     def user_info(self) -> Dict[str, Any]:
         """返回当前登录态信息；接口名漂移时依次尝试兼容入口。"""
-        for name in ("user_info", "user_info_app", "user_my"):
+        for name in ("user_base_info", "user_info", "user_info_app", "user_my"):
             method = getattr(self.client, name, None)
             if callable(method):
                 resp = method()
@@ -78,6 +79,8 @@ class P115Gateway:
         raise RuntimeError("当前 p115client 未暴露可用的文件列表接口")
 
     def mkdir(self, name: str, pid: int = 0) -> Dict[str, Any]:
+        if not str(name or "").strip():
+            raise ValueError("目录名称不能为空")
         for method_name, payload in (
             ("fs_mkdir", {"cname": name, "pid": int(pid or 0)}),
             ("fs_mkdir_app", {"cname": name, "pid": int(pid or 0)}),
@@ -90,6 +93,8 @@ class P115Gateway:
         raise RuntimeError("当前 p115client 未暴露可用的创建目录接口")
 
     def rename(self, file_id: int, name: str) -> Dict[str, Any]:
+        if not str(name or "").strip():
+            raise ValueError("新名称不能为空")
         payload = {"fid": int(file_id), "file_name": name}
         for method_name in ("fs_rename", "fs_rename_app"):
             method = getattr(self.client, method_name, None)
@@ -101,6 +106,8 @@ class P115Gateway:
 
     def move(self, file_ids: Iterable[int], pid: int) -> Dict[str, Any]:
         ids = [int(fid) for fid in file_ids]
+        if not ids:
+            raise ValueError("没有可移动文件")
         payload: Dict[str, Any] = {"pid": int(pid)}
         payload.update({f"fid[{index}]": fid for index, fid in enumerate(ids)})
         for method_name in ("fs_move", "fs_move_app"):
@@ -113,6 +120,8 @@ class P115Gateway:
 
     def delete(self, file_ids: Iterable[int]) -> Dict[str, Any]:
         ids = [int(fid) for fid in file_ids]
+        if not ids:
+            raise ValueError("没有可删除文件")
         payload = {f"fid[{index}]": fid for index, fid in enumerate(ids)}
         for method_name in ("fs_delete", "fs_delete_app"):
             method = getattr(self.client, method_name, None)
@@ -147,11 +156,14 @@ class P115Gateway:
 
     def share_receive(self, share_code: str, receive_code: str, file_ids: Iterable[int], cid: int) -> Dict[str, Any]:
         ids = [str(int(fid)) for fid in file_ids]
+        if not ids:
+            raise ValueError("115 分享转存没有可提交文件")
         payload = {
             "share_code": share_code,
             "receive_code": receive_code,
             "file_id": ",".join(ids),
             "cid": int(cid),
+            "is_check": 0,
         }
         method = getattr(self.client, "share_receive", None)
         if not callable(method):
@@ -170,18 +182,18 @@ class P115Gateway:
     def offline_add_bt(self, info_hash: str, cid: int, wanted: Optional[Iterable[int]] = None) -> Dict[str, Any]:
         payload: Dict[str, Any] = {"info_hash": info_hash, "wp_path_id": int(cid)}
         if wanted is not None:
-            payload["wanted"] = ",".join(str(int(index)) for index in wanted)
+            wanted_values = [str(int(index)) for index in wanted]
+            if wanted_values:
+                payload["wanted"] = ",".join(wanted_values)
         method = getattr(self.client, "clouddownload_task_add_bt", None)
         if not callable(method):
             raise RuntimeError("当前 p115client 未暴露 clouddownload_task_add_bt")
         resp = method(payload)
         return resp if isinstance(resp, dict) else {"state": bool(resp)}
 
-    def offline_tasks(self) -> Dict[str, Any]:
-        for method_name in ("clouddownload_task_list", "clouddownload_task"):
-            method = getattr(self.client, method_name, None)
-            if callable(method):
-                resp = method({})
-                if isinstance(resp, dict):
-                    return resp
-        return {}
+    def offline_tasks(self, *, page: int = 1, page_size: int = 30) -> Dict[str, Any]:
+        method = getattr(self.client, "clouddownload_task_list", None)
+        if not callable(method):
+            return {}
+        resp = method({"page": max(1, int(page)), "page_size": max(1, int(page_size))})
+        return resp if isinstance(resp, dict) else {}
