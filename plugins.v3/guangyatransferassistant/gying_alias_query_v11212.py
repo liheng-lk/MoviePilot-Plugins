@@ -20,10 +20,12 @@ from __future__ import annotations
 import re
 import threading
 from contextlib import contextmanager
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Optional
+
+from .manual_check_v11211 import GuangYaManualCheckV11211Mixin
 
 
-class GuangYaGyingAliasQueryV11212Mixin:
+class GuangYaGyingAliasQueryV11212Mixin(GuangYaManualCheckV11211Mixin):
     """把精确 TMDB 官方别名补到 GYING 搜索前，而不是只用于搜索后的身份判断。"""
 
     plugin_version = "1.12.12"
@@ -63,7 +65,6 @@ class GuangYaGyingAliasQueryV11212Mixin:
         subscribe = getattr(local, "subscribe", None) if local is not None else None
         if subscribe is not None:
             return subscribe
-        # 迅雷旧链已经建立了线程隔离订阅上下文，直接复用而不增加第二套业务状态。
         xunlei_context = getattr(self, "_gying_xunlei_context_v1125", None)
         return getattr(xunlei_context, "subscribe", None) if xunlei_context is not None else None
 
@@ -93,7 +94,6 @@ class GuangYaGyingAliasQueryV11212Mixin:
 
         year = str(getattr(subscribe, "year", "") or "").strip()
         seen_roots = {self._query_key_v11212(getattr(subscribe, "name", ""))}
-        # primary 可能来自人工统一搜索，仍避免把同一个标题换空格后重复请求。
         primary_root = re.sub(r"\s+(?:19|20)\d{2}\s*$", "", primary).strip()
         if primary_root:
             seen_roots.add(self._query_key_v11212(primary_root))
@@ -139,7 +139,6 @@ class GuangYaGyingAliasQueryV11212Mixin:
             attempted.append(query)
             if index == 0:
                 first_rows, first_state = rows, state
-            # 认证、节点、HTTP 等失败必须原样上抛给调度层，不能靠别名搜索伪装成成功。
             if state.get("success") is False:
                 if index == 0:
                     return rows, state
@@ -184,7 +183,6 @@ class GuangYaGyingAliasQueryV11212Mixin:
                     return rows, state
                 first_state["alias_query_error_v11212"] = str(state.get("message") or "")[:300]
                 break
-            # 下层 RecallGuard/Hardening 已按当前订阅做过候选过滤；有结果即可短路。
             if rows:
                 if index > 0:
                     state["query_alias_v11212"] = query
@@ -204,7 +202,6 @@ class GuangYaGyingAliasQueryV11212Mixin:
         return [], first_state
 
     def _viewing_external_candidates_v1113(self, subscribe: Any):
-        # Magnet/ED2K 旧入口已有 subscribe 参数，只补线程隔离搜索上下文，不改其筛选/提交业务。
         with self._gying_alias_scope_v11212(subscribe):
             return super()._viewing_external_candidates_v1113(subscribe)
 
