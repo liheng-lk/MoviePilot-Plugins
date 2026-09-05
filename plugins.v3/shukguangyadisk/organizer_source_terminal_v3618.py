@@ -1,16 +1,13 @@
-"""v3.6.18：Worker 执行边界的源路径消失终态收口。
+"""Worker 执行边界的源路径存在性与终态回收。
 
-自动整理 discovery 与私有 Worker 之间存在天然时间窗口：资源在扫描时存在，但在真正
-``TransferChain.do_transfer`` 前可能已经被其它整理、人工操作或同盘 move 删除。旧逻辑
-会把 MoviePilot 的“没有找到可整理的媒体文件”统一当成失败写回 retry，于是一个已经不存在
-的源路径会被持续重试。
+v3.7 起该文件不再自己决定“失败要不要 retry”，只提供一个可靠的远端事实：源当前是
+``present / missing / unknown``。唯一文件处理策略位于 :mod:`organizer_policy`。
 
-本层只接受远端存在性事实：
-- 必须使用 v3.6.9 ``refresh_item`` 先失效路径缓存并重新解析；
-- 只有明确返回 ``None``/``FileNotFoundError`` 才认定源已消失；
-- 网络/API异常返回 unknown，不清状态；
-- 源已消失时仅删除该路径（目录任务则删除整棵子树）的本地 organizer 状态，随后让
-  pending 自愈重算；不写 completed/ignored/retry，也不修改 MoviePilot durable task。
+安全边界：
+- 必须使用 ``refresh_item`` 失效路径缓存并重新解析；
+- 只有明确返回 ``None``/``FileNotFoundError`` 才是 missing；
+- 网络/API异常是 unknown，绝不能当成 missing 或“未识别”；
+- 源明确消失时只清理本地 organizer 状态，不制造 completed/ignored/retry 历史。
 """
 
 from __future__ import annotations
@@ -19,6 +16,8 @@ from pathlib import Path
 from typing import Any, Dict
 
 from app.sdk.logging import logger
+
+from .organizer_policy import SourcePresence
 
 
 SOURCE_MISSING_TERMINAL_V3618 = "__shuk_source_missing_terminal_v3618__"
@@ -46,31 +45,37 @@ def _norm(plugin: Any, path: Any) -> str:
 
 
 def source_missing_hint_v3618(message: Any) -> bool:
+    """兼容旧调用点；新的失败决策请使用 organizer_policy。"""
     text = str(message or "").lower()
     return any(marker.lower() in text for marker in _MISSING_HINTS)
 
 
-def confirm_source_missing_v3618(plugin: Any, item: Any) -> bool:
-    """强制刷新远端路径；只有明确不存在才返回 True，异常永远返回 False。"""
+def probe_source_presence_v3618(plugin: Any, item: Any) -> SourcePresence:
+    """强制刷新远端路径并返回三态事实；异常永远是 unknown。"""
     path = _norm(plugin, getattr(item, "path", ""))
     if not path:
-        return False
+        return SourcePresence.UNKNOWN
     api = getattr(plugin, "_guangya_api", None)
     refresh = getattr(api, "refresh_item", None)
     if not callable(refresh):
-        return False
+        return SourcePresence.UNKNOWN
     try:
         current = refresh(Path(path))
     except FileNotFoundError:
-        return True
+        return SourcePresence.MISSING
     except Exception as err:  # noqa: BLE001 - network/API failure is not absence evidence
         logger.debug(
-            "【光鸭云盘助手】【v3.6.18】【源存在性】远端复核失败，保留原状态: path=%s error=%s",
+            "【光鸭云盘助手】【源存在性】远端复核失败，事实=unknown，保留原状态: path=%s error=%s",
             path,
             err,
         )
-        return False
-    return current is None
+        return SourcePresence.UNKNOWN
+    return SourcePresence.MISSING if current is None else SourcePresence.PRESENT
+
+
+def confirm_source_missing_v3618(plugin: Any, item: Any) -> bool:
+    """旧接口兼容：只有三态探针明确 missing 才返回 True。"""
+    return probe_source_presence_v3618(plugin, item) == SourcePresence.MISSING
 
 
 def retire_missing_source_v3618(plugin: Any, item: Any, *, subtree: bool = False) -> Dict[str, int]:
@@ -97,7 +102,6 @@ def retire_missing_source_v3618(plugin: Any, item: Any, *, subtree: bool = False
                 }
             else:
                 mapping.pop(path, None)
-                # 状态表可能遗留未规范化 key；同时按 normalize 后身份删除。
                 for raw_path in list(mapping):
                     if _norm(plugin, raw_path) == path:
                         mapping.pop(raw_path, None)
@@ -107,18 +111,16 @@ def retire_missing_source_v3618(plugin: Any, item: Any, *, subtree: bool = False
 
     removed = dict(state_store.mutate(apply) or {})
 
-    # 不直接删除整个 group pending，避免同目录其它仍在等待的成员失去优先回访；让现有
-    # v3.6.8 依据剩余直属等待态事实决定是否删除 pending。
     prune = getattr(plugin, "_v361_prune_stale_pending", None)
     if callable(prune):
         try:
             prune()
         except Exception as err:  # noqa: BLE001
-            logger.debug("【光鸭云盘助手】【v3.6.18】【源消失终态】pending 自愈失败: %s", err)
+            logger.debug("【光鸭云盘助手】【源消失终态】pending 自愈失败: %s", err)
 
     total = sum(int(value or 0) for value in removed.values())
     logger.info(
-        "【光鸭云盘助手】【v3.6.18】【源消失终态】远端已确认源不存在，停止再次整理并清理本地状态: "
+        "【光鸭云盘助手】【源消失终态】远端已确认源不存在，停止再次整理并清理本地状态: "
         "path=%s subtree=%s removed=%s details=%s",
         path,
         subtree,
@@ -131,6 +133,7 @@ def retire_missing_source_v3618(plugin: Any, item: Any, *, subtree: bool = False
 __all__ = [
     "SOURCE_MISSING_TERMINAL_V3618",
     "confirm_source_missing_v3618",
+    "probe_source_presence_v3618",
     "retire_missing_source_v3618",
     "source_missing_hint_v3618",
 ]
