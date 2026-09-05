@@ -87,11 +87,7 @@ class TransferDispatcher:
             if task.source_type == SourceType.SHARE115.value:
                 file_ids = [int(v) for v in (share_file_ids or [])]
                 if not file_ids:
-                    return self.fail(
-                        task,
-                        TaskState.NEEDS_REVIEW,
-                        "115 分享尚未解析出安全文件选择",
-                    )
+                    return self.fail(task, TaskState.NEEDS_REVIEW, "115 分享尚未解析出安全文件选择")
                 resp = self.provider.share_receive(
                     share_code=task.share_code,
                     receive_code=task.receive_code,
@@ -100,11 +96,7 @@ class TransferDispatcher:
                 )
             elif task.source_type == SourceType.MAGNET.value:
                 if not task.wanted:
-                    return self.fail(
-                        task,
-                        TaskState.NEEDS_REVIEW,
-                        "Magnet 尚未生成安全 wanted 文件索引",
-                    )
+                    return self.fail(task, TaskState.NEEDS_REVIEW, "Magnet 尚未生成安全 wanted 文件索引")
                 resp = self.provider.offline_add_bt(
                     info_hash=task.source_key,
                     target_cid=task.target_cid,
@@ -137,6 +129,9 @@ class TransferDispatcher:
             task.remote_task_id = remote_id
             task.error_code = ""
             task.error_message = ""
+            if task.source_type == SourceType.SHARE115.value:
+                # share_receive 返回成功时文件已保存到目标 CID；后续只等 P115Disk/MP 整理。
+                return self.store.transition(task, TaskState.TRANSFERRED)
             return self.store.transition(task, TaskState.TRANSFERRING)
         except ValueError as err:
             return self.fail(task, TaskState.NEEDS_REVIEW, str(err))
