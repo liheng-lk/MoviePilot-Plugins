@@ -14,6 +14,7 @@ PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 PATCH = PLUGIN / "gying_alias_query_v11212.py"
 ENTRY = PLUGIN / "__init__.py"
 MANUAL = PLUGIN / "manual_check_v11211.py"
+FENCE = PLUGIN / "xunlei_existing_fence_v11213.py"
 
 
 def _mixin_class():
@@ -116,17 +117,22 @@ class _Probe(Mixin, _Base):
 def test_v11212_source_parses_and_is_nested_without_moving_top_level_mro():
     source = PATCH.read_text(encoding="utf-8")
     manual = MANUAL.read_text(encoding="utf-8")
+    fence = FENCE.read_text(encoding="utf-8")
     entry = ENTRY.read_text(encoding="utf-8")
     ast.parse(source, filename=str(PATCH))
     ast.parse(manual, filename=str(MANUAL))
+    ast.parse(fence, filename=str(FENCE))
     assert 'plugin_version = "1.12.12"' in source
     assert 'build_id = "20260905-r58"' in source
     assert "from .xunlei_season_fence_v11210 import GuangYaXunleiSeasonFenceV11210Mixin" in source
     assert "class GuangYaGyingAliasQueryV11212Mixin(GuangYaXunleiSeasonFenceV11210Mixin):" in source
-    assert "from .gying_alias_query_v11212 import GuangYaGyingAliasQueryV11212Mixin" in manual
-    assert "class GuangYaManualCheckV11211Mixin(GuangYaGyingAliasQueryV11212Mixin):" in manual
+    assert "from .gying_alias_query_v11212 import GuangYaGyingAliasQueryV11212Mixin" in fence
+    assert "class GuangYaXunleiExistingEpisodeFenceV11213Mixin(GuangYaGyingAliasQueryV11212Mixin):" in fence
+    assert "from .xunlei_existing_fence_v11213 import GuangYaXunleiExistingEpisodeFenceV11213Mixin" in manual
+    assert "class GuangYaManualCheckV11211Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixin):" in manual
     head = entry.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     assert "GuangYaGyingAliasQueryV11212Mixin" not in head
+    assert "GuangYaXunleiExistingEpisodeFenceV11213Mixin" not in head
     assert head.index("GuangYaMovieIdentityV1129Mixin") < head.index("GuangYaResourceGateV1127Mixin")
 
 
