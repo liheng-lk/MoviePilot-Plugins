@@ -1,0 +1,59 @@
+name: Stage ShukGuangYaDisk v3.7.2 release
+
+on:
+  push:
+    branches:
+      - refactor/shukguangya-organizer-core-v372
+    paths:
+      - tools/stage_shuk_v372_release.py
+      - .github/workflows/stage-shuk-v372-release.yml
+
+permissions:
+  contents: write
+
+jobs:
+  stage-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/shukguangya-organizer-core-v372
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Stage v3.7.2 metadata
+        run: python tools/stage_shuk_v372_release.py
+      - name: Python syntax
+        run: python -m compileall -q plugins.v3/shukguangyadisk
+      - name: Full Shuk tests and contracts
+        run: |
+          python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          python tests/v3/shukguangyadisk/run_contract_tests.py
+      - name: Repository regression
+        run: python -m unittest discover -s tests -v
+      - name: GuangYa transfer regression
+        run: python tests/v3/guangyatransferassistant/run_contract_tests.py
+      - name: Validate manifests and cross-plugin isolation
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path('.')
+          plugin=json.loads((root/'plugins.v3/shukguangyadisk/plugin.json').read_text(encoding='utf-8'))
+          package=json.loads((root/'package.v3.json').read_text(encoding='utf-8'))
+          assert plugin['version']=='3.7.2'
+          assert package['ShukGuangYaDisk']['version']=='3.7.2'
+          assert tuple(map(int, package['GuangYaTransferAssistant']['version'].split('.'))) >= (1,12,14)
+          assert '?v=3.7.2' in (root/'plugins.v3/shukguangyadisk/dist/assets/remoteEntry.js').read_text(encoding='utf-8')
+          PY
+      - name: Commit release staging and remove one-time tooling
+        run: |
+          rm -f tools/stage_shuk_v372_release.py .github/workflows/stage-shuk-v372-release.yml
+          find plugins.v3 tests -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v3 tests -type f -name '*.pyc' -delete
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'release(shukguangyadisk): stage v3.7.2 explicit folder terminal core'
+          git push origin HEAD:refactor/shukguangya-organizer-core-v372
