@@ -32,14 +32,29 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: GuangYa V3 contract tests
         run: python tests/v3/guangyatransferassistant/run_contract_tests.py
-      - name: Dependency manifests
-        run: python tests/v3/check_dependency_manifests.py
-      - name: JSON metadata
-        run: python -m json.tool package.v3.json >/dev/null && python -m json.tool plugins.v3/guangyatransferassistant/plugin.json >/dev/null
+      - name: V3 dependency manifests
+        run: |
+          test -z "$(find plugins.v3 -type f -name 'requirements.txt' -print)"
+          python - <<'PY'
+          from pathlib import Path
+          import tomllib
+          for path in Path('plugins.v3').glob('*/pyproject.toml'):
+              with path.open('rb') as f:
+                  project = tomllib.load(f)['project']
+              assert project.get('dynamic') == ['version'], path
+              assert project.get('requires-python') == '>=3.12', path
+          shuk = Path('plugins.v3/shukguangyadisk')
+          assert not (shuk / 'pyproject.toml').exists(), 'ShukGuangYaDisk V3 must remain dependency-free'
+          assert not (shuk / 'requirements.txt').exists(), 'ShukGuangYaDisk V3 must remain dependency-free'
+          PY
+      - name: JSON indexes
+        run: python -c "import json; [json.load(open(p,encoding='utf-8')) for p in ['plugin.json','package.v2.json','package.v3.json']]"
       - name: Cleanup artifacts
         run: |
           find . -type d -name '__pycache__' -prune -exec rm -rf {} +
           find . -type f -name '*.pyc' -delete
+      - name: No generated Python artifacts
+        run: test -z "$(find . -type f -name '*.pyc' -o -type d -name '__pycache__')"
       - name: Finalize validated candidate
         run: |
           rm -f .validation/guangya-v11212-alias.trigger
