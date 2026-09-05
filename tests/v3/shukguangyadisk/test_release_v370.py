@@ -26,7 +26,7 @@ def test_v370_release_metadata_is_preserved_as_floor():
     assert "v3.7.0" in package["ShukGuangYaDisk"]["history"]
 def test_v370_preserves_current_transfer_assistant_release():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
-    assert package["GuangYaTransferAssistant"]["version"] == "1.12.14"
+    assert package["GuangYaTransferAssistant"]["version"] == "1.12.15"
 
 
 def test_v370_status_exposes_policy_version_separately_from_legacy_hardening():
