@@ -21,11 +21,9 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from app.sdk.logging import logger
-
-from .organizer_execution_v360 import GuangYaOrganizerExecutionV360Mixin
 
 
 _REPO_PATCH_FLAG = "_shuk_v3621_admission_probe_wrapped"
@@ -38,6 +36,13 @@ def _admission_repo_class() -> Any:
     from app.db.adapters.transfer.admission import TransactionalTransferAdmissionRepository
 
     return TransactionalTransferAdmissionRepository
+
+
+def _execution_class() -> Any:
+    # 延迟导入，避免插件入口装配 MRO 时形成反向循环；测试也可以只验证纯观察逻辑。
+    from .organizer_execution_v360 import GuangYaOrganizerExecutionV360Mixin
+
+    return GuangYaOrganizerExecutionV360Mixin
 
 
 def _thread_local() -> threading.local:
@@ -107,9 +112,11 @@ def install_moviepilot_admission_probe_v3621() -> bool:
             return original_admit(repository, *args, **kwargs)
         except Exception as err:  # noqa: BLE001 - 仅记录后原样抛出
             if _is_exact_admission_conflict(err):
-                storage = kwargs.get("storage")
-                src_path = kwargs.get("src_path")
-                _remember_conflict(storage=storage, src_path=src_path, error=err)
+                _remember_conflict(
+                    storage=kwargs.get("storage"),
+                    src_path=kwargs.get("src_path"),
+                    error=err,
+                )
             raise
 
     setattr(repo_cls, "_shuk_v3621_original_admit", original_admit)
@@ -209,12 +216,13 @@ def _persist_probe_conflict(plugin: Any, row: Dict[str, Any], member: Any) -> st
 def install_admission_conflict_probe_v3621() -> None:
     """安装精确异常探针，并包住最终 execution fallback。"""
     install_moviepilot_admission_probe_v3621()
-    if bool(getattr(GuangYaOrganizerExecutionV360Mixin, _EXEC_PATCH_FLAG, False)):
+    execution_cls = _execution_class()
+    if bool(getattr(execution_cls, _EXEC_PATCH_FLAG, False)):
         return
 
-    previous_execute = GuangYaOrganizerExecutionV360Mixin._execute_isolated_transfer
-    previous_fallback = GuangYaOrganizerExecutionV360Mixin._fallback_terminal_state
-    previous_status = GuangYaOrganizerExecutionV360Mixin.api_organize_monitor_status
+    previous_execute = execution_cls._execute_isolated_transfer
+    previous_fallback = execution_cls._fallback_terminal_state
+    previous_status = execution_cls.api_organize_monitor_status
 
     def execute(plugin: Any, item: Any):
         clear_admission_probe_v3621()
@@ -264,10 +272,10 @@ def install_admission_conflict_probe_v3621() -> None:
             status["admission_conflict_probe"] = True
         return response
 
-    GuangYaOrganizerExecutionV360Mixin._execute_isolated_transfer = execute
-    GuangYaOrganizerExecutionV360Mixin._fallback_terminal_state = fallback
-    GuangYaOrganizerExecutionV360Mixin.api_organize_monitor_status = api_status
-    setattr(GuangYaOrganizerExecutionV360Mixin, _EXEC_PATCH_FLAG, True)
+    execution_cls._execute_isolated_transfer = execute
+    execution_cls._fallback_terminal_state = fallback
+    execution_cls.api_organize_monitor_status = api_status
+    setattr(execution_cls, _EXEC_PATCH_FLAG, True)
     logger.info(
         "【光鸭云盘助手】【v3.6.21】MoviePilot admission 精确冲突探针已启用："
         "宿主通用失败不再掩盖 TransferAdmissionConflictError，冲突成员直接 persistent blocked"
