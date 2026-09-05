@@ -28,10 +28,8 @@ from app.sdk.logging import logger
 from .organizer_empty_folder_guard_v3410 import _runtime_media_exts
 from .organizer_mp_folder_context_v346 import (
     _is_tv_media,
-    _moviepilot_directory_context,
     _moviepilot_tv_context_from_directory_meta,
 )
-from . import organizer_loss_guard_v349 as _loss_guard
 
 
 @dataclass(frozen=True)
@@ -374,17 +372,20 @@ def _fallback_episode_format(item: Any) -> Tuple[Optional[EpisodeFormat], Dict[s
     return None, {}, "no_common_template"
 
 
-def _ensure_tv_context(item: Any, kwargs: Dict[str, Any]) -> Tuple[bool, str]:
+def _ensure_tv_context(
+    item: Any,
+    kwargs: Dict[str, Any],
+    directory_meta: Any,
+) -> Tuple[bool, str]:
     media = kwargs.get("mediainfo")
     if _is_tv_media(media):
         kwargs["mtype"] = MediaType.TV
         return True, ""
 
-    context, error = _moviepilot_directory_context(str(getattr(item, "path", "") or ""))
-    meta = getattr(context, "meta_info", None) if context else None
-    tv_media, tv_error = _moviepilot_tv_context_from_directory_meta(meta)
+    # 复用本轮唯一一次 MoviePilot 路径识别得到的 meta；禁止在同一 Preview 构建里二次 recognize_by_path。
+    tv_media, tv_error = _moviepilot_tv_context_from_directory_meta(directory_meta)
     if not tv_media:
-        return False, str(tv_error or error or "MoviePilot 电视剧识别未确认")
+        return False, str(tv_error or "MoviePilot 电视剧识别未确认")
     kwargs["mediainfo"] = tv_media
     kwargs["mtype"] = MediaType.TV
     return True, ""
@@ -424,139 +425,135 @@ def _mp_member_recommend(
     return epformat, expectations, "moviepilot_member_samples"
 
 
-def install_episode_name_adapter_v3411() -> None:
-    if getattr(_loss_guard, "_guangya_episode_name_adapter_v3411", False):
-        return
+def apply_episode_name_adapter(
+    plugin: Any,
+    item: Any,
+    transfer_chain: Any,
+    directory_item: Any,
+    kwargs: Dict[str, Any],
+    directory_meta: Any,
+) -> Tuple[Dict[str, Any], Optional[str], str]:
+    """显式构建 MoviePilot 集数上下文，不改写其它模块函数。"""
+    resolved = dict(kwargs or {})
 
-    original_build = _loss_guard._build_moviepilot_kwargs
-    original_audit = _loss_guard._audit_preview
+    existing_epformat = resolved.get("epformat")
+    if existing_epformat:
+        template = str(getattr(existing_epformat, "format", "") or "")
+        expectations = _validated_expectations(template, _media_members(item), require_tokens=False) or {}
+        if expectations:
+            _attach_expectations(plugin, item, expectations, "moviepilot_existing")
+        return resolved, None, "moviepilot_existing"
 
-    def build(plugin: Any, item: Any):
-        transfer_chain, directory_item, kwargs, plan_error = original_build(plugin, item)
-        if plan_error:
-            return transfer_chain, directory_item, kwargs, plan_error
-
-        # v3.4.8 的目录推荐若已成功，继续使用 MP 原结果；同时尽量建立预览集号校验账本。
-        existing_epformat = kwargs.get("epformat")
-        if existing_epformat:
-            template = str(getattr(existing_epformat, "format", "") or "")
-            expectations = _validated_expectations(template, _media_members(item), require_tokens=False) or {}
-            if expectations:
-                _attach_expectations(plugin, item, expectations, "moviepilot_directory")
-            return transfer_chain, directory_item, kwargs, None
-
-        # 第一层兼容：仍然调用 MoviePilot 推荐器，但显式传入扫描得到的整个文件列表。
-        epformat, expectations, source = _mp_member_recommend(
-            plugin,
-            transfer_chain,
-            directory_item,
-            item,
-        )
-        if epformat:
-            ok, error = _ensure_tv_context(item, kwargs)
-            if not ok:
-                return transfer_chain, directory_item, kwargs, error
-            kwargs["epformat"] = epformat
-            if expectations:
-                _attach_expectations(plugin, item, expectations, source)
-            logger.info(
-                "【光鸭云盘助手】【集数适配】MoviePilot 使用整组文件生成集数模板: %s -> %s",
-                item.path,
-                epformat.format,
-            )
-            return transfer_chain, directory_item, kwargs, None
-
-        # 第二层兼容：只推导集号位置；模板仍由 MoviePilot FormatParser 逐文件反向验证。
-        fallback, expectations, fallback_reason = _fallback_episode_format(item)
-        if not fallback:
-            logger.debug(
-                "【光鸭云盘助手】【集数适配】未启用弱命名兼容模板: %s - MP=%s；fallback=%s",
-                item.path,
-                source,
-                fallback_reason,
-            )
-            return transfer_chain, directory_item, kwargs, None
-
-        ok, error = _ensure_tv_context(item, kwargs)
+    # 唯一一次 MoviePilot 推荐：直接把当前 folder envelope 的整组成员传入公开 API。
+    epformat, expectations, source = _mp_member_recommend(
+        plugin,
+        transfer_chain,
+        directory_item,
+        item,
+    )
+    if epformat:
+        ok, error = _ensure_tv_context(item, resolved, directory_meta)
         if not ok:
-            return transfer_chain, directory_item, kwargs, error
-        kwargs["epformat"] = fallback
-        _attach_expectations(plugin, item, expectations, "validated_compatibility")
+            return resolved, error, source
+        resolved["epformat"] = epformat
+        if expectations:
+            _attach_expectations(plugin, item, expectations, source)
         logger.info(
-            "【光鸭云盘助手】【集数适配】MoviePilot 原推荐未覆盖该命名，已生成并验证兼容模板: %s -> %s；成员=%s",
+            "【光鸭云盘助手】【集数适配】MoviePilot 使用整组文件生成集数模板: %s -> %s",
             item.path,
-            fallback.format,
-            len(expectations),
+            epformat.format,
         )
-        return transfer_chain, directory_item, kwargs, None
+        return resolved, None, source
 
-    def audit(plugin: Any, item: Any, result: Any):
-        safe, message, details = original_audit(plugin, item, result)
-        if not safe:
-            return safe, message, details
+    # MoviePilot 未推荐时，仅对集号位置做兼容推导；仍必须经 MP FormatParser 整组反向验证。
+    fallback, expectations, fallback_reason = _fallback_episode_format(item)
+    if not fallback:
+        logger.debug(
+            "【光鸭云盘助手】【集数适配】未启用弱命名兼容模板: %s - MP=%s；fallback=%s",
+            item.path,
+            source,
+            fallback_reason,
+        )
+        return resolved, None, f"{source};fallback={fallback_reason}"
 
-        expectations = dict(getattr(item, "_guangya_episode_expectations_v3411", {}) or {})
-        if not expectations:
-            return safe, message, details
+    ok, error = _ensure_tv_context(item, resolved, directory_meta)
+    if not ok:
+        return resolved, error, fallback_reason
+    resolved["epformat"] = fallback
+    _attach_expectations(plugin, item, expectations, "validated_compatibility")
+    logger.info(
+        "【光鸭云盘助手】【集数适配】MoviePilot 原推荐未覆盖该命名，已生成并验证兼容模板: %s -> %s；成员=%s",
+        item.path,
+        fallback.format,
+        len(expectations),
+    )
+    return resolved, None, "validated_compatibility"
 
-        ok, payload, error = _loss_guard._preview_result(result)
-        if not ok or not isinstance(payload, dict):
-            return False, error or "MoviePilot 预览结果无法执行集号复核", details
 
-        preview_rows = [row for row in (payload.get("items") or []) if isinstance(row, dict)]
-        by_source = {
-            plugin._organize_normalize_path(str(row.get("source") or "")): row
-            for row in preview_rows
-            if row.get("source")
-        }
-        mismatches: List[str] = []
-        for source_path, expected in expectations.items():
-            row = by_source.get(source_path)
-            if not row:
-                mismatches.append(f"{expected.get('name')} 未出现在预览")
-                continue
-            actual_episode = _to_int(row.get("episode"))
-            actual_end = _to_int(row.get("episode_end"))
-            actual_season = _to_int(row.get("season"))
-            expected_episode = _to_int(expected.get("episode"))
-            expected_end = _to_int(expected.get("episode_end"))
-            expected_season = _to_int(expected.get("season"))
-            if actual_episode != expected_episode:
-                mismatches.append(
-                    f"{expected.get('name')} 期望E{expected_episode}但MoviePilot解析为E{actual_episode}"
-                )
-                continue
-            if expected_end is not None and actual_end != expected_end:
-                mismatches.append(
-                    f"{expected.get('name')} 期望结束集E{expected_end}但MoviePilot解析为E{actual_end}"
-                )
-                continue
-            if expected_season is not None and actual_season not in (None, expected_season):
-                mismatches.append(
-                    f"{expected.get('name')} 期望S{expected_season}但MoviePilot解析为S{actual_season}"
-                )
+def audit_episode_expectations(
+    plugin: Any,
+    item: Any,
+    payload: Dict[str, Any],
+    details: Dict[str, Any],
+) -> Tuple[bool, str, Dict[str, Any]]:
+    """在基础 Preview 唯一性校验之后复核 MoviePilot 最终 season/episode。"""
+    expectations = dict(getattr(item, "_guangya_episode_expectations_v3411", {}) or {})
+    merged = dict(details or {})
+    if not expectations:
+        return True, "", merged
+    if not isinstance(payload, dict):
+        return False, "MoviePilot 预览结果无法执行集号复核", merged
 
-        details = dict(details or {})
-        details["episode_adapter"] = {
-            "source": str(getattr(item, "_guangya_episode_adapter_source_v3411", "") or ""),
-            "validated": len(expectations),
-            "mismatches": mismatches[:20],
-        }
-        if mismatches:
-            return (
-                False,
-                f"集号二次校验失败 {len(mismatches)} 个：" + "；".join(mismatches[:6]),
-                details,
+    preview_rows = [row for row in (payload.get("items") or []) if isinstance(row, dict)]
+    by_source = {
+        plugin._organize_normalize_path(str(row.get("source") or "")): row
+        for row in preview_rows
+        if row.get("source")
+    }
+    mismatches: List[str] = []
+    for source_path, expected in expectations.items():
+        row = by_source.get(source_path)
+        if not row:
+            mismatches.append(f"{expected.get('name')} 未出现在预览")
+            continue
+        actual_episode = _to_int(row.get("episode"))
+        actual_end = _to_int(row.get("episode_end"))
+        actual_season = _to_int(row.get("season"))
+        expected_episode = _to_int(expected.get("episode"))
+        expected_end = _to_int(expected.get("episode_end"))
+        expected_season = _to_int(expected.get("season"))
+        if actual_episode != expected_episode:
+            mismatches.append(
+                f"{expected.get('name')} 期望E{expected_episode}但MoviePilot解析为E{actual_episode}"
             )
-        return True, "", details
+            continue
+        if expected_end is not None and actual_end != expected_end:
+            mismatches.append(
+                f"{expected.get('name')} 期望结束集E{expected_end}但MoviePilot解析为E{actual_end}"
+            )
+            continue
+        if expected_season is not None and actual_season not in (None, expected_season):
+            mismatches.append(
+                f"{expected.get('name')} 期望S{expected_season}但MoviePilot解析为S{actual_season}"
+            )
 
-    _loss_guard._build_moviepilot_kwargs = build
-    _loss_guard._audit_preview = audit
-    _loss_guard._guangya_episode_name_adapter_v3411 = True
+    merged["episode_adapter"] = {
+        "source": str(getattr(item, "_guangya_episode_adapter_source_v3411", "") or ""),
+        "validated": len(expectations),
+        "mismatches": mismatches[:20],
+    }
+    if mismatches:
+        return (
+            False,
+            f"集号二次校验失败 {len(mismatches)} 个：" + "；".join(mismatches[:6]),
+            merged,
+        )
+    return True, "", merged
 
 
 __all__ = [
-    "install_episode_name_adapter_v3411",
+    "apply_episode_name_adapter",
+    "audit_episode_expectations",
     "_episode_token",
     "_fallback_episode_format",
 ]

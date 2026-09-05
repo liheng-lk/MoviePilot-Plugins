@@ -24,9 +24,10 @@ def test_v372_execution_owns_folder_terminal_reconciliation():
         "_defer_unconfirmed_members(self, item, reason)",
         "_guangya_empty_folder_skip_v3410",
         '"folder_partial" if deferred else "folder_completed"',
-        '"organizer_policy_version": "v3.7.2"',
     ):
         assert token in EXECUTION, token
+    match = __import__("re").search(r'"organizer_policy_version": "v(\d+)\.(\d+)\.(\d+)"', EXECUTION)
+    assert match and tuple(map(int, match.groups())) >= (3, 7, 2)
 
 
 def test_v372_keeps_helpers_not_second_policy():

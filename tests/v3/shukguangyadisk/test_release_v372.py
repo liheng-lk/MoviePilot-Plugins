@@ -1,24 +1,25 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
-VERSION = "3.7.2"
 
 
-def test_v372_release_metadata_is_exact():
+def test_v372_release_metadata_is_preserved_as_floor():
     init_text = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
     plugin = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
     remote = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf-8")
-    assert f'plugin_version = "{VERSION}"' in init_text
-    assert plugin["version"] == VERSION
-    assert package["ShukGuangYaDisk"]["version"] == VERSION
-    assert f'?v={VERSION}' in remote
-    assert f'v{VERSION}' in plugin["history"]
-    assert plugin["history"][f'v{VERSION}'] == package["ShukGuangYaDisk"]["history"][f'v{VERSION}']
+    match = re.search(r'plugin_version = "(\d+)\.(\d+)\.(\d+)"', init_text)
+    assert match and tuple(map(int, match.groups())) >= (3, 7, 2)
+    assert tuple(map(int, plugin["version"].split("."))) >= (3, 7, 2)
+    assert tuple(map(int, package["ShukGuangYaDisk"]["version"].split("."))) >= (3, 7, 2)
+    assert f'?v={plugin["version"]}' in remote
+    assert "v3.7.2" in plugin["history"]
+    assert plugin["history"]["v3.7.2"] == package["ShukGuangYaDisk"]["history"]["v3.7.2"]
 
 
 def test_v372_release_removes_two_more_runtime_installers_without_new_media_policy():
@@ -30,7 +31,8 @@ def test_v372_release_removes_two_more_runtime_installers_without_new_media_poli
         assert token not in candidate
         assert token not in loss
         assert token not in empty
-    assert '"organizer_policy_version": "v3.7.2"' in execution
+    match = re.search(r'"organizer_policy_version": "v(\d+)\.(\d+)\.(\d+)"', execution)
+    assert match and tuple(map(int, match.groups())) >= (3, 7, 2)
     assert "_defer_unconfirmed_members(self, item, reason)" in execution
     assert "_guangya_empty_folder_skip_v3410" in execution
     policy = (PLUGIN / "organizer_policy.py").read_text(encoding="utf-8")

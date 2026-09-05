@@ -46,9 +46,9 @@ def test_guard_does_not_build_a_second_naming_or_classification_policy():
     ):
         assert forbidden not in GUARD, forbidden
     assert "_moviepilot_directory_context" in GUARD
-    assert "_moviepilot_episode_format" in GUARD
-    assert "_moviepilot_tv_context_from_directory_meta" in GUARD
-
+    assert "apply_episode_name_adapter(" in GUARD
+    assert "apply_category_consistency(" in GUARD
+    assert "audit_episode_expectations(" in GUARD
 
 def test_folder_success_cannot_silently_complete_members_without_file_events():
     assert "def _defer_unconfirmed_members" in GUARD

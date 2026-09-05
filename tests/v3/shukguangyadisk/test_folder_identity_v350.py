@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
 IDENTITY = (PLUGIN / "organizer_folder_identity_v350.py").read_text(encoding="utf-8")
 FILTER = (PLUGIN / "organizer_candidate_filter.py").read_text(encoding="utf-8")
+LOSS = (PLUGIN / "organizer_loss_guard_v349.py").read_text(encoding="utf-8")
 
 
 def test_season_directory_uses_parent_as_media_identity_path():
@@ -49,8 +50,12 @@ def test_wrong_filename_cannot_replace_confirmed_parent_identity():
         assert token in IDENTITY, token
 
 
-def test_folder_identity_wraps_episode_and_category_chain_before_rename_diagnostics():
+def test_folder_identity_follows_explicit_episode_and_category_context_before_rename_diagnostics():
     assert "from .organizer_folder_identity_v350 import install_folder_identity_v350" in FILTER
     assert "install_folder_identity_v350()" in FILTER
-    assert FILTER.index("install_category_consistency_v3412()") < FILTER.index("install_folder_identity_v350()")
+    assert "install_category_consistency_v3412" not in FILTER
+    assert "apply_episode_name_adapter(" in LOSS
+    assert "apply_category_consistency(" in LOSS
+    assert LOSS.index("apply_episode_name_adapter(") < LOSS.index("apply_category_consistency(")
     assert FILTER.index("install_folder_identity_v350()") < FILTER.index("install_rename_diagnostics_v3414()")
+
