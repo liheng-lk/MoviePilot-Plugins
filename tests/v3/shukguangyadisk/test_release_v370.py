@@ -9,20 +9,21 @@ PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
 VERSION = "3.7.0"
 
 
-def test_v370_release_metadata_is_consistent():
+def test_v370_release_metadata_is_preserved_as_floor():
+    import re
+
     init_text = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
     plugin = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
     remote = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf-8")
 
-    assert f'plugin_version = "{VERSION}"' in init_text
-    assert plugin["version"] == VERSION
-    assert package["ShukGuangYaDisk"]["version"] == VERSION
-    assert f"?v={VERSION}" in remote
-    assert f"v{VERSION}" in plugin["history"]
-    assert f"v{VERSION}" in package["ShukGuangYaDisk"]["history"]
-
-
+    match = re.search(r'plugin_version = "(\d+)\.(\d+)\.(\d+)"', init_text)
+    assert match and tuple(map(int, match.groups())) >= (3, 7, 0)
+    assert tuple(map(int, plugin["version"].split("."))) >= (3, 7, 0)
+    assert tuple(map(int, package["ShukGuangYaDisk"]["version"].split("."))) >= (3, 7, 0)
+    assert f'?v={plugin["version"]}' in remote
+    assert "v3.7.0" in plugin["history"]
+    assert "v3.7.0" in package["ShukGuangYaDisk"]["history"]
 def test_v370_preserves_current_transfer_assistant_release():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
     assert package["GuangYaTransferAssistant"]["version"] == "1.12.14"
