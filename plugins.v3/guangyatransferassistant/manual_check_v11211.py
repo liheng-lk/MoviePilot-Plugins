@@ -12,15 +12,18 @@
 
 人工 force 只绕过“自动外部检索冷却”，不会绕过媒体身份、年份、质量、Episode Fence、
 reservation/source claim、迅雷跨季物理资源栅栏等安全边界。
+
+v1.12.12 仅在本层与 v1.12.10 SeasonFence 之间插入 GYING 官方别名检索层，
+不改变本层 /gycheck 的人工完整检查语义。
 """
 from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List
 
-from .xunlei_season_fence_v11210 import GuangYaXunleiSeasonFenceV11210Mixin
+from .gying_alias_query_v11212 import GuangYaGyingAliasQueryV11212Mixin
 
 
-class GuangYaManualCheckV11211Mixin(GuangYaXunleiSeasonFenceV11210Mixin):
+class GuangYaManualCheckV11211Mixin(GuangYaGyingAliasQueryV11212Mixin):
     """把 /gycheck 显式转换成频道优先、剩余缺口强制完整来源链。"""
 
     plugin_version = "1.12.11"
@@ -51,7 +54,6 @@ class GuangYaManualCheckV11211Mixin(GuangYaXunleiSeasonFenceV11210Mixin):
                 if bool(self._uncovered_missing_v1125(subscribe)):
                     remaining.append(sid)
             except Exception:
-                # 人工检查遇到旧数据/诊断异常时宁可继续完整链，也不能再次退化成“频道 0 条就停”。
                 remaining.append(sid)
         return sorted(set(remaining))
 
@@ -81,7 +83,6 @@ class GuangYaManualCheckV11211Mixin(GuangYaXunleiSeasonFenceV11210Mixin):
                 str(err)[:260],
             )
 
-        # 第一阶段只消费频道，明确禁止借频道阶段访问 GYING。
         self._run_v1115_mode_batch(
             batch,
             "人工立即检查·频道阶段",
@@ -102,7 +103,6 @@ class GuangYaManualCheckV11211Mixin(GuangYaXunleiSeasonFenceV11210Mixin):
             "【光鸭转存助手】【人工完整检查v1.12.11】频道后仍有 %s 个订阅待处理；立即执行 观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K",
             len(remaining),
         )
-        # 复用 active pull 模式以禁止下层重复刷新频道；force=True 只绕过自动检索冷却。
         self._run_v1115_mode_batch(
             remaining,
             "人工立即检查·完整资源链",

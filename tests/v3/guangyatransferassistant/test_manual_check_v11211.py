@@ -95,7 +95,7 @@ def _mixin_class():
         "Dict": Dict,
         "Iterable": Iterable,
         "List": List,
-        "GuangYaXunleiSeasonFenceV11210Mixin": _Base,
+        "GuangYaGyingAliasQueryV11212Mixin": _Base,
     }
     exec(compile(module, str(PLUGIN / "manual_check_v11211.py"), "exec"), ns)
     return ns["GuangYaManualCheckV11211Mixin"]
@@ -112,8 +112,11 @@ def test_v11211_layer_parses_and_is_nested_before_resource_gate_without_dropping
     ast.parse(SOURCE)
     ast.parse(MOVIE)
     ast.parse(SEASON)
-    assert "from .xunlei_season_fence_v11210 import GuangYaXunleiSeasonFenceV11210Mixin" in SOURCE
-    assert "class GuangYaManualCheckV11211Mixin(GuangYaXunleiSeasonFenceV11210Mixin):" in SOURCE
+    alias = (PLUGIN / "gying_alias_query_v11212.py").read_text(encoding="utf-8")
+    assert "from .gying_alias_query_v11212 import GuangYaGyingAliasQueryV11212Mixin" in SOURCE
+    assert "class GuangYaManualCheckV11211Mixin(GuangYaGyingAliasQueryV11212Mixin):" in SOURCE
+    assert "from .xunlei_season_fence_v11210 import GuangYaXunleiSeasonFenceV11210Mixin" in alias
+    assert "class GuangYaGyingAliasQueryV11212Mixin(GuangYaXunleiSeasonFenceV11210Mixin):" in alias
     assert "from .manual_check_v11211 import GuangYaManualCheckV11211Mixin" in MOVIE
     assert "class GuangYaMovieIdentityV1129Mixin(GuangYaManualCheckV11211Mixin):" in MOVIE
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
