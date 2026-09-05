@@ -25,7 +25,6 @@ from app.sdk.logging import logger
 from .guangya_network_resilience_v347 import _api_network_status, _network_retry_after
 from .organizer_folder_batch_v342 import _FolderBatchEnvelope
 from .organizer_mp_folder_context_v346 import _is_monitor_root_folder_task
-from .organizer_queue_recovery import GuangYaQueueRecoveryMixin
 
 
 def _runtime_media_exts() -> Set[str]:
@@ -141,77 +140,9 @@ def _clear_stale_transient_state(plugin: Any, item: _FolderBatchEnvelope) -> int
     return int(state_store.mutate(apply) or 0)
 
 
-def install_empty_folder_guard_v3410() -> None:
-    if getattr(GuangYaQueueRecoveryMixin, "_guangya_empty_folder_guard_v3410", False):
-        return
 
-    previous_execute = GuangYaQueueRecoveryMixin._execute_isolated_transfer
-    previous_fallback = GuangYaQueueRecoveryMixin._fallback_terminal_state
-
-    def execute(self, item: Any):
-        if not isinstance(item, _FolderBatchEnvelope):
-            return previous_execute(self, item)
-        if _is_monitor_root_folder_task(self, item):
-            return previous_execute(self, item)
-
-        state, media_count, detail = _live_primary_media_state(self, item.path)
-        if state in {"empty", "missing"}:
-            removed = _clear_stale_transient_state(self, item)
-            setattr(item, "_guangya_empty_folder_skip_v3410", True)
-            self._append_monitor_history({
-                "time": __import__("time").strftime("%Y-%m-%d %H:%M:%S"),
-                "path": item.path,
-                "name": item.name,
-                "size": item.size,
-                "result": "folder_empty_skipped",
-                "group_path": item.path,
-                "group_name": item.name,
-                "batch_id": item.batch_id,
-                "message": f"{detail}；跳过陈旧文件夹任务，不调用 MoviePilot 识别",
-            })
-            logger.info(
-                "【光鸭云盘助手】【空目录保护】跳过陈旧文件夹任务，不调用 MoviePilot 识别: %s；%s；清理临时状态=%s",
-                item.path,
-                detail,
-                removed,
-            )
-            return True, detail
-
-        if state == "network":
-            logger.info(
-                "【光鸭云盘助手】【空目录保护】源目录执行前复核因网络异常延后: %s - %s",
-                item.path,
-                detail,
-            )
-            return False, detail
-
-        if state == "unknown":
-            logger.debug(
-                "【光鸭云盘助手】【空目录保护】无法可靠确认源目录是否为空，保持原流程: %s - %s",
-                item.path,
-                detail,
-            )
-        elif state == "media":
-            logger.debug(
-                "【光鸭云盘助手】【空目录保护】源目录仍有视频，继续 MoviePilot 整理: %s，已确认视频>=%s",
-                item.path,
-                media_count,
-            )
-
-        return previous_execute(self, item)
-
-    def fallback(self, item: Any, success: bool, message: str) -> None:
-        if isinstance(item, _FolderBatchEnvelope) and getattr(
-            item, "_guangya_empty_folder_skip_v3410", False
-        ):
-            # execute 已经清理陈旧 transient 状态；不能再进入 v3.4.9 的
-            # “成功但无单文件终态 -> retry”逻辑，否则空目录会永久循环。
-            return None
-        return previous_fallback(self, item, success=success, message=message)
-
-    GuangYaQueueRecoveryMixin._execute_isolated_transfer = execute
-    GuangYaQueueRecoveryMixin._fallback_terminal_state = fallback
-    GuangYaQueueRecoveryMixin._guangya_empty_folder_guard_v3410 = True
-
-
-__all__ = ["install_empty_folder_guard_v3410"]
+__all__ = [
+    "_clear_stale_transient_state",
+    "_live_primary_media_state",
+    "_runtime_media_exts",
+]

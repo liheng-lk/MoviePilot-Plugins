@@ -27,6 +27,7 @@ v3.5.8 为电视剧弱命名补 MoviePilot 原生 season 参数，并唤醒旧�
 v3.5.9 改为 50 目录持久游标增量扫描，并在旧 worker 交接期间停止无效全量 refill。
 v3.6.3 在最终 MoviePilot kwargs 上增加 TV→MOVIE 安全消歧，仅对单主视频、无集号、非 Season 目录生效。
 v3.7.1 起冲突策略、预览缺员补救和旧 preview retry 唤醒由 Execution 核心显式调用，不再修改 QueueRecovery/FolderStream 类。
+v3.7.2 起 loss guard 终态核对与 empty-folder 陈旧任务收口也由 Execution 显式负责，两个旧 installer 退出运行图。
 """
 
 from __future__ import annotations
@@ -144,8 +145,6 @@ from .organizer_legacy_queue_cleanup_v343 import install_legacy_queue_cleanup_v3
 from .organizer_mp_folder_context_v346 import install_mp_folder_context_v346
 from .organizer_deep_folder_stream_v3413 import install_deep_folder_stream_v3413
 from .guangya_network_resilience_v347 import install_network_resilience_v347
-from .organizer_loss_guard_v349 import install_loss_guard_v349
-from .organizer_empty_folder_guard_v3410 import install_empty_folder_guard_v3410
 from .organizer_episode_name_adapter_v3411 import install_episode_name_adapter_v3411
 from .organizer_episode_sample_bridge_v3411 import install_episode_sample_bridge_v3411
 from .organizer_category_consistency_v3412 import install_category_consistency_v3412
@@ -170,8 +169,6 @@ install_legacy_queue_cleanup_v343()
 install_mp_folder_context_v346()
 install_deep_folder_stream_v3413()
 install_network_resilience_v347()
-install_loss_guard_v349()
-install_empty_folder_guard_v3410()
 install_episode_name_adapter_v3411()
 install_episode_sample_bridge_v3411()
 install_category_consistency_v3412()

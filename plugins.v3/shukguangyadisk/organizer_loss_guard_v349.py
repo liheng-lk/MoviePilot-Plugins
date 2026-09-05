@@ -35,7 +35,6 @@ from .organizer_mp_folder_context_v346 import (
     _moviepilot_tv_context_from_directory_meta,
     _normalize_result,
 )
-from .organizer_queue_recovery import GuangYaQueueRecoveryMixin
 
 
 def _normalize_path(plugin: Any, value: Any) -> str:
@@ -220,118 +219,10 @@ def _defer_unconfirmed_members(plugin: Any, item: _FolderBatchEnvelope, reason: 
     return deferred
 
 
-def install_loss_guard_v349() -> None:
-    if getattr(GuangYaQueueRecoveryMixin, "_guangya_loss_guard_v349", False):
-        return
 
-    previous_execute = GuangYaQueueRecoveryMixin._execute_isolated_transfer
-    previous_fallback = GuangYaQueueRecoveryMixin._fallback_terminal_state
-
-    def execute(self, item: Any):
-        if not isinstance(item, _FolderBatchEnvelope):
-            return previous_execute(self, item)
-        if _is_monitor_root_folder_task(self, item):
-            return previous_execute(self, item)
-
-        transfer_chain, directory_item, kwargs, plan_error = _build_moviepilot_kwargs(self, item)
-        if plan_error:
-            logger.error(
-                "【光鸭云盘助手】【数据安全校验】阻止真实整理: %s - %s",
-                item.path,
-                plan_error,
-            )
-            return False, plan_error
-
-        preview_kwargs = dict(kwargs)
-        preview_kwargs["preview"] = True
-        logger.info(
-            "【光鸭云盘助手】【数据安全校验】整理前预览: %s，待核对成员=%s",
-            item.path,
-            len(item.members),
-        )
-        try:
-            preview = transfer_chain.do_transfer(**preview_kwargs)
-        except Exception as err:  # noqa: BLE001
-            message = f"MoviePilot 整理预览异常：{err}"
-            logger.exception("【光鸭云盘助手】【数据安全校验】%s - %s", item.path, message)
-            return False, message
-
-        safe, guard_message, details = _audit_preview(self, item, preview)
-        if not safe:
-            self._append_monitor_history({
-                "time": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "path": item.path,
-                "name": item.name,
-                "size": item.size,
-                "result": "folder_safety_blocked",
-                "group_path": item.path,
-                "group_name": item.name,
-                "batch_id": item.batch_id,
-                "message": guard_message,
-                "safety_details": details,
-            })
-            logger.error(
-                "【光鸭云盘助手】【数据安全校验】已阻止真实整理，源文件保持原位: %s - %s",
-                item.path,
-                guard_message,
-            )
-            return False, f"数据安全校验未通过：{guard_message}"
-
-        logger.info(
-            "【光鸭云盘助手】【数据安全校验】通过: %s，%s 个待整理成员均映射到唯一目标；开始真实整理",
-            item.path,
-            details.get("expected", len(item.members)),
-        )
-        logger.info(
-            "【光鸭云盘助手】【MP目录上下文】提交完整资源目录: %s，扫描成员=%s；"
-            "识别/分类/命名/目标路径全部由 MoviePilot 执行",
-            item.path,
-            len(item.members),
-        )
-        return _normalize_result(transfer_chain.do_transfer(**kwargs))
-
-    def fallback(self, item: Any, success: bool, message: str) -> None:
-        if not isinstance(item, _FolderBatchEnvelope):
-            return previous_fallback(self, item, success=success, message=message)
-
-        if not success:
-            return previous_fallback(self, item, success=False, message=message)
-
-        reason = "文件夹整理返回成功，但未收到该成员的 MoviePilot 单文件最终事件，已安全退回重试"
-        try:
-            deferred = _defer_unconfirmed_members(self, item, reason)
-        except Exception as err:  # noqa: BLE001
-            logger.exception("【光鸭云盘助手】【数据安全校验】成员终态核对失败: %s - %s", item.path, err)
-            # 终态核对自身失败时绝不能调用旧 success fallback，否则会误标 completed。
-            deferred = ["终态核对失败"]
-            reason = f"成员终态核对失败：{err}"
-
-        if deferred:
-            logger.error(
-                "【光鸭云盘助手】【数据安全校验】文件夹存在 %s 个未确认成员，不标记完成，已退回重试: %s",
-                len(deferred),
-                item.path,
-            )
-
-        self._append_monitor_history({
-            "time": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "path": item.path,
-            "name": item.name,
-            "size": item.size,
-            "result": "folder_partial" if deferred else "folder_completed",
-            "group_path": item.path,
-            "group_name": item.name,
-            "batch_id": item.batch_id,
-            "message": (
-                f"文件夹任务结束：成员 {len(item.members)}；"
-                + (f"{len(deferred)} 个未收到单文件终态，已退回重试" if deferred else "所有成员均收到 MoviePilot 单文件终态")
-                + (f"；{message}" if message else "")
-            ),
-        })
-
-    GuangYaQueueRecoveryMixin._execute_isolated_transfer = execute
-    GuangYaQueueRecoveryMixin._fallback_terminal_state = fallback
-    GuangYaQueueRecoveryMixin._guangya_loss_guard_v349 = True
-
-
-__all__ = ["install_loss_guard_v349"]
+__all__ = [
+    "_audit_preview",
+    "_build_moviepilot_kwargs",
+    "_defer_unconfirmed_members",
+    "_preview_result",
+]
