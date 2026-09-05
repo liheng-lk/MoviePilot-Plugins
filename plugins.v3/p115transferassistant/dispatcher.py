@@ -1,9 +1,10 @@
-"""三来源提交与最小安全门禁。"""
+"""三来源提交与集级安全门禁。"""
 
 from __future__ import annotations
 
 from typing import Iterable, Optional
 
+from .episode_fence import EpisodeFence
 from .models import SourceType, TaskState, TransferTask
 from .p115_provider import P115TransferProvider
 from .resource import NormalizedResource
@@ -11,9 +12,15 @@ from .task_store import TaskStore
 
 
 class TransferDispatcher:
-    def __init__(self, provider: P115TransferProvider, store: TaskStore):
+    def __init__(
+        self,
+        provider: P115TransferProvider,
+        store: TaskStore,
+        fence: EpisodeFence | None = None,
+    ):
         self.provider = provider
         self.store = store
+        self.fence = fence
 
     def build_task(
         self,
@@ -47,6 +54,31 @@ class TransferDispatcher:
         )
         return self.store.save(task)
 
+    def _release_reservation(self, task: TransferTask) -> None:
+        if not self.fence or not task.reserved_episodes:
+            return
+        self.fence.release(
+            task_id=task.task_id,
+            tmdb_id=task.tmdb_id,
+            season=task.season,
+            episodes=task.reserved_episodes,
+        )
+        task.reserved_episodes = []
+        self.store.save(task)
+
+    def fail(
+        self,
+        task: TransferTask,
+        state: TaskState,
+        error: str,
+        *,
+        release: bool = True,
+    ) -> TransferTask:
+        task = self.store.transition(task, state, error=error)
+        if release:
+            self._release_reservation(task)
+        return task
+
     def dispatch(self, task: TransferTask, *, share_file_ids: Optional[Iterable[int]] = None) -> TransferTask:
         if task.state in {TaskState.COMPLETED, TaskState.TRANSFERRING, TaskState.TRANSFERRED}:
             return task
@@ -55,7 +87,11 @@ class TransferDispatcher:
             if task.source_type == SourceType.SHARE115.value:
                 file_ids = [int(v) for v in (share_file_ids or [])]
                 if not file_ids:
-                    return self.store.transition(task, TaskState.NEEDS_REVIEW, error="115 分享尚未解析出安全文件选择")
+                    return self.fail(
+                        task,
+                        TaskState.NEEDS_REVIEW,
+                        "115 分享尚未解析出安全文件选择",
+                    )
                 resp = self.provider.share_receive(
                     share_code=task.share_code,
                     receive_code=task.receive_code,
@@ -64,7 +100,11 @@ class TransferDispatcher:
                 )
             elif task.source_type == SourceType.MAGNET.value:
                 if not task.wanted:
-                    return self.store.transition(task, TaskState.NEEDS_REVIEW, error="Magnet 尚未生成安全 wanted 文件索引")
+                    return self.fail(
+                        task,
+                        TaskState.NEEDS_REVIEW,
+                        "Magnet 尚未生成安全 wanted 文件索引",
+                    )
                 resp = self.provider.offline_add_bt(
                     info_hash=task.source_key,
                     target_cid=task.target_cid,
@@ -73,11 +113,15 @@ class TransferDispatcher:
             elif task.source_type == SourceType.ED2K.value:
                 resp = self.provider.offline_add_url(uri=task.uri, target_cid=task.target_cid)
             else:
-                return self.store.transition(task, TaskState.FAILED_FINAL, error=f"未知来源: {task.source_type}")
+                return self.fail(task, TaskState.FAILED_FINAL, f"未知来源: {task.source_type}")
 
             if not self.provider.is_ok(resp):
-                message = str(resp.get("error") or resp.get("message") or resp)[:1000] if isinstance(resp, dict) else str(resp)
-                return self.store.transition(task, TaskState.FAILED_RETRYABLE, error=message)
+                message = (
+                    str(resp.get("error") or resp.get("message") or resp)[:1000]
+                    if isinstance(resp, dict)
+                    else str(resp)
+                )
+                return self.fail(task, TaskState.FAILED_RETRYABLE, message)
 
             task.extra["submit_response"] = resp
             remote_id = ""
@@ -91,8 +135,10 @@ class TransferDispatcher:
                     or ""
                 )
             task.remote_task_id = remote_id
+            task.error_code = ""
+            task.error_message = ""
             return self.store.transition(task, TaskState.TRANSFERRING)
         except ValueError as err:
-            return self.store.transition(task, TaskState.NEEDS_REVIEW, error=str(err))
+            return self.fail(task, TaskState.NEEDS_REVIEW, str(err))
         except Exception as err:
-            return self.store.transition(task, TaskState.FAILED_RETRYABLE, error=str(err))
+            return self.fail(task, TaskState.FAILED_RETRYABLE, str(err))
