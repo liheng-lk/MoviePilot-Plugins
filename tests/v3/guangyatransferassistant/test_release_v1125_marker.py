@@ -15,10 +15,10 @@ XUNLEI = (PLUGIN / "xunlei_flash_v193.py").read_text(encoding="utf-8")
 
 
 def test_v1125_release_metadata_is_single_truth():
-    assert 'plugin_version = "1.12.12"' in ENTRY
-    assert 'build_id = "20260905-r58"' in ENTRY
-    assert LOCAL["version"] == "1.12.12"
-    assert PACKAGE["version"] == "1.12.12"
+    assert 'plugin_version = "1.12.13"' in ENTRY
+    assert 'build_id = "20260905-r59"' in ENTRY
+    assert LOCAL["version"] == "1.12.13"
+    assert PACKAGE["version"] == "1.12.13"
     assert "v1.12.5" in PACKAGE["history"]
 
 

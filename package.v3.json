@@ -98,14 +98,15 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "更新日历驱动的固定分流助手：5 分钟频道 Push 被动消费；当天应播 TV/动漫每 10 分钟快速追更；电影每 60 分钟复查。v1.12.12 修复 GYING 网页明明存在资源但插件检索不到的前置关键词断层：电影先用 MoviePilot 中文标题检索，当前媒体仍未命中时再按同一 TMDB 身份和年份使用官方英文/原始标题精确复查；无关搜索卡片不再提前终止降级，认证/节点/HTTP 失败仍立即停止。该能力同时覆盖观影迅雷召回和 GYING Magnet/ED2K，不使用编辑距离、拼音或模糊跨媒体匹配。来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K，并继续保留 /gycheck 人工完整链、媒体身份、年份、质量、Episode Fence、跨来源在途门禁及迅雷跨季物理栅栏。",
-    "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,PanSou,CloakBrowser,自动登录,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流,质量过滤,字幕过滤,检索冷却,更新日历,每小时补漏,10分钟追更,快速追更,资源门禁,季发行年份,合法别名,拆包恢复,needs_review,TMDB官方别名,英文原名检索",
-    "version": "1.12.12",
+    "description": "更新日历驱动的固定分流助手：5 分钟频道 Push 被动消费；当天应播 TV/动漫每 10 分钟快速追更；电影每 60 分钟复查。v1.12.13 修复媒体库已有剧集仍被迅雷秒传重复导入：TV 迅雷开始前读取 MoviePilot 媒体库真实缺集，最终允许集严格取“媒体库 missing ∩ 成功事实/订阅 missing - reservation - active claim”；生成 JSON 后在真正 batch import 前再次逐视频复核，任何文件只要包含已入库/已完成集就整文件拒绝，跨边界多集文件也不冒险导入；媒体库事实读取失败时本轮仅跳过迅雷并继续后续来源。电影路径、迅雷 JSON 1.1.3 与既有媒体身份/质量/Episode Fence/跨季栅栏保持不变；来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+    "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,PanSou,CloakBrowser,自动登录,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流,质量过滤,字幕过滤,检索冷却,更新日历,每小时补漏,10分钟追更,快速追更,资源门禁,季发行年份,合法别名,拆包恢复,needs_review,TMDB官方别名,英文原名检索,迅雷防重复,已入库硬栅栏,最终导入过滤",
+    "version": "1.12.13",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v1.12.13": "修复实机“媒体库已有 E01-E09、频道刚补 E10 后，迅雷仍秒传 E01-E06”的重复写入：旧链虽调用媒体库同步却丢弃其 missing 返回，随后仅依赖 cooperative 缺集状态，在媒体库与刚完成回执刷新不同步时可能把旧集重新放回迅雷 target。v1.12.13 将 TV 迅雷最终允许集固定为 library missing ∩ logical/fact missing，再扣除 reservation 与 active source claim；JSON batch import 前按真实文件集号二次硬过滤，E09-E11 这类同时覆盖已有与缺失集的多集文件整文件拒绝；若 MoviePilot 媒体库缺集事实读取失败则 fail closed 跳过迅雷、继续光鸭直接转存/Magnet/ED2K。电影、JSON 1.1.3 和既有全部安全门禁不变；来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
       "v1.12.12": "修复观影网页存在资源但 GYING 插件搜索因关键词断层无法发现的问题：订阅电影先保留中文标题/年份搜索，若返回的只是无关卡片或没有当前媒体候选，则按订阅精确 TMDB ID 读取并校验官方 title/en_title/original_title，继续尝试如 Runaway Jury 2003 的精确官方别名；中文首轮已命中时立即短路，不额外访问站点。认证、节点和 HTTP 搜索失败仍立即停止，错误 TMDB/年份不会贡献别名，不做编辑距离、拼音或模糊匹配。观影迅雷召回及 GYING Magnet/ED2K 共用该检索语义；/gycheck 完整链、来源优先级、Episode Fence、reservation/source claim 与 v1.12.10 迅雷跨季物理资源栅栏保持不变。",
       "v1.12.11": "修复 /gycheck 名为‘立即检查’但实际可能只停留在频道检查的问题：人工检查现在先强刷并消费频道，再对真实剩余缺口以 force=True 立即执行观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K；频道命中 0 条不再阻止观影检索，人工检查绕过自动检索冷却，但不绕过媒体身份、年份、质量、Episode Fence、reservation/source claim 或 v1.12.10 迅雷跨季物理资源栅栏。",
       "v1.12.10": "修复同一真实迅雷分享被同一剧集多个 season 订阅重复消费、产生 01.mp4/01(1).mp4 等物理重复文件：TV 无明确季号的包在秒传前先校验完整集号结构，若解析集号超过当前季总集数则整包拒绝，禁止裁剪目标集后冒充当前季；同一系列+同一 seasonless share 在首个真实秒传成功后写入持久 season claim，其它订阅/season 不得再次消费；升级时可从旧 xunlei_flash_state completed 事实恢复 claim，同系列迅雷 dispatch 串行化关闭并发竞态；显式带 Sxx/Season/第x季 的真实多季包继续交给既有媒体身份与文件级 planner，电影、GYING、迅雷 JSON 协议和来源优先级不变。",
