@@ -24,11 +24,7 @@ jobs:
           find plugins.v3/shukguangyadisk -type f -name '*.pyc' -delete
       - name: Focused phase2 contracts
         run: |
-          python -m unittest tests.v3.shukguangyadisk.test_conflict_resolution_v353 -v
-          python -m unittest tests.v3.shukguangyadisk.test_preview_partial_v355 -v
-          python -m unittest tests.v3.shukguangyadisk.test_preview_retry_wakeup_v356 -v
-          python -m unittest tests.v3.shukguangyadisk.test_completion_reconcile_v354 -v
-          python -m unittest tests.v3.shukguangyadisk.test_organizer_phase2_v371_contract -v
+          python tests/v3/shukguangyadisk/run_contract_tests.py
       - name: All Shuk tests and contracts
         run: |
           python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
