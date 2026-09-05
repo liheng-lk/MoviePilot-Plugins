@@ -67,3 +67,9 @@ actual physical video episodes ⊆ allowed missing
 - 当前版本合同全部迁移；历史 v1.12.13/v1.12.12/v1.12.10 模块标记继续保留；
 - PR 正式 CI 全绿；
 - 合并 main 后 main push CI 再次全绿。
+
+## 7. 正式迁移结果
+
+一次性 release workflow 已在提交前执行与仓库正式 CI 等价的完整验证，并在全部门禁通过后生成正式元数据迁移提交 `9d41699344372afabadf73943c3b0e79d50fb02c`；临时迁移脚本与临时 workflow 已在同一提交中自删除。
+
+该 bot-authored 提交在 GitHub PR 安全策略下显示为 `action_required`，不作为测试失败处理。本次人工文档提交用于重新触发标准 PR CI；只有该 CI 与合并后的 `main` push CI 均为全绿，v1.12.14 才视为发布完成。
