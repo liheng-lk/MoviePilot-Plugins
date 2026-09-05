@@ -1,4 +1,4 @@
-"""光鸭转存助手 v1.12.13 运行入口。
+"""光鸭转存助手 v1.12.14 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
@@ -22,6 +22,7 @@ v1.12.10 修复同一迅雷分享被同媒体不同季重复消费：无季号�
 v1.12.11 修复 /gycheck 只检查频道却未保证主动资源链的问题：人工立即检查先强刷并消费频道，频道仍未覆盖时以 force=True 立即执行观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K；人工操作绕过自动检索冷却，但继续保留媒体身份、年份、质量、Episode Fence、reservation/source claim 与 v1.12.10 迅雷跨季物理资源栅栏。
 v1.12.12 修复 GYING 前置搜索未使用精确 TMDB 官方别名的问题：电影中文标题未命中当前媒体时，继续用同一 TMDB 身份与年份下的官方英文/原始标题搜索；无关卡片不再阻止降级，网络/认证失败仍硬停止；观影迅雷召回与 GYING Magnet/ED2K 共用该语义，不引入模糊匹配。
 v1.12.13 修复媒体库已有剧集仍被迅雷秒传重复导入：TV 迅雷硬目标改为媒体库 missing 与成功事实/订阅 missing 的交集，并在 JSON batch import 前逐视频二次过滤；跨边界多集文件整文件拒绝，媒体库缺集事实读取失败时跳过迅雷但继续后续来源。
+v1.12.14 统一核心资源链：频道/观影均支持光鸭分享、迅雷分享、Magnet、ED2K；TV/动漫按精确 TMDB 官方标题补召回；所有 TV 最终写盘收紧到 library missing ∩ logical/fact missing - reservation - other source claim，并对光鸭分享、迅雷、Magnet、ED2K 统一执行不可分割物理文件 episodes ⊆ allowed missing 与实际 payload 身份门禁。
 
 最终优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。
 后续 ResourceGroup 内部仍保持：光鸭直接转存 > Magnet > ED2K。
@@ -140,8 +141,8 @@ class GuangYaTransferAssistant(
 ):
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
 
-    plugin_version = "1.12.13"
-    build_id = "20260905-r59"
+    plugin_version = "1.12.14"
+    build_id = "20260905-r60"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""

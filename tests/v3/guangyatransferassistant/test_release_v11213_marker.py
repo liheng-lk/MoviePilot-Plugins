@@ -13,10 +13,10 @@ LOCAL = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
 PACKAGE = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
 
 
-def test_v11213_public_release_is_single_truth():
-    assert LOCAL["version"] == PACKAGE["version"] == "1.12.13"
-    assert 'plugin_version = "1.12.13"' in ENTRY
-    assert 'build_id = "20260905-r59"' in ENTRY
+def test_v11214_public_release_is_single_truth_while_v11213_fence_stays_historical():
+    assert LOCAL["version"] == PACKAGE["version"] == "1.12.14"
+    assert 'plugin_version = "1.12.14"' in ENTRY
+    assert 'build_id = "20260905-r60"' in ENTRY
     assert "v1.12.13" in PACKAGE["history"]
 
 

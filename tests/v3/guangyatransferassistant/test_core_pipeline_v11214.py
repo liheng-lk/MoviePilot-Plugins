@@ -344,8 +344,8 @@ def test_every_storage_path_reuses_guangya_target_and_no_moviepilot_downloader()
         assert forbidden not in corpus
 
 
-def test_current_public_release_remains_v11213_until_full_gate_passes():
-    assert 'plugin_version = "1.12.13"' in ENTRY
-    assert 'build_id = "20260905-r59"' in ENTRY
+def test_current_public_release_is_v11214_after_full_gate_passes():
+    assert 'plugin_version = "1.12.14"' in ENTRY
+    assert 'build_id = "20260905-r60"' in ENTRY
     assert 'plugin_version = "1.12.14"' in CORE
     assert 'build_id = "20260905-r60"' in FINAL
