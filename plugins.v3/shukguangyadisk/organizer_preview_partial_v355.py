@@ -32,7 +32,6 @@ from .organizer_policy import (
     decide_failed_execution,
     should_probe_source_presence,
 )
-from .organizer_queue_recovery import GuangYaQueueRecoveryMixin
 from .organizer_source_terminal_v3618 import (
     probe_source_presence_v3618,
     retire_missing_source_v3618,
@@ -235,7 +234,7 @@ def _rescue_partial_preview(plugin: Any, item: _FolderBatchEnvelope) -> Tuple[bo
         ),
     })
     logger.warning(
-        "【光鸭云盘助手】【v3.5.5】【预览局部补救】%s：逐文件确认=%s，实际整理=%s，"
+        "【光鸭云盘助手】【整理策略】【预览局部补救】%s：逐文件确认=%s，实际整理=%s，"
         "调用失败=%s，未识别保留=%s，暂时失败=%s，安全阻断=%s；不再因单个缺员拖死整个资源",
         item.path,
         len(rows),
@@ -253,41 +252,34 @@ def _rescue_partial_preview(plugin: Any, item: _FolderBatchEnvelope) -> Tuple[bo
     )
 
 
-def install_preview_partial_v355() -> None:
-    if getattr(GuangYaQueueRecoveryMixin, "_guangya_preview_partial_v355", False):
-        return
-
-    previous_execute = GuangYaQueueRecoveryMixin._execute_isolated_transfer
-
-    def execute(self: Any, item: Any):
-        result = previous_execute(self, item)
-        if not isinstance(item, _FolderBatchEnvelope):
-            return result
-        try:
-            success, message = result
-        except Exception:
-            return result
-        if success or _MISSING_PREVIEW_TOKEN not in str(message or ""):
-            return result
-
-        logger.warning(
-            "【光鸭云盘助手】【v3.5.5】【预览局部补救】完整目录预览存在缺员，"
-            "切换为同一 MoviePilot 上下文逐文件补预览: %s",
+def rescue_partial_preview_if_needed(
+    plugin: Any,
+    item: Any,
+    result: Tuple[bool, str],
+) -> Tuple[bool, str]:
+    """Rescue only the historical MoviePilot folder-preview missing-member failure."""
+    if not isinstance(item, _FolderBatchEnvelope):
+        return result
+    try:
+        success, message = result
+    except Exception:
+        return result
+    if success or _MISSING_PREVIEW_TOKEN not in str(message or ""):
+        return result
+    logger.warning(
+        "【光鸭云盘助手】【整理策略】【预览局部补救】完整目录预览存在缺员，"
+        "切换为同一 MoviePilot 上下文逐文件补预览: %s",
+        item.path,
+    )
+    try:
+        return _rescue_partial_preview(plugin, item)
+    except Exception as err:  # noqa: BLE001
+        logger.exception(
+            "【光鸭云盘助手】【整理策略】【预览局部补救】执行异常，保持原失败语义: %s - %s",
             item.path,
+            err,
         )
-        try:
-            return _rescue_partial_preview(self, item)
-        except Exception as err:  # noqa: BLE001
-            logger.exception(
-                "【光鸭云盘助手】【v3.5.5】【预览局部补救】执行异常，保持原失败语义: %s - %s",
-                item.path,
-                err,
-            )
-            return result
-
-    GuangYaQueueRecoveryMixin._execute_isolated_transfer = execute
-    GuangYaQueueRecoveryMixin._guangya_preview_partial_v355 = True
-    logger.info("【光鸭云盘助手】【v3.5.5】目录预览缺员局部补救已启用")
+        return result
 
 
-__all__ = ["install_preview_partial_v355"]
+__all__ = ["rescue_partial_preview_if_needed", "_rescue_partial_preview"]

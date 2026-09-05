@@ -14,7 +14,7 @@ def test_movie_duplicates_wait_for_real_moviepilot_history_before_delete():
     assert "同目标同大小视为重复副本" in PATCH
     assert "history_id" in PATCH
     assert "api.delete(current)" in PATCH
-    record_tail = PATCH[PATCH.index("def record(self: Any, event: Any, success: bool)") :]
+    record_tail = PATCH[PATCH.index("def handle_duplicate_terminal_event(plugin: Any, event: Any, success: bool)") :]
     assert "if not success or not history_id:" in record_tail
     assert "target=_delete_duplicate_worker" in record_tail
     assert record_tail.index("if not success or not history_id:") < record_tail.index("target=_delete_duplicate_worker")
@@ -55,10 +55,13 @@ def test_unknown_sizes_are_never_auto_deleted():
     assert "unique_unknown.append(source)" in PATCH
 
 
-def test_conflict_resolver_is_final_scheduler_patch():
-    assert "from .organizer_conflict_resolution_v353 import install_conflict_resolution_v353" in FILTER
-    assert "install_conflict_resolution_v353()" in FILTER
-    assert FILTER.index("install_task_semantics_v352()") < FILTER.index("install_conflict_resolution_v353()")
+def test_conflict_resolver_is_called_explicitly_by_execution_core_without_monkey_patch():
+    execution = (PLUGIN / "organizer_execution_v360.py").read_text(encoding="utf-8")
+    assert "install_conflict_resolution_v353" not in FILTER
+    assert "GuangYaQueueRecoveryMixin._execute_isolated_transfer = execute" not in PATCH
+    assert "_execute_conflict_aware(self, item)" in execution
+    assert "apply_version_rename_event(self, event)" in execution
+    assert "handle_duplicate_terminal_event(self, event, success)" in execution
 
 
 def test_no_custom_media_business_rules_are_introduced():

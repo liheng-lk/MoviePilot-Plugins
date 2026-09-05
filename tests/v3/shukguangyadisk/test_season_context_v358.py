@@ -52,12 +52,12 @@ def test_v358_wakes_only_old_empty_season_directory_failures():
         assert token in PATCH, token
 
 
-def test_v358_installs_after_v356():
-    wake_pos = CANDIDATE.index('install_preview_retry_wakeup_v356()')
-    season_pos = CANDIDATE.index('install_season_context_v358()')
-    assert season_pos > wake_pos
-    assert 'from .organizer_season_context_v358 import install_season_context_v358' in CANDIDATE
-
+def test_v358_remains_installed_while_v356_migration_is_explicit_in_execution_core():
+    execution = (PLUGIN / "organizer_execution_v360.py").read_text(encoding="utf-8")
+    assert 'install_preview_retry_wakeup_v356()' not in CANDIDATE
+    assert 'install_season_context_v358()' in CANDIDATE
+    assert '_wake_legacy_preview_retries(self)' in execution
+    assert '_v371_preview_retry_migration_checked' in execution
 
 def test_v358_history_and_current_release_metadata_remain_consistent():
     plugin_meta = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))

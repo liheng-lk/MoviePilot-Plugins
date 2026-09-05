@@ -20,8 +20,6 @@ from typing import Any, Dict, List
 
 from app.sdk.logging import logger
 
-from .organizer_folder_stream import GuangYaFolderStreamMixin
-
 
 _MARKER_KEY = "organize_v356_preview_retry_wakeup"
 _MISSING_PREVIEW_TOKEN = "源文件未进入 MoviePilot 预览"
@@ -90,23 +88,4 @@ def _wake_legacy_preview_retries(plugin: Any) -> Dict[str, Any]:
     return marker
 
 
-def install_preview_retry_wakeup_v356() -> None:
-    if getattr(GuangYaFolderStreamMixin, "_guangya_preview_retry_wakeup_v356", False):
-        return
-
-    previous_scan = GuangYaFolderStreamMixin.run_organize_monitor_scan
-
-    def run_scan(self: Any, manual: bool = False):
-        try:
-            _wake_legacy_preview_retries(self)
-        except Exception as err:  # noqa: BLE001
-            # 自愈失败不能阻断普通扫描；保留原 retry 状态，下轮仍可继续尝试。
-            logger.exception("【光鸭云盘助手】【v3.5.6】【升级自愈】旧预览缺员 retry 唤醒失败: %s", err)
-        return previous_scan(self, manual=manual)
-
-    GuangYaFolderStreamMixin.run_organize_monitor_scan = run_scan
-    GuangYaFolderStreamMixin._guangya_preview_retry_wakeup_v356 = True
-    logger.info("【光鸭云盘助手】【v3.5.6】旧预览缺员 retry 一次性唤醒已启用")
-
-
-__all__ = ["install_preview_retry_wakeup_v356", "_wake_legacy_preview_retries"]
+__all__ = ["_wake_legacy_preview_retries"]
