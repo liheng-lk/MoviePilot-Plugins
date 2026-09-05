@@ -6,6 +6,7 @@ on:
       - refactor/shukguangya-organizer-core-v373-work
     paths:
       - tools/stage_shuk_v373_release.py
+      - tools/fix_shuk_v373_release_banner.py
       - .github/workflows/stage-shuk-v373-release.yml
 
 permissions:
@@ -24,6 +25,8 @@ jobs:
           python-version: '3.12'
       - name: Stage v3.7.3 metadata
         run: python tools/stage_shuk_v373_release.py
+      - name: Preserve banner compatibility
+        run: python tools/fix_shuk_v373_release_banner.py
       - name: Python syntax
         run: python -m compileall -q plugins.v3/shukguangyadisk
       - name: Full Shuk tests and contracts
@@ -50,13 +53,14 @@ jobs:
           assert 'plugin_version = "3.7.3"' in init
           assert '?v=3.7.3' in remote
           assert '"organizer_policy_version": "v3.7.3"' in execution
+          assert 'policy 执行链已显式接管' in execution
           assert 'v3.7.3' in plugin['history'] and 'v3.7.3' in package['ShukGuangYaDisk']['history']
           assert tuple(map(int, package['GuangYaTransferAssistant']['version'].split('.'))) >= (1, 12, 14)
           assert not (root/'plugins.v3/shukguangyadisk/organizer_episode_sample_bridge_v3411.py').exists()
           PY
       - name: Commit staged release and self-delete
         run: |
-          rm -f tools/stage_shuk_v373_release.py .github/workflows/stage-shuk-v373-release.yml
+          rm -f tools/stage_shuk_v373_release.py tools/fix_shuk_v373_release_banner.py .github/workflows/stage-shuk-v373-release.yml
           find plugins.v3 tests -type d -name '__pycache__' -prune -exec rm -rf {} +
           find plugins.v3 tests -type f -name '*.pyc' -delete
           git config user.name 'github-actions[bot]'
