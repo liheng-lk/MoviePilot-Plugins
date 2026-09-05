@@ -1,7 +1,7 @@
 """115 网盘助手 MoviePilot V3 插件入口。
 
-首轮提供稳定登录态、二维码登录、目录浏览与基础文件操作 API；MoviePilot
-StorageChain 合同将在同分支继续补齐。
+提供非阻塞二维码登录、目录浏览、基础文件操作与 MoviePilot V3 自定义存储合同。
+首版整理能力明确支持 115 同盘 ``move``；复制/上传在实机核准前不宣称可用。
 """
 
 from __future__ import annotations
@@ -14,13 +14,15 @@ from app.sdk.logging import logger
 from .auth import QrToken, create_qr_token, exchange_qr_cookie, extract_cookie, poll_qr_status
 from .models import P115Item
 from .p115_client import P115ClientConfig, P115Gateway
+from .storage_api import P115StorageApi
+from .storage_contract import P115StorageContractMixin
 
 
-class P115Disk(_PluginBase):
+class P115Disk(P115StorageContractMixin, _PluginBase):
     plugin_name = "115网盘助手"
-    plugin_desc = "MoviePilot V3 115网盘助手，支持扫码登录、目录浏览、文件操作和115转存底层能力。"
+    plugin_desc = "MoviePilot V3 115网盘助手，支持扫码登录、目录浏览、同盘整理和115转存底层能力。"
     plugin_icon = ""
-    plugin_version = "0.1.1"
+    plugin_version = "0.2.0"
     plugin_author = "liheng-lk"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
     plugin_config_prefix = "p115disk_"
@@ -38,6 +40,17 @@ class P115Disk(_PluginBase):
     def __init__(self):
         super().__init__()
         self._gateway: Optional[P115Gateway] = None
+        self._storage_api: Optional[P115StorageApi] = None
+
+    def _create_runtime(self) -> None:
+        self._gateway = P115Gateway(
+            P115ClientConfig(cookies=self._cookies, cookies_file=self._cookies_file, app=self._qr_app)
+        )
+        self._storage_api = P115StorageApi(
+            gateway=self._gateway,
+            disk_name=self._disk_name,
+            page_size=self._page_size,
+        )
 
     def init_plugin(self, config: dict = None) -> None:
         config = config or {}
@@ -49,17 +62,18 @@ class P115Disk(_PluginBase):
             self._page_size = max(50, min(int(config.get("page_size") or 500), 1150))
         except (TypeError, ValueError):
             self._page_size = 500
+
+        self.ensure_storage_registered()
         self._gateway = None
+        self._storage_api = None
         if not self._enabled:
             return
         if not (self._cookies or self._cookies_file):
             logger.info("【115网盘助手】尚未登录，等待扫码或 Cookie 配置")
             return
         try:
-            self._gateway = P115Gateway(
-                P115ClientConfig(cookies=self._cookies, cookies_file=self._cookies_file, app=self._qr_app)
-            )
-            logger.info("【115网盘助手】初始化完成")
+            self._create_runtime()
+            logger.info("【115网盘助手】初始化完成，MoviePilot存储=%s", self._disk_name)
         except Exception as err:
             logger.error("【115网盘助手】初始化失败: %s", err)
 
@@ -87,19 +101,14 @@ class P115Disk(_PluginBase):
         return None
 
     def stop_service(self) -> None:
+        self._storage_api = None
         self._gateway = None
 
     def _ensure_gateway(self) -> P115Gateway:
         if not self._enabled:
             raise RuntimeError("115网盘助手未启用")
         if self._gateway is None:
-            self._gateway = P115Gateway(
-                P115ClientConfig(
-                    cookies=self._cookies,
-                    cookies_file=self._cookies_file,
-                    app=self._qr_app,
-                )
-            )
+            self._create_runtime()
         return self._gateway
 
     def _current_config(self) -> Dict[str, Any]:
@@ -120,6 +129,8 @@ class P115Disk(_PluginBase):
                 "page_size": self._page_size,
                 "qr_app": self._qr_app,
                 "has_cookies": bool(self._cookies or self._cookies_file),
+                "storage_name": self._disk_name,
+                "support_transtype": self.support_transtype(self._disk_name) or {},
             },
         }
 
