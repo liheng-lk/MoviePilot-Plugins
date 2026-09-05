@@ -242,6 +242,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
         # 最终响应也必须明确归零，避免 UI 再显示“当前剧集=/”。
         status.update({
             "organizer_engine": "v3.6.0",
+            "organizer_policy_version": "v3.7.0",
             "scheduler_mode": "single_resource_worker",
             "discovery_page_size": _PAGE_DIR_LIMIT,
             "sticky_tv_group_path": "",

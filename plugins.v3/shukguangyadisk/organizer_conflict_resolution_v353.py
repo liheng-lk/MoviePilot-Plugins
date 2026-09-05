@@ -1125,7 +1125,10 @@ def install_conflict_resolution_v353() -> None:
     _install_terminal_duplicate_cleanup()
     GuangYaQueueRecoveryMixin._execute_isolated_transfer = execute
     GuangYaQueueRecoveryMixin._guangya_conflict_resolution_v353 = True
-    logger.info("【光鸭云盘助手】【v3.5.3】电影重复目标与剧集局部冲突消歧已启用")
+    logger.info(
+        "【光鸭云盘助手】【整理策略 v3.7.0】统一文件处置已启用："
+        "未识别原地保留；同大小精准去重；不同大小多版本；未知事实安全阻断"
+    )
 
 
 __all__ = [
