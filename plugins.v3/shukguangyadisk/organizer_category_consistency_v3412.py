@@ -21,7 +21,6 @@ from app.modules.themoviedb.category import CategoryHelper
 from app.schemas.types import MediaType
 from app.sdk.logging import logger
 
-from . import organizer_loss_guard_v349 as _loss_guard
 from .organizer_mp_folder_context_v346 import _is_tv_media
 
 
@@ -106,72 +105,61 @@ def _reconcile_moviepilot_category(media: Any) -> Tuple[Any, Dict[str, Any], Opt
     return corrected, diagnostics, None
 
 
-def install_category_consistency_v3412() -> None:
-    """在 v3.4.11 集号适配之后收口分类事实。"""
-    if getattr(_loss_guard, "_guangya_category_consistency_v3412", False):
-        return
+def apply_category_consistency(
+    item: Any,
+    kwargs: Dict[str, Any],
+) -> Tuple[Dict[str, Any], Optional[str]]:
+    """按 MoviePilot 当前 CategoryHelper 收口 mediainfo.category；失败时 fail closed。"""
+    resolved = dict(kwargs or {})
+    media = resolved.get("mediainfo")
+    if not media:
+        return resolved, None
 
-    original_build = _loss_guard._build_moviepilot_kwargs
+    reconciled, diagnostics, category_error = _reconcile_moviepilot_category(media)
+    if category_error:
+        logger.error(
+            "【光鸭云盘助手】【分类一致性】已阻止真实整理，无法使用 MoviePilot 当前分类规则核验: %s - %s",
+            getattr(item, "path", ""),
+            category_error,
+        )
+        return resolved, category_error
 
-    def build(plugin: Any, item: Any):
-        transfer_chain, directory_item, kwargs, plan_error = original_build(plugin, item)
-        if plan_error or not kwargs:
-            return transfer_chain, directory_item, kwargs, plan_error
+    resolved["mediainfo"] = reconciled
+    media_type = getattr(reconciled, "type", None)
+    if media_type:
+        resolved["mtype"] = media_type
 
-        media = kwargs.get("mediainfo")
-        if not media:
-            return transfer_chain, directory_item, kwargs, plan_error
+    current = diagnostics.get("current_category") or "未分类"
+    expected = diagnostics.get("moviepilot_category")
+    expected_text = expected if expected else "未分类"
+    origin = ",".join(diagnostics.get("origin_country") or []) or "-"
+    production = ",".join(diagnostics.get("production_countries") or []) or "-"
+    language = diagnostics.get("original_language") or "-"
 
-        reconciled, diagnostics, category_error = _reconcile_moviepilot_category(media)
-        if category_error:
-            logger.error(
-                "【光鸭云盘助手】【分类一致性】已阻止真实整理，无法使用 MoviePilot 当前分类规则核验: %s - %s",
-                getattr(item, "path", ""),
-                category_error,
-            )
-            return transfer_chain, directory_item, kwargs, category_error
-
-        kwargs = dict(kwargs)
-        kwargs["mediainfo"] = reconciled
-        media_type = getattr(reconciled, "type", None)
-        if media_type:
-            kwargs["mtype"] = media_type
-
-        current = diagnostics.get("current_category") or "未分类"
-        expected = diagnostics.get("moviepilot_category")
-        expected_text = expected if expected else "未分类"
-        origin = ",".join(diagnostics.get("origin_country") or []) or "-"
-        production = ",".join(diagnostics.get("production_countries") or []) or "-"
-        language = diagnostics.get("original_language") or "-"
-
-        if diagnostics.get("corrected"):
-            logger.warning(
-                "【光鸭云盘助手】【分类一致性】识别上下文分类与 MoviePilot 当前 category.yaml 不一致，"
-                "已使用 MP 当前结果: %s -> %s；origin_country=%s；production_countries=%s；original_language=%s",
-                current,
-                expected_text,
-                origin,
-                production,
-                language,
-            )
-        else:
-            logger.info(
-                "【光鸭云盘助手】【分类一致性】MoviePilot 当前分类=%s；origin_country=%s；"
-                "production_countries=%s；original_language=%s",
-                expected_text,
-                origin,
-                production,
-                language,
-            )
-
-        return transfer_chain, directory_item, kwargs, None
-
-    _loss_guard._build_moviepilot_kwargs = build
-    _loss_guard._guangya_category_consistency_v3412 = True
+    if diagnostics.get("corrected"):
+        logger.warning(
+            "【光鸭云盘助手】【分类一致性】识别上下文分类与 MoviePilot 当前 category.yaml 不一致，"
+            "已使用 MP 当前结果: %s -> %s；origin_country=%s；production_countries=%s；original_language=%s",
+            current,
+            expected_text,
+            origin,
+            production,
+            language,
+        )
+    else:
+        logger.info(
+            "【光鸭云盘助手】【分类一致性】MoviePilot 当前分类=%s；origin_country=%s；"
+            "production_countries=%s；original_language=%s",
+            expected_text,
+            origin,
+            production,
+            language,
+        )
+    return resolved, None
 
 
 __all__ = [
-    "install_category_consistency_v3412",
+    "apply_category_consistency",
     "_moviepilot_current_category",
     "_reconcile_moviepilot_category",
 ]

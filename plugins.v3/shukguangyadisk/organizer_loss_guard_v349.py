@@ -31,10 +31,15 @@ from .organizer_mp_folder_context_v346 import (
     _is_monitor_root_folder_task,
     _is_tv_media,
     _moviepilot_directory_context,
-    _moviepilot_episode_format,
     _moviepilot_tv_context_from_directory_meta,
     _normalize_result,
 )
+
+from .organizer_episode_name_adapter_v3411 import (
+    apply_episode_name_adapter,
+    audit_episode_expectations,
+)
+from .organizer_category_consistency_v3412 import apply_category_consistency
 
 
 def _normalize_path(plugin: Any, value: Any) -> str:
@@ -61,7 +66,7 @@ def _preview_result(result: Any) -> Tuple[bool, Optional[dict], str]:
 
 
 def _audit_preview(plugin: Any, item: _FolderBatchEnvelope, result: Any) -> Tuple[bool, str, Dict[str, Any]]:
-    """核对本轮成员是否一一映射到唯一目标；这里只审计，不自行计算目标路径。"""
+    """核对成员唯一目标，再显式执行弱命名集号终态复核。"""
     ok, payload, error = _preview_result(result)
     if not ok or payload is None:
         return False, error, {"preview_total": 0, "expected": len(item.members)}
@@ -130,34 +135,24 @@ def _audit_preview(plugin: Any, item: _FolderBatchEnvelope, result: Any) -> Tupl
 
     if problems:
         return False, "；".join(problems), details
+
+    episode_safe, episode_message, details = audit_episode_expectations(
+        plugin,
+        item,
+        payload,
+        details,
+    )
+    if not episode_safe:
+        return False, episode_message, details
     return True, "", details
 
-
 def _build_moviepilot_kwargs(plugin: Any, item: _FolderBatchEnvelope) -> Tuple[TransferChain, Any, Dict[str, Any], Optional[str]]:
-    """与 v3.4.8 实际目录整理保持同一 MoviePilot 上下文，不引入第二套识别规则。"""
+    """显式构建唯一 Preview 上下文：MP 识别 → 集数适配 → MP 分类核验。"""
     directory_item = _directory_fileitem(plugin, item)
     transfer_chain = TransferChain()
 
     context, recognize_error = _moviepilot_directory_context(directory_item.path)
     media = getattr(context, "media_info", None) if context else None
-    meta = getattr(context, "meta_info", None) if context else None
-
-    epformat, episode_error = _moviepilot_episode_format(
-        transfer_chain=transfer_chain,
-        directory_item=directory_item,
-    )
-    if epformat and not _is_tv_media(media):
-        tv_media, tv_error = _moviepilot_tv_context_from_directory_meta(meta)
-        if tv_media:
-            media = tv_media
-            recognize_error = None
-        else:
-            return (
-                transfer_chain,
-                directory_item,
-                {},
-                str(tv_error or "MoviePilot 已检测到集数结构，但电视剧识别未确认"),
-            )
 
     kwargs: Dict[str, Any] = {
         "fileitem": directory_item,
@@ -169,11 +164,25 @@ def _build_moviepilot_kwargs(plugin: Any, item: _FolderBatchEnvelope) -> Tuple[T
         media_type = getattr(media, "type", None)
         if media_type:
             kwargs["mtype"] = media_type
-    elif epformat:
-        kwargs["mtype"] = MediaType.TV
-    if epformat:
-        kwargs["epformat"] = epformat
 
+    # v3.7.3：不再依赖 ContextVar/sample bridge 或 installer 链；整组成员直接进入 MP 推荐器。
+    kwargs, episode_error, episode_note = apply_episode_name_adapter(
+        plugin,
+        item,
+        transfer_chain,
+        directory_item,
+        kwargs,
+    )
+    if episode_error:
+        return transfer_chain, directory_item, {}, episode_error
+
+    # 分类事实必须晚于 episode TV 上下文收口，继续只使用 MoviePilot CategoryHelper。
+    kwargs, category_error = apply_category_consistency(item, kwargs)
+    if category_error:
+        return transfer_chain, directory_item, kwargs, category_error
+
+    media = kwargs.get("mediainfo")
+    epformat = kwargs.get("epformat")
     if media:
         logger.info(
             "【光鸭云盘助手】【数据安全校验】MoviePilot 目录上下文: %s -> %s；分类=%s",
@@ -187,15 +196,14 @@ def _build_moviepilot_kwargs(plugin: Any, item: _FolderBatchEnvelope) -> Tuple[T
             recognize_error,
             item.path,
         )
-    if episode_error and not epformat:
+    if episode_note and not epformat:
         logger.debug(
             "【光鸭云盘助手】【数据安全校验】MoviePilot 未推荐额外集数模板: %s - %s",
             item.path,
-            episode_error,
+            episode_note,
         )
 
     return transfer_chain, directory_item, kwargs, None
-
 
 def _defer_unconfirmed_members(plugin: Any, item: _FolderBatchEnvelope, reason: str) -> List[str]:
     """文件夹整体成功但成员无逐文件终态时，退回重试而不是直接 completed。"""
