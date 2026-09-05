@@ -24,9 +24,11 @@ def test_v370_release_metadata_is_preserved_as_floor():
     assert f'?v={plugin["version"]}' in remote
     assert "v3.7.0" in plugin["history"]
     assert "v3.7.0" in package["ShukGuangYaDisk"]["history"]
+
+
 def test_v370_preserves_current_transfer_assistant_release():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
-    assert package["GuangYaTransferAssistant"]["version"] == "1.12.15"
+    assert package["GuangYaTransferAssistant"]["version"] == "1.12.16"
 
 
 def test_v370_status_exposes_policy_version_separately_from_legacy_hardening():
@@ -37,6 +39,7 @@ def test_v370_status_exposes_policy_version_separately_from_legacy_hardening():
     assert match, "organizer policy version missing"
     assert tuple(map(int, match.groups())) >= (3, 7, 0)
     assert '"runtime_hardening": "v3.6.20"' in execution
+
 
 def test_v370_startup_banner_uses_current_policy_semantics_not_old_conflict_version():
     execution = (PLUGIN / "organizer_execution_v360.py").read_text(encoding="utf-8")

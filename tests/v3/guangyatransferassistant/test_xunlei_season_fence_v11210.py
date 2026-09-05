@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 PATCH = PLUGIN / "xunlei_season_fence_v11210.py"
 MOVIE_IDENTITY = PLUGIN / "movie_identity_v1129.py"
+BILINGUAL_IDENTITY = PLUGIN / "movie_bilingual_identity_v11216.py"
 ENTRY = PLUGIN / "__init__.py"
 
 
@@ -171,9 +172,11 @@ def _candidate():
 def test_v11210_source_parses_and_is_between_movie_identity_and_resource_gate():
     patch = PATCH.read_text(encoding="utf-8")
     movie = MOVIE_IDENTITY.read_text(encoding="utf-8")
+    bilingual = BILINGUAL_IDENTITY.read_text(encoding="utf-8")
     entry = ENTRY.read_text(encoding="utf-8")
     ast.parse(patch, filename=str(PATCH))
     ast.parse(movie, filename=str(MOVIE_IDENTITY))
+    ast.parse(bilingual, filename=str(BILINGUAL_IDENTITY))
     assert 'plugin_version = "1.12.10"' in patch
     assert 'build_id = "20260905-r56"' in patch
     manual = (PLUGIN / "manual_check_v11211.py").read_text(encoding="utf-8")
@@ -188,8 +191,10 @@ def test_v11210_source_parses_and_is_between_movie_identity_and_resource_gate():
     ast.parse(core, filename=str(PLUGIN / "core_pipeline_v11214.py"))
     ast.parse(fence, filename=str(PLUGIN / "xunlei_existing_fence_v11213.py"))
     ast.parse(alias, filename=str(PLUGIN / "gying_alias_query_v11212.py"))
-    assert "from .manual_check_v11211 import GuangYaManualCheckV11211Mixin" in movie
-    assert "class GuangYaMovieIdentityV1129Mixin(GuangYaManualCheckV11211Mixin):" in movie
+    assert "from .movie_bilingual_identity_v11216 import GuangYaMovieBilingualIdentityV11216Mixin" in movie
+    assert "class GuangYaMovieIdentityV1129Mixin(GuangYaMovieBilingualIdentityV11216Mixin):" in movie
+    assert "from .manual_check_v11211 import GuangYaManualCheckV11211Mixin" in bilingual
+    assert "class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaManualCheckV11211Mixin):" in bilingual
     assert "class GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin):" in manual
     assert "class GuangYaChannelReconcileV11215Mixin(GuangYaCorePipelineFinalV11214Mixin):" in reconcile
     assert "class GuangYaCorePipelineFinalV11214Mixin(GuangYaCorePipelineV11214Mixin):" in core_final
