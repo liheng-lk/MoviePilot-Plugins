@@ -1,0 +1,9 @@
+{
+  "name": "115网盘助手",
+  "description": "MoviePilot V3 115网盘存储助手，提供115登录、目录浏览、文件管理，并为115转存链路提供基础能力。",
+  "version": "0.1.0",
+  "icon": "",
+  "author": "liheng-lk",
+  "level": 1,
+  "system_version": ">=3.0.0"
+}
