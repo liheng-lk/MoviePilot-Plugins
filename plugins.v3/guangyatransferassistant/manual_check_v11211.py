@@ -13,17 +13,17 @@
 人工 force 只绕过“自动外部检索冷却”，不会绕过媒体身份、年份、质量、Episode Fence、
 reservation/source claim、迅雷跨季物理资源栅栏等安全边界。
 
-v1.12.12 在本层下方保留 GYING 官方别名检索；v1.12.13 再在两者之间加入迅雷已入库集
-最终物理栅栏。两层都不改变本层 /gycheck 的人工完整检查语义。
+v1.12.14 在本层下方统一收口频道/观影四类来源、TV 官方别名召回与最终物理缺集栅栏；
+其下继续保留 v1.12.13 迅雷已入库集、v1.12.12 GYING 别名和 v1.12.10 跨季栅栏。
 """
 from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List
 
-from .xunlei_existing_fence_v11213 import GuangYaXunleiExistingEpisodeFenceV11213Mixin
+from .core_pipeline_v11214 import GuangYaCorePipelineV11214Mixin
 
 
-class GuangYaManualCheckV11211Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixin):
+class GuangYaManualCheckV11211Mixin(GuangYaCorePipelineV11214Mixin):
     """把 /gycheck 显式转换成频道优先、剩余缺口强制完整来源链。"""
 
     plugin_version = "1.12.11"
