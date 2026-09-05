@@ -1,0 +1,49 @@
+name: Run Shuk organizer v3.7 refactor
+
+on:
+  push:
+    branches:
+      - refactor/shukguangya-organizer-core-v370
+
+permissions:
+  contents: write
+
+concurrency:
+  group: shuk-organizer-v370-refactor
+  cancel-in-progress: false
+
+jobs:
+  refactor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply planned organizer refactor
+        run: python .github/scripts/refactor_shuk_v370.py
+      - name: Python syntax
+        run: |
+          python -m compileall -q plugins.v3/shukguangyadisk
+          find plugins.v3/shukguangyadisk -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v3/shukguangyadisk -type f -name '*.pyc' -delete
+      - name: Shuk unit and function contracts
+        run: |
+          python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          python tests/v3/shukguangyadisk/run_contract_tests.py
+      - name: Repository regression
+        run: |
+          python -m unittest discover -s tests -v
+          python tests/v3/guangyatransferassistant/run_contract_tests.py
+      - name: Commit refactor and remove temporary tooling
+        run: |
+          rm -f .github/workflows/dev-refactor-shuk-v370.yml
+          rm -f .github/workflows/dev-refactor-shuk-v370-run.yml
+          rm -f .github/scripts/refactor_shuk_v370.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add plugins.v3/shukguangyadisk tests/v3/shukguangyadisk .github
+          git commit -m "refactor(shuk): centralize organizer file policy for v3.7"
+          git push origin HEAD:refactor/shukguangya-organizer-core-v370
