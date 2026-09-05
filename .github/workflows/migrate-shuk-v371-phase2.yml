@@ -16,15 +16,16 @@ jobs:
         with:
           python-version: '3.12'
       - name: Apply phase2 migration
-        run: python .github/scripts/migrate_shuk_v371_policy_execution.py
+        run: |
+          python .github/scripts/migrate_shuk_v371_policy_execution.py
+          python .github/scripts/update_shuk_v371_contracts.py
       - name: Python syntax
         run: |
           python -m compileall -q plugins.v3/shukguangyadisk
           find plugins.v3/shukguangyadisk -type d -name '__pycache__' -prune -exec rm -rf {} +
           find plugins.v3/shukguangyadisk -type f -name '*.pyc' -delete
       - name: Focused phase2 contracts
-        run: |
-          python tests/v3/shukguangyadisk/run_contract_tests.py
+        run: python tests/v3/shukguangyadisk/run_contract_tests.py
       - name: All Shuk tests and contracts
         run: |
           python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
@@ -44,6 +45,7 @@ jobs:
       - name: Commit migration and remove temporary tooling
         run: |
           rm -f .github/scripts/migrate_shuk_v371_policy_execution.py
+          rm -f .github/scripts/update_shuk_v371_contracts.py
           rm -f .github/workflows/migrate-shuk-v371-phase2.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
