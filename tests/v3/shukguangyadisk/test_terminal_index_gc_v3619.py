@@ -103,6 +103,32 @@ def test_missing_direct_child_prunes_known_and_pending_descendants_only():
     assert plugin.status["terminal_index_pruned_path"] == "/root"
 
 
+def test_real_moved_series_subtree_is_forgotten_from_both_scheduler_indexes():
+    module = _load_module()
+    plugin = _Plugin()
+    root = "/光鸭媒体库/剧集"
+    stale_group = "/光鸭媒体库/剧集/死人公司 (2024)/Season 3"
+    plugin.known = {
+        stale_group: {"signature": "old"},
+        "/光鸭媒体库/剧集/仍存在剧集 (2026)/Season 1": {"signature": "live"},
+    }
+    plugin.pending = {
+        stale_group: {"due_at": 1},
+    }
+
+    result = module.prune_unreachable_resource_indexes_v3619(
+        plugin,
+        group=root,
+        directory_exists=True,
+        present_dirs={"/光鸭媒体库/剧集/仍存在剧集 (2026)"},
+    )
+
+    assert result == {"known": 1, "pending": 1}
+    assert stale_group not in plugin.known
+    assert stale_group not in plugin.pending
+    assert "/光鸭媒体库/剧集/仍存在剧集 (2026)/Season 1" in plugin.known
+
+
 def test_missing_directory_prunes_exact_group_and_whole_index_subtree():
     module = _load_module()
     plugin = _Plugin()
@@ -184,5 +210,7 @@ def test_v3619_is_index_lifecycle_only_not_media_or_file_delete_policy():
     assert "tmdb" not in lower
     assert "delete_file" not in lower
     assert "move_item" not in lower
-    assert "list_strict" in PATCH  # doc-boundary: facts come from v3.6.13 strict listing
+    # v3.6.19 必须复用 v3.6.13 已完成的严格目录读取，不能自己再发第二次远端 list_strict。
+    assert "list_strict(" not in PATCH
     assert "_reconcile_reachable_state" in PATCH
+    assert "_present_direct_children" in PATCH
