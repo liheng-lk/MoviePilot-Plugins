@@ -13,8 +13,8 @@
 新逻辑把同一 TMDB 11329 返回的 Runaway Jury 作为精确官方别名后，仍沿用既有
 年份、电影季号、真实文件与来源优先级门禁。
 
-v1.12.10 只借本层的最终 MRO 位置挂接 GuangYaXunleiSeasonFenceV11210Mixin：
-迅雷季包物理栅栏位于 ResourceGate v1.12.7 之前，不改变本层电影别名行为。
+v1.12.10 通过本层最终 MRO 位置挂接迅雷跨季物理资源栅栏；v1.12.11 再在该栅栏之上
+挂接 /gycheck 人工完整资源链。三层都位于 ResourceGate v1.12.7 之前，且不会互相改写业务语义。
 """
 from __future__ import annotations
 
@@ -25,10 +25,10 @@ from typing import Any, Dict, Iterable, List
 from app.chain.media import MediaChain
 from app.schemas.types import MediaSource, MediaType
 
-from .xunlei_season_fence_v11210 import GuangYaXunleiSeasonFenceV11210Mixin
+from .manual_check_v11211 import GuangYaManualCheckV11211Mixin
 
 
-class GuangYaMovieIdentityV1129Mixin(GuangYaXunleiSeasonFenceV11210Mixin):
+class GuangYaMovieIdentityV1129Mixin(GuangYaManualCheckV11211Mixin):
     """仅为电影补充同一 TMDB 身份下的官方标题，不改变既有媒体身份评分规则。"""
 
     plugin_version = "1.12.9"
