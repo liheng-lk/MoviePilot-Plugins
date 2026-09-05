@@ -1,0 +1,71 @@
+name: Validate GuangYa v1.12.13 once
+
+on:
+  push:
+    branches:
+      - fix/guangya-v1.12.13-xunlei-existing-episode-fence
+    paths:
+      - '.validation/guangya-v11213.trigger'
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/guangya-v1.12.13-xunlei-existing-episode-fence
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Align nested historical contract
+        run: python tools/_wire_xunlei_fence_v11213_test.py
+      - name: Python syntax
+        run: |
+          python -m compileall -q plugins.v2 plugins.v3
+          find plugins.v2 plugins.v3 -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v2 plugins.v3 -type f -name '*.pyc' -delete
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: V3 plugin contract tests
+        run: |
+          python tests/v3/dailynewdrama/test_plugin_contract.py
+          python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          python tests/v3/shukguangyadisk/run_contract_tests.py
+          python tests/v3/guangyatransferassistant/run_contract_tests.py
+      - name: V3 dependency manifests
+        run: |
+          test -z "$(find plugins.v3 -type f -name 'requirements.txt' -print)"
+          python - <<'PY'
+          from pathlib import Path
+          import tomllib
+          for path in Path('plugins.v3').glob('*/pyproject.toml'):
+              with path.open('rb') as f:
+                  project = tomllib.load(f)['project']
+              assert project.get('dynamic') == ['version'], path
+              assert project.get('requires-python') == '>=3.12', path
+          shuk = Path('plugins.v3/shukguangyadisk')
+          assert not (shuk / 'pyproject.toml').exists()
+          assert not (shuk / 'requirements.txt').exists()
+          PY
+      - name: JSON indexes
+        run: python -c "import json; [json.load(open(p,encoding='utf-8')) for p in ['plugin.json','package.v2.json','package.v3.json']]"
+      - name: Cleanup artifacts
+        run: |
+          find . -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find . -type f -name '*.pyc' -delete
+      - name: No generated Python artifacts
+        run: test -z "$(find . -type f -name '*.pyc' -o -type d -name '__pycache__')"
+      - name: Finalize validated candidate
+        run: |
+          rm -f .validation/guangya-v11213.trigger
+          rm -f tools/_wire_xunlei_fence_v11213_test.py
+          rm -f .github/workflows/validate-guangya-v11213-once.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(guangya): finalize v1.12.13 Xunlei existing-episode fence'
+          git push origin HEAD:fix/guangya-v1.12.13-xunlei-existing-episode-fence
