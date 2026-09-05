@@ -25,16 +25,18 @@ def test_phase2_removes_three_runtime_behavior_installers():
 
 
 def test_execution_core_explicitly_owns_policy_preview_and_events():
+    import re
+
     for token in (
         "_execute_conflict_aware(self, item)",
         "rescue_partial_preview_if_needed(self, item, result)",
         "apply_version_rename_event(self, event)",
         "handle_duplicate_terminal_event(self, event, success)",
         "_wake_legacy_preview_retries(self)",
-        '"organizer_policy_version": "v3.7.1"',
     ):
         assert token in EXECUTION, token
-
+    match = re.search(r'"organizer_policy_version": "v(\d+)\.(\d+)\.(\d+)"', EXECUTION)
+    assert match and tuple(map(int, match.groups())) >= (3, 7, 1)
 
 def test_phase2_helpers_do_not_import_runtime_classes_to_patch():
     for source in (CONFLICT, PREVIEW, WAKE):

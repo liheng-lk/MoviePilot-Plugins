@@ -8,21 +8,25 @@ PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
 VERSION = "3.7.1"
 
 
-def test_v371_release_metadata_is_exact_and_cross_plugin_safe():
+def test_v371_release_metadata_is_preserved_as_floor_and_cross_plugin_safe():
+    import re
+
     init_text = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
     plugin = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
     remote = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf-8")
-    assert f'plugin_version = "{VERSION}"' in init_text
-    assert plugin["version"] == VERSION
-    assert package["ShukGuangYaDisk"]["version"] == VERSION
-    assert f'?v={VERSION}' in remote
-    assert f'v{VERSION}' in plugin["history"]
-    assert f'v{VERSION}' in package["ShukGuangYaDisk"]["history"]
-    assert package["GuangYaTransferAssistant"]["version"] == "1.12.14"
+    match = re.search(r'plugin_version = "(\d+)\.(\d+)\.(\d+)"', init_text)
+    assert match and tuple(map(int, match.groups())) >= (3, 7, 1)
+    assert tuple(map(int, plugin["version"].split("."))) >= (3, 7, 1)
+    assert tuple(map(int, package["ShukGuangYaDisk"]["version"].split("."))) >= (3, 7, 1)
+    assert f'?v={plugin["version"]}' in remote
+    assert "v3.7.1" in plugin["history"]
+    assert "v3.7.1" in package["ShukGuangYaDisk"]["history"]
+    assert tuple(map(int, package["GuangYaTransferAssistant"]["version"].split("."))) >= (1, 12, 14)
 
+def test_v371_release_is_phase2_architecture_floor():
+    import re
 
-def test_v371_release_is_phase2_architecture_only():
     execution = (PLUGIN / "organizer_execution_v360.py").read_text(encoding="utf-8")
     candidate = (PLUGIN / "organizer_candidate_filter.py").read_text(encoding="utf-8")
     for token in (
@@ -31,6 +35,7 @@ def test_v371_release_is_phase2_architecture_only():
         "install_preview_retry_wakeup_v356",
     ):
         assert token not in candidate
-    assert '"organizer_policy_version": "v3.7.1"' in execution
+    match = re.search(r'"organizer_policy_version": "v(\d+)\.(\d+)\.(\d+)"', execution)
+    assert match and tuple(map(int, match.groups())) >= (3, 7, 1)
     assert "_execute_conflict_aware(self, item)" in execution
     assert "rescue_partial_preview_if_needed(self, item, result)" in execution

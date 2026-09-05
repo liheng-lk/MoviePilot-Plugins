@@ -40,6 +40,7 @@ from .organizer_conflict_resolution_v353 import (
 )
 from .organizer_preview_partial_v355 import rescue_partial_preview_if_needed
 from .organizer_preview_retry_wakeup_v356 import _wake_legacy_preview_retries
+from .organizer_loss_guard_v349 import _defer_unconfirmed_members
 from .organizer_policy import (
     FileDisposition,
     decide_failed_execution,
@@ -140,8 +141,8 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
         if not self._v371_policy_banner_logged:
             self._v371_policy_banner_logged = True
             logger.info(
-                "【光鸭云盘助手】【整理核心 v3.7.1】policy 执行链已显式接管："
-                "冲突处置/预览补救/版本 Rename/重复终态不再使用运行时 monkey patch"
+                "【光鸭云盘助手】【整理核心 v3.7.2】policy 执行链已显式接管："
+                "冲突处置/预览补救/版本 Rename/重复终态/folder 终态核对不再使用运行时 monkey patch"
             )
 
         result = super().init_organizer_monitor()
@@ -254,6 +255,56 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
                 item.path,
             )
             return
+
+        if isinstance(item, _FolderBatchEnvelope) and item.directory_mode:
+            # v3.7.2：空/已消失目录在 _execute_conflict_aware 已完成事实复核和 transient
+            # 清理，不能再进入“folder success 但无逐文件终态 -> deferred retry”。
+            if getattr(item, "_guangya_empty_folder_skip_v3410", False):
+                return
+
+            # Folder API 返回 success 不能推导“所有成员都成功”。只有 MoviePilot 的逐文件
+            # TransferComplete/history 才能终结成员；仍 inflight 的成员安全退回 deferred。
+            if success:
+                reason = "文件夹整理返回成功，但未收到该成员的 MoviePilot 单文件最终事件，已安全退回重试"
+                try:
+                    deferred = _defer_unconfirmed_members(self, item, reason)
+                except Exception as err:  # noqa: BLE001
+                    logger.exception(
+                        "【光鸭云盘助手】【数据安全校验】成员终态核对失败: %s - %s",
+                        item.path,
+                        err,
+                    )
+                    deferred = ["终态核对失败"]
+                    reason = f"成员终态核对失败：{err}"
+
+                if deferred:
+                    logger.error(
+                        "【光鸭云盘助手】【数据安全校验】文件夹存在 %s 个未确认成员，不标记完成，已退回重试: %s",
+                        len(deferred),
+                        item.path,
+                    )
+
+                self._append_monitor_history({
+                    "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "path": item.path,
+                    "name": item.name,
+                    "size": item.size,
+                    "result": "folder_partial" if deferred else "folder_completed",
+                    "group_path": item.path,
+                    "group_name": item.name,
+                    "batch_id": item.batch_id,
+                    "message": (
+                        f"文件夹任务结束：成员 {len(item.members)}；"
+                        + (
+                            f"{len(deferred)} 个未收到单文件终态，已退回重试"
+                            if deferred
+                            else "所有成员均收到 MoviePilot 单文件终态"
+                        )
+                        + (f"；{message}" if message else "")
+                    ),
+                })
+                return
+
         return super()._fallback_terminal_state(item, success=success, message=message)
 
     def api_organize_monitor_status(self) -> Dict[str, Any]:
@@ -275,7 +326,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
         # 最终响应也必须明确归零，避免 UI 再显示“当前剧集=/”。
         status.update({
             "organizer_engine": "v3.6.0",
-            "organizer_policy_version": "v3.7.1",
+            "organizer_policy_version": "v3.7.2",
             "scheduler_mode": "single_resource_worker",
             "discovery_page_size": _PAGE_DIR_LIMIT,
             "sticky_tv_group_path": "",

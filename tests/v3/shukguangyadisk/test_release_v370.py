@@ -41,7 +41,6 @@ def test_v370_status_exposes_policy_version_separately_from_legacy_hardening():
 def test_v370_startup_banner_uses_current_policy_semantics_not_old_conflict_version():
     execution = (PLUGIN / "organizer_execution_v360.py").read_text(encoding="utf-8")
     conflict = (PLUGIN / "organizer_conflict_resolution_v353.py").read_text(encoding="utf-8")
-    assert "【整理核心 v3.7.1】policy 执行链已显式接管" in execution
+    assert "policy 执行链已显式接管" in execution
     assert "【v3.5.3】电影重复目标与剧集局部冲突消歧已启用" not in conflict
     assert "install_conflict_resolution_v353" not in conflict
-

@@ -77,12 +77,12 @@ def test_adapter_does_not_hardcode_media_identity_or_target_policy():
     assert "_moviepilot_tv_context_from_directory_meta" in ADAPTER
 
 
-def test_adapter_is_installed_after_loss_and_empty_folder_guards():
+def test_adapter_remains_active_after_loss_and_empty_move_to_explicit_core():
     assert "from .organizer_episode_name_adapter_v3411 import install_episode_name_adapter_v3411" in FILTER
     assert "install_episode_name_adapter_v3411()" in FILTER
-    assert FILTER.index("install_loss_guard_v349()") < FILTER.index("install_episode_name_adapter_v3411()")
-    assert FILTER.index("install_empty_folder_guard_v3410()") < FILTER.index("install_episode_name_adapter_v3411()")
-
+    assert "install_loss_guard_v349" not in FILTER
+    assert "install_empty_folder_guard_v3410" not in FILTER
+    assert "from . import organizer_loss_guard_v349 as _loss_guard" in ADAPTER
 
 def test_v3411_feature_remains_in_current_release():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
