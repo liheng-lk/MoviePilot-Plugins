@@ -16,13 +16,13 @@ DESC = (
     '更新日历驱动的固定分流助手：5 分钟频道 Push 被动消费；当天应播 TV/动漫每 10 分钟快速追更；电影每 60 分钟复查。'
     'v1.12.13 修复媒体库已有剧集仍被迅雷秒传重复导入：TV 迅雷开始前读取 MoviePilot 媒体库真实缺集，最终允许集严格取“媒体库 missing ∩ 成功事实/订阅 missing - reservation - active claim”；'
     '生成 JSON 后在真正 batch import 前再次逐视频复核，任何文件只要包含已入库/已完成集就整文件拒绝，跨边界多集文件也不冒险导入；媒体库事实读取失败时本轮仅跳过迅雷并继续后续来源。'
-    '电影路径、迅雷 JSON 1.1.3、来源优先级与既有媒体身份/质量/Episode Fence/跨季栅栏保持不变。'
+    '电影路径、迅雷 JSON 1.1.3 与既有媒体身份/质量/Episode Fence/跨季栅栏保持不变；来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。'
 )
 HISTORY = (
     '修复实机“媒体库已有 E01-E09、频道刚补 E10 后，迅雷仍秒传 E01-E06”的重复写入：旧链虽调用媒体库同步却丢弃其 missing 返回，随后仅依赖 cooperative 缺集状态，'
     '在媒体库与刚完成回执刷新不同步时可能把旧集重新放回迅雷 target。v1.12.13 将 TV 迅雷最终允许集固定为 library missing ∩ logical/fact missing，再扣除 reservation 与 active source claim；'
     'JSON batch import 前按真实文件集号二次硬过滤，E09-E11 这类同时覆盖已有与缺失集的多集文件整文件拒绝；若 MoviePilot 媒体库缺集事实读取失败则 fail closed 跳过迅雷、继续光鸭直接转存/Magnet/ED2K。'
-    '电影、JSON 1.1.3、来源优先级和既有全部安全门禁不变。'
+    '电影、JSON 1.1.3 和既有全部安全门禁不变；来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。'
 )
 
 # ---- final runtime metadata ----
