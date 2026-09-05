@@ -1,0 +1,56 @@
+name: Migrate Shuk organizer v3.7.1 phase2
+on:
+  push:
+    branches: [refactor/shukguangya-organizer-core-v371]
+permissions:
+  contents: write
+jobs:
+  migrate-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/shukguangya-organizer-core-v371
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply phase2 migration
+        run: python .github/scripts/migrate_shuk_v371_policy_execution.py
+      - name: Python syntax
+        run: |
+          python -m compileall -q plugins.v3/shukguangyadisk
+          find plugins.v3/shukguangyadisk -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v3/shukguangyadisk -type f -name '*.pyc' -delete
+      - name: Focused phase2 contracts
+        run: |
+          python -m unittest tests.v3.shukguangyadisk.test_conflict_resolution_v353 -v
+          python -m unittest tests.v3.shukguangyadisk.test_preview_partial_v355 -v
+          python -m unittest tests.v3.shukguangyadisk.test_preview_retry_wakeup_v356 -v
+          python -m unittest tests.v3.shukguangyadisk.test_completion_reconcile_v354 -v
+          python -m unittest tests.v3.shukguangyadisk.test_organizer_phase2_v371_contract -v
+      - name: All Shuk tests and contracts
+        run: |
+          python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          python tests/v3/shukguangyadisk/run_contract_tests.py
+      - name: Repository regression
+        run: |
+          python -m unittest discover -s tests -v
+          python tests/v3/guangyatransferassistant/run_contract_tests.py
+      - name: Static no-monkey-patch gate
+        run: |
+          ! grep -q 'install_conflict_resolution_v353' plugins.v3/shukguangyadisk/organizer_candidate_filter.py
+          ! grep -q 'install_preview_partial_v355' plugins.v3/shukguangyadisk/organizer_candidate_filter.py
+          ! grep -q 'install_preview_retry_wakeup_v356' plugins.v3/shukguangyadisk/organizer_candidate_filter.py
+          ! grep -q 'GuangYaQueueRecoveryMixin._execute_isolated_transfer = execute' plugins.v3/shukguangyadisk/organizer_conflict_resolution_v353.py
+          ! grep -q 'GuangYaQueueRecoveryMixin._execute_isolated_transfer = execute' plugins.v3/shukguangyadisk/organizer_preview_partial_v355.py
+          ! grep -q 'GuangYaFolderStreamMixin.run_organize_monitor_scan = run_scan' plugins.v3/shukguangyadisk/organizer_preview_retry_wakeup_v356.py
+      - name: Commit migration and remove temporary tooling
+        run: |
+          rm -f .github/scripts/migrate_shuk_v371_policy_execution.py
+          rm -f .github/workflows/migrate-shuk-v371-phase2.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'refactor(shuk): move policy execution into explicit core' || exit 0
+          git push origin HEAD:refactor/shukguangya-organizer-core-v371
