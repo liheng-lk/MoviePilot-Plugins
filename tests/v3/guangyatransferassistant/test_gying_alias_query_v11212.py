@@ -14,6 +14,7 @@ PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 PATCH = PLUGIN / "gying_alias_query_v11212.py"
 ENTRY = PLUGIN / "__init__.py"
 MANUAL = PLUGIN / "manual_check_v11211.py"
+RECONCILE = PLUGIN / "channel_reconcile_v11215.py"
 CORE_FINAL = PLUGIN / "core_pipeline_final_v11214.py"
 CORE = PLUGIN / "core_pipeline_v11214.py"
 FENCE = PLUGIN / "xunlei_existing_fence_v11213.py"
@@ -119,12 +120,14 @@ class _Probe(Mixin, _Base):
 def test_v11212_source_parses_and_is_nested_without_moving_top_level_mro():
     source = PATCH.read_text(encoding="utf-8")
     manual = MANUAL.read_text(encoding="utf-8")
+    reconcile = RECONCILE.read_text(encoding="utf-8")
     core_final = CORE_FINAL.read_text(encoding="utf-8")
     core = CORE.read_text(encoding="utf-8")
     fence = FENCE.read_text(encoding="utf-8")
     entry = ENTRY.read_text(encoding="utf-8")
     ast.parse(source, filename=str(PATCH))
     ast.parse(manual, filename=str(MANUAL))
+    ast.parse(reconcile, filename=str(RECONCILE))
     ast.parse(core_final, filename=str(CORE_FINAL))
     ast.parse(core, filename=str(CORE))
     ast.parse(fence, filename=str(FENCE))
@@ -136,7 +139,8 @@ def test_v11212_source_parses_and_is_nested_without_moving_top_level_mro():
     assert "class GuangYaXunleiExistingEpisodeFenceV11213Mixin(GuangYaGyingAliasQueryV11212Mixin):" in fence
     assert "class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixin):" in core
     assert "class GuangYaCorePipelineFinalV11214Mixin(GuangYaCorePipelineV11214Mixin):" in core_final
-    assert "class GuangYaManualCheckV11211Mixin(GuangYaCorePipelineFinalV11214Mixin):" in manual
+    assert "class GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin):" in manual
+    assert "class GuangYaChannelReconcileV11215Mixin(GuangYaCorePipelineFinalV11214Mixin):" in reconcile
     head = entry.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     assert "GuangYaGyingAliasQueryV11212Mixin" not in head
     assert "GuangYaXunleiExistingEpisodeFenceV11213Mixin" not in head

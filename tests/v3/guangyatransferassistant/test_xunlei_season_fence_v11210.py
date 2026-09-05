@@ -177,18 +177,21 @@ def test_v11210_source_parses_and_is_between_movie_identity_and_resource_gate():
     assert 'plugin_version = "1.12.10"' in patch
     assert 'build_id = "20260905-r56"' in patch
     manual = (PLUGIN / "manual_check_v11211.py").read_text(encoding="utf-8")
+    reconcile = (PLUGIN / "channel_reconcile_v11215.py").read_text(encoding="utf-8")
     core_final = (PLUGIN / "core_pipeline_final_v11214.py").read_text(encoding="utf-8")
     core = (PLUGIN / "core_pipeline_v11214.py").read_text(encoding="utf-8")
     fence = (PLUGIN / "xunlei_existing_fence_v11213.py").read_text(encoding="utf-8")
     alias = (PLUGIN / "gying_alias_query_v11212.py").read_text(encoding="utf-8")
     ast.parse(manual, filename=str(PLUGIN / "manual_check_v11211.py"))
+    ast.parse(reconcile, filename=str(PLUGIN / "channel_reconcile_v11215.py"))
     ast.parse(core_final, filename=str(PLUGIN / "core_pipeline_final_v11214.py"))
     ast.parse(core, filename=str(PLUGIN / "core_pipeline_v11214.py"))
     ast.parse(fence, filename=str(PLUGIN / "xunlei_existing_fence_v11213.py"))
     ast.parse(alias, filename=str(PLUGIN / "gying_alias_query_v11212.py"))
     assert "from .manual_check_v11211 import GuangYaManualCheckV11211Mixin" in movie
     assert "class GuangYaMovieIdentityV1129Mixin(GuangYaManualCheckV11211Mixin):" in movie
-    assert "class GuangYaManualCheckV11211Mixin(GuangYaCorePipelineFinalV11214Mixin):" in manual
+    assert "class GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin):" in manual
+    assert "class GuangYaChannelReconcileV11215Mixin(GuangYaCorePipelineFinalV11214Mixin):" in reconcile
     assert "class GuangYaCorePipelineFinalV11214Mixin(GuangYaCorePipelineV11214Mixin):" in core_final
     assert "class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixin):" in core
     assert "from .gying_alias_query_v11212 import GuangYaGyingAliasQueryV11212Mixin" in fence
