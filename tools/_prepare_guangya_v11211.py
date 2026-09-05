@@ -98,10 +98,41 @@ def patch_readme() -> None:
     README.write_text(text.rstrip() + "\n" + block, encoding="utf-8")
 
 
+def patch_nested_contract_tests() -> None:
+    movie_test = ROOT / "tests" / "v3" / "guangyatransferassistant" / "test_movie_identity_v1129.py"
+    text = movie_test.read_text(encoding="utf-8")
+    text = text.replace(
+        '"GuangYaXunleiSeasonFenceV11210Mixin": _XunleiFenceBase,',
+        '"GuangYaManualCheckV11211Mixin": _XunleiFenceBase,',
+        1,
+    )
+    movie_test.write_text(text, encoding="utf-8")
+
+    season_test = ROOT / "tests" / "v3" / "guangyatransferassistant" / "test_xunlei_season_fence_v11210.py"
+    text = season_test.read_text(encoding="utf-8")
+    old = (
+        '    assert "from .xunlei_season_fence_v11210 import GuangYaXunleiSeasonFenceV11210Mixin" in movie\n'
+        '    assert "class GuangYaMovieIdentityV1129Mixin(GuangYaXunleiSeasonFenceV11210Mixin):" in movie\n'
+    )
+    new = (
+        '    manual = (PLUGIN / "manual_check_v11211.py").read_text(encoding="utf-8")\n'
+        '    ast.parse(manual, filename=str(PLUGIN / "manual_check_v11211.py"))\n'
+        '    assert "from .manual_check_v11211 import GuangYaManualCheckV11211Mixin" in movie\n'
+        '    assert "class GuangYaMovieIdentityV1129Mixin(GuangYaManualCheckV11211Mixin):" in movie\n'
+        '    assert "from .xunlei_season_fence_v11210 import GuangYaXunleiSeasonFenceV11210Mixin" in manual\n'
+        '    assert "class GuangYaManualCheckV11211Mixin(GuangYaXunleiSeasonFenceV11210Mixin):" in manual\n'
+    )
+    if old not in text and new not in text:
+        raise RuntimeError("season-fence nested contract marker not found")
+    text = text.replace(old, new, 1)
+    season_test.write_text(text, encoding="utf-8")
+
+
 def patch_current_release_tests() -> None:
-    # v1.12.10 SeasonFence 是历史业务层，必须永久保持自身版本与专属测试契约。
+    # 这两个测试显式验证历史层版本，不能被当前发布号机械替换。
     excluded = {
         ROOT / "tests" / "v3" / "guangyatransferassistant" / "test_xunlei_season_fence_v11210.py",
+        ROOT / "tests" / "v3" / "guangyatransferassistant" / "test_manual_check_v11211.py",
     }
     for path in (ROOT / "tests").rglob("*.py"):
         if path in excluded:
@@ -138,5 +169,6 @@ if __name__ == "__main__":
     patch_local()
     patch_package()
     patch_readme()
+    patch_nested_contract_tests()
     patch_current_release_tests()
     verify()
