@@ -16,15 +16,19 @@
 - 不绕过媒体身份、质量、MoviePilot library missing、reservation/source claim；
 - 不绕过 v1.12.14 物理文件 episodes ⊆ allowed missing；
 - 不改变来源优先级和 Magnet/ED2K 的光鸭 cloudcollection 路线。
+
+候选阶段故意不修改最终 ``plugin_version/build_id``；只有行为测试与标准 CI 全绿后，
+才把公开版本从 v1.12.14/r60 迁移为 v1.12.15/r61。
 """
 from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Set, Tuple
 
 from .channel_event_v1115 import _entry_key_v1115
+from .core_pipeline_final_v11214 import GuangYaCorePipelineFinalV11214Mixin
 
 
-class GuangYaChannelReconcileV11215Mixin:
+class GuangYaChannelReconcileV11215Mixin(GuangYaCorePipelineFinalV11214Mixin):
     """让“频道已有资源”本身成为可恢复的被动事实，而不是一次性事件。"""
 
     @staticmethod
