@@ -14,8 +14,7 @@
 年份、电影季号、真实文件与来源优先级门禁。
 
 v1.12.10 通过本层最终 MRO 位置挂接迅雷跨季物理资源栅栏；v1.12.11 再在该栅栏之上
-挂接 /gycheck 人工完整资源链；v1.12.12 在不移动顶层 MRO 的前提下再挂接 GYING 官方别名检索。
-这些层都位于 ResourceGate v1.12.7 之前，且不会互相改写业务语义。
+挂接 /gycheck 人工完整资源链；v1.12.12 继续嵌套在下层而不移动本层顶级 MRO 位置。
 """
 from __future__ import annotations
 
@@ -26,10 +25,10 @@ from typing import Any, Dict, Iterable, List
 from app.chain.media import MediaChain
 from app.schemas.types import MediaSource, MediaType
 
-from .gying_alias_query_v11212 import GuangYaGyingAliasQueryV11212Mixin
+from .manual_check_v11211 import GuangYaManualCheckV11211Mixin
 
 
-class GuangYaMovieIdentityV1129Mixin(GuangYaGyingAliasQueryV11212Mixin):
+class GuangYaMovieIdentityV1129Mixin(GuangYaManualCheckV11211Mixin):
     """仅为电影补充同一 TMDB 身份下的官方标题，不改变既有媒体身份评分规则。"""
 
     plugin_version = "1.12.9"
