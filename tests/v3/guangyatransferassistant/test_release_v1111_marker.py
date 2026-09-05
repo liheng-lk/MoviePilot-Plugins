@@ -11,9 +11,9 @@ def test_v1111_release_marker():
     entry = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.12.14"
-    assert 'plugin_version = "1.12.14"' in entry
-    assert 'build_id = "20260905-r60"' in entry
+    assert package["version"] == local["version"] == "1.12.15"
+    assert 'plugin_version = "1.12.15"' in entry
+    assert 'build_id = "20260906-r62"' in entry
     assert "v1.12.5" in package["history"]
     assert "v1.12.3" in package["history"]
     assert "v1.10.13" in package["history"]

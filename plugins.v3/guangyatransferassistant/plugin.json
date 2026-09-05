@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "更新日历驱动的固定分流助手：5 分钟频道 Push 被动消费；当天应播 TV/动漫每 10 分钟快速追更；电影每 60 分钟复查。v1.12.14 完成核心资源链统一：频道与观影均可贡献光鸭分享、迅雷分享、Magnet、ED2K；TV/动漫可按精确 TMDB 身份补充官方英文/原始标题召回。所有 TV 最终写盘统一收紧到“MoviePilot library missing ∩ logical/fact missing - reservation - other source claim”，当前来源不会扣除自身 claim；光鸭直接分享、Magnet、ED2K 与既有迅雷均执行不可分割物理视频 episodes ⊆ allowed missing，真实 payload 的标题/年份/季号硬冲突直接拒绝，媒体库缺集事实不可用时最终写盘 fail closed。来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K，目标缺口覆盖后立即短路；Magnet/ED2K 仍使用光鸭原生 cloudcollection。",
-  "version": "1.12.14",
+  "description": "更新日历驱动的固定分流助手：5 分钟频道 Push 被动消费并补偿复核 7 天频道缓存；当天应播 TV/动漫每 10 分钟快速追更；电影每 60 分钟复查。v1.12.15 修复两类频道资源空窗：既有订阅在首次游标/bootstrap/重启未形成新事件时，会从 7 天缓存补偿进入 channel_event；新增订阅则固定先强刷全部配置频道并写入本地缓存，再做资源匹配。若新增订阅强刷后仍未命中且频道健康，会按配置 history_pages 有界回溯游标之前的频道历史，仅把解析结果补入 7 天 cache，不推进/回退 channel_cursors，也不把旧消息伪造成新事件。所有频道路径均不主动访问 GYING、不消耗外部检索冷却；v1.12.14 的 MoviePilot library/logical/reservation/source-claim 缺集硬栅栏、真实 payload 身份门禁和不可分割物理文件 episodes ⊆ allowed missing 全部保持。来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K，Magnet/ED2K 使用光鸭原生 cloudcollection。",
+  "version": "1.12.15",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,

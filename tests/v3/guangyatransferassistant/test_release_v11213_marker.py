@@ -14,9 +14,9 @@ PACKAGE = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["Gu
 
 
 def test_v11214_public_release_is_single_truth_while_v11213_fence_stays_historical():
-    assert LOCAL["version"] == PACKAGE["version"] == "1.12.14"
-    assert 'plugin_version = "1.12.14"' in ENTRY
-    assert 'build_id = "20260905-r60"' in ENTRY
+    assert LOCAL["version"] == PACKAGE["version"] == "1.12.15"
+    assert 'plugin_version = "1.12.15"' in ENTRY
+    assert 'build_id = "20260906-r62"' in ENTRY
     assert "v1.12.13" in PACKAGE["history"]
 
 
@@ -27,9 +27,11 @@ def test_v11213_hard_fence_is_nested_without_moving_top_level_mro():
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     assert "GuangYaXunleiExistingEpisodeFenceV11213Mixin" not in head
     manual = (PLUGIN / "manual_check_v11211.py").read_text(encoding="utf-8")
+    reconcile = (PLUGIN / "channel_reconcile_v11215.py").read_text(encoding="utf-8")
     core_final = (PLUGIN / "core_pipeline_final_v11214.py").read_text(encoding="utf-8")
     core = (PLUGIN / "core_pipeline_v11214.py").read_text(encoding="utf-8")
-    assert "class GuangYaManualCheckV11211Mixin(GuangYaCorePipelineFinalV11214Mixin):" in manual
+    assert "class GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin):" in manual
+    assert "class GuangYaChannelReconcileV11215Mixin(GuangYaCorePipelineFinalV11214Mixin):" in reconcile
     assert "class GuangYaCorePipelineFinalV11214Mixin(GuangYaCorePipelineV11214Mixin):" in core_final
     assert "class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixin):" in core
 
