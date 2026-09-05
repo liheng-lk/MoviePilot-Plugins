@@ -22,14 +22,14 @@ from typing import Any, Dict, Iterable, List
 
 from . import legacy as _legacy_module
 from .channel_sources_v11214 import install_channel_source_matrix_v11214
-from .core_pipeline_v11214 import GuangYaCorePipelineV11214Mixin
+from .core_pipeline_final_v11214 import GuangYaCorePipelineFinalV11214Mixin
 
 # __init__.py 已安装 v1.9.0 光鸭/Magnet/ED2K ResourceGroup；这里在它外层补频道 Xunlei。
 # installer 自带热重载幂等标记，因此重复 import 不会叠加 wrapper。
 install_channel_source_matrix_v11214(_legacy_module)
 
 
-class GuangYaManualCheckV11211Mixin(GuangYaCorePipelineV11214Mixin):
+class GuangYaManualCheckV11211Mixin(GuangYaCorePipelineFinalV11214Mixin):
     """把 /gycheck 显式转换成频道优先、剩余缺口强制完整来源链。"""
 
     plugin_version = "1.12.11"
