@@ -88,7 +88,7 @@ def migrate_assert_lines(path: Path) -> None:
         current_ref = (
             "assert" in stripped
             and any(token in line for token in (
-                "ENTRY", "entry_text", "entry", "package[", "PACKAGE[", "plugin[", "local[", "LOCAL["
+                "ENTRY", "entry_text", "entry", "package[", "PACKAGE[", "plugin[", "PLUGIN_JSON", "local[", "LOCAL["
             ))
         )
         if current_ref:
