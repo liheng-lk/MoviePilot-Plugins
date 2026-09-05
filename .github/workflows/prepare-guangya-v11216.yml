@@ -24,7 +24,7 @@ jobs:
       - name: Prepare public release metadata
         run: |
           python - <<'PY'
-          import json, re
+          import json
           from pathlib import Path
 
           plugin_dir = Path('plugins.v3/guangyatransferassistant')
@@ -87,6 +87,22 @@ jobs:
                   readme = release_note + readme
                   readme_path.write_text(readme, encoding='utf-8')
           PY
+      - name: Migrate root current-release contracts only
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          files = [
+              Path('tests/test_guangya_channel_ed2k_v1112.py'),
+              Path('tests/test_guangya_episode_fence_v1124.py'),
+              Path('tests/test_guangya_media_identity_v1111.py'),
+              Path('tests/test_guangya_release_v1110.py'),
+          ]
+          for path in files:
+              text = path.read_text(encoding='utf-8')
+              text = text.replace('1.12.15', '1.12.16')
+              text = text.replace('20260906-r62', '20260906-r63')
+              path.write_text(text, encoding='utf-8')
+          PY
       - name: Python syntax
         run: |
           python -m compileall -q plugins.v2 plugins.v3
@@ -127,7 +143,7 @@ jobs:
           rm -f .github/workflows/prepare-guangya-v11216.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add plugins.v3/guangyatransferassistant/__init__.py plugins.v3/guangyatransferassistant/plugin.json plugins.v3/guangyatransferassistant/README.md package.v3.json .github/workflows/prepare-guangya-v11216.yml
+          git add plugins.v3/guangyatransferassistant/__init__.py plugins.v3/guangyatransferassistant/plugin.json plugins.v3/guangyatransferassistant/README.md package.v3.json tests/test_guangya_channel_ed2k_v1112.py tests/test_guangya_episode_fence_v1124.py tests/test_guangya_media_identity_v1111.py tests/test_guangya_release_v1110.py .github/workflows/prepare-guangya-v11216.yml
           git diff --cached --quiet && exit 0
           git commit -m 'release(guangya): promote v1.12.16 bilingual identity fix'
           git push origin HEAD:fix/guangya-v1.12.16-bilingual-identity
