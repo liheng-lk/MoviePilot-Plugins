@@ -1,0 +1,95 @@
+name: Sync Shuk v3.7.3 with current main
+
+on:
+  push:
+    branches:
+      - refactor/shukguangya-organizer-core-v373-work
+    paths:
+      - .github/workflows/sync-shuk-v373-with-main.yml
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/shukguangya-organizer-core-v373-work
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Preserve staged Shuk market entry
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          package = json.loads(Path('package.v3.json').read_text(encoding='utf-8'))
+          shuk = package['ShukGuangYaDisk']
+          assert shuk['version'] == '3.7.3'
+          Path('/tmp/shuk-v373.json').write_text(json.dumps(shuk, ensure_ascii=False, indent=2), encoding='utf-8')
+          PY
+      - name: Merge current main and resolve shared market index by entry
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main
+          set +e
+          git merge --no-commit --no-ff origin/main
+          merge_rc=$?
+          set -e
+          if [ "$merge_rc" -ne 0 ]; then
+            unresolved=$(git diff --name-only --diff-filter=U)
+            unexpected=$(printf '%s\n' "$unresolved" | grep -v '^package.v3.json$' || true)
+            if [ -n "$unexpected" ]; then
+              echo "Unexpected merge conflicts:"
+              echo "$unexpected"
+              exit 1
+            fi
+            git checkout --theirs package.v3.json
+          fi
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          package_path = Path('package.v3.json')
+          package = json.loads(package_path.read_text(encoding='utf-8'))
+          shuk = json.loads(Path('/tmp/shuk-v373.json').read_text(encoding='utf-8'))
+          package['ShukGuangYaDisk'] = shuk
+          package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          assert package['ShukGuangYaDisk']['version'] == '3.7.3'
+          assert package['GuangYaTransferAssistant']['version'] == '1.12.15'
+          PY
+          git add package.v3.json
+          unresolved=$(git diff --name-only --diff-filter=U)
+          test -z "$unresolved"
+          git commit -m 'merge(main): sync Shuk v3.7.3 with GuangYaTransferAssistant v1.12.15'
+      - name: Validate synchronized tree
+        run: |
+          python -m compileall -q plugins.v3/shukguangyadisk
+          python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          python tests/v3/shukguangyadisk/run_contract_tests.py
+          python -m unittest discover -s tests -v
+          python tests/v3/guangyatransferassistant/run_contract_tests.py
+      - name: Verify release surfaces after sync
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('.')
+          package = json.loads((root/'package.v3.json').read_text(encoding='utf-8'))
+          plugin = json.loads((root/'plugins.v3/shukguangyadisk/plugin.json').read_text(encoding='utf-8'))
+          assert package['ShukGuangYaDisk']['version'] == '3.7.3'
+          assert plugin['version'] == '3.7.3'
+          assert package['GuangYaTransferAssistant']['version'] == '1.12.15'
+          assert '?v=3.7.3' in (root/'plugins.v3/shukguangyadisk/dist/assets/remoteEntry.js').read_text(encoding='utf-8')
+          PY
+      - name: Remove one-time sync workflow and push
+        run: |
+          rm -f .github/workflows/sync-shuk-v373-with-main.yml
+          find plugins.v3 tests -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v3 tests -type f -name '*.pyc' -delete
+          git add -A
+          git commit -m 'chore(shuk): remove v3.7.3 main sync workflow'
+          git push origin HEAD:refactor/shukguangya-organizer-core-v373-work
