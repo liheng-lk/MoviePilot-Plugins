@@ -39,11 +39,11 @@ def test_real_terminal_members_are_not_reopened_by_fallback_reconcile():
     assert 'if str(state_row.get("fingerprint") or "") != fingerprint:' in RECONCILE
 
 
-def test_v354_runs_after_existing_single_flight_sticky_and_conflict_layers():
-    conflict_pos = CANDIDATE.index('install_conflict_resolution_v353()')
-    reconcile_pos = CANDIDATE.index('install_completion_reconcile_v354()')
-    assert reconcile_pos > conflict_pos
-    assert 'from .organizer_completion_reconcile_v354 import install_completion_reconcile_v354' in CANDIDATE
+def test_v354_legacy_completion_migration_remains_but_no_longer_depends_on_conflict_installer_order():
+    assert 'install_completion_reconcile_v354()' in CANDIDATE
+    assert 'install_conflict_resolution_v353()' not in CANDIDATE
+    execution = (PLUGIN / "organizer_execution_v360.py").read_text(encoding="utf-8")
+    assert '_execute_conflict_aware(self, item)' in execution
 
 
 def test_scan_emits_hidden_state_diagnostics_when_submission_is_zero():

@@ -29,13 +29,18 @@ def test_v370_preserves_current_transfer_assistant_release():
 
 
 def test_v370_status_exposes_policy_version_separately_from_legacy_hardening():
+    import re
+
     execution = (PLUGIN / "organizer_execution_v360.py").read_text(encoding="utf-8")
-    assert '"organizer_policy_version": "v3.7.0"' in execution
+    match = re.search(r'"organizer_policy_version": "v(\d+)\.(\d+)\.(\d+)"', execution)
+    assert match, "organizer policy version missing"
+    assert tuple(map(int, match.groups())) >= (3, 7, 0)
     assert '"runtime_hardening": "v3.6.20"' in execution
 
-
 def test_v370_startup_banner_uses_current_policy_semantics_not_old_conflict_version():
+    execution = (PLUGIN / "organizer_execution_v360.py").read_text(encoding="utf-8")
     conflict = (PLUGIN / "organizer_conflict_resolution_v353.py").read_text(encoding="utf-8")
-    assert "【整理策略 v3.7.0】统一文件处置已启用" in conflict
-    assert "未识别原地保留；同大小精准去重；不同大小多版本；未知事实安全阻断" in conflict
+    assert "【整理核心 v3.7.1】policy 执行链已显式接管" in execution
     assert "【v3.5.3】电影重复目标与剧集局部冲突消歧已启用" not in conflict
+    assert "install_conflict_resolution_v353" not in conflict
+

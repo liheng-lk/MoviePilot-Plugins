@@ -40,3 +40,9 @@ v3.6 及更早的 `install_*_vXXXX()` 图从这里起冻结：**不得继续新�
 5. `state/reporting`：仅活动调度状态 + 有界近期日志。
 
 每迁移一个旧 installer，必须先有等价行为测试，再删除旧安装入口；禁止“新核心 + 旧补丁同时各做一遍”。
+## Phase 2 migration rule
+
+从 v3.7.1 开始，文件处置相关能力必须由最终 MRO 中的执行核心显式调用。
+`organizer_conflict_resolution_v353.py` 与 `organizer_preview_partial_v355.py` 只允许保留纯函数/纯 helper，
+不得再修改 `GuangYaQueueRecoveryMixin`、`GuangYaFolderStreamMixin` 或 `GuangYaOrganizerMixin` 的类方法。
+旧状态迁移可以保留兼容 helper，但必须由生命周期入口显式调用一次，禁止通过扫描 monkey patch 隐式执行。

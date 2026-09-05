@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
 PATCH = (PLUGIN / "organizer_preview_retry_wakeup_v356.py").read_text(encoding="utf-8")
-CANDIDATE = (PLUGIN / "organizer_candidate_filter.py").read_text(encoding="utf-8")
+EXECUTION = (PLUGIN / "organizer_execution_v360.py").read_text(encoding="utf-8")
 STATE = (PLUGIN / "organizer_state.py").read_text(encoding="utf-8")
 
 
@@ -34,22 +34,16 @@ def test_retry_at_zero_becomes_ready_in_existing_state_machine():
     assert 'return "ready"' in STATE
 
 
-def test_v356_runs_once_before_each_scan_then_persists_marker():
+def test_v356_migration_is_marker_guarded_and_called_explicitly_once_from_execution_init():
     for token in (
         '_MARKER_KEY = "organize_v356_preview_retry_wakeup"',
         'if isinstance(marker, dict) and marker.get("applied"):',
         'plugin.save_data(_MARKER_KEY, marker)',
-        '_wake_legacy_preview_retries(self)',
-        'return previous_scan(self, manual=manual)',
     ):
         assert token in PATCH, token
-
-
-def test_v356_installs_after_v355_rescue_layer():
-    rescue_pos = CANDIDATE.index('install_preview_partial_v355()')
-    wake_pos = CANDIDATE.index('install_preview_retry_wakeup_v356()')
-    assert wake_pos > rescue_pos
-    assert 'from .organizer_preview_retry_wakeup_v356 import install_preview_retry_wakeup_v356' in CANDIDATE
+    assert "install_preview_retry_wakeup_v356" not in PATCH
+    assert "_v371_preview_retry_migration_checked" in EXECUTION
+    assert "_wake_legacy_preview_retries(self)" in EXECUTION
 
 
 def test_v356_has_expected_runtime_log_for_real_upgrade_state():

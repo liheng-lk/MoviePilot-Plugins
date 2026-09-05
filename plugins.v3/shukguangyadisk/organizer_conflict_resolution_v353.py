@@ -33,9 +33,6 @@ from .organizer_empty_folder_guard_v3410 import (
 )
 from .organizer_folder_batch_v342 import _FolderBatchEnvelope
 from .organizer_policy import FileDisposition, decide_existing_target
-from .organizer_queue_recovery import GuangYaQueueRecoveryMixin
-from .organizer_recognition import GuangYaOrganizerMixin as GuangYaRecognitionMixin
-from .organizer_runtime import organizer_runtime_bound_to
 
 
 _VERSION_RE = re.compile(r"(?:\s+-\s+版本(?P<num>\d+))$", re.IGNORECASE)
@@ -388,47 +385,37 @@ def _apply_version_to_render(render_str: str, version: int) -> str:
     return (rendered.parent / name).as_posix()
 
 
-def _install_rename_handler() -> None:
-    if getattr(GuangYaRecognitionMixin, "_guangya_conflict_rename_v353", False):
+def apply_version_rename_event(plugin: Any, event: Any) -> None:
+    """Apply the current thread-local version suffix to MoviePilot TransferRename."""
+    context = getattr(_RENAME_CONTEXT, "value", None)
+    if not isinstance(context, dict) or context.get("plugin_id") != id(plugin):
+        return
+    data = getattr(event, "event_data", None)
+    source_item = getattr(data, "source_item", None) if data is not None else None
+    if not source_item:
+        return
+    storage = str(getattr(source_item, "storage", "") or "")
+    valid_storages = {str(getattr(plugin, "_disk_name", "") or "")}
+    names_getter = getattr(plugin, "_storage_names", None)
+    if callable(names_getter):
+        try:
+            valid_storages.update(str(value) for value in (names_getter() or set()))
+        except Exception:
+            pass
+    if storage not in valid_storages:
         return
 
-    def organizer_transfer_rename(self: Any, event: Any) -> None:
-        if not organizer_runtime_bound_to(self):
-            return
-        context = getattr(_RENAME_CONTEXT, "value", None)
-        if not isinstance(context, dict) or context.get("plugin_id") != id(self):
-            return
-        data = getattr(event, "event_data", None)
-        source_item = getattr(data, "source_item", None) if data is not None else None
-        if not source_item:
-            return
-        storage = str(getattr(source_item, "storage", "") or "")
-        valid_storages = {str(getattr(self, "_disk_name", "") or "")}
-        names_getter = getattr(self, "_storage_names", None)
-        if callable(names_getter):
-            try:
-                valid_storages.update(str(value) for value in (names_getter() or set()))
-            except Exception:
-                pass
-        if storage not in valid_storages:
-            return
-
-        source = _norm(self, getattr(source_item, "path", "") or getattr(data, "source_path", ""))
-        primary = str(context.get("source") or "")
-        # 同一次单主视频同步整理中的字幕/音轨也必须带相同版本号，避免伴随文件重新撞名。
-        if source != primary:
-            if PurePosixPath(source).parent != PurePosixPath(primary).parent:
-                return
-        render_str = str(getattr(data, "render_str", "") or "")
-        if not render_str:
-            return
-        updated = _apply_version_to_render(render_str, int(context["version"]))
-        data.updated = True
-        data.updated_str = updated
-        data.source = "光鸭云盘助手-v3.5.3"
-
-    GuangYaRecognitionMixin.organizer_transfer_rename = organizer_transfer_rename
-    GuangYaRecognitionMixin._guangya_conflict_rename_v353 = True
+    source = _norm(plugin, getattr(source_item, "path", "") or getattr(data, "source_path", ""))
+    primary = str(context.get("source") or "")
+    if source != primary and PurePosixPath(source).parent != PurePosixPath(primary).parent:
+        return
+    render_str = str(getattr(data, "render_str", "") or "")
+    if not render_str:
+        return
+    updated = _apply_version_to_render(render_str, int(context["version"]))
+    data.updated = True
+    data.updated_str = updated
+    data.source = "光鸭云盘助手-policy"
 
 
 def _single_preview_target(
@@ -1071,68 +1058,38 @@ def _delete_duplicate_worker(plugin: Any, keeper: str, history_id: int, records:
         )
 
 
-def _install_terminal_duplicate_cleanup() -> None:
-    if getattr(GuangYaRecognitionMixin, "_guangya_duplicate_terminal_v353", False):
+def handle_duplicate_terminal_event(plugin: Any, event: Any, success: bool) -> None:
+    """Consume duplicate waiters after the normal terminal/history chain has completed."""
+    payload_getter = getattr(plugin, "_event_payload", None)
+    payload = payload_getter(event) if callable(payload_getter) else {}
+    fileitem = payload.get("fileitem") if isinstance(payload, dict) else None
+    source = _norm(plugin, getattr(fileitem, "path", "")) if fileitem else ""
+    history_id = payload.get("transfer_history_id") if isinstance(payload, dict) else None
+    if not source:
         return
-    original_record = GuangYaRecognitionMixin._record_terminal_transfer
-
-    def record(self: Any, event: Any, success: bool) -> None:
-        payload_getter = getattr(self, "_event_payload", None)
-        payload = payload_getter(event) if callable(payload_getter) else {}
-        fileitem = payload.get("fileitem") if isinstance(payload, dict) else None
-        source = _norm(self, getattr(fileitem, "path", "")) if fileitem else ""
-        history_id = payload.get("transfer_history_id") if isinstance(payload, dict) else None
-
-        original_record(self, event, success)
-
-        if not source:
-            return
-        with _PENDING_LOCK:
-            records = _PENDING_DUPLICATES.pop(source, [])
-        if not records:
-            return
-        if not success or not history_id:
-            logger.warning(
-                "【光鸭云盘助手】【重复资源】保留副本未取得成功 history_id，不删除任何重复源: %s",
-                source,
-            )
-            return
-
-        threading.Thread(
-            target=_delete_duplicate_worker,
-            args=(self, source, int(history_id), records),
-            name=f"guangya-duplicate-cleanup-{int(time.time())}",
-            daemon=True,
-        ).start()
-
-    GuangYaRecognitionMixin._record_terminal_transfer = record
-    GuangYaRecognitionMixin._guangya_duplicate_terminal_v353 = True
-
-
-def install_conflict_resolution_v353() -> None:
-    if getattr(GuangYaQueueRecoveryMixin, "_guangya_conflict_resolution_v353", False):
+    with _PENDING_LOCK:
+        records = _PENDING_DUPLICATES.pop(source, [])
+    if not records:
         return
-
-    previous_execute = GuangYaQueueRecoveryMixin._execute_isolated_transfer
-
-    def execute(self: Any, item: Any):
-        if not isinstance(item, _FolderBatchEnvelope):
-            return previous_execute(self, item)
-        # v3.7 起单主视频也进入同一 policy：它可能与媒体库已有最终目标发生冲突。
-        return _execute_conflict_aware(self, item)
-
-    _install_rename_handler()
-    _install_terminal_duplicate_cleanup()
-    GuangYaQueueRecoveryMixin._execute_isolated_transfer = execute
-    GuangYaQueueRecoveryMixin._guangya_conflict_resolution_v353 = True
-    logger.info(
-        "【光鸭云盘助手】【整理策略 v3.7.0】统一文件处置已启用："
-        "未识别原地保留；同大小精准去重；不同大小多版本；未知事实安全阻断"
-    )
+    if not success or not history_id:
+        logger.warning(
+            "【光鸭云盘助手】【重复资源】保留副本未取得成功 history_id，不删除任何重复源: %s",
+            source,
+        )
+        return
+    threading.Thread(
+        target=_delete_duplicate_worker,
+        args=(plugin, source, int(history_id), records),
+        name=f"guangya-duplicate-cleanup-{int(time.time())}",
+        daemon=True,
+    ).start()
 
 
 __all__ = [
-    "install_conflict_resolution_v353",
+    "_execute_conflict_aware",
+    "_execute_member",
+    "apply_version_rename_event",
+    "handle_duplicate_terminal_event",
     "_apply_version_to_render",
     "_episode_identity",
     "_group_unique_representatives",

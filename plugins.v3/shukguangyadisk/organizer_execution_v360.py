@@ -33,6 +33,13 @@ from .guangya_move_transaction_guard_v364 import install_move_transaction_guard_
 from .guangya_path_resolution_v369 import install_path_resolution_v369
 from .organizer_engine_v360 import GuangYaOrganizerEngineV360Mixin, _PAGE_DIR_LIMIT
 from .organizer_folder_batch_v342 import _FolderBatchEnvelope
+from .organizer_conflict_resolution_v353 import (
+    _execute_conflict_aware,
+    apply_version_rename_event,
+    handle_duplicate_terminal_event,
+)
+from .organizer_preview_partial_v355 import rescue_partial_preview_if_needed
+from .organizer_preview_retry_wakeup_v356 import _wake_legacy_preview_retries
 from .organizer_policy import (
     FileDisposition,
     decide_failed_execution,
@@ -64,6 +71,8 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
     _v3615_fairness_patch_ready: bool = False
     _v3620_terminal_scope_ready: bool = False
     _v3617_blocked_diag_logged: bool = False
+    _v371_policy_banner_logged: bool = False
+    _v371_preview_retry_migration_checked: bool = False
 
     def init_organizer_monitor(self) -> None:
         if not self._v369_monitor_patch_ready:
@@ -122,6 +131,19 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
             install_move_transaction_guard_v364()
             self._v360_storage_patch_ready = True
 
+        if not self._v371_preview_retry_migration_checked:
+            self._v371_preview_retry_migration_checked = True
+            try:
+                _wake_legacy_preview_retries(self)
+            except Exception as err:  # noqa: BLE001 - migration must never block monitor init
+                logger.warning("【光鸭云盘助手】【整理核心】旧 preview retry 状态迁移失败，保留原状态: %s", err)
+        if not self._v371_policy_banner_logged:
+            self._v371_policy_banner_logged = True
+            logger.info(
+                "【光鸭云盘助手】【整理核心 v3.7.1】policy 执行链已显式接管："
+                "冲突处置/预览补救/版本 Rename/重复终态不再使用运行时 monkey patch"
+            )
+
         result = super().init_organizer_monitor()
         if not self._v3617_blocked_diag_logged:
             self._v3617_blocked_diag_logged = True
@@ -144,8 +166,10 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
             if confirm_source_missing_v3618(self, item):
                 retire_missing_source_v3618(self, item, subtree=True)
                 return True, SOURCE_MISSING_TERMINAL_V3618
-            # 原生目录模式继续经过现有 loss-guard / conflict / season 等 MoviePilot 安全链。
-            return super()._execute_isolated_transfer(item)
+            # v3.7.1：FolderBatch 的 policy/preview 链由执行核心显式调用，不再依赖
+            # organizer_conflict_resolution/preview_partial 对 QueueRecoveryMixin 的运行时改写。
+            result = _execute_conflict_aware(self, item)
+            return rescue_partial_preview_if_needed(self, item, result)
 
         all_success = True
         messages: List[str] = []
@@ -171,6 +195,15 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
                 messages.append(str(message))
 
         return all_success, "；".join(messages[:3])
+
+    def organizer_transfer_rename(self, event: Any) -> None:
+        """MoviePilot TransferRename bridge for policy-managed version suffixes."""
+        apply_version_rename_event(self, event)
+
+    def _record_terminal_transfer(self, event: Any, success: bool) -> None:
+        """Keep normal terminal/history semantics, then consume duplicate waiters."""
+        super()._record_terminal_transfer(event, success)
+        handle_duplicate_terminal_event(self, event, success)
 
     def _fallback_terminal_state(self, item: Any, success: bool, message: str) -> None:
         """统一收口弱命名成员与执行期间刚消失的源，缺失源绝不重新写 retry。"""
@@ -242,7 +275,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
         # 最终响应也必须明确归零，避免 UI 再显示“当前剧集=/”。
         status.update({
             "organizer_engine": "v3.6.0",
-            "organizer_policy_version": "v3.7.0",
+            "organizer_policy_version": "v3.7.1",
             "scheduler_mode": "single_resource_worker",
             "discovery_page_size": _PAGE_DIR_LIMIT,
             "sticky_tv_group_path": "",
