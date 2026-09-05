@@ -54,7 +54,6 @@ class P115Gateway:
         return not bool(resp.get("error"))
 
     def user_info(self) -> Dict[str, Any]:
-        """返回当前登录态信息；接口名漂移时依次尝试兼容入口。"""
         for name in ("user_base_info", "user_info", "user_info_app", "user_my"):
             method = getattr(self.client, name, None)
             if callable(method):
@@ -79,56 +78,67 @@ class P115Gateway:
         raise RuntimeError("当前 p115client 未暴露可用的文件列表接口")
 
     def mkdir(self, name: str, pid: int = 0) -> Dict[str, Any]:
-        if not str(name or "").strip():
+        name = str(name or "").strip()
+        if not name:
             raise ValueError("目录名称不能为空")
-        for method_name, payload in (
-            ("fs_mkdir", {"cname": name, "pid": int(pid or 0)}),
-            ("fs_mkdir_app", {"cname": name, "pid": int(pid or 0)}),
-        ):
-            method = getattr(self.client, method_name, None)
-            if callable(method):
-                resp = method(payload)
-                if isinstance(resp, dict):
-                    return resp
+        method = getattr(self.client, "fs_mkdir", None)
+        if callable(method):
+            resp = method({"cname": name, "pid": int(pid or 0)})
+            if isinstance(resp, dict):
+                return resp
+        method = getattr(self.client, "fs_mkdir_app", None)
+        if callable(method):
+            resp = method({"cname": name, "pid": int(pid or 0)})
+            if isinstance(resp, dict):
+                return resp
         raise RuntimeError("当前 p115client 未暴露可用的创建目录接口")
 
     def rename(self, file_id: int, name: str) -> Dict[str, Any]:
-        if not str(name or "").strip():
+        name = str(name or "").strip()
+        if not name:
             raise ValueError("新名称不能为空")
-        payload = {"fid": int(file_id), "file_name": name}
-        for method_name in ("fs_rename", "fs_rename_app"):
-            method = getattr(self.client, method_name, None)
-            if callable(method):
-                resp = method(payload)
-                if isinstance(resp, dict):
-                    return resp
+        method = getattr(self.client, "fs_rename", None)
+        if callable(method):
+            resp = method((int(file_id), name))
+            if isinstance(resp, dict):
+                return resp
+        method = getattr(self.client, "fs_rename_app", None)
+        if callable(method):
+            resp = method({"fid": int(file_id), "file_name": name})
+            if isinstance(resp, dict):
+                return resp
         raise RuntimeError("当前 p115client 未暴露可用的重命名接口")
 
     def move(self, file_ids: Iterable[int], pid: int) -> Dict[str, Any]:
         ids = [int(fid) for fid in file_ids]
         if not ids:
             raise ValueError("没有可移动文件")
-        payload: Dict[str, Any] = {"pid": int(pid)}
-        payload.update({f"fid[{index}]": fid for index, fid in enumerate(ids)})
-        for method_name in ("fs_move", "fs_move_app"):
-            method = getattr(self.client, method_name, None)
-            if callable(method):
-                resp = method(payload)
-                if isinstance(resp, dict):
-                    return resp
+        method = getattr(self.client, "fs_move", None)
+        if callable(method):
+            resp = method(ids if len(ids) > 1 else ids[0], pid=int(pid))
+            if isinstance(resp, dict):
+                return resp
+        method = getattr(self.client, "fs_move_app", None)
+        if callable(method):
+            resp = method({"fid": ids, "pid": int(pid)})
+            if isinstance(resp, dict):
+                return resp
         raise RuntimeError("当前 p115client 未暴露可用的移动接口")
 
     def delete(self, file_ids: Iterable[int]) -> Dict[str, Any]:
         ids = [int(fid) for fid in file_ids]
         if not ids:
             raise ValueError("没有可删除文件")
-        payload = {f"fid[{index}]": fid for index, fid in enumerate(ids)}
-        for method_name in ("fs_delete", "fs_delete_app"):
-            method = getattr(self.client, method_name, None)
-            if callable(method):
-                resp = method(payload)
-                if isinstance(resp, dict):
-                    return resp
+        method = getattr(self.client, "fs_delete", None)
+        if callable(method):
+            resp = method(ids if len(ids) > 1 else ids[0])
+            if isinstance(resp, dict):
+                return resp
+        method = getattr(self.client, "fs_delete_app", None)
+        if callable(method):
+            resp = method({"fid": ids})
+            if isinstance(resp, dict):
+                return resp
         raise RuntimeError("当前 p115client 未暴露可用的删除接口")
 
     def download_url(self, pickcode: str) -> Any:
