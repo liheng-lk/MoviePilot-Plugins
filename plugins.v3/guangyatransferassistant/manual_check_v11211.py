@@ -133,7 +133,7 @@ class GuangYaManualCheckV11211Mixin(GuangYaGyingAliasQueryV11212Mixin):
                 "流程：频道强刷/缓存 → 观影迅雷秒传 → 光鸭直接转存 → Magnet → ED2K\n"
                 "人工检查会绕过自动外部检索冷却，但仍保留媒体身份、年份、质量和跨来源安全门禁。\n"
                 f"当前频道命中：{int(diagnosis.get('matches') or 0)} 条；频道为 0 不会停止后续观影检索。\n"
-                f"待落盘：{int(diagnosis.get('pending_jobs') or 0)} · 失败任务：{int(diagnosis.get('failed_jobs') or 0}\n"
+                f"待落盘：{int(diagnosis.get('pending_jobs') or 0)} · 失败任务：{int(diagnosis.get('failed_jobs') or 0)}\n"
                 f"稍后可发送 /gywhy {sid} 查看最终原因。"
             ),
         )
