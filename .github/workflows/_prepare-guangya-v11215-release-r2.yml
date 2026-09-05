@@ -33,11 +33,23 @@ jobs:
           python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
           python tests/v3/shukguangyadisk/run_contract_tests.py
           python tests/v3/guangyatransferassistant/run_contract_tests.py
-          python scripts/check_v3_dependencies.py
-          python -m json.tool package.v3.json >/dev/null
-          python -m json.tool plugins.v3/guangyatransferassistant/plugin.json >/dev/null
+          test -z "$(find plugins.v3 -type f -name 'requirements.txt' -print)"
+          python - <<'PY'
+          from pathlib import Path
+          import tomllib
+          for path in Path('plugins.v3').glob('*/pyproject.toml'):
+              with path.open('rb') as f:
+                  project = tomllib.load(f)['project']
+              assert project.get('dynamic') == ['version'], path
+              assert project.get('requires-python') == '>=3.12', path
+          shuk = Path('plugins.v3/shukguangyadisk')
+          assert not (shuk / 'pyproject.toml').exists(), 'ShukGuangYaDisk V3 must remain dependency-free'
+          assert not (shuk / 'requirements.txt').exists(), 'ShukGuangYaDisk V3 must remain dependency-free'
+          PY
+          python -c "import json; [json.load(open(p,encoding='utf-8')) for p in ['plugin.json','package.v2.json','package.v3.json']]"
           find . -type d -name '__pycache__' -prune -exec rm -rf {} +
           find . -type f -name '*.pyc' -delete
+          test -z "$(find . -type f -name '*.pyc' -o -type d -name '__pycache__')"
       - name: Commit validated release
         run: |
           rm -f .github/workflows/_prepare-guangya-v11215-release.yml .github/workflows/_prepare-guangya-v11215-release-r2.yml scripts/_prepare_guangya_v11215_release.py scripts/_patch_guangya_v11215_v3_release_tests.py
