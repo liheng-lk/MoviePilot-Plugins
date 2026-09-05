@@ -12,6 +12,7 @@ from .episode_fence import EpisodeFence
 from .episode_matcher import episode_intersection
 from .models import SourceType, TaskState, TransferTask
 from .p115_provider import P115TransferProvider
+from .recovery import TransferRecovery
 from .resource import NormalizedResource, normalize_resource
 from .share_resolver import resolve_share_files
 from .task_store import TaskStore
@@ -19,9 +20,9 @@ from .task_store import TaskStore
 
 class P115TransferAssistant(_PluginBase):
     plugin_name = "115转存助手"
-    plugin_desc = "115分享、Magnet、ED2K 三来源转存，支持缺集选择、任务去重、状态恢复和集级栅栏。"
+    plugin_desc = "115分享、Magnet、ED2K 三来源转存，支持缺集选择、任务去重、离线恢复和集级栅栏。"
     plugin_icon = ""
-    plugin_version = "0.1.1"
+    plugin_version = "0.2.0"
     plugin_author = "liheng-lk"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
     plugin_config_prefix = "p115transferassistant_"
@@ -32,6 +33,7 @@ class P115TransferAssistant(_PluginBase):
     _cookies: str = ""
     _cookies_file: str = ""
     _target_cid: int = 0
+    _recovery_minutes: int = 1
 
     def __init__(self):
         super().__init__()
@@ -39,6 +41,7 @@ class P115TransferAssistant(_PluginBase):
         self._store: Optional[TaskStore] = None
         self._fence: Optional[EpisodeFence] = None
         self._dispatcher: Optional[TransferDispatcher] = None
+        self._recovery: Optional[TransferRecovery] = None
 
     def init_plugin(self, config: dict = None) -> None:
         config = config or {}
@@ -49,16 +52,22 @@ class P115TransferAssistant(_PluginBase):
             self._target_cid = int(config.get("target_cid") or 0)
         except (TypeError, ValueError):
             self._target_cid = 0
+        try:
+            self._recovery_minutes = max(1, min(int(config.get("recovery_minutes") or 1), 60))
+        except (TypeError, ValueError):
+            self._recovery_minutes = 1
 
         self._store = TaskStore(self.get_data, self.save_data)
         self._fence = EpisodeFence(self.get_data, self.save_data)
         self._provider = None
         self._dispatcher = None
+        self._recovery = None
         if not self._enabled:
             return
         try:
             self._provider = P115TransferProvider(self._cookies, self._cookies_file)
             self._dispatcher = TransferDispatcher(self._provider, self._store, self._fence)
+            self._recovery = TransferRecovery(self._provider, self._store, self._dispatcher)
             logger.info("【115转存助手】初始化完成，目标 CID=%s", self._target_cid)
         except Exception as err:
             logger.error("【115转存助手】初始化失败: %s", err)
@@ -70,9 +79,18 @@ class P115TransferAssistant(_PluginBase):
     def get_command() -> List[Dict[str, Any]]:
         return []
 
-    @staticmethod
-    def get_service() -> List[Dict[str, Any]]:
-        return []
+    def get_service(self) -> List[Dict[str, Any]]:
+        if not self._enabled:
+            return []
+        return [
+            {
+                "id": "P115TransferAssistantRecovery",
+                "name": "115转存助手离线任务状态恢复",
+                "trigger": "interval",
+                "func": self._recovery_tick,
+                "kwargs": {"minutes": self._recovery_minutes},
+            }
+        ]
 
     def get_form(self) -> Tuple[Optional[List[dict]], Dict[str, Any]]:
         return None, {
@@ -80,12 +98,14 @@ class P115TransferAssistant(_PluginBase):
             "cookies": self._cookies,
             "cookies_file": self._cookies_file,
             "target_cid": self._target_cid,
+            "recovery_minutes": self._recovery_minutes,
         }
 
     def get_page(self) -> Optional[List[dict]]:
         return None
 
     def stop_service(self) -> None:
+        self._recovery = None
         self._provider = None
         self._dispatcher = None
 
@@ -100,10 +120,27 @@ class P115TransferAssistant(_PluginBase):
             self._provider = P115TransferProvider(self._cookies, self._cookies_file)
         if not self._dispatcher:
             self._dispatcher = TransferDispatcher(self._provider, self._store, self._fence)
+        if not self._recovery:
+            self._recovery = TransferRecovery(self._provider, self._store, self._dispatcher)
         return self._dispatcher
 
+    def _recovery_tick(self) -> None:
+        if not self._enabled:
+            return
+        try:
+            self._ensure_runtime()
+            stats = self._recovery.tick() if self._recovery else {"checked": 0, "transferred": 0, "failed": 0}
+            if stats.get("checked"):
+                logger.info(
+                    "【115转存助手】【恢复】检查=%s 完成=%s 失败=%s",
+                    stats.get("checked", 0),
+                    stats.get("transferred", 0),
+                    stats.get("failed", 0),
+                )
+        except Exception as err:
+            logger.warning("【115转存助手】【恢复】本轮检查失败: %s", err)
+
     def _reserve_for_dispatch(self, task: TransferTask) -> bool:
-        """在真正发往 115 前占用目标集；全部被占用时直接短路。"""
         if not task.target_episodes or not task.tmdb_id or task.season is None:
             return True
         if not self._fence:
@@ -175,6 +212,7 @@ class P115TransferAssistant(_PluginBase):
                 "enabled": self._enabled,
                 "cookies_file": self._cookies_file,
                 "target_cid": self._target_cid,
+                "recovery_minutes": self._recovery_minutes,
                 "has_cookies": bool(self._cookies or self._cookies_file),
             },
         }
@@ -185,6 +223,7 @@ class P115TransferAssistant(_PluginBase):
             "cookies": str(payload.get("cookies") or self._cookies or "").strip(),
             "cookies_file": str(payload.get("cookies_file") or self._cookies_file or "").strip(),
             "target_cid": int(payload.get("target_cid") or self._target_cid or 0),
+            "recovery_minutes": int(payload.get("recovery_minutes") or self._recovery_minutes or 1),
         }
         self.update_config(config)
         self.init_plugin(config)
@@ -194,6 +233,14 @@ class P115TransferAssistant(_PluginBase):
         store = self._store or TaskStore(self.get_data, self.save_data)
         return {"success": True, "data": [task.to_dict() for task in store.list()]}
 
+    def api_reconcile(self, payload: dict = None) -> Dict[str, Any]:
+        try:
+            self._ensure_runtime()
+            stats = self._recovery.tick() if self._recovery else {"checked": 0, "transferred": 0, "failed": 0}
+            return {"success": True, "data": stats}
+        except Exception as err:
+            return {"success": False, "message": str(err), "data": None}
+
     def _build_task_from_payload(
         self,
         dispatcher: TransferDispatcher,
@@ -202,9 +249,6 @@ class P115TransferAssistant(_PluginBase):
     ) -> TransferTask:
         raw_targets = sorted({int(v) for v in (payload.get("target_episodes") or []) if int(v) > 0})
         season = payload.get("season")
-
-        # ED2K 是单文件入口。存在缺集目标时，先用文件名把它收窄到真实对应集，
-        # 绝不能拿一个 E03 文件去占用 E03-E10 的全部缺口。
         if resource.source_type == SourceType.ED2K and raw_targets:
             matched = list(
                 episode_intersection(
@@ -240,15 +284,11 @@ class P115TransferAssistant(_PluginBase):
             resource = normalize_resource(uri)
             dispatcher = self._ensure_runtime()
             task = self._build_task_from_payload(dispatcher, resource, payload)
-
-            # 已经在途/完成的同一物理资源直接幂等返回，不发第二次请求。
             if task.state in {TaskState.TRANSFERRING, TaskState.TRANSFERRED, TaskState.COMPLETED}:
                 return {"success": True, "data": task.to_dict()}
 
             should_dispatch = bool(payload.get("dispatch", True))
             explicit_share_ids = [int(v) for v in (payload.get("share_file_ids") or [])]
-
-            # ED2K 有缺集上下文但文件名无法确认对应集时，拒绝提交。
             requested_targets = [int(v) for v in (payload.get("target_episodes") or []) if int(v) > 0]
             if resource.source_type == SourceType.ED2K and requested_targets and not task.target_episodes:
                 task = dispatcher.fail(
@@ -309,39 +349,10 @@ class P115TransferAssistant(_PluginBase):
 
     def get_api(self) -> List[Dict[str, Any]]:
         return [
-            {
-                "path": "/config",
-                "endpoint": self.api_config,
-                "methods": ["GET"],
-                "auth": "bear",
-                "summary": "读取115转存助手配置",
-            },
-            {
-                "path": "/config",
-                "endpoint": self.api_save_config,
-                "methods": ["POST"],
-                "auth": "bear",
-                "summary": "保存115转存助手配置",
-            },
-            {
-                "path": "/tasks",
-                "endpoint": self.api_tasks,
-                "methods": ["GET"],
-                "auth": "bear",
-                "summary": "读取115转存任务",
-            },
-            {
-                "path": "/submit",
-                "endpoint": self.api_submit,
-                "methods": ["POST"],
-                "auth": "bear",
-                "summary": "提交115分享/Magnet/ED2K",
-            },
-            {
-                "path": "/retry",
-                "endpoint": self.api_retry,
-                "methods": ["POST"],
-                "auth": "bear",
-                "summary": "重试115转存任务",
-            },
+            {"path": "/config", "endpoint": self.api_config, "methods": ["GET"], "auth": "bear", "summary": "读取115转存助手配置"},
+            {"path": "/config", "endpoint": self.api_save_config, "methods": ["POST"], "auth": "bear", "summary": "保存115转存助手配置"},
+            {"path": "/tasks", "endpoint": self.api_tasks, "methods": ["GET"], "auth": "bear", "summary": "读取115转存任务"},
+            {"path": "/submit", "endpoint": self.api_submit, "methods": ["POST"], "auth": "bear", "summary": "提交115分享/Magnet/ED2K"},
+            {"path": "/retry", "endpoint": self.api_retry, "methods": ["POST"], "auth": "bear", "summary": "重试115转存任务"},
+            {"path": "/reconcile", "endpoint": self.api_reconcile, "methods": ["POST"], "auth": "bear", "summary": "立即对账115离线任务"},
         ]
