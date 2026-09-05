@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, List, Tuple
 
 from app.sdk.logging import logger
@@ -32,11 +33,16 @@ from .guangya_move_transaction_guard_v364 import install_move_transaction_guard_
 from .guangya_path_resolution_v369 import install_path_resolution_v369
 from .organizer_engine_v360 import GuangYaOrganizerEngineV360Mixin, _PAGE_DIR_LIMIT
 from .organizer_folder_batch_v342 import _FolderBatchEnvelope
+from .organizer_policy import (
+    FileDisposition,
+    decide_failed_execution,
+    should_probe_source_presence,
+)
 from .organizer_source_terminal_v3618 import (
     SOURCE_MISSING_TERMINAL_V3618,
     confirm_source_missing_v3618,
+    probe_source_presence_v3618,
     retire_missing_source_v3618,
-    source_missing_hint_v3618,
 )
 from .storage_snapshot_guard_v3610 import install_storage_snapshot_guard_v3610
 
@@ -171,13 +177,42 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
         if str(message or "") == SOURCE_MISSING_TERMINAL_V3618:
             return
 
-        # 预检时源仍存在，但在进入 MoviePilot 后刚好被其它流程搬走时，MoviePilot 会返回
-        # “没有找到可整理的媒体文件”。只有再次强制刷新确认真的不存在，才终态清理；
-        # 网络/API失败或媒体过滤仍沿用原失败语义。
-        if not success and source_missing_hint_v3618(message) and confirm_source_missing_v3618(self, item):
-            subtree = bool(isinstance(item, _FolderBatchEnvelope) and item.directory_mode)
-            retire_missing_source_v3618(self, item, subtree=subtree)
-            return
+        # v3.7 文件处理策略：只有语义可能依赖源存在性时才额外访问远端。
+        # present + 明确认识失败 => 原地停放，不 move/delete/rename，也不进入 retry；
+        # missing => 只退休本地状态；unknown => 保持普通 retry，网络异常绝不伪装成未识别。
+        if not success and should_probe_source_presence(message):
+            presence = probe_source_presence_v3618(self, item)
+            disposition = decide_failed_execution(message, presence)
+            if disposition == FileDisposition.RETIRE_MISSING:
+                subtree = bool(isinstance(item, _FolderBatchEnvelope) and item.directory_mode)
+                retire_missing_source_v3618(self, item, subtree=subtree)
+                return
+            if disposition == FileDisposition.LEAVE_UNRECOGNIZED:
+                parked = 0
+                for member in self._v360_members(item):
+                    try:
+                        member_path, fingerprint = self._v360_member_identity(member)
+                    except Exception:
+                        continue
+                    if self._state().mark_non_actionable(path=member_path, fingerprint=fingerprint):
+                        parked += 1
+                if parked:
+                    group_path = str(getattr(item, "path", "") or "")
+                    self._append_monitor_history({
+                        "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "path": group_path,
+                        "name": str(getattr(item, "name", "") or group_path.rsplit("/", 1)[-1]),
+                        "size": int(getattr(item, "size", 0) or 0),
+                        "result": "unrecognized_untouched",
+                        "group_path": group_path if isinstance(item, _FolderBatchEnvelope) else "",
+                        "message": f"MoviePilot 未形成可靠媒体/目标，源文件原地保留；成员={parked}；不进入重试",
+                    })
+                    logger.warning(
+                        "【光鸭云盘助手】【整理策略】【未识别保留】源文件不移动、不删除、不改名、不重试: %s；%s",
+                        group_path,
+                        message,
+                    )
+                return
 
         # 弱命名 envelope 已逐成员收口，禁止 Worker 外层再用聚合 True/False 覆盖成员结果。
         if isinstance(item, _FolderBatchEnvelope) and not item.directory_mode:

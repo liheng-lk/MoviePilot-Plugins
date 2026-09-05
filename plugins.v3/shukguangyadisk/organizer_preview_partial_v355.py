@@ -27,7 +27,16 @@ from app.sdk.logging import logger
 from . import organizer_conflict_resolution_v353 as _conflict
 from . import organizer_loss_guard_v349 as _loss_guard
 from .organizer_folder_batch_v342 import _FolderBatchEnvelope
+from .organizer_policy import (
+    FileDisposition,
+    decide_failed_execution,
+    should_probe_source_presence,
+)
 from .organizer_queue_recovery import GuangYaQueueRecoveryMixin
+from .organizer_source_terminal_v3618 import (
+    probe_source_presence_v3618,
+    retire_missing_source_v3618,
+)
 
 
 _MISSING_PREVIEW_TOKEN = "源文件未进入 MoviePilot 预览"
@@ -122,11 +131,42 @@ def _rescue_partial_preview(plugin: Any, item: _FolderBatchEnvelope) -> Tuple[bo
         else:
             errors[path] = error or "MoviePilot 无法为当前源生成可审计预览"
 
-    # 逐文件预览仍失败的成员单独隔离，不再把整个 Season 放回 retry。
+    # 逐文件失败也统一交给 v3.7 policy：明确未识别原地停放；明确消失退休；
+    # 网络/API等暂时失败保留 inflight，外层完成态会把它送回 retry；其它安全冲突才 blocked。
+    unrecognized = missing_sources = transient_errors = blocked_errors = 0
     for path, reason in errors.items():
+        member = candidates[path]
+        if should_probe_source_presence(reason):
+            presence = probe_source_presence_v3618(plugin, member)
+            disposition = decide_failed_execution(reason, presence)
+        else:
+            disposition = FileDisposition.RETRY_TRANSIENT
+        if disposition == FileDisposition.LEAVE_UNRECOGNIZED:
+            fingerprint = plugin._fingerprint(member)
+            if plugin._state().mark_non_actionable(path=path, fingerprint=fingerprint):
+                plugin._append_monitor_history({
+                    "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "path": path,
+                    "name": str(getattr(member, "name", "") or PurePosixPath(path).name),
+                    "size": int(getattr(member, "size", 0) or 0),
+                    "result": "unrecognized_untouched",
+                    "group_path": item.path,
+                    "group_name": item.name,
+                    "message": f"逐文件 MoviePilot 识别/预览无法形成可靠目标，源原地保留：{reason}",
+                })
+            unrecognized += 1
+            continue
+        if disposition == FileDisposition.RETIRE_MISSING:
+            retire_missing_source_v3618(plugin, member)
+            missing_sources += 1
+            continue
+        if disposition == FileDisposition.RETRY_TRANSIENT:
+            transient_errors += 1
+            continue
+        blocked_errors += 1
         _block_member(
             plugin,
-            candidates[path],
+            member,
             f"完整目录预览缺员，逐文件补预览仍无法确认：{reason}",
             result="preview_member_isolated",
         )
@@ -190,23 +230,26 @@ def _rescue_partial_preview(plugin: Any, item: _FolderBatchEnvelope) -> Tuple[bo
         "batch_id": item.batch_id,
         "message": (
             f"目录预览缺员已局部处理：逐文件确认={len(rows)}，实际整理={attempted}，"
-            f"调用失败={call_failed}，单独隔离={len(errors) + len(collision_sources)}"
+            f"调用失败={call_failed}，未识别保留={unrecognized}，源消失={missing_sources}，"
+            f"暂时失败={transient_errors}，安全阻断={blocked_errors + len(collision_sources)}"
         ),
     })
     logger.warning(
         "【光鸭云盘助手】【v3.5.5】【预览局部补救】%s：逐文件确认=%s，实际整理=%s，"
-        "调用失败=%s，隔离=%s；不再因单个缺员拖死整个资源",
+        "调用失败=%s，未识别保留=%s，暂时失败=%s，安全阻断=%s；不再因单个缺员拖死整个资源",
         item.path,
         len(rows),
         attempted,
         call_failed,
-        len(errors) + len(collision_sources),
+        unrecognized,
+        transient_errors,
+        blocked_errors + len(collision_sources),
     )
 
     # 返回 True 只表示该批已被安全拆分处理。成员是否完成仍由 MP 最终事件/历史证据决定。
     return True, (
         f"目录预览缺员局部处理完成：整理 {attempted}，调用失败 {call_failed}，"
-        f"隔离 {len(errors) + len(collision_sources)}"
+        f"未识别保留 {unrecognized}，暂时失败 {transient_errors}，安全阻断 {blocked_errors + len(collision_sources)}"
     )
 
 

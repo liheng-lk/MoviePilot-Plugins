@@ -1,5 +1,7 @@
 # 光鸭云盘助手 V3 架构
 
+> **v3.7 重构规则**：自动整理的文件终态统一由 `organizer_policy.py` 决定，详细不可变规则见 `ORGANIZER_RULES.md`。v3.6 以前的 `install_*_vXXXX()` 行为图已冻结，不再新增版本补丁；后续只允许把已有能力逐步迁移进 discovery / recognition / policy / executor / state-reporting 五层核心。
+
 ## 设计目标
 
 插件只解决 MoviePilot 与光鸭远程存储之间的“适配缺口”，不复制 MoviePilot 的媒体库业务规则。

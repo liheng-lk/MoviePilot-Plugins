@@ -16,9 +16,20 @@ from typing import Any, Dict, List
 class GuangYaFolderHistoryMixin:
     """为目录流式调度提供持久历史保留和按子目录折叠的状态视图。"""
 
-    _monitor_history_limit = 1000
-    _folder_history_group_limit = 40
-    _folder_history_detail_limit = 80
+    _monitor_history_limit = 120
+    _folder_history_group_limit = 12
+    _folder_history_detail_limit = 20
+    _history_compacted_v370: bool = False
+
+    def init_organizer_monitor(self, *args: Any, **kwargs: Any):
+        result = super().init_organizer_monitor(*args, **kwargs)
+        if not self._history_compacted_v370:
+            self._history_compacted_v370 = True
+            raw = list(self.get_data(self._monitor_history_key) or [])
+            compact = raw[-self._monitor_history_limit :]
+            if len(compact) != len(raw):
+                self.save_data(self._monitor_history_key, compact)
+        return result
 
     _result_bucket = {
         "completed": "completed",
@@ -165,7 +176,7 @@ class GuangYaFolderHistoryMixin:
         raw_history = list(self.get_data(self._monitor_history_key) or [])
         data["folder_history"] = self._folder_history_groups()
         data["history_retained"] = len(raw_history)
-        data["history"] = raw_history[-40:][::-1]
+        data["history"] = raw_history[-20:][::-1]
         return response
 
 

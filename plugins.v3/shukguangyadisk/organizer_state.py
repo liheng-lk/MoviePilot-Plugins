@@ -245,6 +245,38 @@ class OrganizerStateStore:
 
         self.mutate(_apply)
 
+    def mark_non_actionable(self, *, path: str, fingerprint: str) -> bool:
+        """源仍存在但当前无法可靠识别/规划时原地停放；同指纹只记录一次。
+
+        复用 ignored 持久槽以避免 schema 扩张；与 unsupported 的共同语义都是“当前内容不再
+        自动提交”。文件指纹变化仍由 ``_drop_other_versions`` 自动重新开放。
+        """
+
+        def _apply(state: Dict[str, Any]) -> bool:
+            self._drop_other_versions(state, path, fingerprint)
+            existed = state["ignored"].get(path) == fingerprint
+            state["ignored"][path] = fingerprint
+            state["blocked"].pop(path, None)
+            for name in ("stabilizing", "inflight", "retry"):
+                state[name].pop(path, None)
+            return not existed
+
+        return bool(self.mutate(_apply))
+
+    def retire_path(self, *, path: str) -> bool:
+        """源已经被移动/删除后的唯一终态：从所有本地状态槽移除，不制造 completed 历史。"""
+
+        def _apply(state: Dict[str, Any]) -> bool:
+            removed = False
+            for name in ("completed", "ignored", "blocked", "stabilizing", "inflight", "retry"):
+                mapping = state[name]
+                if path in mapping:
+                    mapping.pop(path, None)
+                    removed = True
+            return removed
+
+        return bool(self.mutate(_apply))
+
     def mark_blocked(
         self,
         *,
