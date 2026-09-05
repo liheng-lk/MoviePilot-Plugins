@@ -30,14 +30,15 @@ def test_v355_reuses_moviepilot_context_and_preview_for_each_member():
         assert token in PATCH, token
 
 
-def test_unpreviewable_member_is_blocked_not_retried_forever():
+def test_unpreviewable_member_uses_v370_policy_instead_of_one_generic_block():
     for token in (
+        'should_probe_source_presence(reason)',
+        'FileDisposition.LEAVE_UNRECOGNIZED',
+        'mark_non_actionable',
+        'FileDisposition.RETRY_TRANSIENT',
         'result="preview_member_isolated"',
-        '_conflict._mark_blocked(plugin, member, reason, result=result)',
-        '逐文件补预览仍无法确认',
     ):
         assert token in PATCH, token
-    # blocked 必须清理 retry/inflight，才能让 v3.5.2 TV sticky 事务释放。
     assert 'for name in ("stabilizing", "inflight", "retry"):' in STATE
 
 
@@ -72,7 +73,9 @@ def test_v355_has_runtime_diagnostic_log():
         '【v3.5.5】【预览局部补救】',
         '逐文件确认=%s',
         '实际整理=%s',
-        '隔离=%s',
+        '未识别保留=%s',
+        '暂时失败=%s',
+        '安全阻断=%s',
         '不再因单个缺员拖死整个资源',
     ):
         assert token in PATCH, token

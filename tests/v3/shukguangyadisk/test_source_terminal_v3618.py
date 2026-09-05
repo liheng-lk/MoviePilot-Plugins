@@ -96,16 +96,19 @@ def test_v3618_sources_parse():
     ast.parse(EXEC)
 
 
-def test_v3618_remote_none_is_absence_but_network_error_is_not():
+def test_v3618_remote_fact_is_three_state_and_network_error_is_unknown():
     module = _load_module()
     missing = _Plugin(_Api(result=None))
+    assert module.probe_source_presence_v3618(missing, _Item("/root/a.mkv")) == module.SourcePresence.MISSING
     assert module.confirm_source_missing_v3618(missing, _Item("/root/a.mkv")) is True
-    assert missing._guangya_api.paths == ["/root/a.mkv"]
+    assert missing._guangya_api.paths == ["/root/a.mkv", "/root/a.mkv"]
 
     present = _Plugin(_Api(result=object()))
+    assert module.probe_source_presence_v3618(present, _Item("/root/a.mkv")) == module.SourcePresence.PRESENT
     assert module.confirm_source_missing_v3618(present, _Item("/root/a.mkv")) is False
 
     failed = _Plugin(_Api(error=RuntimeError("network down")))
+    assert module.probe_source_presence_v3618(failed, _Item("/root/a.mkv")) == module.SourcePresence.UNKNOWN
     assert module.confirm_source_missing_v3618(failed, _Item("/root/a.mkv")) is False
 
 
@@ -139,32 +142,38 @@ def test_v3618_directory_retire_removes_only_confirmed_missing_subtree():
     assert list(plugin.store.state["retry"]) == ["/root/other/E01.mkv"]
 
 
-def test_v3618_failure_message_is_only_a_hint_not_absence_evidence():
+def test_v3618_failure_text_is_only_a_probe_hint_not_absence_evidence():
     module = _load_module()
     assert module.source_missing_hint_v3618("E01.mkv 没有找到可整理的媒体文件") is True
     assert module.source_missing_hint_v3618("TMDB 识别失败") is False
-    # 真正终态还必须由 confirm_source_missing_v3618 的 refresh_item 事实确认。
     plugin = _Plugin(_Api(result=object()))
+    assert module.probe_source_presence_v3618(plugin, _Item("/root/E01.mkv")) == module.SourcePresence.PRESENT
     assert module.confirm_source_missing_v3618(plugin, _Item("/root/E01.mkv")) is False
 
 
-def test_v3618_execution_preflights_before_moviepilot_and_fallback_rechecks_race():
+def test_v3618_execution_preflights_before_moviepilot_and_policy_rechecks_race():
     assert "confirm_source_missing_v3618(self, item)" in EXEC
     first_guard = EXEC.index("if confirm_source_missing_v3618(self, item):")
     first_super = EXEC.index("return super()._execute_isolated_transfer(item)", first_guard)
     assert first_guard < first_super
     fallback_start = EXEC.index("def _fallback_terminal_state")
     fallback = EXEC[fallback_start:EXEC.index("def api_organize_monitor_status", fallback_start)]
-    assert "source_missing_hint_v3618(message)" in fallback
-    assert "confirm_source_missing_v3618(self, item)" in fallback
+    assert "should_probe_source_presence(message)" in fallback
+    assert "probe_source_presence_v3618(self, item)" in fallback
+    assert "decide_failed_execution(message, presence)" in fallback
+    assert "FileDisposition.RETIRE_MISSING" in fallback
+    assert "FileDisposition.LEAVE_UNRECOGNIZED" in fallback
     assert "retire_missing_source_v3618" in fallback
+    assert "mark_non_actionable" in fallback
     assert "mark_failed" not in fallback
 
 
 def test_v3618_uses_refresh_item_to_bypass_stale_path_cache():
     assert "refresh_item" in SOURCE
-    confirm = SOURCE[SOURCE.index("def confirm_source_missing_v3618"):SOURCE.index("def retire_missing_source_v3618")]
-    assert "refresh_item" in confirm
-    assert "get_item(" not in confirm
-    assert "except Exception" in confirm
-    assert "return False" in confirm
+    probe = SOURCE[SOURCE.index("def probe_source_presence_v3618"):SOURCE.index("def confirm_source_missing_v3618")]
+    assert "refresh_item" in probe
+    assert "get_item(" not in probe
+    assert "except Exception" in probe
+    assert "SourcePresence.UNKNOWN" in probe
+    assert "SourcePresence.MISSING" in probe
+    assert "SourcePresence.PRESENT" in probe
