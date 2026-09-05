@@ -1,0 +1,76 @@
+name: Apply Shuk v3.7 batch policy
+
+on:
+  push:
+    branches: [refactor/shukguangya-organizer-core-v370]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Apply batch-wide existing-target policy
+        run: python .github/scripts/extend_shuk_v370_batch_policy.py
+
+      - name: Parse organizer runtime
+        run: |
+          python -m compileall -q plugins.v3/shukguangyadisk
+          find plugins.v3/shukguangyadisk -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v3/shukguangyadisk -type f -name '*.pyc' -delete
+
+      - name: Execute focused v3.7 policy behavior tests
+        run: |
+          python tests/v3/shukguangyadisk/test_organizer_policy_v370.py
+          python tests/v3/shukguangyadisk/test_existing_target_behavior_v370.py
+          python tests/v3/shukguangyadisk/test_existing_target_batch_behavior_v370.py
+          python tests/v3/shukguangyadisk/test_organizer_core_v370_contract.py
+
+      - name: Execute all Shuk tests and contracts
+        run: |
+          python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          python tests/v3/shukguangyadisk/run_contract_tests.py
+
+      - name: Execute repository regressions
+        run: |
+          python -m unittest discover -s tests -p 'test_*.py'
+
+      - name: Verify no batch member bypasses policy
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('plugins.v3/shukguangyadisk/organizer_conflict_resolution_v353.py').read_text(encoding='utf-8')
+          required = [
+              'def _handle_existing_target_groups(',
+              'existing_result = _handle_existing_target_groups(',
+              'forced_version: Optional[int] = None',
+              'if existing_handled:',
+              '剩余成员逐个整理',
+          ]
+          for token in required:
+              assert token in p, token
+          assert 'if len(list(getattr(item, "members", None) or [])) < 2:' not in p
+          print('batch-wide policy contract OK')
+          PY
+
+      - name: Commit batch policy and remove temporary tooling
+        run: |
+          rm -f .github/scripts/extend_shuk_v370_batch_policy.py
+          rm -f .github/workflows/apply-shuk-v370-batch-policy.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add plugins.v3/shukguangyadisk/organizer_conflict_resolution_v353.py tests/v3/shukguangyadisk .github
+          if git diff --cached --quiet; then
+            echo 'No changes to commit'
+            exit 0
+          fi
+          git commit -m 'refactor(shuk): enforce batch-wide organizer policy'
+          git push origin HEAD:refactor/shukguangya-organizer-core-v370
