@@ -17,8 +17,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List
 
+from .xunlei_season_fence_v11210 import GuangYaXunleiSeasonFenceV11210Mixin
 
-class GuangYaManualCheckV11211Mixin:
+
+class GuangYaManualCheckV11211Mixin(GuangYaXunleiSeasonFenceV11210Mixin):
     """把 /gycheck 显式转换成频道优先、剩余缺口强制完整来源链。"""
 
     plugin_version = "1.12.11"
