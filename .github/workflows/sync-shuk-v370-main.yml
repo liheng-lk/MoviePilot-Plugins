@@ -1,0 +1,54 @@
+name: Sync Shuk v3.7 branch with main
+
+on:
+  push:
+    branches: [refactor/shukguangya-organizer-core-v370]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Merge latest main
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main
+          git merge --no-edit origin/main
+
+      - name: Verify Shuk and repository after merge
+        run: |
+          python -m compileall -q plugins.v3/shukguangyadisk
+          find plugins.v3/shukguangyadisk -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v3/shukguangyadisk -type f -name '*.pyc' -delete
+          python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          python tests/v3/shukguangyadisk/run_contract_tests.py
+          python -m unittest discover -s tests -p 'test_*.py'
+
+      - name: Assert transfer assistant main release is preserved
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('package.v3.json').read_text(encoding='utf-8'))
+          assert data['GuangYaTransferAssistant']['version'] == '1.12.14'
+          print('GuangYaTransferAssistant v1.12.14 preserved')
+          PY
+
+      - name: Remove one-time sync workflow and push
+        run: |
+          rm -f .github/workflows/sync-shuk-v370-main.yml
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore(shuk): remove one-time main sync workflow'
+          fi
+          git push origin HEAD:refactor/shukguangya-organizer-core-v370
