@@ -1,4 +1,4 @@
-"""v1.12.15 候选：频道缓存被动补偿触发。
+"""v1.12.15：频道缓存被动补偿触发。
 
 严格频道游标只回答“这一轮是不是新消息”，7 天频道缓存回答“资源现在是否已经存在”。
 旧实现只把严格新消息送入 channel_event，因此在首次建立游标、插件重启/bootstrap、
@@ -17,8 +17,6 @@
 - 不绕过 v1.12.14 物理文件 episodes ⊆ allowed missing；
 - 不改变来源优先级和 Magnet/ED2K 的光鸭 cloudcollection 路线。
 
-候选阶段故意不修改最终 ``plugin_version/build_id``；只有行为测试与标准 CI 全绿后，
-才把公开版本从 v1.12.14/r60 迁移为 v1.12.15/r61。
 """
 from __future__ import annotations
 
@@ -30,6 +28,9 @@ from .core_pipeline_final_v11214 import GuangYaCorePipelineFinalV11214Mixin
 
 class GuangYaChannelReconcileV11215Mixin(GuangYaCorePipelineFinalV11214Mixin):
     """让“频道已有资源”本身成为可恢复的被动事实，而不是一次性事件。"""
+
+    plugin_version = "1.12.15"
+    build_id = "20260905-r61"
 
     @staticmethod
     def _channel_entry_actionable_v11215(entry: Dict[str, Any]) -> bool:

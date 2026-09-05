@@ -27,6 +27,6 @@ def test_gysub_ack_is_sent_before_tmdb_lookup():
 
 
 def test_v1128_metadata_and_previous_resource_gate_remain_active():
-    assert 'plugin_version = "1.12.14"' in ENTRY
-    assert 'build_id = "20260905-r60"' in ENTRY
+    assert 'plugin_version = "1.12.15"' in ENTRY
+    assert 'build_id = "20260905-r61"' in ENTRY
     assert "GuangYaResourceGateV1127Mixin" in ENTRY

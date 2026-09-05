@@ -200,8 +200,9 @@ def test_reconcile_path_remains_passive_channel_event_and_never_adds_gying_calls
     assert "不主动访问 GYING" in xunlei
 
 
-def test_candidate_keeps_public_release_at_v11214_until_full_ci_is_green():
-    assert 'plugin_version = "1.12.14"' in ENTRY
-    assert 'build_id = "20260905-r60"' in ENTRY
-    assert '"version": "1.12.14"' in PLUGIN_JSON
-    assert 'plugin_version = "1.12.15"' not in SOURCE
+def test_v11215_public_release_is_promoted_after_candidate_ci_is_green():
+    assert 'plugin_version = "1.12.15"' in ENTRY
+    assert 'build_id = "20260905-r61"' in ENTRY
+    assert '"version": "1.12.15"' in PLUGIN_JSON
+    assert 'plugin_version = "1.12.15"' in SOURCE
+    assert 'build_id = "20260905-r61"' in SOURCE
