@@ -1,0 +1,49 @@
+name: Consolidate Shuk v3.7.2 phase2 contracts
+
+on:
+  push:
+    branches:
+      - refactor/shukguangya-organizer-core-v372
+    paths:
+      - .github/workflows/cleanup-shuk-v372-tests.yml
+
+permissions:
+  contents: write
+
+jobs:
+  consolidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/shukguangya-organizer-core-v372
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Remove fragmented v3.7.2 micro-contracts
+        run: rm -f tests/v3/shukguangyadisk/test_v372_*.py
+      - name: Verify canonical v3.7.2 contracts remain
+        run: |
+          test -f tests/v3/shukguangyadisk/test_organizer_phase2_v372_contract.py
+          test -f tests/v3/shukguangyadisk/test_release_v372.py
+          test -f tests/v3/shukguangyadisk/test_phase2_doc_v372.py
+          test -f tests/v3/shukguangyadisk/test_phase2_no_temp_tooling_v372.py
+      - name: Full Shuk contracts
+        run: |
+          python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          python tests/v3/shukguangyadisk/run_contract_tests.py
+      - name: Repository regression
+        run: python -m unittest discover -s tests -v
+      - name: GuangYa transfer regression
+        run: python tests/v3/guangyatransferassistant/run_contract_tests.py
+      - name: Commit consolidated release tree and self-delete
+        run: |
+          rm -f .github/workflows/cleanup-shuk-v372-tests.yml
+          find plugins.v3 tests -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v3 tests -type f -name '*.pyc' -delete
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'test(shukguangyadisk): consolidate v3.7.2 phase2 contracts'
+          git push origin HEAD:refactor/shukguangya-organizer-core-v372
