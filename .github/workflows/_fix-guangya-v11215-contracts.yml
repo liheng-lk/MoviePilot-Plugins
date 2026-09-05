@@ -1,0 +1,127 @@
+name: Fix GuangYa v1.12.15 contract nesting
+
+on:
+  push:
+    branches:
+      - fix/guangya-v1.12.15-channel-reconcile
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/guangya-v1.12.15-channel-reconcile
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Migrate historical nesting assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('.')
+          p = root / 'tests/v3/guangyatransferassistant'
+
+          def replace_once(path, old, new):
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one replacement, got {count}: {old!r}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          # v1.12.14 core contract: preserve old core chain and insert the new passive reconciliation layer.
+          path = p / 'test_core_pipeline_v11214.py'
+          replace_once(
+              path,
+              'MANUAL = (PLUGIN / "manual_check_v11211.py").read_text(encoding="utf-8")\n',
+              'MANUAL = (PLUGIN / "manual_check_v11211.py").read_text(encoding="utf-8")\nRECONCILE = (PLUGIN / "channel_reconcile_v11215.py").read_text(encoding="utf-8")\n',
+          )
+          replace_once(
+              path,
+              '        PLUGIN / "manual_check_v11211.py",\n',
+              '        PLUGIN / "manual_check_v11211.py",\n        PLUGIN / "channel_reconcile_v11215.py",\n',
+          )
+          replace_once(
+              path,
+              '    assert "GuangYaManualCheckV11211Mixin(GuangYaCorePipelineFinalV11214Mixin)" in MANUAL\n',
+              '    assert "GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin)" in MANUAL\n    assert "GuangYaChannelReconcileV11215Mixin(GuangYaCorePipelineFinalV11214Mixin)" in RECONCILE\n',
+          )
+
+          # v1.12.12 alias historical contract.
+          path = p / 'test_gying_alias_query_v11212.py'
+          replace_once(
+              path,
+              'MANUAL = PLUGIN / "manual_check_v11211.py"\n',
+              'MANUAL = PLUGIN / "manual_check_v11211.py"\nRECONCILE = PLUGIN / "channel_reconcile_v11215.py"\n',
+          )
+          replace_once(
+              path,
+              '    manual = MANUAL.read_text(encoding="utf-8")\n',
+              '    manual = MANUAL.read_text(encoding="utf-8")\n    reconcile = RECONCILE.read_text(encoding="utf-8")\n',
+          )
+          replace_once(
+              path,
+              '    ast.parse(manual, filename=str(MANUAL))\n',
+              '    ast.parse(manual, filename=str(MANUAL))\n    ast.parse(reconcile, filename=str(RECONCILE))\n',
+          )
+          replace_once(
+              path,
+              '    assert "class GuangYaManualCheckV11211Mixin(GuangYaCorePipelineFinalV11214Mixin):" in manual\n',
+              '    assert "class GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin):" in manual\n    assert "class GuangYaChannelReconcileV11215Mixin(GuangYaCorePipelineFinalV11214Mixin):" in reconcile\n',
+          )
+
+          # v1.12.13 Xunlei existing-episode fence historical contract.
+          path = p / 'test_xunlei_existing_fence_v11213.py'
+          replace_once(
+              path,
+              '    manual = MANUAL.read_text(encoding="utf-8")\n',
+              '    manual = MANUAL.read_text(encoding="utf-8")\n    reconcile = (PLUGIN / "channel_reconcile_v11215.py").read_text(encoding="utf-8")\n',
+          )
+          replace_once(
+              path,
+              '    ast.parse(manual, filename=str(MANUAL))\n',
+              '    ast.parse(manual, filename=str(MANUAL))\n    ast.parse(reconcile, filename=str(PLUGIN / "channel_reconcile_v11215.py"))\n',
+          )
+          replace_once(
+              path,
+              '    assert "class GuangYaManualCheckV11211Mixin(GuangYaCorePipelineFinalV11214Mixin):" in manual\n',
+              '    assert "class GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin):" in manual\n    assert "class GuangYaChannelReconcileV11215Mixin(GuangYaCorePipelineFinalV11214Mixin):" in reconcile\n',
+          )
+
+          # v1.12.10 season fence historical contract.
+          path = p / 'test_xunlei_season_fence_v11210.py'
+          replace_once(
+              path,
+              '    manual = (PLUGIN / "manual_check_v11211.py").read_text(encoding="utf-8")\n',
+              '    manual = (PLUGIN / "manual_check_v11211.py").read_text(encoding="utf-8")\n    reconcile = (PLUGIN / "channel_reconcile_v11215.py").read_text(encoding="utf-8")\n',
+          )
+          replace_once(
+              path,
+              '    ast.parse(manual, filename=str(PLUGIN / "manual_check_v11211.py"))\n',
+              '    ast.parse(manual, filename=str(PLUGIN / "manual_check_v11211.py"))\n    ast.parse(reconcile, filename=str(PLUGIN / "channel_reconcile_v11215.py"))\n',
+          )
+          replace_once(
+              path,
+              '    assert "class GuangYaManualCheckV11211Mixin(GuangYaCorePipelineFinalV11214Mixin):" in manual\n',
+              '    assert "class GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin):" in manual\n    assert "class GuangYaChannelReconcileV11215Mixin(GuangYaCorePipelineFinalV11214Mixin):" in reconcile\n',
+          )
+          PY
+      - name: Validate candidate
+        run: |
+          python -m compileall -q plugins.v3/guangyatransferassistant tests/v3/guangyatransferassistant
+          python -m unittest discover -s tests -v
+          python tests/v3/guangyatransferassistant/run_contract_tests.py
+      - name: Commit validated migration
+        run: |
+          rm -f .github/workflows/_fix-guangya-v11215-contracts.yml
+          git config user.name "liheng-lk"
+          git config user.email "69590718+liheng-lk@users.noreply.github.com"
+          git add tests/v3/guangyatransferassistant .github/workflows/_fix-guangya-v11215-contracts.yml
+          git diff --cached --check
+          git commit -m "test(guangya): migrate channel reconcile nesting contracts"
+          git push origin HEAD:fix/guangya-v1.12.15-channel-reconcile
