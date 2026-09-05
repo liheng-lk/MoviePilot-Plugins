@@ -38,7 +38,7 @@ def test_gying_hardening_parses_and_is_final_node_layer():
     order = ["GuangYaConfigUiMixin,", "GuangYaGyingHardeningMixin,", "GuangYaGyingFailoverMixin,", "GuangYaGyingRuntimeMixin,", "GuangYaXunleiHardeningMixin,", "GuangYaXunleiFlashMixin,"]
     positions = [entry_text.index(token, start) for token in order]
     assert positions == sorted(positions)
-    assert 'build_id = "20260906-r62"' in entry_text
+    assert 'build_id = "20260906-r63"' in entry_text
 
 
 def test_unicode_and_punycode_are_one_node_identity():

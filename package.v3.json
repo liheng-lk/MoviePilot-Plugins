@@ -103,14 +103,15 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "更新日历驱动的固定分流助手：5 分钟频道 Push 被动消费并补偿复核 7 天频道缓存；当天应播 TV/动漫每 10 分钟快速追更；电影每 60 分钟复查。v1.12.15 修复两类频道资源空窗：既有订阅在首次游标/bootstrap/重启未形成新事件时，会从 7 天缓存补偿进入 channel_event；新增订阅则固定先强刷全部配置频道并写入本地缓存，再做资源匹配。若新增订阅强刷后仍未命中且频道健康，会按配置 history_pages 有界回溯游标之前的频道历史，仅把解析结果补入 7 天 cache，不推进/回退 channel_cursors，也不把旧消息伪造成新事件。所有频道路径均不主动访问 GYING、不消耗外部检索冷却；v1.12.14 的 MoviePilot library/logical/reservation/source-claim 缺集硬栅栏、真实 payload 身份门禁和不可分割物理文件 episodes ⊆ allowed missing 全部保持。来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K，Magnet/ED2K 使用光鸭原生 cloudcollection。",
+    "description": "更新日历驱动的固定分流助手：频道/观影统一支持光鸭分享、迅雷分享、Magnet、ED2K；v1.12.16 增加严格电影双语真实资源身份桥，仅在 discovery、同分享双语顶层、年份与真实视频第二语言标题形成闭环时救回，错误电影/年份/无桥接/TV 继续拒绝；v1.12.15 新订阅频道预热与历史回溯、v1.12.14 权威缺集和物理文件硬栅栏保持。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
     "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,PanSou,CloakBrowser,自动登录,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流,质量过滤,字幕过滤,检索冷却,更新日历,每小时补漏,10分钟追更,快速追更,资源门禁,季发行年份,合法别名,拆包恢复,needs_review,TMDB官方别名,英文原名检索,迅雷防重复,已入库硬栅栏,最终导入过滤,四源统一,缺集硬栅栏,频道补偿,缓存补偿,新增订阅预热,频道历史回溯",
-    "version": "1.12.15",
+    "version": "1.12.16",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v1.12.16": "修复《荣光与暗影》类电影双语真实资源被迅雷身份门禁误杀：仅在观影 discovery 已命中订阅、同一真实分享顶层同时包含订阅标题与第二语言标题、资源年份精确一致且真实视频文件精确命中第二语言标题时救回；PASS_CODE_ERROR/分享删除继续失败，错误电影/错误年份/纯外文无同分享桥接/TV 继续硬拒绝，不引入编辑距离、拼音或包含式模糊匹配；来源优先级与 v1.12.15 频道缓存、新订阅预热、v1.12.14 权威缺集/物理文件安全规则不变。",
       "v1.12.15": "修复“频道有资源但没有转存”的两类触发空窗。其一，严格 Telegram 游标继续只判定本轮新增消息，但 5 分钟频道 Push 会同时被动复核 7 天缓存；首次游标 bootstrap、插件重启或一次性事件未形成时，只有活跃固定分流订阅仍有真实未覆盖缺口且缓存实际含光鸭分享、迅雷、Magnet 或 ED2K，才补偿进入 channel_event。其二，新增订阅不再先读旧缓存再补一次增量刷新，而是固定先强刷全部配置频道、等待单飞刷新完成、写入 7 天 cache 后再匹配；若仍未命中且频道健康，则按配置 history_pages 有界回溯当前 Telegram cursor 之前的历史页，复用既有频道解析器并只补 cache，不修改 channel_cursors、不生成 _channel_new_entries，也不把历史资源伪装成新消息。频道失败/退避时跳过额外历史回溯，并明确区分‘本地缓存未命中’与‘频道没有资源’。title-only、stale、集号不覆盖、已入库/已完成/reservation/其它 source claim 已覆盖的订阅均不触发；全链不访问 GYING、不消耗外部检索冷却，最终继续服从 v1.12.14 的真实 payload 身份门禁、MoviePilot 权威缺口与不可分割物理文件 episodes ⊆ allowed missing。来源优先级和光鸭原生 cloudcollection 路线不变。",
       "v1.12.14": "核心资源链统一：频道与观影均支持光鸭分享、迅雷分享、Magnet、ED2K；频道迅雷密码严格限定同一消息，观影光鸭分享通过临时 ResourceGroup 进入既有直接转存且不污染频道索引；TV/动漫新增精确 TMDB 官方英文/原始标题召回。所有 TV 最终允许集统一为 MoviePilot library missing ∩ logical/fact missing - reservation - other source claim，当前 source 不扣自身 claim；光鸭直接分享、Magnet、ED2K 与既有迅雷统一要求不可分割物理视频 episodes ⊆ allowed missing，真实 payload 标题/年份/季号硬冲突拒绝，MoviePilot 媒体库事实不可用时 fail closed。保持观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K，覆盖缺口即短路；Magnet/ED2K 继续使用光鸭原生 cloudcollection。",
       "v1.12.13": "修复实机“媒体库已有 E01-E09、频道刚补 E10 后，迅雷仍秒传 E01-E06”的重复写入：旧链虽调用媒体库同步却丢弃其 missing 返回，随后仅依赖 cooperative 缺集状态，在媒体库与刚完成回执刷新不同步时可能把旧集重新放回迅雷 target。v1.12.13 将 TV 迅雷最终允许集固定为 library missing ∩ logical/fact missing，再扣除 reservation 与 active source claim；JSON batch import 前按真实文件集号二次硬过滤，E09-E11 这类同时覆盖已有与缺失集的多集文件整文件拒绝；若 MoviePilot 媒体库缺集事实读取失败则 fail closed 跳过迅雷、继续光鸭直接转存/Magnet/ED2K。电影、JSON 1.1.3 和既有全部安全门禁不变；来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",

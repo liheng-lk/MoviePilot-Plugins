@@ -30,10 +30,10 @@ class GuangYaChannelEd2kV1112Tests(unittest.TestCase):
         entry = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
         package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
         local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(package["version"], "1.12.15")
-        self.assertEqual(local["version"], "1.12.15")
-        self.assertIn('plugin_version = "1.12.15"', entry)
-        self.assertIn('build_id = "20260906-r62"', entry)
+        self.assertEqual(package["version"], "1.12.16")
+        self.assertEqual(local["version"], "1.12.16")
+        self.assertIn('plugin_version = "1.12.16"', entry)
+        self.assertIn('build_id = "20260906-r63"', entry)
         self.assertIn('v1.11.2', package.get("history") or {})
 
 
