@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import re
 import sys
 import types
 from pathlib import Path
@@ -70,7 +71,8 @@ class _Plugin:
 def test_v3619_sources_parse_and_runtime_reports_current_hardening():
     ast.parse(PATCH, filename=str(PATCH_PATH))
     ast.parse(EXEC, filename=str(EXEC_PATH))
-    assert '"runtime_hardening": "v3.6.19"' in EXEC
+    runtime = re.search(r'"runtime_hardening": "v3\.6\.(\d+)"', EXEC)
+    assert runtime and int(runtime.group(1)) >= 19
 
 
 def test_missing_direct_child_prunes_known_and_pending_descendants_only():
