@@ -23,6 +23,14 @@ class GuangYaCorePipelineFinalV11214Mixin(GuangYaCorePipelineV11214Mixin):
     plugin_version = "1.12.14"
     build_id = "20260905-r60"
 
+    def _hydrate_viewing_guangya_shares_v11214(self, subscribe: Any) -> int:
+        """让 GYING 光鸭分享与迅雷/Magnet 共用同一订阅 TMDB alias scope。"""
+        scope = getattr(self, "_gying_alias_scope_v11212", None)
+        if not callable(scope):
+            return int(super()._hydrate_viewing_guangya_shares_v11214(subscribe) or 0)
+        with scope(subscribe):
+            return int(super()._hydrate_viewing_guangya_shares_v11214(subscribe) or 0)
+
     def _authoritative_missing_v11214(self, subscribe: Any, *, current_source_id: str = "") -> Set[int]:
         if self._is_movie_subscription(subscribe):
             return set()
