@@ -1,0 +1,47 @@
+name: Prepare GuangYa v1.12.15 release r2
+
+on:
+  push:
+    branches:
+      - fix/guangya-v1.12.15-channel-reconcile
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/guangya-v1.12.15-channel-reconcile
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply audited release migration
+        run: python scripts/_prepare_guangya_v11215_release.py
+      - name: Validate release migration
+        run: |
+          python -m compileall -q plugins.v2 plugins.v3
+          find plugins.v2 plugins.v3 -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v2 plugins.v3 -type f -name '*.pyc' -delete
+          python -m unittest discover -s tests -v
+          python tests/v3/dailynewdrama/test_plugin_contract.py
+          python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          python tests/v3/shukguangyadisk/run_contract_tests.py
+          python tests/v3/guangyatransferassistant/run_contract_tests.py
+          python scripts/check_v3_dependencies.py
+          python -m json.tool package.v3.json >/dev/null
+          python -m json.tool plugins.v3/guangyatransferassistant/plugin.json >/dev/null
+          find . -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find . -type f -name '*.pyc' -delete
+      - name: Commit validated release
+        run: |
+          rm -f .github/workflows/_prepare-guangya-v11215-release.yml .github/workflows/_prepare-guangya-v11215-release-r2.yml scripts/_prepare_guangya_v11215_release.py
+          git config user.name "liheng-lk"
+          git config user.email "69590718+liheng-lk@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "release(guangya): promote v1.12.15 channel reconciliation"
+          git push origin HEAD:fix/guangya-v1.12.15-channel-reconcile
