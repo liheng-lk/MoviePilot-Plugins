@@ -95,7 +95,7 @@ def _mixin_class():
         "Dict": Dict,
         "Iterable": Iterable,
         "List": List,
-        "GuangYaXunleiExistingEpisodeFenceV11213Mixin": _Base,
+        "GuangYaCorePipelineFinalV11214Mixin": _Base,
     }
     exec(compile(module, str(PLUGIN / "manual_check_v11211.py"), "exec"), ns)
     return ns["GuangYaManualCheckV11211Mixin"]
@@ -112,10 +112,14 @@ def test_v11211_layer_parses_and_is_nested_before_resource_gate_without_dropping
     ast.parse(SOURCE)
     ast.parse(MOVIE)
     ast.parse(SEASON)
+    final = (PLUGIN / "core_pipeline_final_v11214.py").read_text(encoding="utf-8")
+    core = (PLUGIN / "core_pipeline_v11214.py").read_text(encoding="utf-8")
     fence = (PLUGIN / "xunlei_existing_fence_v11213.py").read_text(encoding="utf-8")
     alias = (PLUGIN / "gying_alias_query_v11212.py").read_text(encoding="utf-8")
-    assert "from .xunlei_existing_fence_v11213 import GuangYaXunleiExistingEpisodeFenceV11213Mixin" in SOURCE
-    assert "class GuangYaManualCheckV11211Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixin):" in SOURCE
+    assert "from .core_pipeline_final_v11214 import GuangYaCorePipelineFinalV11214Mixin" in SOURCE
+    assert "class GuangYaManualCheckV11211Mixin(GuangYaCorePipelineFinalV11214Mixin):" in SOURCE
+    assert "class GuangYaCorePipelineFinalV11214Mixin(GuangYaCorePipelineV11214Mixin):" in final
+    assert "class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixin):" in core
     assert "from .gying_alias_query_v11212 import GuangYaGyingAliasQueryV11212Mixin" in fence
     assert "class GuangYaXunleiExistingEpisodeFenceV11213Mixin(GuangYaGyingAliasQueryV11212Mixin):" in fence
     assert "from .xunlei_season_fence_v11210 import GuangYaXunleiSeasonFenceV11210Mixin" in alias

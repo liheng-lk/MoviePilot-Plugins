@@ -281,3 +281,13 @@ CI 可以覆盖协议解析、PoW 算法、节点切换、隐私边界、缺集�
 - `E09-E11` 这类横跨“已有 + 缺失”的多集文件按不可分割文件处理，不会为了 E11 顺带重复 E09/E10。
 - 若 MoviePilot 媒体库缺集事实无法读取，本轮只禁用迅雷秒传并继续光鸭直接转存、Magnet、ED2K，不以不确定状态冒险写入。
 - 电影路径不变；来源优先级仍为：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。
+
+## v1.12.14：核心资源链统一与最终缺集硬栅栏
+
+- 频道与观影 GYING 现在都可以贡献四类候选：光鸭分享、迅雷分享、Magnet、ED2K；频道迅雷密码只从同一条消息读取，观影光鸭分享以临时 ResourceGroup 进入既有直接转存链，不写入持久 Telegram 索引。
+- TV/动漫在中文标题没有当前媒体可用候选时，可按订阅精确 TMDB ID 补充官方 `title/en_title/original_title/original_name` 等可信标题继续检索；不使用编辑距离、拼音或模糊标题猜测。
+- TV 最终允许集统一收紧为 `MoviePilot library missing ∩ logical/fact missing - reservation - other source claim`；当前正在提交的 source 不会把自己的 claim 再扣一次。
+- 光鸭直接分享、迅雷、Magnet、ED2K 的不可分割视频统一要求 `actual episodes ⊆ allowed missing`。例如只缺 E11 时，单集 E11 可以写入，`E09-E11` 或 `E09-E12` 整文件必须拒绝。
+- 搜索卡片/频道标题只作为发现证据；真正提交前重新检查实际分享/resolve 文件。真实标题、年份或 Season 明确冲突时拒绝；`S01E11.mkv` 这类没有作品标题的弱文件名不会被伪造为冲突证据。
+- 保持 `观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K`，一旦当前真实缺口被覆盖就停止后续来源。Magnet/ED2K 继续走光鸭原生 `cloudcollection`，不引入 MoviePilot 下载器。
+

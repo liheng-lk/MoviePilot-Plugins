@@ -135,29 +135,34 @@ def _rows(start=1, end=12):
 def test_v11213_is_nested_without_changing_top_level_mro():
     source = PATCH.read_text(encoding="utf-8")
     manual = MANUAL.read_text(encoding="utf-8")
+    core_final = (PLUGIN / "core_pipeline_final_v11214.py").read_text(encoding="utf-8")
+    core = (PLUGIN / "core_pipeline_v11214.py").read_text(encoding="utf-8")
     entry = ENTRY.read_text(encoding="utf-8")
     ast.parse(source, filename=str(PATCH))
     ast.parse(manual, filename=str(MANUAL))
+    ast.parse(core_final, filename=str(PLUGIN / "core_pipeline_final_v11214.py"))
+    ast.parse(core, filename=str(PLUGIN / "core_pipeline_v11214.py"))
     assert 'plugin_version = "1.12.13"' in source
     assert 'build_id = "20260905-r59"' in source
     assert "from .gying_alias_query_v11212 import GuangYaGyingAliasQueryV11212Mixin" in source
     assert "class GuangYaXunleiExistingEpisodeFenceV11213Mixin(GuangYaGyingAliasQueryV11212Mixin):" in source
-    assert "from .xunlei_existing_fence_v11213 import GuangYaXunleiExistingEpisodeFenceV11213Mixin" in manual
-    assert "class GuangYaManualCheckV11211Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixin):" in manual
+    assert "class GuangYaManualCheckV11211Mixin(GuangYaCorePipelineFinalV11214Mixin):" in manual
+    assert "class GuangYaCorePipelineFinalV11214Mixin(GuangYaCorePipelineV11214Mixin):" in core_final
+    assert "class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixin):" in core
     head = entry.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     assert "GuangYaXunleiExistingEpisodeFenceV11213Mixin" not in head
+    assert "GuangYaCorePipelineV11214Mixin" not in head
+    assert "GuangYaCorePipelineFinalV11214Mixin" not in head
     assert head.index("GuangYaMovieIdentityV1129Mixin") < head.index("GuangYaResourceGateV1127Mixin")
 
 
 def test_user_repro_library_e01_e09_plus_channel_e10_becomes_only_e11_e30():
     probe = _Probe()
-    # 媒体库只负责确认已有 E01-E09，因此它认为 E10-E30 尚缺。
     probe.sync_result = {
         "success": True,
         "existing": list(range(1, 10)),
         "missing": list(range(10, 31)),
     }
-    # 同一时刻频道 E10 刚成功，成功事实已封住 E10；旧 note 可能尚不知道 E01-E09。
     probe.logical_missing = set(range(1, 10)) | set(range(11, 31))
     allowed, sync = probe._xunlei_authoritative_missing_v11213(TV)
     assert sync["existing"] == list(range(1, 10))
