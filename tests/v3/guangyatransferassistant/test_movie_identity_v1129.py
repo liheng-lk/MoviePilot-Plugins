@@ -40,7 +40,7 @@ def _mixin_class(fake_media_chain):
         "MediaChain": fake_media_chain,
         "MediaType": _MediaType,
         "MediaSource": _MediaSource,
-        "GuangYaXunleiSeasonFenceV11210Mixin": _XunleiFenceBase,
+        "GuangYaManualCheckV11211Mixin": _XunleiFenceBase,
     }
     exec(compile(module, str(PATCH), "exec"), ns)
     return ns["GuangYaMovieIdentityV1129Mixin"]
