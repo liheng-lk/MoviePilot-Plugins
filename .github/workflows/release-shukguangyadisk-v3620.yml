@@ -1,0 +1,123 @@
+name: Release ShukGuangYaDisk v3.6.20
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-shukguangyadisk-v3620
+  cancel-in-progress: false
+
+jobs:
+  release-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify v3.6.20 regression code
+        run: |
+          test -f plugins.v3/shukguangyadisk/organizer_terminal_event_scope_v3620.py
+          grep -q 'runtime_hardening.*v3.6.20' plugins.v3/shukguangyadisk/organizer_execution_v360.py
+          grep -q 'test_real_115_strm_terminal_event_is_rejected_before_any_guangya_side_effect' tests/v3/shukguangyadisk/test_terminal_event_scope_v3620.py
+          grep -q '_is_own_transfer_fileitem' plugins.v3/shukguangyadisk/organizer_terminal_event_scope_v3620.py
+          grep -q '_is_monitored_path' plugins.v3/shukguangyadisk/organizer_terminal_event_scope_v3620.py
+
+      - name: Materialize v3.6.20 release metadata
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          old = "3.6.19"
+          new = "3.6.20"
+          history_text = (
+              "修复 MoviePilot 全局 TransferComplete/TransferFailed 被光鸭自动整理错误消费的问题："
+              "115、本地及其它存储的成功/失败事件此前虽会被底层光鸭 storage 门禁拒绝，但 v3.5.1 MP history "
+              "wrapper 与 v3.6.8 pending 终态 wrapper 位于外层，仍会误写光鸭 MP 历史计数/日志并触发 pending 自愈。"
+              "现在终态链最外层同时校验 fileitem.storage 属于光鸭存储且 fileitem.path 位于当前自动整理监控路径；"
+              "缺少归属证据 fail-closed，其它存储事件零副作用，光鸭自身终态继续走原 history/pending/state 链。"
+              "不修改 MoviePilot 媒体识别、分类、命名、目标目录、durable task 或任何文件操作。"
+          )
+
+          plugin_path = Path("plugins.v3/shukguangyadisk/plugin.json")
+          plugin = json.loads(plugin_path.read_text(encoding="utf-8"))
+          assert plugin["version"] == old, ("unexpected plugin version", plugin["version"])
+          plugin["version"] = new
+          plugin["history"] = {f"v{new}": history_text, **dict(plugin.get("history") or {})}
+          plugin_path.write_text(json.dumps(plugin, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          package_path = Path("package.v3.json")
+          package = json.loads(package_path.read_text(encoding="utf-8"))
+          shuk = package["ShukGuangYaDisk"]
+          assert shuk["version"] == old, ("unexpected market version", shuk["version"])
+          shuk["version"] = new
+          shuk["history"] = {f"v{new}": history_text, **dict(shuk.get("history") or {})}
+          package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          entry_path = Path("plugins.v3/shukguangyadisk/__init__.py")
+          entry = entry_path.read_text(encoding="utf-8")
+          needle = f'plugin_version = "{old}"'
+          assert entry.count(needle) == 1, "unexpected __init__.py version marker"
+          entry_path.write_text(entry.replace(needle, f'plugin_version = "{new}"', 1), encoding="utf-8")
+
+          remote_path = Path("plugins.v3/shukguangyadisk/dist/assets/remoteEntry.js")
+          remote = remote_path.read_text(encoding="utf-8")
+          needle = f"?v={old}"
+          assert remote.count(needle) == 1, "unexpected remoteEntry version marker"
+          remote_path.write_text(remote.replace(needle, f"?v={new}", 1), encoding="utf-8")
+          PY
+
+      - name: Validate transformed v3.6.20 tree
+        run: |
+          python -m compileall -q plugins.v2 plugins.v3
+          find plugins.v2 plugins.v3 -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v2 plugins.v3 -type f -name '*.pyc' -delete
+          python -m unittest discover -s tests -v
+          python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          python tests/v3/shukguangyadisk/run_contract_tests.py
+          python tests/v3/guangyatransferassistant/run_contract_tests.py
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          version = "3.6.20"
+          plugin = json.loads(Path("plugins.v3/shukguangyadisk/plugin.json").read_text(encoding="utf-8"))
+          package = json.loads(Path("package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
+          entry = Path("plugins.v3/shukguangyadisk/__init__.py").read_text(encoding="utf-8")
+          remote = Path("plugins.v3/shukguangyadisk/dist/assets/remoteEntry.js").read_text(encoding="utf-8")
+          assert plugin["version"] == package["version"] == version
+          assert f'plugin_version = "{version}"' in entry
+          assert f'?v={version}' in remote
+          assert f"v{version}" in plugin["history"] and f"v{version}" in package["history"]
+          PY
+          test -z "$(find plugins.v3 -type f -name 'requirements.txt' -print)"
+
+      - name: Commit guarded release and self-delete
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          rm -f .github/workflows/release-shukguangyadisk-v3620.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.v3.json \
+            plugins.v3/shukguangyadisk/plugin.json \
+            plugins.v3/shukguangyadisk/__init__.py \
+            plugins.v3/shukguangyadisk/dist/assets/remoteEntry.js \
+            .github/workflows/release-shukguangyadisk-v3620.yml
+          git commit -m "release(shukguangyadisk): v3.6.20 terminal event isolation"
+          git pull --rebase origin main
+          python -m compileall -q plugins.v3/shukguangyadisk
+          find plugins.v3/shukguangyadisk -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v3/shukguangyadisk -type f -name '*.pyc' -delete
+          python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          python tests/v3/shukguangyadisk/run_contract_tests.py
+          git push origin HEAD:main
