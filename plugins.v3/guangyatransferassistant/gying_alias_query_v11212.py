@@ -22,10 +22,10 @@ import threading
 from contextlib import contextmanager
 from typing import Any, Dict, Iterable, Iterator, List, Optional
 
-from .manual_check_v11211 import GuangYaManualCheckV11211Mixin
+from .xunlei_season_fence_v11210 import GuangYaXunleiSeasonFenceV11210Mixin
 
 
-class GuangYaGyingAliasQueryV11212Mixin(GuangYaManualCheckV11211Mixin):
+class GuangYaGyingAliasQueryV11212Mixin(GuangYaXunleiSeasonFenceV11210Mixin):
     """把精确 TMDB 官方别名补到 GYING 搜索前，而不是只用于搜索后的身份判断。"""
 
     plugin_version = "1.12.12"
