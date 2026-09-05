@@ -26,7 +26,7 @@ def _mixin_class(fake_media_chain):
         TMDB = "tmdb"
 
     class _XunleiFenceBase:
-        """测试只隔离 v1.12.9 电影别名行为；v1.12.10 season fence 由独立测试覆盖。"""
+        """测试只隔离 v1.12.9 电影别名行为；下层双语/season fence 由独立测试覆盖。"""
 
         pass
 
@@ -40,6 +40,7 @@ def _mixin_class(fake_media_chain):
         "MediaChain": fake_media_chain,
         "MediaType": _MediaType,
         "MediaSource": _MediaSource,
+        "GuangYaMovieBilingualIdentityV11216Mixin": _XunleiFenceBase,
         "GuangYaManualCheckV11211Mixin": _XunleiFenceBase,
     }
     exec(compile(module, str(PATCH), "exec"), ns)
@@ -115,6 +116,8 @@ def test_v1129_layer_parses_and_is_outer_than_tv_resource_gate():
     assert 'plugin_version = "1.12.9"' in text
     assert 'build_id = "20260905-r55"' in text
     assert "from .movie_identity_v1129 import GuangYaMovieIdentityV1129Mixin" in entry
+    assert "from .movie_bilingual_identity_v11216 import GuangYaMovieBilingualIdentityV11216Mixin" in text
+    assert "class GuangYaMovieIdentityV1129Mixin(GuangYaMovieBilingualIdentityV11216Mixin):" in text
     head = entry.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     assert head.index("GuangYaMovieIdentityV1129Mixin") < head.index("GuangYaResourceGateV1127Mixin")
 
