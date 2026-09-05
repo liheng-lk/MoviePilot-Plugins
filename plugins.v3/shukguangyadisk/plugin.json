@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
   "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
-  "version": "3.7.2",
+  "version": "3.7.3",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v3.7.3": "整理核心 Phase 2 第三阶段：将 v3.4.11 集数整组样本/弱命名 Preview 复核与 v3.4.12 分类一致性从连续运行时 monkey patch 迁入 loss guard 显式 Preview 上下文；删除 ContextVar episode sample bridge，整组成员直接传入 MoviePilot recommend_episode_format，并复用同一次目录识别得到的 meta 做 TV 约束，不再二次 recognize_by_path。文件处置规则完全继承 v3.7.0；MoviePilot 媒体身份/普通命名/目标目录、durable/pending/终态归属/分页/Move 保护及光鸭认证/API/Storage 均不变。",
     "v3.7.2": "整理核心 Phase 2 第二阶段：将 v3.4.9 folder success 成员终态核对与 v3.4.10 空/已搬空目录收口从 QueueRecovery 运行时 monkey patch 迁入最终 Execution fallback 显式生命周期；organizer_loss_guard_v349 与 organizer_empty_folder_guard_v3410 退化为纯 Preview/源事实 helper，不再改写 QueueRecovery。文件处置规则完全继承 v3.7.0：同大小复核后去重、不同大小版本化、未识别原地保留、网络/大小事实未知 fail closed；MoviePilot 识别/分类/命名、durable/pending/分页/Move 保护与光鸭认证/API/Storage 不变。",
     "v3.7.1": "整理核心 Phase 2：将冲突处置、目录 Preview 缺员补救、旧 preview retry 唤醒从运行时 monkey patch 迁入最终 Execution 核心显式调用；版本化 TransferRename 与重复副本终态清理也由 Execution 明确桥接。删除 install_conflict_resolution_v353 / install_preview_partial_v355 / install_preview_retry_wakeup_v356 三个行为 installer，helper 不再改写 QueueRecovery、FolderStream 或 Organizer 类方法。文件处置规则完全继承 v3.7.0：未识别原地保留、同大小复核后去重、不同大小版本化、未知事实 fail closed；v3.6.20 终态归属门禁仍位于 duplicate cleanup 外层，115/本地事件不能进入光鸭终态副作用。光鸭认证/API/存储、MoviePilot 识别/分类/普通命名、durable/pending/分页与 Move 保护均不变。",
     "v3.7.0": "整理核心第一阶段收口：新增唯一 organizer_policy 文件处置表，识别失败且源仍存在的媒体原地保留，不移动、不删除、不改名、不进入 retry；源明确消失只退休本地状态，不再制造 completed 历史。MoviePilot Preview 已确定最终目标时，目标存在且源/目标精确字节大小一致才允许删除重复源，删除前再次复核大小与 fileId；大小不同统一通过 MoviePilot TransferRename 生成版本N并二次 Preview 确认，大小未知或目标事实不可读一律保持原位。该规则覆盖单文件与 Season 批次每个成员，duplicate_targets 不再绕过已有目标策略。自动整理本地历史从 1000 条收敛为近期 120 条，状态页仅展示最近 20 条；新增 ORGANIZER_RULES.md 冻结规则，后续不再新增 v3.x 行为补丁模块，逐步迁移旧兼容层到统一五层核心。",

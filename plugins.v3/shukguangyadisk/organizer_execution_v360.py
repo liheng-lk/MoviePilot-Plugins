@@ -141,8 +141,8 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
         if not self._v371_policy_banner_logged:
             self._v371_policy_banner_logged = True
             logger.info(
-                "【光鸭云盘助手】【整理核心 v3.7.2】policy 执行链已显式接管："
-                "冲突处置/预览补救/版本 Rename/重复终态/folder 终态核对不再使用运行时 monkey patch"
+                "【光鸭云盘助手】【整理核心 v3.7.3】policy 执行链已显式接管："
+                "冲突处置/预览补救/版本 Rename/重复终态/folder 终态/集数与分类 Preview 上下文不再使用运行时 monkey patch"
             )
 
         result = super().init_organizer_monitor()
@@ -326,7 +326,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
         # 最终响应也必须明确归零，避免 UI 再显示“当前剧集=/”。
         status.update({
             "organizer_engine": "v3.6.0",
-            "organizer_policy_version": "v3.7.2",
+            "organizer_policy_version": "v3.7.3",
             "scheduler_mode": "single_resource_worker",
             "discovery_page_size": _PAGE_DIR_LIMIT,
             "sticky_tv_group_path": "",
