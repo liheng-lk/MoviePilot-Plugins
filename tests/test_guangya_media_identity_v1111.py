@@ -22,7 +22,7 @@ class GuangYaMediaIdentityV1111Tests(unittest.TestCase):
             entry.index("GuangYaReleaseV1110Mixin,", start),
         )
         self.assertIn('plugin_version = "1.12.15"', entry)
-        self.assertIn('build_id = "20260905-r61"', entry)
+        self.assertIn('build_id = "20260906-r62"', entry)
         package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
         local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(package["version"], "1.12.15")

@@ -33,7 +33,7 @@ class GuangYaChannelEd2kV1112Tests(unittest.TestCase):
         self.assertEqual(package["version"], "1.12.15")
         self.assertEqual(local["version"], "1.12.15")
         self.assertIn('plugin_version = "1.12.15"', entry)
-        self.assertIn('build_id = "20260905-r61"', entry)
+        self.assertIn('build_id = "20260906-r62"', entry)
         self.assertIn('v1.11.2', package.get("history") or {})
 
 

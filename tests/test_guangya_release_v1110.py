@@ -35,7 +35,7 @@ class GuangYaReleaseV1110Tests(unittest.TestCase):
             "GuangYaReceiptCompletionV1124Mixin",
         ])
         self.assertIn('plugin_version = "1.12.15"', ENTRY)
-        self.assertIn('build_id = "20260905-r61"', ENTRY)
+        self.assertIn('build_id = "20260906-r62"', ENTRY)
 
     def test_daily_full_catchup_is_independent_of_new_channel_messages(self):
         self.assertIn('"id": "GuangYaTransferAssistantDailyCatchup"', RELEASE)

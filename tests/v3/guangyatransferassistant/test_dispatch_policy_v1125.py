@@ -152,7 +152,7 @@ def test_v1125_policy_parses_and_sits_below_final_authority_above_weekly_schedul
     scheduler = entry_text.index("GuangYaAiringSchedulerV1120Mixin,", start)
     assert page < final_policy < policy < weekly < scheduler
     assert 'plugin_version = "1.12.15"' in entry_text
-    assert 'build_id = "20260905-r61"' in entry_text
+    assert 'build_id = "20260906-r62"' in entry_text
     assert 'build_id = "20260904-r51"' in policy_text
 
 

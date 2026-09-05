@@ -36,7 +36,7 @@ class GuangYaChannelReconcileV11215Mixin(GuangYaCorePipelineFinalV11214Mixin):
     """让“频道已有资源”成为可恢复事实，并保证新订阅先预热频道再匹配。"""
 
     plugin_version = "1.12.15"
-    build_id = "20260905-r61"
+    build_id = "20260906-r62"
     _channel_prime_wait_seconds_v11215 = 5.0
     _channel_prime_history_pages_cap_v11215 = 20
 

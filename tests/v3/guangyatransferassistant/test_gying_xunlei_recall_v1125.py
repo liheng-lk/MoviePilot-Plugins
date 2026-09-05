@@ -51,7 +51,7 @@ def test_v1125_hardening_parses_without_changing_public_release_marker():
     ast.parse(text, filename=str(HARDENING))
     assert 'build_id = "20260904-r51"' in text
     assert 'plugin_version = "1.12.15"' in entry
-    assert 'build_id = "20260905-r61"' in entry
+    assert 'build_id = "20260906-r62"' in entry
 
 
 def test_search_cards_are_ranked_before_existing_detail_request_limit():

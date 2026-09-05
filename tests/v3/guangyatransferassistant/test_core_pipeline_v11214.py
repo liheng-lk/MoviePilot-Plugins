@@ -349,6 +349,6 @@ def test_every_storage_path_reuses_guangya_target_and_no_moviepilot_downloader()
 
 def test_current_public_release_is_v11214_after_full_gate_passes():
     assert 'plugin_version = "1.12.15"' in ENTRY
-    assert 'build_id = "20260905-r61"' in ENTRY
+    assert 'build_id = "20260906-r62"' in ENTRY
     assert 'plugin_version = "1.12.14"' in CORE
     assert 'build_id = "20260905-r60"' in FINAL

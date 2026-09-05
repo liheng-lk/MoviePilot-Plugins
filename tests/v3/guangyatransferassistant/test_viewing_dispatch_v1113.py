@@ -26,7 +26,7 @@ def test_v1113_files_parse_and_release_is_published():
     local = json.loads(PLUGIN_JSON.read_text(encoding="utf-8"))
     assert package["version"] == local["version"] == "1.12.15"
     assert 'plugin_version = "1.12.15"' in entry_text
-    assert 'build_id = "20260905-r61"' in entry_text
+    assert 'build_id = "20260906-r62"' in entry_text
     assert "v1.12.5" in package["history"]
     assert "v1.12.3" in package["history"]
     assert "v1.10.13" in package["history"]
