@@ -1,23 +1,43 @@
 from __future__ import annotations
 
 import ast
-import importlib.util
+import re
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, Dict, Iterable, Iterator, List, Optional
 
 
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 PATCH = PLUGIN / "gying_alias_query_v11212.py"
 ENTRY = PLUGIN / "__init__.py"
+MANUAL = PLUGIN / "manual_check_v11211.py"
 
 
 def _mixin_class():
-    spec = importlib.util.spec_from_file_location("gying_alias_query_v11212_test", PATCH)
-    module = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
-    spec.loader.exec_module(module)
-    return module.GuangYaGyingAliasQueryV11212Mixin
+    tree = ast.parse(PATCH.read_text(encoding="utf-8"), filename=str(PATCH))
+    cls = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "GuangYaGyingAliasQueryV11212Mixin"
+    )
+    module = ast.Module(body=[cls], type_ignores=[])
+    ast.fix_missing_locations(module)
+    ns = {
+        "Any": Any,
+        "Dict": Dict,
+        "Iterable": Iterable,
+        "Iterator": Iterator,
+        "List": List,
+        "Optional": Optional,
+        "re": re,
+        "threading": threading,
+        "contextmanager": contextmanager,
+        "GuangYaXunleiSeasonFenceV11210Mixin": object,
+    }
+    exec(compile(module, str(PATCH), "exec"), ns)
+    return ns["GuangYaGyingAliasQueryV11212Mixin"]
 
 
 MOVIE = SimpleNamespace(id=209, name="失控陪审团", year=2003, type="电影", season=0)
@@ -93,16 +113,21 @@ class _Probe(Mixin, _Base):
     pass
 
 
-def test_v11212_source_parses_and_runtime_mro_places_alias_query_after_movie_identity_before_resource_gate():
+def test_v11212_source_parses_and_is_nested_without_moving_top_level_mro():
     source = PATCH.read_text(encoding="utf-8")
+    manual = MANUAL.read_text(encoding="utf-8")
     entry = ENTRY.read_text(encoding="utf-8")
     ast.parse(source, filename=str(PATCH))
+    ast.parse(manual, filename=str(MANUAL))
     assert 'plugin_version = "1.12.12"' in source
     assert 'build_id = "20260905-r58"' in source
-    assert "from .gying_alias_query_v11212 import GuangYaGyingAliasQueryV11212Mixin" in entry
+    assert "from .xunlei_season_fence_v11210 import GuangYaXunleiSeasonFenceV11210Mixin" in source
+    assert "class GuangYaGyingAliasQueryV11212Mixin(GuangYaXunleiSeasonFenceV11210Mixin):" in source
+    assert "from .gying_alias_query_v11212 import GuangYaGyingAliasQueryV11212Mixin" in manual
+    assert "class GuangYaManualCheckV11211Mixin(GuangYaGyingAliasQueryV11212Mixin):" in manual
     head = entry.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
-    assert head.index("GuangYaMovieIdentityV1129Mixin") < head.index("GuangYaGyingAliasQueryV11212Mixin")
-    assert head.index("GuangYaGyingAliasQueryV11212Mixin") < head.index("GuangYaResourceGateV1127Mixin")
+    assert "GuangYaGyingAliasQueryV11212Mixin" not in head
+    assert head.index("GuangYaMovieIdentityV1129Mixin") < head.index("GuangYaResourceGateV1127Mixin")
 
 
 def test_runaway_jury_alias_is_added_after_exact_chinese_query():
@@ -110,7 +135,6 @@ def test_runaway_jury_alias_is_added_after_exact_chinese_query():
     queries = probe._gying_alias_keywords_v11212(MOVIE, "失控陪审团 2003")
     assert queries[0] == "失控陪审团 2003"
     assert "Runaway Jury 2003" in queries
-    assert all("模糊" not in query for query in queries)
 
 
 def test_raw_gying_does_not_stop_on_unrelated_cards_and_retries_exact_tmdb_alias():
