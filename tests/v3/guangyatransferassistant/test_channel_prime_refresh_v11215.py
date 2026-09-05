@@ -16,21 +16,47 @@ ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 
 
 class _LegacyStub:
+    class RequestUtils:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def get_res(self, url):
+            return SimpleNamespace(status_code=200, text="history-page")
+
+    settings = None
+
     @staticmethod
     def _entry_match_reason(row, subscribe):
         return True, "matched"
+
+    @staticmethod
+    def _extract_channel_entries(page_html, source_url, label):
+        return [{
+            "resource_group_id": "history",
+            "source_url": source_url,
+            "message_id": "100",
+            "share_url": "https://www.guangyapan.com/s/history",
+            "episode_hint": "S01E11",
+            "display_title": "测试剧 S01E11",
+        }]
+
+    @staticmethod
+    def _extract_pagination_urls(page_html, source_url):
+        return []
 
 
 class _CoreBase:
     def __init__(self):
         self._enabled = True
+        self._proxy = False
+        self._history_pages = 2
         self.events: List[str] = []
         self.logs = []
         self.rows: Dict[int, List[Any]] = {}
+        self._cache_items: Dict[str, Any] = {}
         self.subscriptions = {1: SimpleNamespace(id=1, name="测试剧", season=1)}
         self.gaps = {1: {11}}
         self.refresh_populates = False
-        self.backfill_populates = False
         self._channel_refresh_lock = threading.Lock()
 
     def _positive_ids_v1125(self, values):
@@ -65,15 +91,19 @@ class _CoreBase:
             }, "matched")]
         return []
 
-    def _history_backfill_for_subscriptions_v11215(self, subscriptions):
+    def _source_urls(self):
+        return ["https://t.me/s/test"]
+
+    def _channel_cache_v1115(self):
+        return {"items": dict(self._cache_items)}
+
+    def _refresh_channel_cache_v1115(self, rows):
         self.events.append("history")
-        if self.backfill_populates:
-            self.rows[1] = [({
-                "resource_group_id": "history",
-                "share_url": "https://www.guangyapan.com/s/history",
-                "episode_hint": "S01E11",
-            }, "matched")]
-        return {"pages": 2, "rows": 10, "cached": 10, "matched_ids": [1] if self.backfill_populates else [], "errors": []}
+        for row in rows or []:
+            key = str(row.get("resource_group_id") or row.get("message_id") or "history")
+            self._cache_items[key] = dict(row)
+        if rows:
+            self.rows[1] = [(dict(rows[0]), "matched")]
 
     def _channel_refresh_healthy_v11215(self):
         return True
@@ -145,7 +175,6 @@ def test_new_subscription_force_refresh_happens_before_first_cache_match():
 def test_history_backfill_runs_only_after_forced_refresh_still_misses():
     cls = _load_mixin()
     probe = cls()
-    probe.backfill_populates = True
     probe._spawn_route_prime([1])
 
     assert probe.events[0] == "refresh:True"
@@ -154,6 +183,7 @@ def test_history_backfill_runs_only_after_forced_refresh_still_misses():
     history_pos = probe.events.index("history")
     assert any(value == "cache" for value in probe.events[:history_pos])
     assert any(value == "cache" for value in probe.events[history_pos + 1:])
+    assert probe.rows[1][0][0]["share_url"] == "https://www.guangyapan.com/s/history"
     assert probe.events[-1] == "queue:新订阅资源匹配:1"
 
 
