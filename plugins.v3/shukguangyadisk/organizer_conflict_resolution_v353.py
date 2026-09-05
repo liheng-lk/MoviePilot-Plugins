@@ -826,9 +826,15 @@ def _execute_conflict_aware(plugin: Any, item: _FolderBatchEnvelope) -> Tuple[bo
         return _block_guard_failure(plugin, item, row_error, details)
 
     # v3.7 先把“媒体库已有最终目标”作为比批内碰撞更高优先级的事实处理。
-    # 这样 Season 批次里的每一集都遵守同一条规则，而不是只有单文件任务才检查目标已存在。
+    # duplicate_targets 只是“多个源规划到同一目标”的冲突事实，本身不能阻止已有目标 policy；
+    # 只有 missing/failed/empty_target 才说明预览成员事实不完整，必须先 fail closed。
+    preview_members_valid = not (
+        details.get("missing")
+        or details.get("failed")
+        or details.get("empty_target")
+    )
     existing_handled: set[str] = set()
-    if safe:
+    if preview_members_valid:
         existing_result = _handle_existing_target_groups(plugin, item, transfer_chain, kwargs, rows)
         existing_handled = set(existing_result.get("handled") or set())
         if existing_handled:
@@ -857,7 +863,9 @@ def _execute_conflict_aware(plugin: Any, item: _FolderBatchEnvelope) -> Tuple[bo
     collisions = _collision_groups(plugin, item, rows)
     # 不是重复目标问题时完全保持 v3.4.9 语义；其它预览异常仍整组阻止。
     if not collisions:
-        if not safe:
+        # safe 可能仅因原始 duplicate_targets=False；若这些冲突成员已被已有目标 policy 收口，
+        # 剩余成员仍是完整安全预览，不能再用旧 safe 标志把它们误阻断。
+        if not preview_members_valid:
             return _block_guard_failure(plugin, item, guard_message, details)
         if existing_handled:
             attempted = failed = 0
