@@ -4,18 +4,21 @@
 1. 导入阶段先安装 v3.6.9 光鸭路径分页/严格读取，以及 v3.6.10 MoviePilot 存储快照保护；
 2. monitor 初始化时安装 v3.6.9/v3.6.13 连续发现与状态可达性回收，随后安装 v3.6.19
    终态索引收口，再安装 v3.6.11 durable retry、v3.6.12 pending 真等待门禁与 v3.6.15
-   pending 公平调度，最后安装 v3.6.0 move 终态修复与 v3.6.4 move 失败事务保护；
+   pending 公平调度；v3.6.20 最后包住 MoviePilot 全局终态事件，只允许光鸭存储 + 当前
+   监控路径进入 history/pending 终态链；再安装 v3.6.0 move 终态修复与 v3.6.4 move 失败事务保护；
    v3.6.17 只读投影 blocked 诊断；
 3. v3.6.18 在私有 Worker 调 MoviePilot 前强制刷新源路径，已明确消失的源直接终态清理，
    并在“预检后刚好被搬走”的失败竞态里再次复核，禁止把不存在路径重新写入 retry；
 4. v3.6.19 在 v3.6.13 已严格确认目录/子树消失时，同步清理 known-resource 与
    pending-resource 调度索引，避免已搬走历史路径仍被后续增量扫描触碰；
-5. 弱命名 folder envelope 内部逐文件执行时，最终状态统一回到 v3.6 fallback；
-6. 状态 API 最后投影 v3.6 Worker/discovery/blocked 事实，屏蔽旧 v3.5.9 cursor/sticky 的展示残留。
+5. v3.6.20 隔离 MoviePilot 全局 TransferComplete/TransferFailed，115、本地和其它存储
+   不再污染光鸭 MP 历史计数、终态日志或触发 pending 自愈；
+6. 弱命名 folder envelope 内部逐文件执行时，最终状态统一回到 v3.6 fallback；
+7. 状态 API 最后投影 v3.6 Worker/discovery/blocked 事实，屏蔽旧 v3.5.9 cursor/sticky 的展示残留。
 
 普通 MoviePilot 原生目录任务继续走旧安全预览/冲突/season 等 MoviePilot 安全链，不在这里
-重写业务规则。v3.6.9~v3.6.19 只修远端查询、发现调度、状态/快照可靠性、durable 任务身份
-衔接、pending 等待态语义、公平性、长期状态回收效率与 Worker 执行边界终态。
+重写业务规则。v3.6.9~v3.6.20 只修远端查询、发现调度、状态/快照可靠性、durable 任务身份
+衔接、pending 等待态语义、公平性、长期状态回收、终态事件归属与 Worker 执行边界终态。
 """
 
 from __future__ import annotations
@@ -52,6 +55,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
     _v3611_retry_patch_ready: bool = False
     _v3612_pending_patch_ready: bool = False
     _v3615_fairness_patch_ready: bool = False
+    _v3620_terminal_scope_ready: bool = False
     _v3617_blocked_diag_logged: bool = False
 
     def init_organizer_monitor(self) -> None:
@@ -90,6 +94,13 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
 
             install_pending_fairness_v3615()
             self._v3615_fairness_patch_ready = True
+        if not self._v3620_terminal_scope_ready:
+            # MoviePilot 终态事件是全局广播；这一层必须在历史 orchestrator 与 pending wrapper
+            # 都已经完成装配后再包住它们，避免其它存储成功事件污染光鸭状态/日志。
+            from .organizer_terminal_event_scope_v3620 import install_terminal_event_scope_v3620
+
+            install_terminal_event_scope_v3620()
+            self._v3620_terminal_scope_ready = True
         if not self._v360_storage_patch_ready:
             # 安装顺序不可交换：v3.6.4 必须包在 v3.6.0 最终 move_item 外层，才能在
             # MoviePilot 收到失败前进行延长确认、回滚和 delete/purge 保护。
@@ -195,7 +206,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
             "sticky_tv_group_since": 0,
             "active_resource_tasks": 1 if running_path else 0,
             "worker_queue_depth": int(snapshot.get("queued") or 0),
-            "runtime_hardening": "v3.6.19",
+            "runtime_hardening": "v3.6.20",
         })
 
         if running_path:
