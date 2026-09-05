@@ -47,3 +47,7 @@ Execution._fallback_terminal_state
 - `organizer_loss_guard_v349._build_moviepilot_kwargs()` 明确执行：一次 MoviePilot 目录识别 → 集数适配 → 分类一致性。
 - TV 约束重识别复用同一次目录识别的 `meta_info`，同一 Preview 构建过程不二次 `recognize_by_path`。
 - Preview 唯一目标校验通过后，再显式执行弱命名 season/episode 终态复核；任何不一致仍 fail closed。
+
+## 共享市场索引发布约束
+
+`package.v3.json` 是多插件共享发布面。若 PR 验证期间 `main` 上其它插件已经升级，Shuk 发布分支必须先同步最新 `main`，并按插件条目保留各自最新对象；禁止用旧 checkout 整份覆盖市场索引。同步后必须重新执行 PR CI，正式发布仍以 main-push CI 与 Raw `main/package.v3.json` 校验为最终门禁。
