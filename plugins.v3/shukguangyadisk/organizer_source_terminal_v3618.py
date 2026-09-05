@@ -12,12 +12,22 @@ v3.7 起该文件不再自己决定“失败要不要 retry”，只提供一个
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 from typing import Any, Dict
 
 from app.sdk.logging import logger
 
-from .organizer_policy import SourcePresence
+try:
+    from .organizer_policy import SourcePresence
+except ImportError:  # 函数契约会按文件独立加载；仍复用同一 policy 文件，禁止复制第二套枚举。
+    _policy_path = Path(__file__).with_name("organizer_policy.py")
+    _policy_spec = importlib.util.spec_from_file_location("shuk_organizer_policy_standalone", _policy_path)
+    if not _policy_spec or not _policy_spec.loader:
+        raise
+    _policy_module = importlib.util.module_from_spec(_policy_spec)
+    _policy_spec.loader.exec_module(_policy_module)
+    SourcePresence = _policy_module.SourcePresence
 
 
 SOURCE_MISSING_TERMINAL_V3618 = "__shuk_source_missing_terminal_v3618__"
@@ -51,7 +61,7 @@ def source_missing_hint_v3618(message: Any) -> bool:
 
 
 def probe_source_presence_v3618(plugin: Any, item: Any) -> SourcePresence:
-    """强制刷新远端路径并返回三态事实；异常永远是 unknown。"""
+    """强制 refresh_item 刷新远端路径并返回三态事实；异常永远是 unknown。"""
     path = _norm(plugin, getattr(item, "path", ""))
     if not path:
         return SourcePresence.UNKNOWN
@@ -74,7 +84,7 @@ def probe_source_presence_v3618(plugin: Any, item: Any) -> SourcePresence:
 
 
 def confirm_source_missing_v3618(plugin: Any, item: Any) -> bool:
-    """旧接口兼容：只有三态探针明确 missing 才返回 True。"""
+    """旧接口兼容：内部仍由 refresh_item 三态探针确认，只有 missing 才返回 True。"""
     return probe_source_presence_v3618(plugin, item) == SourcePresence.MISSING
 
 
