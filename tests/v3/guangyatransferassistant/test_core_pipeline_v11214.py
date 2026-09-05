@@ -15,6 +15,7 @@ FINAL = (PLUGIN / "core_pipeline_final_v11214.py").read_text(encoding="utf-8")
 CHANNEL = (PLUGIN / "channel_sources_v11214.py").read_text(encoding="utf-8")
 CHANNEL_OLD = (PLUGIN / "channel_sources_v190.py").read_text(encoding="utf-8")
 MANUAL = (PLUGIN / "manual_check_v11211.py").read_text(encoding="utf-8")
+RECONCILE = (PLUGIN / "channel_reconcile_v11215.py").read_text(encoding="utf-8")
 ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 XUNLEI = (PLUGIN / "xunlei_existing_fence_v11213.py").read_text(encoding="utf-8")
 VIEWING = (PLUGIN / "viewing_dispatch_v1113.py").read_text(encoding="utf-8")
@@ -104,12 +105,14 @@ def test_v11214_sources_parse_and_nesting_does_not_move_top_level_mro():
         PLUGIN / "core_pipeline_final_v11214.py",
         PLUGIN / "channel_sources_v11214.py",
         PLUGIN / "manual_check_v11211.py",
+        PLUGIN / "channel_reconcile_v11215.py",
     ):
         ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     assert "GuangYaCorePipelineV11214Mixin" not in head
     assert "GuangYaCorePipelineFinalV11214Mixin" not in head
-    assert "GuangYaManualCheckV11211Mixin(GuangYaCorePipelineFinalV11214Mixin)" in MANUAL
+    assert "GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin)" in MANUAL
+    assert "GuangYaChannelReconcileV11215Mixin(GuangYaCorePipelineFinalV11214Mixin)" in RECONCILE
     assert "GuangYaCorePipelineFinalV11214Mixin(GuangYaCorePipelineV11214Mixin)" in FINAL
     assert "GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixin)" in CORE
 
@@ -345,7 +348,7 @@ def test_every_storage_path_reuses_guangya_target_and_no_moviepilot_downloader()
 
 
 def test_current_public_release_is_v11214_after_full_gate_passes():
-    assert 'plugin_version = "1.12.14"' in ENTRY
-    assert 'build_id = "20260905-r60"' in ENTRY
+    assert 'plugin_version = "1.12.15"' in ENTRY
+    assert 'build_id = "20260905-r61"' in ENTRY
     assert 'plugin_version = "1.12.14"' in CORE
     assert 'build_id = "20260905-r60"' in FINAL

@@ -13,7 +13,10 @@
 人工 force 只绕过“自动外部检索冷却”，不会绕过媒体身份、年份、质量、Episode Fence、
 reservation/source claim、迅雷跨季物理资源栅栏等安全边界。
 
-v1.12.14 在本层下方统一收口频道/观影四类来源、TV 官方别名召回与最终物理缺集栅栏；
+v1.12.15 候选在本层下方增加频道 7 天缓存的被动补偿触发：严格新事件若因首次游标、
+重启/bootstrap 等原因没有形成事件，只要缓存里已有真实可执行资源且订阅仍有未覆盖缺口，
+下一次频道 tick 仍会进入 channel_event；该补偿不会访问 GYING，也不会放宽最终写盘门禁。
+v1.12.14 继续统一频道/观影四类来源、TV 官方别名召回与最终物理缺集栅栏；
 其下继续保留 v1.12.13 迅雷已入库集、v1.12.12 GYING 别名和 v1.12.10 跨季栅栏。
 """
 from __future__ import annotations
@@ -22,14 +25,14 @@ from typing import Any, Dict, Iterable, List
 
 from . import legacy as _legacy_module
 from .channel_sources_v11214 import install_channel_source_matrix_v11214
-from .core_pipeline_final_v11214 import GuangYaCorePipelineFinalV11214Mixin
+from .channel_reconcile_v11215 import GuangYaChannelReconcileV11215Mixin
 
 # __init__.py 已安装 v1.9.0 光鸭/Magnet/ED2K ResourceGroup；这里在它外层补频道 Xunlei。
 # installer 自带热重载幂等标记，因此重复 import 不会叠加 wrapper。
 install_channel_source_matrix_v11214(_legacy_module)
 
 
-class GuangYaManualCheckV11211Mixin(GuangYaCorePipelineFinalV11214Mixin):
+class GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin):
     """把 /gycheck 显式转换成频道优先、剩余缺口强制完整来源链。"""
 
     plugin_version = "1.12.11"
