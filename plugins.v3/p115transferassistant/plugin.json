@@ -1,0 +1,9 @@
+{
+  "name": "115转存助手",
+  "description": "115分享、Magnet、ED2K 三来源转存助手，支持资源规范化、任务去重、状态恢复和安全文件选择。",
+  "version": "0.1.0",
+  "icon": "",
+  "author": "liheng-lk",
+  "level": 1,
+  "system_version": ">=3.0.0"
+}
