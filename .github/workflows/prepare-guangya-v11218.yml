@@ -32,7 +32,6 @@ jobs:
               '待落盘验证改用 get_item 纯只读查询，不再因复核本身创建目录。来源优先级、媒体身份、权威缺集和物理文件硬栅栏全部保持。'
           )
 
-          # Runtime entry: public truth only; historical layer paragraphs stay intact.
           entry_path = plugin / '__init__.py'
           text = entry_path.read_text(encoding='utf-8')
           text = text.replace('"""光鸭转存助手 v1.12.17 运行入口。', '"""光鸭转存助手 v1.12.18 运行入口。', 1)
@@ -47,7 +46,6 @@ jobs:
           text = text.replace(old_runtime, new_runtime, 1)
           entry_path.write_text(text, encoding='utf-8')
 
-          # Local plugin manifest.
           local_path = plugin / 'plugin.json'
           local = json.loads(local_path.read_text(encoding='utf-8'))
           local['version'] = new_v
@@ -60,7 +58,6 @@ jobs:
           )
           local_path.write_text(json.dumps(local, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
-          # Public package index, preserving all other plugins and historical versions.
           package_path = root / 'package.v3.json'
           package = json.loads(package_path.read_text(encoding='utf-8'))
           row = package['GuangYaTransferAssistant']
@@ -75,7 +72,6 @@ jobs:
           row['history'] = {'v1.12.18': release_note, **history}
           package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
-          # README release section.
           readme_path = plugin / 'README.md'
           readme = readme_path.read_text(encoding='utf-8')
           section = '''## v1.12.18 - 空目录生命周期保护\n\n- Magnet/ED2K 在第一次创建目标目录前完成 `resolve_res`，解析/筛选失败不会留下媒体空目录；预解析结果直接复用，不额外重复请求。\n- 迅雷、光鸭分享、Magnet/ED2K 只追踪“本次调用前明确不存在”的目录；失败且没有服务端 taskId 时，再次读取远端并确认目录仍为空才允许回收。\n- 已有目录、非空目录、目录读取失败、服务端 taskId、pending verification、`/` 与配置保存根目录一律 fail-closed 保留，避免异步迟到文件竞态和误删。\n- 待落盘 `_verify_restored_items` 改用 `get_item()` 只读查询；目标目录不存在只报告“尚未落盘”，验证动作自身不再创建目录。\n- 不改变 v1.12.17 的结构化资源召回，也不改变媒体身份、年份/Season、权威缺集、reservation/source claim、不可分割物理文件门禁及 `观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K` 优先级。\n\n'''
@@ -98,12 +94,11 @@ jobs:
                   original = line
                   public_context = any(token in line for token in (
                       'ENTRY', 'entry', 'PLUGIN_JSON', 'plugin["version"]', 'local["version"]',
-                      'PACKAGE[', 'package[', 'GuangYaTransferAssistant',
+                      'LOCAL["version"]', 'PACKAGE[', 'package[', 'GuangYaTransferAssistant',
                   ))
                   if public_context:
                       line = line.replace('plugin_version = "1.12.17"', 'plugin_version = "1.12.18"')
                       line = line.replace('build_id = "20260906-r64"', 'build_id = "20260906-r65"')
-                      # JSON/current-package equality literals on the same line.
                       if 'version' in line:
                           line = line.replace('"1.12.17"', '"1.12.18"')
                   if line != original:
@@ -112,7 +107,19 @@ jobs:
               if changed:
                   path.write_text(''.join(lines), encoding='utf-8')
 
-          # Cross-plugin contract explicitly pins the currently released transfer assistant.
+          # Two legacy contracts read the final entry/local metadata through generic variable names.
+          episode_compat = root / 'tests/v3/guangyatransferassistant/test_episode_compat_v171.py'
+          src = episode_compat.read_text(encoding='utf-8')
+          src = src.replace('assert \'build_id = "20260906-r64"\' in text',
+                            'assert \'build_id = "20260906-r65"\' in text')
+          episode_compat.write_text(src, encoding='utf-8')
+
+          release_1125 = root / 'tests/v3/guangyatransferassistant/test_release_v1125_marker.py'
+          src = release_1125.read_text(encoding='utf-8')
+          src = src.replace('assert LOCAL["version"] == "1.12.17"',
+                            'assert LOCAL["version"] == "1.12.18"')
+          release_1125.write_text(src, encoding='utf-8')
+
           shuk = root / 'tests/v3/shukguangyadisk/test_release_v370.py'
           if shuk.exists():
               src = shuk.read_text(encoding='utf-8')
