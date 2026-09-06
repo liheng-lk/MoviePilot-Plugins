@@ -12,12 +12,12 @@ PLUGIN_JSON = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
 PACKAGE = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
 
 
-def test_v11216_public_release_truth_is_consistent():
-    assert 'plugin_version = "1.12.16"' in ENTRY
-    assert 'build_id = "20260906-r63"' in ENTRY
-    assert PLUGIN_JSON["version"] == "1.12.16"
-    assert PACKAGE["GuangYaTransferAssistant"]["version"] == "1.12.16"
-    assert "v1.12.16" in PACKAGE["GuangYaTransferAssistant"]["history"]
+def test_v11217_public_release_truth_promotes_v11216_history():
+    assert 'plugin_version = "1.12.17"' in ENTRY
+    assert 'build_id = "20260906-r64"' in ENTRY
+    assert PLUGIN_JSON["version"] == "1.12.17"
+    assert PACKAGE["GuangYaTransferAssistant"]["version"] == "1.12.17"
+    assert "v1.12.17" in PACKAGE["GuangYaTransferAssistant"]["history"]
 
 
 def test_v11216_release_keeps_strict_bilingual_bridge_not_fuzzy_identity():
