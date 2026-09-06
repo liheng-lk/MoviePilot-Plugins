@@ -193,8 +193,8 @@ def test_v11210_source_parses_and_is_between_movie_identity_and_resource_gate():
     ast.parse(alias, filename=str(PLUGIN / "gying_alias_query_v11212.py"))
     assert "from .movie_bilingual_identity_v11216 import GuangYaMovieBilingualIdentityV11216Mixin" in movie
     assert "class GuangYaMovieIdentityV1129Mixin(GuangYaMovieBilingualIdentityV11216Mixin):" in movie
-    assert "from .manual_check_v11211 import GuangYaManualCheckV11211Mixin" in bilingual
-    assert "class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaManualCheckV11211Mixin):" in bilingual
+    assert "from .search_recall_v11217 import GuangYaSearchRecallV11217Mixin" in bilingual
+    assert "class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaSearchRecallV11217Mixin):" in bilingual
     assert "class GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin):" in manual
     assert "class GuangYaChannelReconcileV11215Mixin(GuangYaCorePipelineFinalV11214Mixin):" in reconcile
     assert "class GuangYaCorePipelineFinalV11214Mixin(GuangYaCorePipelineV11214Mixin):" in core_final

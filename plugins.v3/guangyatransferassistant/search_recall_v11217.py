@@ -68,10 +68,15 @@ def _clean_release_text_v11217(value: Any) -> str:
     text = html.unescape(str(value or "")).replace("\\", "/").strip()
     if not text:
         return ""
-    try:
-        text = PurePosixPath(text).name or text
-    except Exception:
-        pass
+    is_media_path = bool(
+        text.startswith("/")
+        or re.search(r"/[^/]+\.(?:mkv|mp4|ts|m2ts|avi|mov|wmv|flv|webm|iso|m4v|rmvb|mpg|mpeg)$", text, re.I)
+    )
+    if is_media_path:
+        try:
+            text = PurePosixPath(text).name or text
+        except Exception:
+            pass
     text = re.sub(r"\.(?:mkv|mp4|ts|m2ts|avi|mov|wmv|flv|webm|iso|m4v|rmvb|mpg|mpeg)$", "", text, flags=re.I)
     text = re.sub(r"^[\s🎬🎞🎥📺⭐🌈🔥✨💥✅]+", "", text)
     return text.strip(" \t\r\n._-—|/\\")

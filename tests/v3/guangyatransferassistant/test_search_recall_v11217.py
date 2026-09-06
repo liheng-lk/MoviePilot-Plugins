@@ -396,7 +396,6 @@ def test_source_priority_and_final_hard_fence_files_are_not_reimplemented_here()
     text = SOURCE.read_text(encoding="utf-8")
     assert "cloudcollection/v1/create_task" not in text
     assert "rapid_transfer" not in text
-    assert "download" not in text.lower() or "download" in text.lower()  # no downloader implementation assertion below
     assert "DownloadChain" not in text
     assert "_xunlei_json_identity_matches_v1123" not in text
     assert "_resolve_offline_source" not in text
