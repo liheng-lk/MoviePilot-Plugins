@@ -124,6 +124,61 @@ replace_once(
     "shuk cross-plugin transfer assistant floor",
 )
 
+# Run 3 proved the remaining GuangYa V3 failures are exclusively stale current
+# public-version/build assertions. Scope this migration to the exact failing files
+# from that run; do not touch v1.12.17 feature/history contracts elsewhere.
+v3_current_contract_files = {
+    "test_airing_scheduler_v1120.py",
+    "test_airing_weekly_v1121.py",
+    "test_channel_reconcile_v11215.py",
+    "test_command_bridge_v1128.py",
+    "test_config_providers_v192.py",
+    "test_content_resilience_v1105.py",
+    "test_core_pipeline_v11214.py",
+    "test_dispatch_policy_v1125.py",
+    "test_episode_compat_v171.py",
+    "test_fast_recall_v1126.py",
+    "test_gying_auth_v1107.py",
+    "test_gying_autologin_v1109.py",
+    "test_gying_hardening_v193.py",
+    "test_gying_observability_v1104.py",
+    "test_gying_pansou_v1110.py",
+    "test_gying_pow_v1111.py",
+    "test_gying_transport_v1108.py",
+    "test_gying_xunlei_recall_v1125.py",
+    "test_mp_sdk_compat_v195.py",
+    "test_multisource_v180_contract.py",
+    "test_page_perf_v1123.py",
+    "test_plugin_contract.py",
+    "test_release_v1109_marker.py",
+    "test_release_v1111_marker.py",
+    "test_release_v11213_marker.py",
+    "test_release_v11216_marker.py",
+    "test_release_v11217_final.py",
+    "test_release_v11217_marker.py",
+    "test_release_v1125_marker.py",
+    "test_resource_gate_v1127.py",
+    "test_resource_planner_v190_contract.py",
+    "test_status_ui_v191.py",
+    "test_subscribe_contract_v196.py",
+    "test_v1100_ui_runtime.py",
+    "test_v180_metadata_contract.py",
+    "test_viewing_dispatch_v1113.py",
+    "test_xunlei_flash_v193.py",
+    "test_xunlei_hardening_v193.py",
+}
+v3_contract_root = ROOT / "tests" / "v3" / "guangyatransferassistant"
+for filename in sorted(v3_current_contract_files):
+    path = v3_contract_root / filename
+    if not path.exists():
+        raise SystemExit(f"missing V3 current-release contract: {path}")
+    text = path.read_text(encoding="utf-8")
+    # Exact quoted bare values are current release truth in this curated failure
+    # set. Historical keys use the prefixed form "v1.12.17" and therefore remain.
+    text = text.replace('"1.12.17"', '"1.12.18"')
+    text = text.replace('"20260906-r64"', '"20260906-r65"')
+    path.write_text(text, encoding="utf-8")
+
 # README release note immediately before v1.12.17.
 readme = PLUGIN / "README.md"
 text = readme.read_text(encoding="utf-8")
