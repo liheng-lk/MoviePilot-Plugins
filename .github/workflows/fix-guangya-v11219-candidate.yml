@@ -30,6 +30,10 @@ jobs:
           new = 'grace = max(0, int(getattr(self, "_empty_dir_share_grace_v11219", 300)))'
           assert text.count(old) == 1
           text = text.replace(old, new, 1)
+          old = '''            record = self._mark_terminal_v11219(str(key), record)\n            if now - float(record.get("terminal_seen_at") or now) < grace:\n                continue'''
+          new = '''            record = self._mark_terminal_v11219(str(key), record)\n            terminal_seen_at = float(record.get("terminal_seen_at") or 0)\n            terminal_age = max(0.0, time.time() - terminal_seen_at)\n            if grace > 0 and terminal_age < grace:\n                continue'''
+          assert old in text
+          text = text.replace(old, new, 1)
           prod.write_text(text, encoding='utf-8')
 
           # 历史结构合同：验证新增 lease 包住旧 guard，而不是假设 movie identity 直接继承 guard。
