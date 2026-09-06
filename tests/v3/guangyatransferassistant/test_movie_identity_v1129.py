@@ -41,7 +41,7 @@ def _mixin_class(fake_media_chain):
         "MediaType": _MediaType,
         "MediaSource": _MediaSource,
         "GuangYaMovieBilingualIdentityV11216Mixin": _XunleiFenceBase,
-        "GuangYaEmptyDirGuardV11218Mixin": type("_EmptyDirGuardBase", (), {}),
+        "GuangYaEmptyDirLeaseV11219Mixin": type("_EmptyDirLeaseBase", (), {}),
         "GuangYaManualCheckV11211Mixin": _XunleiFenceBase,
     }
     exec(compile(module, str(PATCH), "exec"), ns)
@@ -120,7 +120,7 @@ def test_v1129_layer_parses_and_is_outer_than_tv_resource_gate():
     assert "from .movie_bilingual_identity_v11216 import GuangYaMovieBilingualIdentityV11216Mixin" in text
     assert "class GuangYaMovieIdentityV1129Mixin(" in text
     assert "GuangYaMovieBilingualIdentityV11216Mixin," in text
-    assert "GuangYaEmptyDirGuardV11218Mixin," in text
+    assert "GuangYaEmptyDirLeaseV11219Mixin," in text
     head = entry.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     assert head.index("GuangYaMovieIdentityV1129Mixin") < head.index("GuangYaResourceGateV1127Mixin")
 

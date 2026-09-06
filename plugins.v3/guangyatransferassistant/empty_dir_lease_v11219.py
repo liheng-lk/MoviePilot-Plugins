@@ -318,7 +318,7 @@ class GuangYaEmptyDirLeaseV11219Mixin(GuangYaEmptyDirGuardV11218Mixin):
             owner = str(record.get("owner") or "")
             terminal = bool(record.get("terminal_hint"))
             release_without_delete = False
-            grace = int(self._empty_dir_lease_grace_v11219 or 120)
+            grace = max(0, int(getattr(self, "_empty_dir_lease_grace_v11219", 120)))
 
             if kind == "offline":
                 source = dict(sources.get(owner) or {})
@@ -343,7 +343,7 @@ class GuangYaEmptyDirLeaseV11219Mixin(GuangYaEmptyDirGuardV11218Mixin):
                     # restore_share 已经经过 task_confirmed，随后 30 次目标可见性复核仍失败；
                     # 再给较长宽限期，之后仍 0 文件才回收。
                     terminal = True
-                    grace = int(self._empty_dir_share_grace_v11219 or 300)
+                    grace = max(0, int(getattr(self, "_empty_dir_share_grace_v11219", 300)))
                 elif status:
                     terminal = False
             elif kind == "xunlei":
@@ -356,7 +356,9 @@ class GuangYaEmptyDirLeaseV11219Mixin(GuangYaEmptyDirGuardV11218Mixin):
                 continue
 
             record = self._mark_terminal_v11219(str(key), record)
-            if now - float(record.get("terminal_seen_at") or now) < grace:
+            terminal_seen_at = float(record.get("terminal_seen_at") or 0)
+            terminal_age = max(0.0, time.time() - terminal_seen_at)
+            if grace > 0 and terminal_age < grace:
                 continue
             outcome = self._reclaim_lease_v11219(str(key), record)
             if outcome in {"removed", "missing", "occupied"}:

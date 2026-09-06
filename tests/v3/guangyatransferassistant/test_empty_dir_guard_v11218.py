@@ -195,9 +195,12 @@ class Probe(Guard):
 
 def test_runtime_chain_contains_v11218_without_removing_v11216_v11217():
     text = MOVIE.read_text(encoding="utf-8")
-    assert "from .empty_dir_guard_v11218 import GuangYaEmptyDirGuardV11218Mixin" in text
+    lease = (PLUGIN / "empty_dir_lease_v11219.py").read_text(encoding="utf-8")
+    assert "from .empty_dir_lease_v11219 import GuangYaEmptyDirLeaseV11219Mixin" in text
     assert "GuangYaMovieBilingualIdentityV11216Mixin," in text
-    assert "GuangYaEmptyDirGuardV11218Mixin," in text
+    assert "GuangYaEmptyDirLeaseV11219Mixin," in text
+    assert "class GuangYaEmptyDirLeaseV11219Mixin(GuangYaEmptyDirGuardV11218Mixin):" in lease
+    assert "from .empty_dir_guard_v11218 import GuangYaEmptyDirGuardV11218Mixin" in lease
     assert 'plugin_version = "1.12.18"' in SOURCE.read_text(encoding="utf-8")
 
 

@@ -182,4 +182,4 @@ def test_v1129_top_level_mro_position_is_preserved_via_nested_bridge():
     assert "from .movie_bilingual_identity_v11216 import GuangYaMovieBilingualIdentityV11216Mixin" in text
     assert "class GuangYaMovieIdentityV1129Mixin(" in text
     assert "GuangYaMovieBilingualIdentityV11216Mixin," in text
-    assert "GuangYaEmptyDirGuardV11218Mixin," in text
+    assert "GuangYaEmptyDirLeaseV11219Mixin," in text
