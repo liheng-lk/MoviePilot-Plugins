@@ -12,7 +12,8 @@ v1.10.3 修复 v1.10.0 重构时的方法名漂移：新版控制台与统一搜
 
 v1.12.19 开发阶段增加 Provider 性能、排序与并发状态收口：
 - GYING 继续单线程执行，避免节点健康/登录会话被并发放大；
-- 独立 Magnet/ED2K API 最多 4 路并发，但用 executor.map 按配置顺序收敛结果；
+- 独立 Magnet/ED2K API 单次搜索最多 4 路并发，并使用进程级 4 槽 BoundedSemaphore 约束多个订阅同时搜索的总并发；
+- executor.map 按配置顺序收敛结果，不让网络返回快慢改变候选先后语义；
 - 不再“全局先截断、外层再评分”，而是先汇总单源有界候选池、排序、按 identity 去重，最后截断；
 - 同一物理资源的重复候选不再默认“配置靠前者获胜”，而是保留排序更优的来源记录；
 - 自动分流已有订阅上下文时，canonical identity 已明确拒绝的候选在最终 limit 前淘汰，避免错误 Magnet 饿死合法 ED2K；
@@ -35,6 +36,7 @@ from .provider_sources_v192 import _dedupe_candidates, _find_links, _proxy_dict
 
 
 _PROVIDER_API_MAX_WORKERS_V11219 = 4
+_PROVIDER_API_GLOBAL_SEMAPHORE_V11219 = threading.BoundedSemaphore(_PROVIDER_API_MAX_WORKERS_V11219)
 _EXTERNAL_SOURCE_TIER_V11219 = {"magnet": 0, "ed2k": 1}
 _SOURCE_STORE_MUTATION_LOCK_V11219 = threading.RLock()
 
@@ -145,8 +147,6 @@ class GuangYaProviderReliabilityV1100Mixin:
         if lowered.startswith("x-api-key:"):
             headers["X-API-Key"] = raw.split(":", 1)[1].strip()
             return headers
-        # 大多数自建搜索 API 接受二者之一；同时携带可避免旧版本把裸 token 放进
-        # Authorization 而导致 401。响应和日志中从不回显 token。
         headers["X-API-Key"] = raw
         headers["Authorization"] = f"Bearer {raw}"
         return headers
@@ -209,7 +209,6 @@ class GuangYaProviderReliabilityV1100Mixin:
         for key, params in variants[:4]:
             request_url = url
             request_params = dict(params)
-            # 兼容直接把关键词写进 URL 的 API 模板。
             if any(marker in request_url for marker in ("{keyword}", "{query}", "{q}")):
                 encoded = quote(str(keyword or "").strip(), safe="")
                 request_url = request_url.replace("{keyword}", encoded).replace("{query}", encoded).replace("{q}", encoded)
@@ -229,7 +228,6 @@ class GuangYaProviderReliabilityV1100Mixin:
                     message = f"HTTP {status}"
                     attempts.append({"param": key, "status": status, "count": 0, "ok": False, "message": message})
                     last_error = message
-                    # 401/403 多半是认证问题，换查询参数没有意义。
                     if status in {401, 403}:
                         break
                     continue
@@ -271,14 +269,15 @@ class GuangYaProviderReliabilityV1100Mixin:
         }
 
     def _parallel_api_provider_search_v11219(self, keyword: str):
-        """只并发彼此独立的 API Provider；返回顺序仍与配置顺序一致。"""
+        """只并发彼此独立的 API Provider；单次与跨订阅总并发都不超过 4。"""
         definitions = self._parse_provider_defs()
         if not definitions:
             return [], [], 0
 
         def worker(item: Dict[str, str]):
             try:
-                rows, state = self._search_api_provider(item, keyword)
+                with _PROVIDER_API_GLOBAL_SEMAPHORE_V11219:
+                    rows, state = self._search_api_provider(item, keyword)
                 return list(rows or []), dict(state or {})
             except Exception as err:
                 return [], {
@@ -342,8 +341,6 @@ class GuangYaProviderReliabilityV1100Mixin:
                     eligible = bool(match_fn(subscribe, row))
                 except Exception:
                     eligible = False
-                # 这是自动分流已有明确媒体上下文时的预截断硬过滤；最终 dispatch 仍会再次校验。
-                # 手工关键词搜索 subscribe=None，不会在这里丢弃跨媒体浏览结果。
                 if not eligible:
                     continue
             if eligible and subscribe is not None and not is_movie and uncovered and callable(episode_hint_fn):
@@ -383,11 +380,9 @@ class GuangYaProviderReliabilityV1100Mixin:
             ranked.append((sort_key, enriched))
 
         ranked.sort(key=lambda item: item[0])
-        # _dedupe_candidates 保留第一次出现；排序后第一次就是同 identity 中的最佳候选。
         return _dedupe_candidates([row for _key, row in ranked])
 
     def _search_external_providers(self, keyword: str) -> Dict[str, Any]:
-        """自动分流搜索：完整有界池 -> 身份硬过滤 -> 排序 -> identity 去重 -> 最终 limit。"""
         keyword = str(keyword or "").strip()
         if not keyword:
             return {"success": False, "message": "keyword 不能为空", "data": [], "providers": []}
