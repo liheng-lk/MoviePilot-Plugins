@@ -18,6 +18,7 @@ v1.12.19 开发阶段增加 Provider 性能、排序与并发状态收口：
 - 同一物理资源的重复候选不再默认“配置靠前者获胜”，而是保留排序更优的来源记录；
 - 自动分流已有订阅上下文时，canonical identity 已明确拒绝的候选在最终 limit 前淘汰，避免错误 Magnet 饿死合法 ED2K；
 - source store 的 upsert/update/delete 在最终运行时使用同一进程级 RLock，避免多个离线 worker 的 read-modify-write 相互覆盖，也让终态质量学习只观察一次真实迁移；
+- 来源失败学习采用高置信归责：真实 task 最终 status=5、resolve 后规则不匹配或无媒体文件才扣来源分；订阅删除、网络/API/目标路径等基础设施失败不污染 provider 质量；
 - 任一 API worker 的意外异常只降级该来源，不允许拖垮其它 Provider。
 """
 
@@ -111,6 +112,44 @@ class GuangYaProviderReliabilityV1100Mixin:
         """删除与 upsert/update 共用一把锁，防止删除被并发旧快照复活。"""
         with _SOURCE_STORE_MUTATION_LOCK_V11219:
             return super()._delete_source(source_id)
+
+    @staticmethod
+    def _candidate_failure_is_source_attributable_v11219(row: Dict[str, Any]) -> bool:
+        """只让高置信“资源自身失败”进入学习，基础设施/管理故障保持中性。"""
+        row = dict(row or {})
+        error = str(row.get("last_error") or "").strip()
+        task_id = str(row.get("task_id") or "").strip()
+        try:
+            task_status = int(row.get("task_status"))
+        except (TypeError, ValueError):
+            task_status = -1
+
+        # 已经创建服务端任务且光鸭明确返回 status=5，说明该真实资源任务最终失败/部分完成。
+        if task_id and task_status == 5:
+            return True
+        # resolve 后拿到真实 payload 才产生的两类资源质量事实。
+        if error.startswith("订阅规则不匹配："):
+            return True
+        if "未发现可选的视频或字幕文件" in error:
+            return True
+        return False
+
+    def _record_candidate_quality_outcome_v11219(self, row: Dict[str, Any], success: bool) -> None:
+        """成功总是学习；失败仅在可归责于真实资源时学习。"""
+        if bool(success):
+            return super()._record_candidate_quality_outcome_v11219(row, True)
+        if self._candidate_failure_is_source_attributable_v11219(row):
+            return super()._record_candidate_quality_outcome_v11219(row, False)
+        try:
+            self._plugin_log(
+                "DEBUG",
+                "【光鸭转存助手】【候选学习v1.12.19】跳过非来源责任失败 source=%s error=%s",
+                str((row or {}).get("id") or "")[:80],
+                str((row or {}).get("last_error") or "")[:240],
+            )
+        except Exception:
+            pass
+        return None
 
     def _parse_provider_defs(self) -> List[Dict[str, str]]:
         """兼容 v1.10 控制台命名，复用 v1.9.2 唯一的 Provider 配置解析入口。"""
