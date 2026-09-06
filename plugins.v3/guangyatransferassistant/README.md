@@ -1,3 +1,13 @@
+## v1.12.18 - 候选排序与频道来源质量
+
+- 资源召回仍由 v1.12.17 负责；本版只优化同阶段候选的尝试顺序，不扩大搜索范围。
+- 频道候选以 canonical identity/结构化标题分为主；电视剧明确覆盖当前缺集且额外 spillover 更少者优先，缓存新鲜度只作为同分项。
+- Telegram 来源质量只从现有 SourceStore 的真实终态派生：`completed` 计成功，`failed`/`needs_review` 计失败，`new`/`queued`/`waiting` 不计入。
+- 来源质量采用 Beta(2,2) 平滑与样本权重，修正值限制在 ±18；历史样本少的频道不会因为一次成功或失败长期霸榜/垫底。
+- 迅雷候选优先明确覆盖当前 missing 且夹带额外集更少的分享，再比较 canonical identity；提取码完整只作很小的同分信号。
+- 固定来源优先级保持：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K；Magnet/ED2K 仍只走光鸭原生 `cloudcollection`。
+- v1.12.13~v1.12.16 的真实 payload 身份、权威缺集、reservation/source claim 与不可分割物理文件最终硬栅栏全部保持。
+
 ## v1.12.17 - 结构化资源召回与频道定向搜索
 
 - GYING 使用订阅/TMDB 官方标题、英文名、原名生成最多 8 档有界查询，不再只依赖单一中文展示名。

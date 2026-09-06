@@ -103,14 +103,15 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "更新日历驱动的固定分流助手：频道/观影统一支持光鸭分享、迅雷分享、Magnet、ED2K。v1.12.17 增加结构化 release title 召回、官方别名多档 GYING 检索及 Telegram 频道 ?q= 定向搜索；无年份歧义别名需 MoviePilot canonical identity 复核，明确 TMDB/年份/季冲突和最终真实 payload/缺集/物理文件安全门禁不放宽。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+    "description": "更新日历驱动的固定分流助手。v1.12.18 在 v1.12.17 结构化宽召回基础上新增可解释候选排序：canonical identity 为主，TV 优先当前缺集精确覆盖且少夹带的资源；Telegram 频道质量只从真实 completed/failed/needs_review 终态派生并做 Beta 平滑，迅雷候选同样优先当前缺集且 spillover 更少的分享。仅改变同阶段尝试顺序，不改变 5 分钟频道 Push 被动语义、频道游标、最终媒体/缺集/物理文件硬栅栏；来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
     "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,PanSou,CloakBrowser,自动登录,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流,质量过滤,字幕过滤,检索冷却,更新日历,每小时补漏,10分钟追更,快速追更,资源门禁,季发行年份,合法别名,拆包恢复,needs_review,TMDB官方别名,英文原名检索,迅雷防重复,已入库硬栅栏,最终导入过滤,四源统一,缺集硬栅栏,频道补偿,缓存补偿,新增订阅预热,频道历史回溯",
-    "version": "1.12.17",
+    "version": "1.12.18",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v1.12.18": "候选排序与频道来源质量：在 v1.12.17 宽召回之后按 canonical identity、当前缺集覆盖、额外集 spillover 与真实 Telegram 终态质量对同阶段候选排序；频道质量只从 completed / failed / needs_review 派生并采用 Beta 平滑，少量样本不会压过媒体身份。迅雷优先当前缺集且夹带更少的分享，提取码只作同分信号。只改变尝试顺序，不改变观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K，v1.12.13~v1.12.16 最终真实 payload、权威缺集、reservation/source claim 与物理文件硬栅栏保持。",
       "v1.12.17": "重构资源/频道召回：参考 MoviePilot 结构化资源匹配与同作品消歧，GYING 最多生成 8 档 canonical query；主动检查在频道 cache 未命中时对配置频道执行最多 4 档 Telegram ?q= 定向搜索并有界并发，结果只补 7 天 cache/index、不推进 channel_cursors、不伪造频道新事件；READNFO/语言/清晰度/来源/编码/发布组等仅作为召回噪声剥离，明确 TMDB/年份/季冲突仍拒绝，无年份第二别名必须经 MoviePilot 识别为同一 canonical identity；5 分钟 channel_event 继续被动，v1.12.13~v1.12.16 的已入库防重、真实 payload 身份、reservation/source claim 与不可分割物理文件最终栅栏完全保留。",
       "v1.12.16": "修复《荣光与暗影》类电影双语真实资源被迅雷身份门禁误杀：仅在观影 discovery 已命中订阅、同一真实分享顶层同时包含订阅标题与第二语言标题、资源年份精确一致且真实视频文件精确命中第二语言标题时救回；PASS_CODE_ERROR/分享删除继续失败，错误电影/错误年份/纯外文无同分享桥接/TV 继续硬拒绝，不引入编辑距离、拼音或包含式模糊匹配；来源优先级与 v1.12.15 频道缓存、新订阅预热、v1.12.14 权威缺集/物理文件安全规则不变。",
       "v1.12.15": "修复“频道有资源但没有转存”的两类触发空窗。其一，严格 Telegram 游标继续只判定本轮新增消息，但 5 分钟频道 Push 会同时被动复核 7 天缓存；首次游标 bootstrap、插件重启或一次性事件未形成时，只有活跃固定分流订阅仍有真实未覆盖缺口且缓存实际含光鸭分享、迅雷、Magnet 或 ED2K，才补偿进入 channel_event。其二，新增订阅不再先读旧缓存再补一次增量刷新，而是固定先强刷全部配置频道、等待单飞刷新完成、写入 7 天 cache 后再匹配；若仍未命中且频道健康，则按配置 history_pages 有界回溯当前 Telegram cursor 之前的历史页，复用既有频道解析器并只补 cache，不修改 channel_cursors、不生成 _channel_new_entries，也不把历史资源伪装成新消息。频道失败/退避时跳过额外历史回溯，并明确区分‘本地缓存未命中’与‘频道没有资源’。title-only、stale、集号不覆盖、已入库/已完成/reservation/其它 source claim 已覆盖的订阅均不触发；全链不访问 GYING、不消耗外部检索冷却，最终继续服从 v1.12.14 的真实 payload 身份门禁、MoviePilot 权威缺口与不可分割物理文件 episodes ⊆ allowed missing。来源优先级和光鸭原生 cloudcollection 路线不变。",

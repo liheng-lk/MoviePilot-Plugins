@@ -50,7 +50,7 @@ class GuangYaCandidateRankingV11218Mixin(GuangYaSearchRecallV11217Mixin):
     """在 v1.12.17 宽召回之后进行保守、可解释的候选排序。"""
 
     plugin_version = "1.12.18"
-    build_id = "20260906-r65-preview"
+    build_id = "20260906-r65"
     _candidate_rank_log_interval_v11218 = 5 * 60
 
     def init_plugin(self, config: dict = None) -> None:

@@ -1,4 +1,4 @@
-"""光鸭转存助手 v1.12.17 运行入口。
+"""光鸭转存助手 v1.12.18 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
@@ -24,6 +24,7 @@ v1.12.12 修复 GYING 前置搜索未使用精确 TMDB 官方别名的问题：�
 v1.12.13 修复媒体库已有剧集仍被迅雷秒传重复导入：TV 迅雷硬目标改为媒体库 missing 与成功事实/订阅 missing 的交集，并在 JSON batch import 前逐视频二次过滤；跨边界多集文件整文件拒绝，媒体库缺集事实读取失败时跳过迅雷但继续后续来源。
 v1.12.14 统一核心资源链：频道/观影均支持光鸭分享、迅雷分享、Magnet、ED2K；TV/动漫按精确 TMDB 官方标题补召回；所有 TV 最终写盘收紧到 library missing ∩ logical/fact missing - reservation - other source claim，并对光鸭分享、迅雷、Magnet、ED2K 统一执行不可分割物理文件 episodes ⊆ allowed missing 与实际 payload 身份门禁。
 v1.12.17 重构资源召回：参考 MoviePilot 的结构化 release title + canonical identity 消歧，以及 Telegram/PanSou 的频道关键词定向搜索；GYING 最多生成 8 档官方别名检索词，主动检查在频道缓存未命中时对配置频道执行最多 4 档 ?q= 定向搜索并有界并发；READNFO/语言/清晰度/来源/编码/发布组等只在召回阶段作为噪声剥离，明确 TMDB/年份/季冲突仍硬拒绝，无年份第二别名必须由 MoviePilot 识别为同一 canonical identity；定向搜索只补既有 7 天 cache/index，不推进 channel_cursors、不伪造新事件，5 分钟 channel_event 仍完全被动；v1.12.13~v1.12.16 的真实 payload 身份、权威缺集、reservation/source claim 与不可分割物理文件最终门禁全部保持。
+v1.12.18 候选排序与来源质量：同阶段候选以 canonical identity 为主，TV 当前缺集精确覆盖优先，Telegram 频道只按真实 completed/failed/needs_review 终态做 Beta 平滑质量修正；迅雷分享减少 spillover 优先；仅调整尝试顺序，固定来源优先级与最终写盘硬栅栏全部保持。
 v1.12.16 修复电影双语真实资源被身份门禁误杀：仅在观影 discovery 已命中订阅、真实分享顶层同时包含订阅标题与第二语言标题、年份精确一致且真实视频文件精确命中该第二语言标题时救回；错误电影、错误年份、纯外文无同分享桥接、电视剧仍硬拒绝，不引入模糊匹配。
 v1.12.15 修复频道已有资源但未触发转存：既有订阅在严格 Telegram 游标 bootstrap、插件重启或一次性事件未形成时由 7 天缓存补偿；新增订阅固定先强刷全部配置频道、写入缓存后再匹配，若仍未命中且频道健康则按 history_pages 有界回溯当前游标之前的历史页，只补 cache、不修改 channel_cursors、不伪造新事件；所有频道路径均不主动访问 GYING、不消耗外部检索冷却，v1.12.14 的媒体身份、权威缺集与物理文件硬栅栏全部保持。
 
@@ -144,8 +145,8 @@ class GuangYaTransferAssistant(
 ):
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
 
-    plugin_version = "1.12.17"
-    build_id = "20260906-r64"
+    plugin_version = "1.12.18"
+    build_id = "20260906-r65"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
