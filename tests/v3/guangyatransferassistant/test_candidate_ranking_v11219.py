@@ -18,6 +18,7 @@ def _helper_namespace():
     tree = ast.parse(text, filename=str(GUARD))
     wanted = {
         "_nonnegative_int_v11219",
+        "_nonnegative_float_v11219",
         "candidate_quality_score_v11219",
         "candidate_rank_key_v11219",
     }
@@ -61,6 +62,24 @@ def test_quality_score_is_neutral_without_samples_and_bounded_with_outcomes():
     assert score({"success": 0, "failure": 8}) < 0
     assert -100 <= score({"success": 999999, "failure": 0}) <= 100
     assert -100 <= score({"success": 0, "failure": 999999}) <= 100
+
+
+def test_dirty_quality_timestamps_fail_closed_to_zero():
+    safe_float = _helper_namespace()["_nonnegative_float_v11219"]
+    assert safe_float("broken") == 0.0
+    assert safe_float(-123) == 0.0
+    assert safe_float("12.5") == 12.5
+    store = _last_method("_candidate_quality_store_v11219", "_candidate_quality_snapshot_v11219")
+    assert '_nonnegative_float_v11219(value.get("updated_at"))' in store
+    assert '_nonnegative_float_v11219(raw.get("updated_at"))' in store
+
+
+def test_gying_search_and_viewing_auto_terminal_history_share_one_quality_key():
+    method = _last_method("_candidate_quality_key_v11219", "_candidate_quality_store_v11219")
+    assert 'origin_key == "viewing_auto"' in method
+    assert 'provider = source_label or "GYING"' in method
+    assert 'if provider in {"viewing", "gying"}:' in method
+    assert 'provider = "gying"' in method
 
 
 def test_fixed_source_tier_cannot_be_overturned_by_learning_or_coverage():
