@@ -1,0 +1,122 @@
+name: Prepare GuangYa v1.12.19
+on:
+  push:
+    branches: [fix/guangya-v1.12.19-persistent-empty-dir-lease]
+    paths: [.github/workflows/prepare-guangya-v11219.yml]
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/guangya-v1.12.19-persistent-empty-dir-lease
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply release metadata only
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          plugin = Path('plugins.v3/guangyatransferassistant')
+          entry = plugin / '__init__.py'
+          text = entry.read_text(encoding='utf-8')
+          assert text.startswith('"""光鸭转存助手 v1.12.18 运行入口。')
+          text = text.replace('"""光鸭转存助手 v1.12.18 运行入口。', '"""光鸭转存助手 v1.12.19 运行入口。', 1)
+          marker = 'v1.12.18 修复失败转存/纯验证留下空目录：'
+          assert marker in text and 'v1.12.19 持久空目录租约' not in text
+          note = (
+              'v1.12.19 持久空目录租约：在 v1.12.18 同步保护之上，把 cloudcollection、光鸭分享和迅雷异步任务本轮新建目录的事实持久化；'
+              '任务终态失败或确认 0 文件后，分别经过 120/300 秒可见性宽限并重新递归读取远端目录树，仅回收仍为空且无其它活跃 lease 覆盖的新建子树；'
+              '插件重启后继续复核。已有目录、任意非空目录、事实未知、人工 cancelled、根目录和配置保存根全部 fail-closed 保留；检索、媒体身份、权威缺集、Episode Fence 与来源优先级不变。\n'
+          )
+          text = text.replace(marker, note + marker, 1)
+          old = '    plugin_version = "1.12.18"\n    build_id = "20260906-r65"'
+          new = '    plugin_version = "1.12.19"\n    build_id = "20260906-r66"'
+          assert text.count(old) == 1
+          text = text.replace(old, new, 1)
+          entry.write_text(text, encoding='utf-8')
+
+          local_path = plugin / 'plugin.json'
+          local = json.loads(local_path.read_text(encoding='utf-8'))
+          assert local['version'] == '1.12.18'
+          local['version'] = '1.12.19'
+          local['description'] = (
+              '更新日历驱动的固定分流助手。v1.12.19 在 v1.12.18 空目录同步保护之上增加持久异步目录租约：'
+              'cloudcollection、光鸭分享与迅雷任务只记录本轮写入前明确不存在的目录；终态失败或确认 0 文件后经过可见性宽限，'
+              '再次递归读取远端目录树，仅回收仍为空且无其它活跃任务覆盖的新建子树，插件重启后仍继续复核。'
+              '已有/非空/事实未知/人工忽略/根目录/配置保存根全部 fail-closed 保留。'
+              'v1.12.17 结构化召回、真实媒体身份、年份/季、library missing、reservation/source claim、不可分割物理文件门禁保持；'
+              '来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。'
+          )
+          local_path.write_text(json.dumps(local, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          package_path = Path('package.v3.json')
+          package = json.loads(package_path.read_text(encoding='utf-8'))
+          row = package['GuangYaTransferAssistant']
+          assert row['version'] == '1.12.18'
+          row['version'] = '1.12.19'
+          row['description'] = local['description']
+          history = dict(row.get('history') or {})
+          assert 'v1.12.19' not in history
+          new_history = {
+              'v1.12.19': '补齐异步任务空目录生命周期：在 v1.12.18 同步 guard 上持久化只属于本次写入的新建目录 lease，覆盖 cloudcollection taskId、光鸭分享 pending verification、迅雷 taskId 失败与插件重启；终态失败/0 文件完成经 120s 或 share 300s 宽限后重新递归读取远端，仅回收仍为空且无其它活跃 lease 覆盖的目录树。已有、非空、事实未知、cancelled、根目录和保存根不删；资源检索、媒体身份、缺集、Episode Fence、来源优先级不变。',
+          }
+          new_history.update(history)
+          row['history'] = new_history
+          package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          readme_path = plugin / 'README.md'
+          readme = readme_path.read_text(encoding='utf-8')
+          assert readme.startswith('## v1.12.18 - 空目录生命周期保护')
+          section = '''## v1.12.19 - 异步空目录持久租约\n\n- v1.12.18 继续负责同步失败即时回收；v1.12.19 把“本次写入前明确不存在”的目录持久化为异步 lease，覆盖 Magnet/ED2K cloudcollection、光鸭分享 pending verification、迅雷 taskId 失败。\n- task/source/job 进入明确终态后不会立刻删除：普通任务等待 120 秒、光鸭分享 verifying 等待 300 秒，再重新递归读取整棵远端目录树。\n- 任意真实文件存在立即保护目录；目录读取/列表事实未知 fail-closed；有其它活跃 lease 与路径重叠时不清理。只有确认整棵新建子树仍为 0 文件才最深层优先回收。\n- lease 写入插件持久数据，插件重启后仍继续终态复核；已有目录、`/`、配置保存根和人工 cancelled 不进入危险删除路径。\n- 不改变 v1.12.17 资源召回，也不改变媒体身份、年份/Season、library missing、reservation/source claim、Episode Fence、不可分割物理文件门禁及 `观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K`。\n\n'''
+          readme_path.write_text(section + readme, encoding='utf-8')
+          PY
+      - name: Python syntax
+        run: |
+          python -m compileall -q plugins.v2 plugins.v3
+          find plugins.v2 plugins.v3 -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v2 plugins.v3 -type f -name '*.pyc' -delete
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: V3 plugin contract tests
+        run: |
+          python tests/v3/dailynewdrama/test_plugin_contract.py
+          python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          python tests/v3/shukguangyadisk/run_contract_tests.py
+          python tests/v3/guangyatransferassistant/run_contract_tests.py
+      - name: V3 dependency manifests
+        run: |
+          test -z "$(find plugins.v3 -type f -name 'requirements.txt' -print)"
+          python - <<'PY'
+          from pathlib import Path
+          import tomllib
+          for path in Path('plugins.v3').glob('*/pyproject.toml'):
+              with path.open('rb') as f:
+                  project = tomllib.load(f)['project']
+              assert project.get('dynamic') == ['version'], path
+              assert project.get('requires-python') == '>=3.12', path
+          shuk = Path('plugins.v3/shukguangyadisk')
+          assert not (shuk / 'pyproject.toml').exists()
+          assert not (shuk / 'requirements.txt').exists()
+          PY
+      - name: JSON indexes
+        run: python -c "import json; [json.load(open(p,encoding='utf-8')) for p in ['plugin.json','package.v2.json','package.v3.json']]"
+      - name: Cleanup generated test artifacts
+        run: |
+          find . -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find . -type f -name '*.pyc' -delete
+      - name: No generated Python artifacts
+        run: test -z "$(find . -type f -name '*.pyc' -o -type d -name '__pycache__')"
+      - name: Commit validated release only
+        run: |
+          rm -f .github/workflows/prepare-guangya-v11219.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.v3.json plugins.v3/guangyatransferassistant tests .github/workflows/prepare-guangya-v11219.yml
+          git diff --cached --quiet && exit 0
+          git commit -m 'release(guangya): finalize v1.12.19 persistent empty-dir lease'
+          git push origin HEAD:fix/guangya-v1.12.19-persistent-empty-dir-lease
