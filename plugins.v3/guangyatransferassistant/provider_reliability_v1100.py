@@ -14,6 +14,8 @@ v1.12.19 开发阶段增加 Provider 性能、排序与并发状态收口：
 - GYING 继续单线程执行，避免节点健康/登录会话被并发放大；
 - 独立 Magnet/ED2K API 单次搜索最多 4 路并发，并使用进程级 4 槽 BoundedSemaphore 约束多个订阅同时搜索的总并发；
 - executor.map 按配置顺序收敛结果，不让网络返回快慢改变候选先后语义；
+- URL 关键词模板只请求一次，不再因 q/keyword/kw/search 变体重复请求同一 URL；
+- 普通 API 记住最近 6 小时真正返回过资源的查询参数，下次优先尝试；缓存命中为空仍继续其它参数，不牺牲召回；
 - 不再“全局先截断、外层再评分”，而是先汇总单源有界候选池、排序、按 identity 去重，最后截断；
 - 同一物理资源的重复候选不再默认“配置靠前者获胜”，而是保留排序更优的来源记录；
 - 自动分流已有订阅上下文时，canonical identity 已明确拒绝的候选在最终 limit 前淘汰，避免错误 Magnet 饿死合法 ED2K；
@@ -26,6 +28,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Tuple
 from urllib.parse import quote
@@ -38,6 +41,10 @@ from .provider_sources_v192 import _dedupe_candidates, _find_links, _proxy_dict
 
 _PROVIDER_API_MAX_WORKERS_V11219 = 4
 _PROVIDER_API_GLOBAL_SEMAPHORE_V11219 = threading.BoundedSemaphore(_PROVIDER_API_MAX_WORKERS_V11219)
+_PROVIDER_QUERY_HINT_TTL_V11219 = 6 * 60 * 60
+_PROVIDER_QUERY_HINT_MAX_V11219 = 100
+_PROVIDER_QUERY_HINT_LOCK_V11219 = threading.RLock()
+_PROVIDER_QUERY_HINTS_V11219: Dict[str, Dict[str, Any]] = {}
 _EXTERNAL_SOURCE_TIER_V11219 = {"magnet": 0, "ed2k": 1}
 _SOURCE_STORE_MUTATION_LOCK_V11219 = threading.RLock()
 
@@ -124,10 +131,8 @@ class GuangYaProviderReliabilityV1100Mixin:
         except (TypeError, ValueError):
             task_status = -1
 
-        # 已经创建服务端任务且光鸭明确返回 status=5，说明该真实资源任务最终失败/部分完成。
         if task_id and task_status == 5:
             return True
-        # resolve 后拿到真实 payload 才产生的两类资源质量事实。
         if error.startswith("订阅规则不匹配："):
             return True
         if "未发现可选的视频或字幕文件" in error:
@@ -172,6 +177,59 @@ class GuangYaProviderReliabilityV1100Mixin:
         else:
             keys = ("q", "keyword", "kw", "search")
         return [(key, {key: keyword}) for key in keys]
+
+    @staticmethod
+    def _provider_query_hint_key_v11219(item: Dict[str, str]) -> str:
+        kind = str((item or {}).get("kind") or "json").strip().lower()
+        url = str((item or {}).get("url") or "").strip()
+        return f"{kind}|{url}"[:1000] if url else ""
+
+    def _provider_query_hint_v11219(self, item: Dict[str, str]) -> str:
+        key = self._provider_query_hint_key_v11219(item)
+        if not key:
+            return ""
+        now = time.monotonic()
+        with _PROVIDER_QUERY_HINT_LOCK_V11219:
+            cached = dict(_PROVIDER_QUERY_HINTS_V11219.get(key) or {})
+            try:
+                cached_at = float(cached.get("ts") or 0)
+            except (TypeError, ValueError):
+                cached_at = 0.0
+            if not cached or cached_at <= 0 or now - cached_at >= _PROVIDER_QUERY_HINT_TTL_V11219:
+                _PROVIDER_QUERY_HINTS_V11219.pop(key, None)
+                return ""
+            return str(cached.get("param") or "").strip()
+
+    def _remember_provider_query_hint_v11219(self, item: Dict[str, str], param: str) -> None:
+        key = self._provider_query_hint_key_v11219(item)
+        param = str(param or "").strip()
+        if not key or not param or param == "url_template":
+            return
+        now = time.monotonic()
+        with _PROVIDER_QUERY_HINT_LOCK_V11219:
+            if key not in _PROVIDER_QUERY_HINTS_V11219 and len(_PROVIDER_QUERY_HINTS_V11219) >= _PROVIDER_QUERY_HINT_MAX_V11219:
+                oldest_key = min(
+                    _PROVIDER_QUERY_HINTS_V11219,
+                    key=lambda value: float((_PROVIDER_QUERY_HINTS_V11219.get(value) or {}).get("ts") or 0),
+                )
+                _PROVIDER_QUERY_HINTS_V11219.pop(oldest_key, None)
+            _PROVIDER_QUERY_HINTS_V11219[key] = {"param": param, "ts": now}
+
+    def _provider_query_variants_for_item_v11219(
+        self,
+        item: Dict[str, str],
+        keyword: str,
+    ) -> List[Tuple[str, Dict[str, str]]]:
+        url = str((item or {}).get("url") or "").strip()
+        if any(marker in url for marker in ("{keyword}", "{query}", "{q}")):
+            return [("url_template", {})]
+        variants = self._provider_query_variants(str((item or {}).get("kind") or "json"), keyword)
+        hint = self._provider_query_hint_v11219(item)
+        if not hint:
+            return variants
+        preferred = [row for row in variants if row[0] == hint]
+        remaining = [row for row in variants if row[0] != hint]
+        return [*preferred, *remaining] if preferred else variants
 
     @staticmethod
     def _provider_headers(token: str) -> Dict[str, str]:
@@ -240,7 +298,7 @@ class GuangYaProviderReliabilityV1100Mixin:
             session.proxies.update(proxies)
         headers = self._provider_headers(token)
         timeout = int(getattr(self, "_provider_timeout", 15) or 15)
-        variants = self._provider_query_variants(kind, keyword)
+        variants = self._provider_query_variants_for_item_v11219(item, keyword)
         attempts: List[Dict[str, Any]] = []
         had_http_success = False
         last_error = ""
@@ -248,7 +306,7 @@ class GuangYaProviderReliabilityV1100Mixin:
         for key, params in variants[:4]:
             request_url = url
             request_params = dict(params)
-            if any(marker in request_url for marker in ("{keyword}", "{query}", "{q}")):
+            if key == "url_template":
                 encoded = quote(str(keyword or "").strip(), safe="")
                 request_url = request_url.replace("{keyword}", encoded).replace("{query}", encoded).replace("{q}", encoded)
                 request_params = {}
@@ -274,6 +332,7 @@ class GuangYaProviderReliabilityV1100Mixin:
                 rows = self._provider_response_candidates(response, kind=kind, name=name)
                 attempts.append({"param": key, "status": status, "count": len(rows), "ok": True})
                 if rows:
+                    self._remember_provider_query_hint_v11219(item, key)
                     limit = int(getattr(self, "_provider_result_limit", 20) or 20)
                     rows = _dedupe_candidates(rows)[:limit]
                     return rows, {
