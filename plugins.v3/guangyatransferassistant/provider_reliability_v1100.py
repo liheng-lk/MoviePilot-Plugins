@@ -10,18 +10,20 @@ v1.10.3 修复 v1.10.0 重构时的方法名漂移：新版控制台与统一搜
 ``_parse_provider_defs``，而 v1.9.2 的真实配置解析入口仍叫 ``_provider_api_defs``。
 增加兼容桥接后，状态页、资源来源检测和统一搜索重新使用同一份 Magnet/ED2K 配置定义。
 
-v1.12.19 开发阶段增加 Provider 性能与排序收口：
+v1.12.19 开发阶段增加 Provider 性能、排序与并发状态收口：
 - GYING 继续单线程执行，避免节点健康/登录会话被并发放大；
 - 独立 Magnet/ED2K API 最多 4 路并发，但用 executor.map 按配置顺序收敛结果；
 - 不再“全局先截断、外层再评分”，而是先汇总单源有界候选池、排序、按 identity 去重，最后截断；
 - 同一物理资源的重复候选不再默认“配置靠前者获胜”，而是保留排序更优的来源记录；
 - 自动分流已有订阅上下文时，canonical identity 已明确拒绝的候选在最终 limit 前淘汰，避免错误 Magnet 饿死合法 ED2K；
+- source store 的 upsert/update/delete 在最终运行时使用同一进程级 RLock，避免多个离线 worker 的 read-modify-write 相互覆盖，也让终态质量学习只观察一次真实迁移；
 - 任一 API worker 的意外异常只降级该来源，不允许拖垮其它 Provider。
 """
 
 from __future__ import annotations
 
 import json
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Tuple
 from urllib.parse import quote
@@ -34,6 +36,7 @@ from .provider_sources_v192 import _dedupe_candidates, _find_links, _proxy_dict
 
 _PROVIDER_API_MAX_WORKERS_V11219 = 4
 _EXTERNAL_SOURCE_TIER_V11219 = {"magnet": 0, "ed2k": 1}
+_SOURCE_STORE_MUTATION_LOCK_V11219 = threading.RLock()
 
 
 def _nonnegative_int_v11219(value: Any) -> int:
@@ -91,6 +94,21 @@ class GuangYaProviderReliabilityV1100Mixin:
     """最终外部 Provider 搜索、探测和统一搜索 API。"""
 
     build_id = "20260901-r11"
+
+    def _upsert_source(self, *args: Any, **kwargs: Any):
+        """串行化完整 source upsert cooperative chain，避免多 worker 覆盖同一持久化快照。"""
+        with _SOURCE_STORE_MUTATION_LOCK_V11219:
+            return super()._upsert_source(*args, **kwargs)
+
+    def _update_source(self, source_id: str, **fields: Any):
+        """串行化状态迁移；锁覆盖下层终态学习观察，保证同一迁移最多记账一次。"""
+        with _SOURCE_STORE_MUTATION_LOCK_V11219:
+            return super()._update_source(source_id, **fields)
+
+    def _delete_source(self, source_id: str):
+        """删除与 upsert/update 共用一把锁，防止删除被并发旧快照复活。"""
+        with _SOURCE_STORE_MUTATION_LOCK_V11219:
+            return super()._delete_source(source_id)
 
     def _parse_provider_defs(self) -> List[Dict[str, str]]:
         """兼容 v1.10 控制台命名，复用 v1.9.2 唯一的 Provider 配置解析入口。"""
