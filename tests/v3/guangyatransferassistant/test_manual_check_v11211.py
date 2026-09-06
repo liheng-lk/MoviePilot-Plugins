@@ -129,7 +129,9 @@ def test_v11211_layer_parses_and_is_nested_before_resource_gate_without_dropping
     assert "from .xunlei_season_fence_v11210 import GuangYaXunleiSeasonFenceV11210Mixin" in alias
     assert "class GuangYaGyingAliasQueryV11212Mixin(GuangYaXunleiSeasonFenceV11210Mixin):" in alias
     assert "from .movie_bilingual_identity_v11216 import GuangYaMovieBilingualIdentityV11216Mixin" in MOVIE
-    assert "class GuangYaMovieIdentityV1129Mixin(GuangYaMovieBilingualIdentityV11216Mixin):" in MOVIE
+    assert "class GuangYaMovieIdentityV1129Mixin(" in MOVIE
+    assert "GuangYaMovieBilingualIdentityV11216Mixin," in MOVIE
+    assert "GuangYaEmptyDirGuardV11218Mixin," in MOVIE
     assert "from .search_recall_v11217 import GuangYaSearchRecallV11217Mixin" in BILINGUAL
     assert "class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaSearchRecallV11217Mixin):" in BILINGUAL
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
