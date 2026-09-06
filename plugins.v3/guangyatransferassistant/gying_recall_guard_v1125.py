@@ -48,6 +48,13 @@ def _nonnegative_int_v11219(value: Any) -> int:
         return 0
 
 
+def _nonnegative_float_v11219(value: Any) -> float:
+    try:
+        return max(0.0, float(value or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def candidate_quality_score_v11219(stats: Dict[str, Any]) -> int:
     """Beta(2,2) 平滑后的有界质量分；无样本严格为 0。"""
     success = _nonnegative_int_v11219((stats or {}).get("success"))
@@ -477,13 +484,19 @@ class GuangYaGyingRecallGuardV1125Mixin(_GuangYaGyingRecallGuardV1125Base):
             return ""
         provider = str((row or {}).get("provider") or "").strip()
         origin = str((row or {}).get("origin") or "").strip()
-        if not provider and origin.lower().startswith("provider:"):
+        origin_key = origin.casefold()
+        source_label = str((row or {}).get("source_label") or "").strip()
+        if not provider and origin_key.startswith("provider:"):
             provider = origin.split(":", 1)[1].strip()
-        if not provider and origin.lower().startswith("channel"):
-            provider = str((row or {}).get("source_label") or origin).strip()
+        if not provider and origin_key == "viewing_auto":
+            provider = source_label or "GYING"
+        if not provider and origin_key.startswith("channel"):
+            provider = source_label or origin
         if not provider:
             return ""
         provider = " ".join(provider.split()).casefold()[:120]
+        if provider in {"viewing", "gying"}:
+            provider = "gying"
         return f"{source_type}|{provider}"
 
     def _candidate_quality_store_v11219(self) -> Dict[str, Any]:
@@ -499,9 +512,13 @@ class GuangYaGyingRecallGuardV1125Mixin(_GuangYaGyingRecallGuardV1125Base):
                 items[str(key)] = {
                     "success": _nonnegative_int_v11219(value.get("success")),
                     "failure": _nonnegative_int_v11219(value.get("failure")),
-                    "updated_at": float(value.get("updated_at") or 0),
+                    "updated_at": _nonnegative_float_v11219(value.get("updated_at")),
                 }
-        return {"schema": 1, "items": items, "updated_at": float(raw.get("updated_at") or 0)}
+        return {
+            "schema": 1,
+            "items": items,
+            "updated_at": _nonnegative_float_v11219(raw.get("updated_at")),
+        }
 
     def _candidate_quality_snapshot_v11219(self) -> Dict[str, Dict[str, Any]]:
         now = time.monotonic()
