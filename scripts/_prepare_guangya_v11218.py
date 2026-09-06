@@ -113,6 +113,17 @@ for old, new, label in (
 ):
     replace_once(release_v1110, old, new, label)
 
+# ShukGuangYaDisk owns an explicit cross-plugin floor contract: this assertion
+# protects the transfer assistant from rollback, so its expected current version
+# must advance with GuangYaTransferAssistant without touching any Shuk behavior.
+shuk_release_floor = ROOT / "tests" / "v3" / "shukguangyadisk" / "test_release_v370.py"
+replace_once(
+    shuk_release_floor,
+    'assert package["GuangYaTransferAssistant"]["version"] == "1.12.17"',
+    'assert package["GuangYaTransferAssistant"]["version"] == "1.12.18"',
+    "shuk cross-plugin transfer assistant floor",
+)
+
 # README release note immediately before v1.12.17.
 readme = PLUGIN / "README.md"
 text = readme.read_text(encoding="utf-8")
