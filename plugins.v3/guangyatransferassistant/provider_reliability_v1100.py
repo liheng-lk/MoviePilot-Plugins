@@ -9,11 +9,19 @@
 v1.10.3 修复 v1.10.0 重构时的方法名漂移：新版控制台与统一搜索调用
 ``_parse_provider_defs``，而 v1.9.2 的真实配置解析入口仍叫 ``_provider_api_defs``。
 增加兼容桥接后，状态页、资源来源检测和统一搜索重新使用同一份 Magnet/ED2K 配置定义。
+
+v1.12.19 开发阶段增加 Provider 性能与排序收口：
+- GYING 继续单线程执行，避免节点健康/登录会话被并发放大；
+- 独立 Magnet/ED2K API 最多 4 路并发，但用 executor.map 按配置顺序收敛结果；
+- 不再“全局先截断、外层再评分”，而是先汇总单源有界候选池、排序、按 identity 去重，最后截断；
+- 同一物理资源的重复候选不再默认“配置靠前者获胜”，而是保留排序更优的来源记录；
+- 任一 API worker 的意外异常只降级该来源，不允许拖垮其它 Provider。
 """
 
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Tuple
 from urllib.parse import quote
 from xml.etree import ElementTree
@@ -21,6 +29,61 @@ from xml.etree import ElementTree
 import requests
 
 from .provider_sources_v192 import _dedupe_candidates, _find_links, _proxy_dict
+
+
+_PROVIDER_API_MAX_WORKERS_V11219 = 4
+_EXTERNAL_SOURCE_TIER_V11219 = {"magnet": 0, "ed2k": 1}
+
+
+def _nonnegative_int_v11219(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _quality_score_v11219(stats: Dict[str, Any]) -> int:
+    success = _nonnegative_int_v11219((stats or {}).get("success"))
+    failure = _nonnegative_int_v11219((stats or {}).get("failure"))
+    if success + failure <= 0:
+        return 0
+    posterior = (success + 2.0) / (success + failure + 4.0)
+    return max(-100, min(100, int(round((posterior - 0.5) * 200.0))))
+
+
+def _candidate_rank_key_v11219(
+    source_type: str,
+    eligible: bool,
+    coverage_penalty: int,
+    extra_episode_count: int,
+    hit_episode_count: int,
+    quality_score: int,
+    candidate_rank: int,
+    original_index: int,
+) -> Tuple[int, int, int, int, int, int, int, int]:
+    source_tier = _EXTERNAL_SOURCE_TIER_V11219.get(str(source_type or "").strip().lower(), 99)
+    return (
+        source_tier,
+        0 if eligible else 1,
+        max(0, int(coverage_penalty or 0)),
+        max(0, int(extra_episode_count or 0)),
+        -max(0, int(hit_episode_count or 0)),
+        -max(-100, min(100, int(quality_score or 0))),
+        max(0, int(candidate_rank or 0)),
+        max(0, int(original_index or 0)),
+    )
+
+
+def _bounded_ordered_map_v11219(worker: Any, items: List[Any], max_workers: int = _PROVIDER_API_MAX_WORKERS_V11219):
+    """有限并发执行，但结果顺序严格跟输入配置一致。"""
+    rows = list(items or [])
+    if not rows:
+        return []
+    workers = max(1, min(_nonnegative_int_v11219(max_workers) or 1, _PROVIDER_API_MAX_WORKERS_V11219, len(rows)))
+    if workers <= 1:
+        return [worker(item) for item in rows]
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="gy-provider") as executor:
+        return list(executor.map(worker, rows))
 
 
 class GuangYaProviderReliabilityV1100Mixin:
@@ -188,6 +251,152 @@ class GuangYaProviderReliabilityV1100Mixin:
             "attempts": attempts,
         }
 
+    def _parallel_api_provider_search_v11219(self, keyword: str):
+        """只并发彼此独立的 API Provider；返回顺序仍与配置顺序一致。"""
+        definitions = self._parse_provider_defs()
+        if not definitions:
+            return [], [], 0
+
+        def worker(item: Dict[str, str]):
+            try:
+                rows, state = self._search_api_provider(item, keyword)
+                return list(rows or []), dict(state or {})
+            except Exception as err:
+                return [], {
+                    "provider": str(item.get("name") or "API")[:120],
+                    "kind": str(item.get("kind") or "json")[:40],
+                    "success": False,
+                    "count": 0,
+                    "message": f"Provider worker 异常：{err}"[:300],
+                    "attempts": [],
+                }
+
+        workers = min(_PROVIDER_API_MAX_WORKERS_V11219, len(definitions))
+        results = _bounded_ordered_map_v11219(worker, definitions, workers)
+        rows: List[Dict[str, Any]] = []
+        states: List[Dict[str, Any]] = []
+        for found, state in results:
+            rows.extend(dict(row) for row in (found or []) if isinstance(row, dict))
+            states.append(dict(state or {}))
+        return rows, states, workers
+
+    def _rank_provider_pool_v11219(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """先评分再 identity 去重；若运行时没有 v1.12.19 学习层则安全退回稳定去重。"""
+        candidates = [dict(row) for row in (rows or []) if isinstance(row, dict)]
+        if len(candidates) <= 1:
+            return _dedupe_candidates(candidates)
+
+        quality_key_fn = getattr(self, "_candidate_quality_key_v11219", None)
+        quality_snapshot_fn = getattr(self, "_candidate_quality_snapshot_v11219", None)
+        local_fn = getattr(self, "_candidate_rank_local_v11219", None)
+        episode_hint_fn = getattr(self, "_candidate_episode_hint_v1125", None)
+        match_fn = getattr(self, "_provider_candidate_matches", None)
+        movie_fn = getattr(self, "_is_movie_subscription", None)
+        if not all(callable(fn) for fn in (quality_key_fn, quality_snapshot_fn, local_fn)):
+            return _dedupe_candidates(candidates)
+
+        try:
+            quality = dict(quality_snapshot_fn() or {})
+        except Exception:
+            quality = {}
+        try:
+            local = local_fn()
+            subscribe = getattr(local, "subscribe", None)
+            uncovered = {
+                int(value)
+                for value in (getattr(local, "uncovered", set()) or set())
+                if str(value).isdigit() and int(value) > 0
+            }
+        except Exception:
+            subscribe = None
+            uncovered = set()
+
+        is_movie = bool(subscribe is not None and callable(movie_fn) and movie_fn(subscribe))
+        ranked = []
+        for index, row in enumerate(candidates):
+            eligible = True
+            coverage_penalty = 1
+            extra_episode_count = 0
+            hit_episode_count = 0
+            if subscribe is not None and callable(match_fn):
+                try:
+                    eligible = bool(match_fn(subscribe, row))
+                except Exception:
+                    eligible = False
+            if eligible and subscribe is not None and not is_movie and uncovered and callable(episode_hint_fn):
+                try:
+                    explicit = set(episode_hint_fn(subscribe, row) or set())
+                except Exception:
+                    explicit = set()
+                if explicit:
+                    hit = explicit.intersection(uncovered)
+                    extra = explicit - uncovered
+                    hit_episode_count = len(hit)
+                    extra_episode_count = len(extra)
+                    if hit and not extra:
+                        coverage_penalty = 0
+                    elif hit:
+                        coverage_penalty = 2
+                    else:
+                        coverage_penalty = 3
+            try:
+                quality_key = str(quality_key_fn(row) or "")
+            except Exception:
+                quality_key = ""
+            quality_score = _quality_score_v11219(dict(quality.get(quality_key) or {})) if quality_key else 0
+            sort_key = _candidate_rank_key_v11219(
+                str(row.get("type") or ""),
+                eligible,
+                coverage_penalty,
+                extra_episode_count,
+                hit_episode_count,
+                quality_score,
+                _nonnegative_int_v11219(row.get("candidate_rank")),
+                index,
+            )
+            enriched = dict(row)
+            enriched["candidate_score_v11219"] = quality_score
+            enriched["candidate_sort_v11219"] = list(sort_key[:-1])
+            ranked.append((sort_key, enriched))
+
+        ranked.sort(key=lambda item: item[0])
+        # _dedupe_candidates 保留第一次出现；排序后第一次就是同 identity 中的最佳候选。
+        return _dedupe_candidates([row for _key, row in ranked])
+
+    def _search_external_providers(self, keyword: str) -> Dict[str, Any]:
+        """自动分流搜索：完整有界池 -> 排序 -> identity 去重 -> 最终 limit。"""
+        keyword = str(keyword or "").strip()
+        if not keyword:
+            return {"success": False, "message": "keyword 不能为空", "data": [], "providers": []}
+
+        rows: List[Dict[str, Any]] = []
+        states: List[Dict[str, Any]] = []
+        try:
+            viewing_rows, viewing_state = self._search_viewing(keyword)
+            rows.extend(dict(row) for row in (viewing_rows or []) if isinstance(row, dict))
+            states.append(dict(viewing_state or {}))
+        except Exception as err:
+            states.append({"provider": "viewing", "success": False, "message": f"GYING 搜索异常：{err}"[:300]})
+
+        api_rows, api_states, workers = self._parallel_api_provider_search_v11219(keyword)
+        rows.extend(api_rows)
+        states.extend(api_states)
+        raw_count = len(rows)
+        ranked = self._rank_provider_pool_v11219(rows)
+        deduped_count = len(ranked)
+        limit = max(1, int(getattr(self, "_provider_result_limit", 20) or 20))
+        returned = ranked[:limit]
+        healthy = any(bool(state.get("success")) for state in states if state.get("enabled", True))
+        return {
+            "success": healthy,
+            "message": f"候选池 {raw_count}，去重排序后 {deduped_count}，返回 {len(returned)} 个 Magnet/ED2K 候选",
+            "data": returned,
+            "providers": states,
+            "candidate_ranking_v11219": True,
+            "candidate_pool_v11219": {"raw": raw_count, "deduped": deduped_count, "returned": len(returned)},
+            "provider_parallelism_v11219": workers,
+        }
+
     def _unified_provider_search(self, keyword: str) -> Dict[str, Any]:
         keyword = str(keyword or "").strip()
         if not keyword:
@@ -198,18 +407,28 @@ class GuangYaProviderReliabilityV1100Mixin:
         states: List[Dict[str, Any]] = []
 
         if bool(getattr(self, "_viewing_enabled", False)):
-            viewing_rows, viewing_state = self._search_viewing(keyword)
-            xunlei_rows, xunlei_state = self._search_viewing_xunlei(keyword)
-            candidates.extend(viewing_rows or [])
-            xunlei.extend(xunlei_rows or [])
-            states.extend([dict(viewing_state or {}), dict(xunlei_state or {})])
+            try:
+                viewing_rows, viewing_state = self._search_viewing(keyword)
+                candidates.extend(dict(row) for row in (viewing_rows or []) if isinstance(row, dict))
+                states.append(dict(viewing_state or {}))
+            except Exception as err:
+                states.append({"provider": "viewing", "success": False, "message": f"GYING 搜索异常：{err}"[:300]})
+            try:
+                xunlei_rows, xunlei_state = self._search_viewing_xunlei(keyword)
+                xunlei.extend(dict(row) for row in (xunlei_rows or []) if isinstance(row, dict))
+                states.append(dict(xunlei_state or {}))
+            except Exception as err:
+                states.append({"provider": "viewing_xunlei", "success": False, "message": f"迅雷搜索异常：{err}"[:300]})
 
-        for item in self._parse_provider_defs():
-            rows, state = self._search_api_provider(item, keyword)
-            candidates.extend(rows or [])
-            states.append(dict(state or {}))
+        api_rows, api_states, workers = self._parallel_api_provider_search_v11219(keyword)
+        candidates.extend(api_rows)
+        states.extend(api_states)
 
-        candidates = _dedupe_candidates(candidates)[: max(1, int(getattr(self, "_provider_result_limit", 20) or 20) * 3)]
+        raw_count = len(candidates)
+        ranked = self._rank_provider_pool_v11219(candidates)
+        pool_limit = max(1, int(getattr(self, "_provider_result_limit", 20) or 20) * 3)
+        candidates = ranked[:pool_limit]
+
         xunlei_by_id: Dict[str, Dict[str, Any]] = {}
         for row in xunlei:
             share_id = str(row.get("share_id") or row.get("identity") or "").strip()
@@ -232,6 +451,9 @@ class GuangYaProviderReliabilityV1100Mixin:
             "xunlei": xunlei,
             "counts": {"xunlei": len(xunlei), "magnet": magnet_count, "ed2k": ed2k_count},
             "states": states,
+            "candidate_ranking_v11219": True,
+            "candidate_pool_v11219": {"raw": raw_count, "deduped": len(ranked), "returned": len(candidates)},
+            "provider_parallelism_v11219": workers,
         }
 
     def api_provider_search(self, keyword: str = "") -> Dict[str, Any]:
@@ -262,9 +484,8 @@ class GuangYaProviderReliabilityV1100Mixin:
         else:
             states.append({"provider": "viewing", "success": True, "enabled": False, "message": "未启用"})
 
-        for item in self._parse_provider_defs():
-            _, state = self._search_api_provider(item, keyword)
-            states.append(dict(state or {}))
+        _rows, api_states, _workers = self._parallel_api_provider_search_v11219(keyword)
+        states.extend(api_states)
 
         overall = all(bool(item.get("success")) for item in states if item.get("enabled") is not False)
         result = {"success": overall, "keyword": keyword, "providers": states, "message": "资源来源检测完成" if overall else "部分资源来源不可用，请查看 providers"}
@@ -332,4 +553,9 @@ class GuangYaProviderReliabilityV1100Mixin:
         return apis
 
 
-__all__ = ["GuangYaProviderReliabilityV1100Mixin"]
+__all__ = [
+    "GuangYaProviderReliabilityV1100Mixin",
+    "_bounded_ordered_map_v11219",
+    "_candidate_rank_key_v11219",
+    "_quality_score_v11219",
+]
