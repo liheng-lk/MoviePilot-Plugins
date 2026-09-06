@@ -1,0 +1,49 @@
+name: Wire GuangYa v1.12.19 lease
+on:
+  push:
+    branches: [fix/guangya-v1.12.19-persistent-empty-dir-lease]
+    paths: [.github/workflows/wire-guangya-v11219.yml]
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/guangya-v1.12.19-persistent-empty-dir-lease
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Wire nested runtime chain
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('plugins.v3/guangyatransferassistant/movie_identity_v1129.py')
+          text = path.read_text(encoding='utf-8')
+          old = 'from .empty_dir_guard_v11218 import GuangYaEmptyDirGuardV11218Mixin'
+          new = 'from .empty_dir_lease_v11219 import GuangYaEmptyDirLeaseV11219Mixin'
+          assert old in text and new not in text
+          text = text.replace(old, new, 1)
+          old_head = '''class GuangYaMovieIdentityV1129Mixin(\n    GuangYaMovieBilingualIdentityV11216Mixin,\n    GuangYaEmptyDirGuardV11218Mixin,\n):'''
+          new_head = '''class GuangYaMovieIdentityV1129Mixin(\n    GuangYaMovieBilingualIdentityV11216Mixin,\n    GuangYaEmptyDirLeaseV11219Mixin,\n):'''
+          assert old_head in text
+          text = text.replace(old_head, new_head, 1)
+          marker = 'v1.12.18 以并列 nested mixin 追加失败写入空目录保护，不改变 v1.12.16/17 的身份与召回语义。'
+          replacement = marker + '\n' + 'v1.12.19 在 v1.12.18 之上持久化异步目录租约，补齐 taskId/pending 跨调用与跨重启的终态 0 文件回收。'
+          assert marker in text
+          text = text.replace(marker, replacement, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Candidate syntax and lease behavior
+        run: |
+          python -m py_compile plugins.v3/guangyatransferassistant/empty_dir_lease_v11219.py plugins.v3/guangyatransferassistant/movie_identity_v1129.py
+          python tests/v3/guangyatransferassistant/test_empty_dir_lease_v11219.py
+      - name: Commit wiring
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add plugins.v3/guangyatransferassistant/movie_identity_v1129.py
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(guangya): wire persistent empty-directory leases'
+          git push origin HEAD:fix/guangya-v1.12.19-persistent-empty-dir-lease
