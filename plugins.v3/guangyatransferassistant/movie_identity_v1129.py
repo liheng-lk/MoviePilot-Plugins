@@ -17,6 +17,7 @@ v1.12.10 通过本层最终 MRO 位置挂接迅雷跨季物理资源栅栏；v1.
 挂接 /gycheck 人工完整资源链；v1.12.12 继续嵌套在下层而不移动本层顶级 MRO 位置；
 v1.12.16 在本层下方追加同一迅雷分享内的严格双语真实标题桥接，不改变本层 TMDB 别名逻辑；
 v1.12.18 以并列 nested mixin 追加失败写入空目录保护，不改变 v1.12.16/17 的身份与召回语义。
+v1.12.19 在 v1.12.18 之上持久化异步目录租约，补齐 taskId/pending 跨调用与跨重启的终态 0 文件回收。
 """
 from __future__ import annotations
 
@@ -28,12 +29,12 @@ from app.chain.media import MediaChain
 from app.schemas.types import MediaSource, MediaType
 
 from .movie_bilingual_identity_v11216 import GuangYaMovieBilingualIdentityV11216Mixin
-from .empty_dir_guard_v11218 import GuangYaEmptyDirGuardV11218Mixin
+from .empty_dir_lease_v11219 import GuangYaEmptyDirLeaseV11219Mixin
 
 
 class GuangYaMovieIdentityV1129Mixin(
     GuangYaMovieBilingualIdentityV11216Mixin,
-    GuangYaEmptyDirGuardV11218Mixin,
+    GuangYaEmptyDirLeaseV11219Mixin,
 ):
     """仅为电影补充同一 TMDB 身份下的官方标题，不改变既有媒体身份评分规则。"""
 
