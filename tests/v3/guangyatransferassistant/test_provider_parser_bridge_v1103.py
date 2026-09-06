@@ -41,6 +41,12 @@ def _bridge_method():
     return ns["Bridge"]
 
 
+def _method_source(name: str, next_name: str) -> str:
+    start = provider_text.index(f"    def {name}(")
+    end = provider_text.index(f"    def {next_name}(", start)
+    return provider_text[start:end]
+
+
 def test_v1103_restores_missing_provider_parser_name():
     Bridge = _bridge_method()
 
@@ -56,7 +62,17 @@ def test_v1103_restores_missing_provider_parser_name():
 
 
 def test_all_v1100_provider_consumers_resolve_through_bridge():
-    assert provider_text.count("self._parse_provider_defs()") >= 2
+    # v1.12.19 后自动搜索、统一搜索与来源检测共用一个有限并发 helper；
+    # 配置只在 helper 内通过唯一桥接入口解析，避免每个消费者各复制一份解析逻辑。
+    parallel = _method_source("_parallel_api_provider_search_v11219", "_rank_provider_pool_v11219")
+    external = _method_source("_search_external_providers", "_unified_provider_search")
+    unified = _method_source("_unified_provider_search", "api_provider_search")
+    provider_test = _method_source("api_provider_test", "api_provider_search_selected")
+
+    assert "definitions = self._parse_provider_defs()" in parallel
+    assert "self._parallel_api_provider_search_v11219(keyword)" in external
+    assert "self._parallel_api_provider_search_v11219(keyword)" in unified
+    assert "self._parallel_api_provider_search_v11219(keyword)" in provider_test
     assert "provider_defs = list(self._parse_provider_defs())" in console_text
     assert 'getattr(self, "_provider_api_defs", None)' in provider_text
 
