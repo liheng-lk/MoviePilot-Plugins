@@ -1,0 +1,166 @@
+name: Prepare GuangYa v1.12.18
+on:
+  push:
+    branches: [fix/guangya-v1.12.18-empty-dir-guard]
+    paths: [.github/workflows/prepare-guangya-v11218.yml]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/guangya-v1.12.18-empty-dir-guard
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply deterministic public release migration
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          root = Path('.')
+          plugin = root / 'plugins.v3/guangyatransferassistant'
+          old_v, new_v = '1.12.17', '1.12.18'
+          old_b, new_b = '20260906-r64', '20260906-r65'
+          release_note = (
+              'v1.12.18 修复失败转存/纯验证留下空目录：Magnet/ED2K 在创建目标目录前先完成 resolve；'
+              '迅雷、光鸭分享和 cloudcollection 只跟踪本次调用前明确不存在的目录，失败且没有服务端 taskId 时才在远端再次确认为空后回收；'
+              '已有目录、非空目录、目录事实未知、已有 taskId、pending verification、根目录和配置保存根一律保留；'
+              '待落盘验证改用 get_item 纯只读查询，不再因复核本身创建目录。来源优先级、媒体身份、权威缺集和物理文件硬栅栏全部保持。'
+          )
+
+          # Runtime entry: public truth only; historical layer paragraphs stay intact.
+          entry_path = plugin / '__init__.py'
+          text = entry_path.read_text(encoding='utf-8')
+          text = text.replace('"""光鸭转存助手 v1.12.17 运行入口。', '"""光鸭转存助手 v1.12.18 运行入口。', 1)
+          marker = 'v1.12.17 重构资源召回：'
+          if marker not in text:
+              raise SystemExit('v1.12.17 changelog marker missing from entry')
+          text = text.replace(marker, release_note + '\n' + marker, 1)
+          old_runtime = '    plugin_version = "1.12.17"\n    build_id = "20260906-r64"'
+          new_runtime = '    plugin_version = "1.12.18"\n    build_id = "20260906-r65"'
+          if text.count(old_runtime) != 1:
+              raise SystemExit(f'expected one final runtime marker, got {text.count(old_runtime)}')
+          text = text.replace(old_runtime, new_runtime, 1)
+          entry_path.write_text(text, encoding='utf-8')
+
+          # Local plugin manifest.
+          local_path = plugin / 'plugin.json'
+          local = json.loads(local_path.read_text(encoding='utf-8'))
+          local['version'] = new_v
+          local['description'] = (
+              '更新日历驱动的固定分流助手。v1.12.18 增加空目录生命周期保护：Magnet/ED2K 先 resolve 再建目录；'
+              '迅雷、光鸭分享、cloudcollection 失败且没有服务端 taskId 时，仅回收本次调用前明确不存在且远端复核仍为空的媒体/Season 目录；'
+              '已有、非空、事实未知、pending/taskId、根目录和配置保存根全部 fail-closed 保留；待落盘验证改为 get_item 纯只读，不再创建空目录。'
+              'v1.12.17 结构化 GYING/Telegram 定向召回继续保留；最终媒体身份、年份/季、library missing、reservation/source claim 与不可分割物理文件门禁不放宽；'
+              '来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。'
+          )
+          local_path.write_text(json.dumps(local, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          # Public package index, preserving all other plugins and historical versions.
+          package_path = root / 'package.v3.json'
+          package = json.loads(package_path.read_text(encoding='utf-8'))
+          row = package['GuangYaTransferAssistant']
+          row['version'] = new_v
+          row['description'] = (
+              '更新日历驱动的固定分流助手：频道/观影统一支持光鸭分享、迅雷分享、Magnet、ED2K。'
+              'v1.12.18 修复失败/验证流程创建空目录：离线源 resolve 前不建目录，失败且无 taskId 时只回收本次新建且远端确认仍为空的目录；'
+              '已有/非空/未知/taskId/pending/root 全部保留，待落盘验证纯只读。v1.12.17 的结构化资源召回与 Telegram ?q= 定向搜索继续保留；'
+              '最终真实 payload/缺集/物理文件安全门禁不放宽。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。'
+          )
+          history = dict(row.get('history') or {})
+          row['history'] = {'v1.12.18': release_note, **history}
+          package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          # README release section.
+          readme_path = plugin / 'README.md'
+          readme = readme_path.read_text(encoding='utf-8')
+          section = '''## v1.12.18 - 空目录生命周期保护\n\n- Magnet/ED2K 在第一次创建目标目录前完成 `resolve_res`，解析/筛选失败不会留下媒体空目录；预解析结果直接复用，不额外重复请求。\n- 迅雷、光鸭分享、Magnet/ED2K 只追踪“本次调用前明确不存在”的目录；失败且没有服务端 taskId 时，再次读取远端并确认目录仍为空才允许回收。\n- 已有目录、非空目录、目录读取失败、服务端 taskId、pending verification、`/` 与配置保存根目录一律 fail-closed 保留，避免异步迟到文件竞态和误删。\n- 待落盘 `_verify_restored_items` 改用 `get_item()` 只读查询；目标目录不存在只报告“尚未落盘”，验证动作自身不再创建目录。\n- 不改变 v1.12.17 的结构化资源召回，也不改变媒体身份、年份/Season、权威缺集、reservation/source claim、不可分割物理文件门禁及 `观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K` 优先级。\n\n'''
+          anchor = '## v1.12.17 -'
+          if anchor in readme and '## v1.12.18 -' not in readme:
+              readme = readme.replace(anchor, section + anchor, 1)
+          elif '## v1.12.18 -' not in readme:
+              readme = section + readme
+          readme_path.write_text(readme, encoding='utf-8')
+
+          # Update only assertions that read current ENTRY / plugin.json / package.v3.json.
+          # search_recall_v11217 layer/source assertions must remain 1.12.17/r64.
+          for path in list((root / 'tests').rglob('*.py')):
+              if path.name == 'test_search_recall_v11217.py':
+                  continue
+              src = path.read_text(encoding='utf-8')
+              lines = []
+              changed = False
+              for line in src.splitlines(True):
+                  original = line
+                  public_context = any(token in line for token in (
+                      'ENTRY', 'entry', 'PLUGIN_JSON', 'plugin["version"]', 'local["version"]',
+                      'PACKAGE[', 'package[', 'GuangYaTransferAssistant',
+                  ))
+                  if public_context:
+                      line = line.replace('plugin_version = "1.12.17"', 'plugin_version = "1.12.18"')
+                      line = line.replace('build_id = "20260906-r64"', 'build_id = "20260906-r65"')
+                      # JSON/current-package equality literals on the same line.
+                      if 'version' in line:
+                          line = line.replace('"1.12.17"', '"1.12.18"')
+                  if line != original:
+                      changed = True
+                  lines.append(line)
+              if changed:
+                  path.write_text(''.join(lines), encoding='utf-8')
+
+          # Cross-plugin contract explicitly pins the currently released transfer assistant.
+          shuk = root / 'tests/v3/shukguangyadisk/test_release_v370.py'
+          if shuk.exists():
+              src = shuk.read_text(encoding='utf-8')
+              src = src.replace('package["GuangYaTransferAssistant"]["version"] == "1.12.17"',
+                                'package["GuangYaTransferAssistant"]["version"] == "1.12.18"')
+              shuk.write_text(src, encoding='utf-8')
+          PY
+      - name: Python syntax
+        run: |
+          python -m compileall -q plugins.v2 plugins.v3
+          find plugins.v2 plugins.v3 -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find plugins.v2 plugins.v3 -type f -name '*.pyc' -delete
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: V3 plugin contract tests
+        run: |
+          python tests/v3/dailynewdrama/test_plugin_contract.py
+          python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          python tests/v3/shukguangyadisk/run_contract_tests.py
+          python tests/v3/guangyatransferassistant/run_contract_tests.py
+      - name: V3 dependency manifests
+        run: |
+          test -z "$(find plugins.v3 -type f -name 'requirements.txt' -print)"
+          python - <<'PY'
+          from pathlib import Path
+          import tomllib
+          for path in Path('plugins.v3').glob('*/pyproject.toml'):
+              with path.open('rb') as f:
+                  project = tomllib.load(f)['project']
+              assert project.get('dynamic') == ['version'], path
+              assert project.get('requires-python') == '>=3.12', path
+          shuk = Path('plugins.v3/shukguangyadisk')
+          assert not (shuk / 'pyproject.toml').exists()
+          assert not (shuk / 'requirements.txt').exists()
+          PY
+      - name: JSON indexes
+        run: python -c "import json; [json.load(open(p,encoding='utf-8')) for p in ['plugin.json','package.v2.json','package.v3.json']]"
+      - name: Cleanup test artifacts
+        run: |
+          find . -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find . -type f -name '*.pyc' -delete
+      - name: No generated Python artifacts
+        run: test -z "$(find . -type f \( -name '*.pyc' -o -name '__pycache__' \) -print)"
+      - name: Commit validated release only
+        run: |
+          rm -f .github/workflows/prepare-guangya-v11218.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.v3.json plugins.v3/guangyatransferassistant tests .github/workflows/prepare-guangya-v11218.yml
+          git commit -m 'release(guangya): finalize v1.12.18 empty-directory guard'
+          git push origin HEAD:fix/guangya-v1.12.18-empty-dir-guard
