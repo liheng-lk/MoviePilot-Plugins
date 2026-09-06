@@ -15,6 +15,7 @@ v1.12.19 开发阶段增加 Provider 性能与排序收口：
 - 独立 Magnet/ED2K API 最多 4 路并发，但用 executor.map 按配置顺序收敛结果；
 - 不再“全局先截断、外层再评分”，而是先汇总单源有界候选池、排序、按 identity 去重，最后截断；
 - 同一物理资源的重复候选不再默认“配置靠前者获胜”，而是保留排序更优的来源记录；
+- 自动分流已有订阅上下文时，canonical identity 已明确拒绝的候选在最终 limit 前淘汰，避免错误 Magnet 饿死合法 ED2K；
 - 任一 API worker 的意外异常只降级该来源，不允许拖垮其它 Provider。
 """
 
@@ -281,10 +282,10 @@ class GuangYaProviderReliabilityV1100Mixin:
         return rows, states, workers
 
     def _rank_provider_pool_v11219(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """先评分再 identity 去重；若运行时没有 v1.12.19 学习层则安全退回稳定去重。"""
+        """自动分流先硬过滤身份，再评分、identity 去重；手工搜索无订阅上下文时保留完整候选。"""
         candidates = [dict(row) for row in (rows or []) if isinstance(row, dict)]
-        if len(candidates) <= 1:
-            return _dedupe_candidates(candidates)
+        if not candidates:
+            return []
 
         quality_key_fn = getattr(self, "_candidate_quality_key_v11219", None)
         quality_snapshot_fn = getattr(self, "_candidate_quality_snapshot_v11219", None)
@@ -323,6 +324,10 @@ class GuangYaProviderReliabilityV1100Mixin:
                     eligible = bool(match_fn(subscribe, row))
                 except Exception:
                     eligible = False
+                # 这是自动分流已有明确媒体上下文时的预截断硬过滤；最终 dispatch 仍会再次校验。
+                # 手工关键词搜索 subscribe=None，不会在这里丢弃跨媒体浏览结果。
+                if not eligible:
+                    continue
             if eligible and subscribe is not None and not is_movie and uncovered and callable(episode_hint_fn):
                 try:
                     explicit = set(episode_hint_fn(subscribe, row) or set())
@@ -364,7 +369,7 @@ class GuangYaProviderReliabilityV1100Mixin:
         return _dedupe_candidates([row for _key, row in ranked])
 
     def _search_external_providers(self, keyword: str) -> Dict[str, Any]:
-        """自动分流搜索：完整有界池 -> 排序 -> identity 去重 -> 最终 limit。"""
+        """自动分流搜索：完整有界池 -> 身份硬过滤 -> 排序 -> identity 去重 -> 最终 limit。"""
         keyword = str(keyword or "").strip()
         if not keyword:
             return {"success": False, "message": "keyword 不能为空", "data": [], "providers": []}
@@ -389,7 +394,7 @@ class GuangYaProviderReliabilityV1100Mixin:
         healthy = any(bool(state.get("success")) for state in states if state.get("enabled", True))
         return {
             "success": healthy,
-            "message": f"候选池 {raw_count}，去重排序后 {deduped_count}，返回 {len(returned)} 个 Magnet/ED2K 候选",
+            "message": f"候选池 {raw_count}，过滤去重排序后 {deduped_count}，返回 {len(returned)} 个 Magnet/ED2K 候选",
             "data": returned,
             "providers": states,
             "candidate_ranking_v11219": True,
