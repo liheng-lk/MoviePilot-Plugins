@@ -74,6 +74,45 @@ new_history.update(history)
 row["history"] = new_history
 package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
+# Root contracts below describe the final public release truth, not historical
+# layer versions. Migrate only these named assertions; all v1.12.17 layer/history
+# markers elsewhere remain untouched.
+root_contracts = ROOT / "tests"
+channel_ed2k = root_contracts / "test_guangya_channel_ed2k_v1112.py"
+for old, new, label in (
+    ('self.assertEqual(package["version"], "1.12.17")', 'self.assertEqual(package["version"], "1.12.18")', "root channel package"),
+    ('self.assertEqual(local["version"], "1.12.17")', 'self.assertEqual(local["version"], "1.12.18")', "root channel local"),
+    ('self.assertIn(\'plugin_version = "1.12.17"\', entry)', 'self.assertIn(\'plugin_version = "1.12.18"\', entry)', "root channel plugin version"),
+    ('self.assertIn(\'build_id = "20260906-r64"\', entry)', 'self.assertIn(\'build_id = "20260906-r65"\', entry)', "root channel build"),
+):
+    replace_once(channel_ed2k, old, new, label)
+
+episode_fence = root_contracts / "test_guangya_episode_fence_v1124.py"
+replace_once(
+    episode_fence,
+    'self.assertIn(\'build_id = "20260906-r64"\', self.entry)',
+    'self.assertIn(\'build_id = "20260906-r65"\', self.entry)',
+    "root episode fence build",
+)
+
+media_identity = root_contracts / "test_guangya_media_identity_v1111.py"
+for old, new, label in (
+    ('self.assertIn(\'plugin_version = "1.12.17"\', entry)', 'self.assertIn(\'plugin_version = "1.12.18"\', entry)', "root media plugin version"),
+    ('self.assertIn(\'build_id = "20260906-r64"\', entry)', 'self.assertIn(\'build_id = "20260906-r65"\', entry)', "root media build"),
+    ('self.assertEqual(package["version"], "1.12.17")', 'self.assertEqual(package["version"], "1.12.18")', "root media package"),
+    ('self.assertEqual(local["version"], "1.12.17")', 'self.assertEqual(local["version"], "1.12.18")', "root media local"),
+):
+    replace_once(media_identity, old, new, label)
+
+release_v1110 = root_contracts / "test_guangya_release_v1110.py"
+for old, new, label in (
+    ('self.assertIn(\'plugin_version = "1.12.17"\', ENTRY)', 'self.assertIn(\'plugin_version = "1.12.18"\', ENTRY)', "root release plugin version"),
+    ('self.assertIn(\'build_id = "20260906-r64"\', ENTRY)', 'self.assertIn(\'build_id = "20260906-r65"\', ENTRY)', "root release build"),
+    ('self.assertEqual(package["GuangYaTransferAssistant"]["version"], "1.12.17")', 'self.assertEqual(package["GuangYaTransferAssistant"]["version"], "1.12.18")', "root release package"),
+    ('self.assertEqual(PLUGIN_JSON["version"], "1.12.17")', 'self.assertEqual(PLUGIN_JSON["version"], "1.12.18")', "root release local"),
+):
+    replace_once(release_v1110, old, new, label)
+
 # README release note immediately before v1.12.17.
 readme = PLUGIN / "README.md"
 text = readme.read_text(encoding="utf-8")
@@ -88,6 +127,6 @@ readme.write_text(text, encoding="utf-8")
 # Exact current-release contract for the final candidate tree.
 release_test = ROOT / "tests" / "v3" / "guangyatransferassistant" / "test_release_v11218_marker.py"
 release_test.write_text(
-    '''from __future__ import annotations\n\nimport json\nfrom pathlib import Path\n\nROOT = Path(__file__).resolve().parents[3]\nPLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"\n\n\ndef test_v11218_public_release_truth_and_ranking_layer_are_consistent():\n    package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]\n    local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))\n    entry = (PLUGIN / "__init__.py").read_text(encoding="utf-8")\n    ranking = (PLUGIN / "candidate_ranking_v11218.py").read_text(encoding="utf-8")\n    assert package["version"] == local["version"] == "1.12.18"\n    assert 'plugin_version = "1.12.18"' in entry\n    assert 'build_id = "20260906-r65"' in entry\n    assert 'build_id = "20260906-r65"' in ranking\n    assert "v1.12.18" in package.get("history", {})\n\n\ndef test_v11218_keeps_wide_recall_strict_write_and_fixed_source_priority():\n    ranking = (PLUGIN / "candidate_ranking_v11218.py").read_text(encoding="utf-8")\n    planner = (PLUGIN / "resource_planner_v190.py").read_text(encoding="utf-8")\n    bridge = (PLUGIN / "movie_bilingual_identity_v11216.py").read_text(encoding="utf-8")\n    assert "class GuangYaCandidateRankingV11218Mixin(GuangYaSearchRecallV11217Mixin):" in ranking\n    assert "class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaCandidateRankingV11218Mixin):" in bridge\n    assert 'external.sort(key=lambda row: 0 if str(row.get("type") or "") == "magnet" else 1)' in planner\n    assert 'rank = 1 if source_type == "magnet" else 2' in planner\n    for forbidden in ("qbittorrent", "transmission", "cloudcollection/v1/create_task", "userres/rapid"):\n        assert forbidden not in ranking.lower()\n\n\ndef test_v11218_one_shot_release_tooling_is_removed():\n    assert not (ROOT / "scripts/_prepare_guangya_v11218.py").exists()\n    assert not (ROOT / ".github/workflows/prepare-guangya-v11218.yml").exists()\n''',
+    '''from __future__ import annotations\n\nimport json\nfrom pathlib import Path\n\nROOT = Path(__file__).resolve().parents[3]\nPLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"\n\n\ndef test_v11218_public_release_truth_and_ranking_layer_are_consistent():\n    package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]\n    local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))\n    entry = (PLUGIN / "__init__.py").read_text(encoding="utf-8")\n    ranking = (PLUGIN / "candidate_ranking_v11218.py").read_text(encoding="utf-8")\n    assert package["version"] == local["version"] == "1.12.18"\n    assert 'plugin_version = "1.12.18"' in entry\n    assert 'build_id = "20260906-r65"' in entry\n    assert 'build_id = "20260906-r65"' in ranking\n    assert "v1.12.18" in package.get("history", {})\n\n\ndef test_v11218_keeps_wide_recall_strict_write_and_fixed_source_priority():\n    ranking = (PLUGIN / "candidate_ranking_v11218.py").read_text(encoding="utf-8")\n    planner = (PLUGIN / "resource_planner_v190.py").read_text(encoding="utf-8")\n    bridge = (PLUGIN / "movie_bilingual_identity_v11216.py").read_text(encoding="utf-8")\n    assert "class GuangYaCandidateRankingV11218Mixin(GuangYaSearchRecallV11217Mixin):" in ranking\n    assert "class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaCandidateRankingV11218Mixin):" in bridge\n    assert 'external.sort(key=lambda row: 0 if str(row.get("type") or "") == "magnet" else 1)' in planner\n    assert 'rank = 1 if source_type == "magnet" else 2' in planner\n    for forbidden in ("qbittorrent", "transmission", "cloudcollection/v1/create_task", "userres/rapid"):\n        assert forbidden not in ranking.lower()\n''',
     encoding="utf-8",
 )
