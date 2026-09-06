@@ -130,8 +130,8 @@ def test_v11211_layer_parses_and_is_nested_before_resource_gate_without_dropping
     assert "class GuangYaGyingAliasQueryV11212Mixin(GuangYaXunleiSeasonFenceV11210Mixin):" in alias
     assert "from .movie_bilingual_identity_v11216 import GuangYaMovieBilingualIdentityV11216Mixin" in MOVIE
     assert "class GuangYaMovieIdentityV1129Mixin(GuangYaMovieBilingualIdentityV11216Mixin):" in MOVIE
-    assert "from .search_recall_v11217 import GuangYaSearchRecallV11217Mixin" in BILINGUAL
-    assert "class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaSearchRecallV11217Mixin):" in BILINGUAL
+    assert "from .candidate_ranking_v11218 import GuangYaCandidateRankingV11218Mixin" in BILINGUAL
+    assert "class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaCandidateRankingV11218Mixin):" in BILINGUAL
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     assert head.index("GuangYaMovieIdentityV1129Mixin") < head.index("GuangYaResourceGateV1127Mixin")
     assert 'plugin_version = "1.12.10"' in SEASON

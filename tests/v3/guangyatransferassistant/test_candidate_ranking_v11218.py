@@ -167,8 +167,11 @@ def test_resource_planner_has_dynamic_v11218_order_hook_without_changing_source_
 
 def test_v11218_is_nested_under_movie_identity_and_does_not_reimplement_transfer_protocols():
     movie = MOVIE_IDENTITY.read_text(encoding="utf-8")
-    assert "GuangYaCandidateRankingV11218Mixin" in movie
-    assert "GuangYaMovieIdentityV1129Mixin(GuangYaMovieBilingualIdentityV11216Mixin, GuangYaCandidateRankingV11218Mixin)" in movie
+    bilingual = (PLUGIN / "movie_bilingual_identity_v11216.py").read_text(encoding="utf-8")
+    assert "class GuangYaMovieIdentityV1129Mixin(GuangYaMovieBilingualIdentityV11216Mixin):" in movie
+    assert "from .candidate_ranking_v11218 import GuangYaCandidateRankingV11218Mixin" in bilingual
+    assert "class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaCandidateRankingV11218Mixin):" in bilingual
+    assert "class GuangYaCandidateRankingV11218Mixin(GuangYaSearchRecallV11217Mixin):" in SOURCE.read_text(encoding="utf-8")
     source = SOURCE.read_text(encoding="utf-8").lower()
     for forbidden in ("cloudcollection/v1/create_task", "userres/rapid", "qbittorrent", "transmission"):
         assert forbidden not in source

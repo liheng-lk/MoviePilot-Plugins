@@ -22,8 +22,8 @@ def test_v11217_public_release_truth_is_consistent():
 
 
 def test_v11217_recall_is_nested_without_replacing_v11216_final_identity_bridge():
-    assert "from .search_recall_v11217 import GuangYaSearchRecallV11217Mixin" in BRIDGE
-    assert "class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaSearchRecallV11217Mixin):" in BRIDGE
+    assert "from .candidate_ranking_v11218 import GuangYaCandidateRankingV11218Mixin" in BRIDGE
+    assert "class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaCandidateRankingV11218Mixin):" in BRIDGE
     assert 'plugin_version = "1.12.16"' in BRIDGE
     assert 'build_id = "20260906-r63"' in BRIDGE
 

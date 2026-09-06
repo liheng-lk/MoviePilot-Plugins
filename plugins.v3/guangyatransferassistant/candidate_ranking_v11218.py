@@ -216,10 +216,14 @@ class GuangYaCandidateRankingV11218Mixin(GuangYaSearchRecallV11217Mixin):
             return
         sid = int(getattr(subscribe, "id", 0) or 0)
         now = time.time()
-        last = float(getattr(self, "_candidate_rank_log_at_v11218", {}).get(sid, 0) or 0)
+        log_state = getattr(self, "_candidate_rank_log_at_v11218", None)
+        if not isinstance(log_state, dict):
+            log_state = {}
+            self._candidate_rank_log_at_v11218 = log_state
+        last = float(log_state.get(sid, 0) or 0)
         if last and now - last < self._candidate_rank_log_interval_v11218:
             return
-        self._candidate_rank_log_at_v11218[sid] = now
+        log_state[sid] = now
         summary = []
         for entry, _reason in rows[:3]:
             detail = self._channel_entry_score_v11218(subscribe, entry)

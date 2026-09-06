@@ -56,7 +56,7 @@ def _namespace():
     module = ast.Module(body=body, type_ignores=[])
     ast.fix_missing_locations(module)
     namespace = {
-        "GuangYaSearchRecallV11217Mixin": _Base,
+        "GuangYaCandidateRankingV11218Mixin": _Base,
         "explicit_seasons_v1111": MEDIA.explicit_seasons_v1111,
         "explicit_years_v1111": MEDIA.explicit_years_v1111,
         "strong_title_match_v1111": MEDIA.strong_title_match_v1111,

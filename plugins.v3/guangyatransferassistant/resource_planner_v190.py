@@ -516,6 +516,15 @@ class GuangYaResourcePlannerMixin:
             if matched:
                 matched_entries.append((entry, reason))
 
+        # v1.12.18 只提供同阶段频道候选排序 hook；没有新层时完全保持旧顺序。
+        # 固定来源优先级不在这里改变：本函数仍在光鸭直接转存之后执行，且组内仍 Magnet > ED2K。
+        ranker_v11218 = getattr(self, "_channel_entry_priority_v11218", None)
+        if callable(ranker_v11218) and len(matched_entries) > 1:
+            try:
+                matched_entries.sort(key=lambda pair: ranker_v11218(subscribe, pair[0]))
+            except Exception as err:
+                self._plugin_log("WARNING", "【光鸭转存助手】【候选排序v1.12.18】#%s 频道候选排序失败，保持旧顺序：%s", sid, str(err)[:180])
+
         actions = []
         skipped = []
         magnet_selected = False

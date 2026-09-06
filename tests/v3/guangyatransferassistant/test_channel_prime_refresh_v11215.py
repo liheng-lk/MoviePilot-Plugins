@@ -156,7 +156,7 @@ def _load_mixin():
 def test_new_subscription_prime_override_is_before_v1125_dispatch_final_in_runtime_chain():
     assert "class GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin):" in MANUAL
     assert "class GuangYaMovieIdentityV1129Mixin(GuangYaMovieBilingualIdentityV11216Mixin):" in MOVIE
-    assert "class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaSearchRecallV11217Mixin):" in BILINGUAL
+    assert "class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaCandidateRankingV11218Mixin):" in BILINGUAL
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     assert head.index("GuangYaMovieIdentityV1129Mixin") < head.index("GuangYaDispatchPolicyFinalV1125Mixin")
     assert "def _spawn_route_prime(" in SOURCE

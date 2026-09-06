@@ -19,7 +19,7 @@ def test_final_v11217_tree_is_publishable_and_temp_tooling_is_removed():
     assert plugin["version"] == "1.12.17"
     assert package["GuangYaTransferAssistant"]["version"] == "1.12.17"
     assert 'class GuangYaSearchRecallV11217Mixin' in recall
-    assert 'class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaSearchRecallV11217Mixin):' in bilingual
+    assert 'class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaCandidateRankingV11218Mixin):' in bilingual
     assert 'plugin_version = "1.12.16"' in bilingual
     assert 'build_id = "20260906-r63"' in bilingual
     assert not (ROOT / "scripts/_prepare_guangya_v11217.py").exists()

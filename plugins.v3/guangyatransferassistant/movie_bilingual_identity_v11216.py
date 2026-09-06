@@ -20,7 +20,7 @@ import re
 from pathlib import PurePosixPath
 from typing import Any, Dict, Iterable, List, Sequence, Set, Tuple
 
-from .search_recall_v11217 import GuangYaSearchRecallV11217Mixin
+from .candidate_ranking_v11218 import GuangYaCandidateRankingV11218Mixin
 from .media_identity_v1111 import (
     explicit_seasons_v1111,
     explicit_years_v1111,
@@ -88,7 +88,7 @@ def _title_segments_v11216(value: Any, expected_year: Any = None) -> List[Tuple[
     return result
 
 
-class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaSearchRecallV11217Mixin):
+class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaCandidateRankingV11218Mixin):
     """用同一真实分享内的双语标题关系救回电影标题误杀。"""
 
     plugin_version = "1.12.16"
