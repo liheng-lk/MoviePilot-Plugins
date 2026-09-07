@@ -20,3 +20,13 @@ def test_media_match_slice_is_public_v11219_release():
     assert "GuangYaMediaMatchV11219Mixin" in FAST
     assert "requested_episodes" in MATCH
     assert "transfer_episodes" in MATCH
+
+
+def test_v11219_description_keeps_v11218_fail_closed_safety_contract():
+    local_desc = str(PLUGIN_JSON.get("description") or "")
+    package_desc = str(PACKAGE_JSON.get("description") or "")
+    assert local_desc == package_desc
+    assert "get_item" in local_desc
+    assert "fail-closed" in local_desc
+    assert "taskId" in local_desc or "taskid" in local_desc.lower()
+    assert "观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K" in local_desc
