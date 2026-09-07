@@ -1,0 +1,63 @@
+name: Fix GuangYa v1.12.19 Release Contracts
+on:
+  push:
+    branches:
+      - feat/guangya-v1.12.19-ranking-learning
+permissions:
+  contents: write
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/guangya-v1.12.19-ranking-learning
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Update only current-release assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          edits = {
+              "tests/v3/guangyatransferassistant/test_channel_reconcile_v11215.py": [
+                  ('assert \'"version": "1.12.18"\' in PLUGIN_JSON', 'assert \'"version": "1.12.19"\' in PLUGIN_JSON'),
+              ],
+              "tests/v3/guangyatransferassistant/test_episode_compat_v171.py": [
+                  ('assert \'build_id = "20260906-r65"\' in text', 'assert \'build_id = "20260907-r66"\' in text'),
+              ],
+              "tests/v3/guangyatransferassistant/test_release_v11213_marker.py": [
+                  ('assert LOCAL["version"] == PACKAGE["version"] == "1.12.18"', 'assert LOCAL["version"] == PACKAGE["version"] == "1.12.19"'),
+              ],
+              "tests/v3/guangyatransferassistant/test_release_v11216_marker.py": [
+                  ('assert PACKAGE["GuangYaTransferAssistant"]["version"] == "1.12.18"', 'assert PACKAGE["GuangYaTransferAssistant"]["version"] == "1.12.19"'),
+              ],
+              "tests/v3/guangyatransferassistant/test_release_v11217_marker.py": [
+                  ('assert PACKAGE["GuangYaTransferAssistant"]["version"] == "1.12.18"', 'assert PACKAGE["GuangYaTransferAssistant"]["version"] == "1.12.19"'),
+              ],
+              "tests/v3/guangyatransferassistant/test_release_v1125_marker.py": [
+                  ('assert LOCAL["version"] == "1.12.18"', 'assert LOCAL["version"] == "1.12.19"'),
+                  ('assert PACKAGE["version"] == "1.12.18"', 'assert PACKAGE["version"] == "1.12.19"'),
+              ],
+          }
+          for raw_path, replacements in edits.items():
+              path = Path(raw_path)
+              text = path.read_text(encoding="utf-8")
+              for old, new in replacements:
+                  if old not in text:
+                      raise SystemExit(f"expected release assertion missing: {raw_path}: {old}")
+                  text = text.replace(old, new, 1)
+              path.write_text(text, encoding="utf-8")
+          PY
+      - name: Remove one-shot workflow
+        run: rm -f .github/workflows/fix-guangya-v11219-release-contracts.yml
+      - name: Commit current-release contract alignment
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "test(guangya): align v1.12.19 release contracts"
+          git push origin HEAD:feat/guangya-v1.12.19-ranking-learning
