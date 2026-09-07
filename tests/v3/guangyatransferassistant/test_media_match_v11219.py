@@ -25,6 +25,7 @@ def _load_functions(*names):
         "Dict": Dict,
         "Iterable": Iterable,
         "Set": Set,
+        "_STRONG_SOURCE_STATES_V11219": {"submitted", "queued", "waiting", "completed"},
     }
     exec(compile(module, str(MATCH), "exec"), ns)
     return ns
