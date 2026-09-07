@@ -14,6 +14,7 @@
 
 v1.12.19 开发阶段把高质量媒体匹配作为本层 cooperative parent 接入最终 MRO：
 - 电影按真实视频 + MoviePilot/TMDB 官方标题证据做最终身份确认；
+- 迅雷电影与光鸭分享、Magnet/ED2K 共用 actual-payload 最终标准；
 - 剧集把 requested/candidate/resolved/transfer episodes 分开；
 - 未 resolve 的 Magnet/ED2K intent 不再提前占用其它来源的缺集 claim。
 """
@@ -23,9 +24,13 @@ import time
 from typing import Any, Dict, List
 
 from .media_match_v11219 import GuangYaMediaMatchV11219Mixin
+from .movie_xunlei_match_v11219 import GuangYaMovieXunleiMatchV11219Mixin
 
 
-class GuangYaFastRecallV1126Mixin(GuangYaMediaMatchV11219Mixin):
+class GuangYaFastRecallV1126Mixin(
+    GuangYaMediaMatchV11219Mixin,
+    GuangYaMovieXunleiMatchV11219Mixin,
+):
     """把当天应播 TV 的最坏主动发现延迟从约 60 分钟降到约 10 分钟。"""
 
     plugin_version = "1.12.6"
