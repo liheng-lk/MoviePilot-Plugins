@@ -1,0 +1,104 @@
+name: Prepare GuangYa v1.12.19 Release
+on:
+  push:
+    branches:
+      - feat/guangya-v1.12.19-ranking-learning
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/guangya-v1.12.19-ranking-learning
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Promote release metadata
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          version = "1.12.19"
+          build = "20260907-r66"
+          release_note = (
+              "发布候选排序、来源质量学习与高置信媒体匹配：外部 Provider 在全局截断前统一排序并受进程级 4 并发预算约束，"
+              "成功参数名做 6 小时有界学习；电影的迅雷、光鸭分享、Magnet、ED2K 均要求真实 payload 视频和 MoviePilot/TMDB 可信标题证据，"
+              "搜索卡片不能单独授权；剧集/动漫拆分 requested/candidate/resolved/transfer episodes，未 resolve 的意图不再提前形成强 claim，"
+              "真实解析后再次以 MoviePilot 当前权威缺集和不可分割物理文件为最终门禁；来源状态写入增加进程级 RLock，"
+              "仅资源可归因终态失败参与质量学习。来源优先级保持观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K，Magnet/ED2K 继续使用光鸭原生 cloudcollection。"
+          )
+          short_desc = (
+              "更新日历驱动的固定分流助手。v1.12.19 统一电影与剧集/动漫的高置信真实资源匹配：电影四来源均以真实 payload 视频和 MoviePilot/TMDB 可信标题证据为最终门禁；"
+              "剧集拆分 requested/candidate/resolved/transfer episodes，未解析候选不再提前占缺集；Provider 在全局截断前排序并受进程级 4 并发预算约束，"
+              "来源质量只学习真实可归因结果。来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。"
+          )
+
+          entry_path = Path("plugins.v3/guangyatransferassistant/__init__.py")
+          entry = entry_path.read_text(encoding="utf-8")
+          entry = entry.replace('光鸭转存助手 v1.12.18 运行入口。', '光鸭转存助手 v1.12.19 运行入口。', 1)
+          marker = 'v1.12.18 修复失败转存/纯验证留下空目录：'
+          if 'v1.12.19 发布候选排序、来源质量学习与高置信媒体匹配：' not in entry:
+              entry = entry.replace(marker, 'v1.12.19 发布候选排序、来源质量学习与高置信媒体匹配：电影四来源统一真实 payload 最终身份门禁；剧集/动漫拆分 requested/candidate/resolved/transfer episodes，未解析 intent 不再形成强 claim；Provider 候选在全局截断前排序并受全局 4 并发预算约束，查询参数做有界学习；来源状态写入与终态质量学习并发安全，只有资源可归因失败才计入质量。来源优先级和光鸭原生 cloudcollection 路线不变。\n' + marker, 1)
+          entry = entry.replace('plugin_version = "1.12.18"\n    build_id = "20260906-r65"', f'plugin_version = "{version}"\n    build_id = "{build}"', 1)
+          entry_path.write_text(entry, encoding="utf-8")
+
+          plugin_path = Path("plugins.v3/guangyatransferassistant/plugin.json")
+          plugin = json.loads(plugin_path.read_text(encoding="utf-8"))
+          plugin["version"] = version
+          plugin["description"] = short_desc
+          plugin_path.write_text(json.dumps(plugin, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          package_path = Path("package.v3.json")
+          package = json.loads(package_path.read_text(encoding="utf-8"))
+          item = package["GuangYaTransferAssistant"]
+          item["version"] = version
+          item["description"] = short_desc
+          old_history = dict(item.get("history") or {})
+          item["history"] = {f"v{version}": release_note, **old_history}
+          package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          readme_path = Path("plugins.v3/guangyatransferassistant/README.md")
+          readme = readme_path.read_text(encoding="utf-8")
+          release_section = f'''## v{version} - 高置信媒体匹配与来源可靠性\n\n- 电影覆盖迅雷、光鸭直接分享、Magnet、ED2K：搜索标题只负责发现，最终执行必须由真实 payload 视频及 MoviePilot/TMDB 可信官方标题证据确认；保留严格双语真实资源桥，不增加模糊救回。\n- 剧集/动漫拆分 `requested_episodes`、`candidate_episodes`、`resolved_episodes`、`transfer_episodes`；未 resolve 候选不再提前占用其它来源缺集，真实解析后再次按 MoviePilot 当前权威 missing 与不可分割物理文件做最终过滤。\n- Provider 候选先汇总排序再做全局 limit/去重，避免后配置高质量来源被提前截断；普通 API 最多 4 并发，所有同时搜索共享进程级 4 槽预算，GYING 保持独立会话链。\n- URL 模板不再重复请求 q/keyword/kw/search；普通 Provider 对最近成功参数名做 6 小时有界学习，失效时继续完整 fallback，不降低召回。\n- 来源状态 read-modify-write 使用进程级 `RLock`；质量学习只统计真实成功及资源本身可归因失败，网络/API/目标路径/订阅删除等基础设施问题保持中性。\n- 来源优先级保持：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K；Magnet/ED2K 继续使用光鸭原生 `cloudcollection`，不接 MoviePilot 本地下载器。\n\n'''
+          if f"## v{version} -" not in readme:
+              readme = readme.replace("## v1.12.18 -", release_section + "## v1.12.18 -", 1)
+          readme_path.write_text(readme, encoding="utf-8")
+
+          # Promote only assertions that describe the current public release. Historical
+          # module assertions such as GUARD/PATCH plugin_version=1.12.18 stay untouched.
+          current_names = ("ENTRY", "entry", "entry_text")
+          json_names = ("package", "local", "plugin", "PLUGIN_JSON")
+          for path in Path("tests").rglob("*.py"):
+              text = path.read_text(encoding="utf-8")
+              out = []
+              for line in text.splitlines(keepends=True):
+                  if 'plugin_version = "1.12.18"' in line and any(name in line for name in current_names):
+                      line = line.replace('plugin_version = "1.12.18"', 'plugin_version = "1.12.19"')
+                  if 'build_id = "20260906-r65"' in line and any(name in line for name in current_names):
+                      line = line.replace('build_id = "20260906-r65"', 'build_id = "20260907-r66"')
+                  if '1.12.18' in line and (('["version"]' in line) or ("['version']" in line)) and any(name in line for name in json_names):
+                      line = line.replace('1.12.18', '1.12.19')
+                  out.append(line)
+              path.write_text(''.join(out), encoding="utf-8")
+
+          guard_path = Path("tests/v3/guangyatransferassistant/test_media_match_release_guard_v11219.py")
+          guard = guard_path.read_text(encoding="utf-8")
+          guard = guard.replace('def test_media_match_slice_does_not_bump_public_release_metadata():', 'def test_media_match_slice_is_public_v11219_release():')
+          guard = guard.replace('plugin_version = "1.12.18"', 'plugin_version = "1.12.19"')
+          guard = guard.replace('build_id = "20260906-r65"', 'build_id = "20260907-r66"')
+          guard_path.write_text(guard, encoding="utf-8")
+          PY
+      - name: Remove one-shot release workflow
+        run: rm -f .github/workflows/prepare-guangya-v11219.yml
+      - name: Commit release promotion
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "release(guangya): v1.12.19 high-confidence media matching"
+          git push origin HEAD:feat/guangya-v1.12.19-ranking-learning
