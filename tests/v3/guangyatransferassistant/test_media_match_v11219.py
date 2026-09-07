@@ -154,9 +154,11 @@ def test_movie_actual_match_accepts_real_primary_or_file_title_match():
     assert result["actual_title_match"] is True
 
 
-def test_runtime_wiring_places_match_layer_before_dispatch_and_episode_fence():
+def test_runtime_wiring_places_match_layers_before_dispatch_and_episode_fence():
     assert "from .media_match_v11219 import GuangYaMediaMatchV11219Mixin" in FAST_SOURCE
-    assert "class GuangYaFastRecallV1126Mixin(GuangYaMediaMatchV11219Mixin):" in FAST_SOURCE
+    assert "from .movie_xunlei_match_v11219 import GuangYaMovieXunleiMatchV11219Mixin" in FAST_SOURCE
+    declaration = FAST_SOURCE.split("class GuangYaFastRecallV1126Mixin(", 1)[1].split("):", 1)[0]
+    assert declaration.index("GuangYaMediaMatchV11219Mixin") < declaration.index("GuangYaMovieXunleiMatchV11219Mixin")
 
 
 def test_source_schema_separates_intent_candidate_resolved_and_transfer():
