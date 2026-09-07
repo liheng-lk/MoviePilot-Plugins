@@ -1,3 +1,12 @@
+## v1.12.19 - 高置信媒体匹配与来源可靠性
+
+- 电影覆盖迅雷、光鸭直接分享、Magnet、ED2K：搜索标题只负责发现，最终执行必须由真实 payload 视频及 MoviePilot/TMDB 可信官方标题证据确认；保留严格双语真实资源桥，不增加模糊救回。
+- 剧集/动漫拆分 `requested_episodes`、`candidate_episodes`、`resolved_episodes`、`transfer_episodes`；未 resolve 候选不再提前占用其它来源缺集，真实解析后再次按 MoviePilot 当前权威 missing 与不可分割物理文件做最终过滤。
+- Provider 候选先汇总排序再做全局 limit/去重，避免后配置高质量来源被提前截断；普通 API 最多 4 并发，所有同时搜索共享进程级 4 槽预算，GYING 保持独立会话链。
+- URL 模板不再重复请求 q/keyword/kw/search；普通 Provider 对最近成功参数名做 6 小时有界学习，失效时继续完整 fallback，不降低召回。
+- 来源状态 read-modify-write 使用进程级 `RLock`；质量学习只统计真实成功及资源本身可归因失败，网络/API/目标路径/订阅删除等基础设施问题保持中性。
+- 来源优先级保持：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K；Magnet/ED2K 继续使用光鸭原生 `cloudcollection`，不接 MoviePilot 本地下载器。
+
 ## v1.12.18 - 空目录生命周期保护
 
 - Magnet/ED2K 在第一次创建目标目录前完成 `resolve_res`，解析/筛选失败不会留下媒体空目录；预解析结果直接复用，不额外重复请求。

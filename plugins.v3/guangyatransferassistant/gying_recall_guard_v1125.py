@@ -16,16 +16,77 @@
   才逐级补查宽关键词；若严格搜索本身没有成功缓存则不继续放宽；
 - 真正的媒体身份与文件级缺集校验仍由现有迅雷 JSON / Episode Planner 最终确认。
 
+v1.12.19 开发阶段只增加安全排序与来源质量学习：
+- 固定来源层级永远先于学习分，外部候选仍保持 Magnet > ED2K；
+- 排序只作用于已召回候选，不改变 MediaIdentity / library missing / reservation / source claim / 物理文件硬栅栏；
+- 来源质量只统计插件自身来源从非终态进入 completed / failed 的真实终态，不把 retry/waiting 当失败；
+- 学习分使用带先验的有界分数，只在同一来源层级和安全覆盖特征之后作为 tie-break；
+- 通过线程本地上下文把 subscribe/uncovered 只读传给搜索排序，不重写既有 dispatch 执行链。
+
 本层是标准 cooperative mixin，不继承旧 Hardening；运行时显式放在 Hardening 前面。
 """
 from __future__ import annotations
 
 import threading
 import time
-from typing import Any, Dict, Iterable, List, Set
+from typing import Any, Dict, Iterable, List, Set, Tuple
 
 from .episode_resolver_v190 import AUTO_SELECT_CONFIDENCE, reliable_episode_set, resolve_episode
 from .gying_hardening_v193 import gying_keyword_variants
+
+
+_CANDIDATE_QUALITY_DATA_KEY_V11219 = "candidate_quality_v11219"
+_CANDIDATE_QUALITY_CACHE_TTL_V11219 = 30.0
+_EXTERNAL_SOURCE_TIER_V11219 = {"magnet": 0, "ed2k": 1}
+_TERMINAL_SOURCE_OUTCOME_V11219 = {"completed": True, "failed": False}
+
+
+def _nonnegative_int_v11219(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _nonnegative_float_v11219(value: Any) -> float:
+    try:
+        return max(0.0, float(value or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def candidate_quality_score_v11219(stats: Dict[str, Any]) -> int:
+    """Beta(2,2) 平滑后的有界质量分；无样本严格为 0。"""
+    success = _nonnegative_int_v11219((stats or {}).get("success"))
+    failure = _nonnegative_int_v11219((stats or {}).get("failure"))
+    if success + failure <= 0:
+        return 0
+    posterior = (success + 2.0) / (success + failure + 4.0)
+    return max(-100, min(100, int(round((posterior - 0.5) * 200.0))))
+
+
+def candidate_rank_key_v11219(
+    source_type: str,
+    eligible: bool,
+    coverage_penalty: int,
+    extra_episode_count: int,
+    hit_episode_count: int,
+    quality_score: int,
+    candidate_rank: int,
+    original_index: int,
+) -> Tuple[int, int, int, int, int, int, int, int]:
+    """固定来源层级是最高优先维度，学习分永远不能跨层级翻盘。"""
+    source_tier = _EXTERNAL_SOURCE_TIER_V11219.get(str(source_type or "").strip().lower(), 99)
+    return (
+        source_tier,
+        0 if eligible else 1,
+        max(0, int(coverage_penalty or 0)),
+        max(0, int(extra_episode_count or 0)),
+        -max(0, int(hit_episode_count or 0)),
+        -max(-100, min(100, int(quality_score or 0))),
+        max(0, int(candidate_rank or 0)),
+        max(0, int(original_index or 0)),
+    )
 
 
 class GuangYaGyingRecallGuardV1125Mixin:
@@ -403,4 +464,229 @@ class GuangYaGyingRecallGuardV1125Mixin:
         return last_result
 
 
-__all__ = ["GuangYaGyingRecallGuardV1125Mixin"]
+_GuangYaGyingRecallGuardV1125Base = GuangYaGyingRecallGuardV1125Mixin
+
+
+class GuangYaGyingRecallGuardV1125Mixin(_GuangYaGyingRecallGuardV1125Base):
+    """v1.12.19 安全候选排序与终态来源质量学习，不修改任何最终门禁。"""
+
+    def _candidate_rank_local_v11219(self):
+        local = getattr(self, "_candidate_rank_local_state_v11219", None)
+        if local is None:
+            local = threading.local()
+            self._candidate_rank_local_state_v11219 = local
+        return local
+
+    @staticmethod
+    def _candidate_quality_key_v11219(row: Dict[str, Any]) -> str:
+        source_type = str((row or {}).get("type") or "").strip().lower()
+        if source_type not in {"guangya", "magnet", "ed2k"}:
+            return ""
+        provider = str((row or {}).get("provider") or "").strip()
+        origin = str((row or {}).get("origin") or "").strip()
+        origin_key = origin.casefold()
+        source_label = str((row or {}).get("source_label") or "").strip()
+        if not provider and origin_key.startswith("provider:"):
+            provider = origin.split(":", 1)[1].strip()
+        if not provider and origin_key == "viewing_auto":
+            provider = source_label or "GYING"
+        if not provider and origin_key.startswith("channel"):
+            provider = source_label or origin
+        if not provider:
+            return ""
+        provider = " ".join(provider.split()).casefold()[:120]
+        if provider in {"viewing", "gying"}:
+            provider = "gying"
+        return f"{source_type}|{provider}"
+
+    def _candidate_quality_store_v11219(self) -> Dict[str, Any]:
+        raw = self.get_data(_CANDIDATE_QUALITY_DATA_KEY_V11219) or {}
+        if not isinstance(raw, dict):
+            raw = {}
+        raw_items = raw.get("items") or {}
+        items: Dict[str, Dict[str, Any]] = {}
+        if isinstance(raw_items, dict):
+            for key, value in raw_items.items():
+                if not isinstance(value, dict):
+                    continue
+                items[str(key)] = {
+                    "success": _nonnegative_int_v11219(value.get("success")),
+                    "failure": _nonnegative_int_v11219(value.get("failure")),
+                    "updated_at": _nonnegative_float_v11219(value.get("updated_at")),
+                }
+        return {
+            "schema": 1,
+            "items": items,
+            "updated_at": _nonnegative_float_v11219(raw.get("updated_at")),
+        }
+
+    def _candidate_quality_snapshot_v11219(self) -> Dict[str, Dict[str, Any]]:
+        now = time.monotonic()
+        cached = getattr(self, "_candidate_quality_cache_v11219", None)
+        if isinstance(cached, tuple) and len(cached) == 2:
+            try:
+                cached_at = float(cached[0])
+            except (TypeError, ValueError):
+                cached_at = 0.0
+            if now - cached_at < _CANDIDATE_QUALITY_CACHE_TTL_V11219 and isinstance(cached[1], dict):
+                return dict(cached[1])
+        items = dict(self._candidate_quality_store_v11219().get("items") or {})
+        self._candidate_quality_cache_v11219 = (now, items)
+        return dict(items)
+
+    def _record_candidate_quality_outcome_v11219(self, row: Dict[str, Any], success: bool) -> None:
+        key = self._candidate_quality_key_v11219(row)
+        if not key:
+            return
+        try:
+            store = self._candidate_quality_store_v11219()
+            items = dict(store.get("items") or {})
+            stats = dict(items.get(key) or {})
+            stats["success"] = _nonnegative_int_v11219(stats.get("success")) + (1 if success else 0)
+            stats["failure"] = _nonnegative_int_v11219(stats.get("failure")) + (0 if success else 1)
+            stats["updated_at"] = time.time()
+            items[key] = stats
+            store["items"] = items
+            store["updated_at"] = time.time()
+            self.save_data(_CANDIDATE_QUALITY_DATA_KEY_V11219, store)
+            self._candidate_quality_cache_v11219 = (time.monotonic(), dict(items))
+        except Exception as err:
+            self._plugin_log(
+                "DEBUG",
+                "【光鸭转存助手】【候选学习v1.12.19】质量统计写入失败 key=%s: %s",
+                key,
+                err,
+            )
+
+    def _update_source(self, source_id: str, **fields: Any):
+        """只观察真实 terminal transition；所有非终态更新零额外读写。"""
+        target_state = str(fields.get("state") or "").strip().lower()
+        if target_state not in _TERMINAL_SOURCE_OUTCOME_V11219:
+            return super()._update_source(source_id, **fields)
+
+        had_before = False
+        before_state = ""
+        try:
+            before = dict(self._source_store().get("items", {}).get(str(source_id)) or {})
+            had_before = bool(before)
+            before_state = str(before.get("state") or "").strip().lower()
+        except Exception:
+            had_before = False
+
+        updated = super()._update_source(source_id, **fields)
+        if updated and had_before and before_state != target_state:
+            self._record_candidate_quality_outcome_v11219(
+                dict(updated),
+                bool(_TERMINAL_SOURCE_OUTCOME_V11219[target_state]),
+            )
+        return updated
+
+    def _dispatch_provider_candidate(self, subscribe: Any, uncovered: set[int]):
+        """只给既有 Provider dispatch 注入只读排序上下文，不复制执行链。"""
+        local = self._candidate_rank_local_v11219()
+        previous_subscribe = (hasattr(local, "subscribe"), getattr(local, "subscribe", None))
+        previous_uncovered = (hasattr(local, "uncovered"), getattr(local, "uncovered", None))
+        local.subscribe = subscribe
+        local.uncovered = set(uncovered or set())
+        try:
+            return super()._dispatch_provider_candidate(subscribe, uncovered)
+        finally:
+            if previous_subscribe[0]:
+                local.subscribe = previous_subscribe[1]
+            else:
+                try:
+                    delattr(local, "subscribe")
+                except AttributeError:
+                    pass
+            if previous_uncovered[0]:
+                local.uncovered = previous_uncovered[1]
+            else:
+                try:
+                    delattr(local, "uncovered")
+                except AttributeError:
+                    pass
+
+    def _search_external_providers(self, keyword: str) -> Dict[str, Any]:
+        """稳定重排 super 已召回候选；不扩容、不新增请求、不放宽 eligibility。"""
+        result = dict(super()._search_external_providers(keyword) or {})
+        rows = [dict(row) for row in (result.get("data") or []) if isinstance(row, dict)]
+        if len(rows) <= 1:
+            return result
+
+        local = self._candidate_rank_local_v11219()
+        subscribe = getattr(local, "subscribe", None)
+        uncovered = {
+            int(value)
+            for value in (getattr(local, "uncovered", set()) or set())
+            if str(value).isdigit() and int(value) > 0
+        }
+        quality = self._candidate_quality_snapshot_v11219()
+        ranked = []
+        is_movie = bool(subscribe is not None and self._is_movie_subscription(subscribe))
+        for index, row in enumerate(rows):
+            eligible = True
+            coverage_penalty = 1
+            extra_episode_count = 0
+            hit_episode_count = 0
+            if subscribe is not None:
+                try:
+                    eligible = bool(self._provider_candidate_matches(subscribe, row))
+                except Exception:
+                    eligible = False
+                if eligible and not is_movie and uncovered:
+                    explicit = self._candidate_episode_hint_v1125(subscribe, row)
+                    if explicit:
+                        hit = set(explicit).intersection(uncovered)
+                        extra = set(explicit) - uncovered
+                        hit_episode_count = len(hit)
+                        extra_episode_count = len(extra)
+                        if hit and not extra:
+                            coverage_penalty = 0
+                        elif hit:
+                            coverage_penalty = 2
+                        else:
+                            coverage_penalty = 3
+            key = self._candidate_quality_key_v11219(row)
+            quality_score = candidate_quality_score_v11219(dict(quality.get(key) or {})) if key else 0
+            candidate_rank = _nonnegative_int_v11219(row.get("candidate_rank"))
+            sort_key = candidate_rank_key_v11219(
+                str(row.get("type") or ""),
+                eligible,
+                coverage_penalty,
+                extra_episode_count,
+                hit_episode_count,
+                quality_score,
+                candidate_rank,
+                index,
+            )
+            enriched = dict(row)
+            enriched["candidate_score_v11219"] = quality_score
+            enriched["candidate_sort_v11219"] = list(sort_key[:-1])
+            ranked.append((sort_key, enriched))
+
+        ranked.sort(key=lambda item: item[0])
+        result["data"] = [row for _key, row in ranked]
+        result["candidate_ranking_v11219"] = True
+        return result
+
+    def _xunlei_candidate_priority_v1125(
+        self,
+        subscribe: Any,
+        row: Dict[str, Any],
+        missing: set[int],
+    ) -> Tuple[int, ...]:
+        """严格继承旧缺集优先键，只在其后追加“无跨界集/覆盖更多/有提取码”细排。"""
+        base = tuple(super()._xunlei_candidate_priority_v1125(subscribe, row, missing))
+        explicit = self._candidate_episode_hint_v1125(subscribe, row)
+        overlap = set(explicit).intersection(missing or set())
+        extras = set(explicit) - set(missing or set())
+        package_penalty = 0 if explicit and overlap and not extras else (1 if not explicit else 2)
+        passcode_penalty = 0 if str((row or {}).get("passcode") or "").strip() else 1
+        return (*base, package_penalty, len(extras), -len(overlap), passcode_penalty)
+
+
+__all__ = [
+    "GuangYaGyingRecallGuardV1125Mixin",
+    "candidate_quality_score_v11219",
+    "candidate_rank_key_v11219",
+]
