@@ -51,8 +51,8 @@ def test_v11219_guard_parses_without_premature_public_version_bump():
     ast.parse(text, filename=str(GUARD))
     ast.parse(entry, filename=str(ENTRY))
     assert "v1.12.19 开发阶段只增加安全排序与来源质量学习" in text
-    assert 'plugin_version = "1.12.18"' in entry
-    assert 'build_id = "20260906-r65"' in entry
+    assert 'plugin_version = "1.12.19"' in entry
+    assert 'build_id = "20260907-r66"' in entry
 
 
 def test_quality_score_is_neutral_without_samples_and_bounded_with_outcomes():
