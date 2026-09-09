@@ -17,17 +17,22 @@ v1.12.19 开发阶段把高质量媒体匹配作为本层 cooperative parent 接
 - 迅雷电影与光鸭分享、Magnet/ED2K 共用 actual-payload 最终标准；
 - 剧集把 requested/candidate/resolved/transfer episodes 分开；
 - 未 resolve 的 Magnet/ED2K intent 不再提前占用其它来源的缺集 claim。
+
+v1.12.24 继续把自动恢复层作为 cooperative parent 接入：同一频道分享可增长复核、
+handled 真缺口恢复、非更新日提前资源补漏以及识别文件夹名前缀命名均在该层收口。
 """
 from __future__ import annotations
 
 import time
 from typing import Any, Dict, List
 
+from .auto_recovery_v11224 import GuangYaAutoRecoveryV11224Mixin
 from .media_match_v11219 import GuangYaMediaMatchV11219Mixin
 from .movie_xunlei_match_v11219 import GuangYaMovieXunleiMatchV11219Mixin
 
 
 class GuangYaFastRecallV1126Mixin(
+    GuangYaAutoRecoveryV11224Mixin,
     GuangYaMediaMatchV11219Mixin,
     GuangYaMovieXunleiMatchV11219Mixin,
 ):
