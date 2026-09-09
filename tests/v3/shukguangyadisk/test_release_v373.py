@@ -5,10 +5,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
-VERSION = "3.7.4"
+VERSION = "3.7.5"
 
 
-def test_v374_release_metadata_is_exact_and_cross_plugin_safe():
+def test_v375_release_metadata_is_exact_and_cross_plugin_safe():
     init_text = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
     plugin = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
@@ -25,7 +25,7 @@ def test_v374_release_metadata_is_exact_and_cross_plugin_safe():
     assert tuple(map(int, package["GuangYaTransferAssistant"]["version"].split("."))) >= (1, 12, 14)
 
 
-def test_v374_release_keeps_v373_recognition_preview_cleanup():
+def test_v375_release_keeps_v373_recognition_preview_cleanup():
     candidate = (PLUGIN / "organizer_candidate_filter.py").read_text(encoding="utf-8")
     episode = (PLUGIN / "organizer_episode_name_adapter_v3411.py").read_text(encoding="utf-8")
     category = (PLUGIN / "organizer_category_consistency_v3412.py").read_text(encoding="utf-8")
@@ -45,7 +45,7 @@ def test_v374_release_keeps_v373_recognition_preview_cleanup():
     assert "audit_episode_expectations(" in loss
 
 
-def test_v374_release_keeps_one_disposition_policy_and_moviepilot_authority():
+def test_v375_release_keeps_one_disposition_policy_and_moviepilot_authority():
     policy = (PLUGIN / "organizer_policy.py").read_text(encoding="utf-8")
     episode = (PLUGIN / "organizer_episode_name_adapter_v3411.py").read_text(encoding="utf-8")
     category = (PLUGIN / "organizer_category_consistency_v3412.py").read_text(encoding="utf-8")
