@@ -174,18 +174,17 @@ class GuangYaOrganizerMonitorV366Mixin:
                 phases.get(name, 0)
                 for name in ("stabilizing", "inflight", "retry_wait", "history_wait")
             )
-            # 部分成员处于 hard-wait 时不能把整个目录交给 MoviePilot，但也不能饿死
-            # 同目录中已经 ready 的新成员。只有一个 ready 都没有时，才把整个资源标记等待。
+            if hard_wait:
+                return self._v366_finish_schedule(
+                    normalized_group,
+                    files,
+                    {"scheduled": False, "reason": "resource_wait", "primary": len(primary), "phases": phases},
+                )
             if not rows:
                 return self._v366_finish_schedule(
                     normalized_group,
                     files,
-                    {
-                        "scheduled": False,
-                        "reason": "resource_wait" if hard_wait else "no_ready",
-                        "primary": len(primary),
-                        "phases": phases,
-                    },
+                    {"scheduled": False, "reason": "no_ready", "primary": len(primary), "phases": phases},
                 )
             selected = rows
             all_primary_ready = (

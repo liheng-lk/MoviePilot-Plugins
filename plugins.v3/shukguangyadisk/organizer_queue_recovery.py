@@ -29,7 +29,6 @@ class GuangYaQueueRecoveryMixin:
     _isolated_recovery_marker_key = "organize_v340_isolated_recovery"
     _isolated_queue_capacity = 256
     _monitor_inflight_lease = 7 * 24 * 3600
-    _isolated_orphan_owned_grace = 120.0
 
     _isolated_queue: Optional[queue.Queue] = None
     _isolated_worker: Optional[threading.Thread] = None
@@ -40,7 +39,6 @@ class GuangYaQueueRecoveryMixin:
     _isolated_last_result: str = ""
     _isolated_last_message: str = ""
     _isolated_last_finished_at: float = 0.0
-    _isolated_orphan_owned_since: float = 0.0
 
     @staticmethod
     def _isolated_item_path(item: Any) -> str:
@@ -230,25 +228,6 @@ class GuangYaQueueRecoveryMixin:
             qsize = self._isolated_queue.qsize() if self._isolated_queue is not None else 0
             pending = len(self._isolated_pending_keys or set())
             worker_alive = bool(self._isolated_worker and self._isolated_worker.is_alive())
-            now = time.time()
-            orphan_candidate = bool(pending > 0 and qsize == 0 and not self._isolated_running_path)
-            orphan_recovered = 0
-            if orphan_candidate:
-                if not self._isolated_orphan_owned_since:
-                    self._isolated_orphan_owned_since = now
-                elif now - self._isolated_orphan_owned_since >= self._isolated_orphan_owned_grace:
-                    orphan_recovered = pending
-                    if self._isolated_pending_keys is not None:
-                        self._isolated_pending_keys.clear()
-                    pending = 0
-                    self._isolated_orphan_owned_since = 0.0
-                    logger.warning(
-                        "【光鸭云盘助手】【独立worker】【自愈】队列为空且无运行任务，但 owned=%s 持续 %.0fs；已清理孤儿 ownership",
-                        orphan_recovered,
-                        self._isolated_orphan_owned_grace,
-                    )
-            else:
-                self._isolated_orphan_owned_since = 0.0
             return {
                 "mode": "isolated_sync_worker",
                 "worker_alive": worker_alive,
@@ -259,8 +238,6 @@ class GuangYaQueueRecoveryMixin:
                 "last_message": self._isolated_last_message,
                 "last_finished_at": self._isolated_last_finished_at,
                 "capacity": self._isolated_queue_capacity,
-                "orphan_owned_since": self._isolated_orphan_owned_since,
-                "orphan_owned_recovered": orphan_recovered,
             }
 
     def _dispatch_to_moviepilot(self, item: Any) -> bool:
@@ -496,7 +473,6 @@ class GuangYaQueueRecoveryMixin:
             self._isolated_queue = None
             self._isolated_pending_keys = set()
             self._isolated_running_path = ""
-            self._isolated_orphan_owned_since = 0.0
 
     def stop_service(self) -> None:
         self._stop_isolated_worker()

@@ -14,10 +14,7 @@
 5. v3.6.20 隔离 MoviePilot 全局 TransferComplete/TransferFailed，115、本地和其它存储
    不再污染光鸭 MP 历史计数、终态日志或触发 pending 自愈；
 6. 弱命名 folder envelope 内部逐文件执行时，最终状态统一回到 v3.6 fallback；
-7. 状态 API 最后投影 v3.6 Worker/discovery/blocked 事实，屏蔽旧 v3.5.9 cursor/sticky 的展示残留；
-8. 同步 do_transfer 成功但终态事件/历史迟到时进入 evidence-pending；30 秒后仍未拿到
-   MoviePilot completed 证据时，只做严格源存在性复核：源明确 missing 才 retire，本地/远端
-   查询异常保持 inflight，绝不因超时伪造 completed 或 retry。
+7. 状态 API 最后投影 v3.6 Worker/discovery/blocked 事实，屏蔽旧 v3.5.9 cursor/sticky 的展示残留。
 
 普通 MoviePilot 原生目录任务继续走旧安全预览/冲突/season 等 MoviePilot 安全链，不在这里
 重写业务规则。v3.6.9~v3.6.20 只修远端查询、发现调度、状态/快照可靠性、durable 任务身份
@@ -46,7 +43,6 @@ from .organizer_preview_retry_wakeup_v356 import _wake_legacy_preview_retries
 from .organizer_loss_guard_v349 import _defer_unconfirmed_members
 from .organizer_policy import (
     FileDisposition,
-    SourcePresence,
     decide_failed_execution,
     should_probe_source_presence,
 )
@@ -57,9 +53,6 @@ from .organizer_source_terminal_v3618 import (
     retire_missing_source_v3618,
 )
 from .storage_snapshot_guard_v3610 import install_storage_snapshot_guard_v3610
-
-
-_EVIDENCE_RECHECK_SECONDS = 30.0
 
 
 # 存储查询/快照能力必须在插件实例开始 browse/snapshot/monitor 之前生效；installer 均幂等。
@@ -162,60 +155,6 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
             except Exception as err:  # noqa: BLE001 - diagnostics can never fail plugin init
                 logger.debug("【光鸭云盘助手】【v3.6.17】【blocked诊断】启动诊断失败但不影响监控: %s", err)
         return result
-
-    def _v360_prepare_member(self, member: Any):
-        """对 sync-success evidence-pending 做安全主动收口；其它 phase 完全沿用原状态机。"""
-        phase, ready_row = super()._v360_prepare_member(member)
-        if phase != "inflight":
-            return phase, ready_row
-
-        try:
-            path, fingerprint = self._v360_member_identity(member)
-        except Exception:
-            return phase, ready_row
-
-        store = self._state()
-        raw = store.load()
-        evidence = dict((raw.get("inflight") or {}).get(path) or {})
-        if not evidence.get("v360_sync_success"):
-            return phase, ready_row
-
-        try:
-            pending_since = float(evidence.get("v360_evidence_pending_since") or 0)
-        except (TypeError, ValueError):
-            pending_since = 0.0
-        now = time.time()
-        if pending_since <= 0 or now - pending_since < _EVIDENCE_RECHECK_SECONDS:
-            return phase, ready_row
-
-        # super() 已在本轮再次检查 MoviePilot history；走到这里说明 history 仍未确认 completed。
-        # 此时只补一个严格源路径事实。missing 可以证明“源已经离开监控位置”，因此只退休本地
-        # 调度状态；present/unknown 都不足以证明完成，继续保留 inflight 等最终事件/history。
-        presence = probe_source_presence_v3618(self, member)
-        if presence == SourcePresence.MISSING:
-            retire_missing_source_v3618(self, member)
-            logger.info(
-                "【光鸭云盘助手】【证据收口】sync-success 等待 %.1fs 后源已明确消失，"
-                "已 retire 本地 inflight，不伪造 completed: %s",
-                now - pending_since,
-                path,
-            )
-            return "retired", None
-
-        def mark_rechecked(state: Dict[str, Any]) -> None:
-            row = dict((state.get("inflight") or {}).get(path) or {})
-            if not row or str(row.get("fingerprint") or "") != fingerprint:
-                return
-            row["v360_evidence_last_recheck_at"] = now
-            row["v360_evidence_source_presence"] = str(getattr(presence, "value", presence))
-            row["v360_evidence_recheck_count"] = int(row.get("v360_evidence_recheck_count") or 0) + 1
-            state["inflight"][path] = row
-
-        try:
-            store.mutate(mark_rechecked)
-        except Exception as err:  # noqa: BLE001 - diagnostics cannot change evidence semantics
-            logger.debug("【光鸭云盘助手】【证据收口】复核标记写入失败但保留 inflight: %s - %s", path, err)
-        return phase, ready_row
 
     def _execute_isolated_transfer(self, item: Any) -> Tuple[bool, str]:
         if not isinstance(item, _FolderBatchEnvelope):
