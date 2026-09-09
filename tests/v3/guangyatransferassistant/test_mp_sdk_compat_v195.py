@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
@@ -21,5 +21,6 @@ def test_v195_keeps_runtime_fallback_without_internal_import():
 
 
 def test_v195_release_marker():
-    assert 'plugin_version = "1.12.20"' in ENTRY
-    assert 'build_id = "20260909-r67"' in ENTRY
+    assert 'plugin_version = "1.12.21"' in ENTRY
+    assert 'build_id = "20260909-r68"' in ENTRY
+

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 from pathlib import Path
@@ -51,8 +51,8 @@ def test_v11219_guard_parses_without_premature_public_version_bump():
     ast.parse(text, filename=str(GUARD))
     ast.parse(entry, filename=str(ENTRY))
     assert "v1.12.19 开发阶段只增加安全排序与来源质量学习" in text
-    assert 'plugin_version = "1.12.20"' in entry
-    assert 'build_id = "20260909-r67"' in entry
+    assert 'plugin_version = "1.12.21"' in entry
+    assert 'build_id = "20260909-r68"' in entry
 
 
 def test_quality_score_is_neutral_without_samples_and_bounded_with_outcomes():
@@ -148,3 +148,4 @@ def test_v11219_layer_does_not_add_local_download_or_bypass_final_gates():
         "_planner_file_selection(",
     ):
         assert forbidden not in v11219
+

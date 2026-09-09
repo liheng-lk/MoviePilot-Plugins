@@ -88,14 +88,15 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "更新日历驱动的固定分流助手。v1.12.20 修复频道漏触发：兼容当前 tgm 热更模板中的剧集/动漫/电影标题结构；频道分页未追到旧游标时不再推进 cursor，而是有界扩大分页深度并在必要时持久化追赶预算，避免中间消息永久漏掉。继续完整保留 v1.12.19 的高置信真实 payload 媒体匹配、requested/candidate/resolved/transfer episodes、Provider 排序/质量学习，以及 MoviePilot 权威缺集、reservation/source claim、不可分割物理文件硬栅栏。v1.12.18 空目录安全边界不变：待落盘验证继续使用 get_item 纯只读查询；失败且没有服务端 taskId 时才允许回收本次新建并再次确认仍为空的目录，其余情况全部 fail-closed 保留。来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+    "description": "更新日历驱动的固定分流助手。v1.12.21 工程化稳定发布：修复 Provider 认证头/重试语义与解析失败 success 误报，补齐 completed/source claim 老化释放和 failed/needs_review 冷却重开；新增 source 并发互斥槽位，阻断 tick 与异步 worker 对同一来源重复提交/轮询；dispatch/retry API 改为真实入队回执并在未入队时回滚重试状态；状态页补充来源 trace 与操作提示并完成移动端排版精修。v1.12.18 的空目录安全边界继续保持：落盘验证仍使用 get_item 只读查询，非空/未知/已有 taskId 均 fail-closed 保留。来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
     "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,PanSou,CloakBrowser,自动登录,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流,质量过滤,字幕过滤,检索冷却,更新日历,每小时补漏,10分钟追更,快速追更,资源门禁,季发行年份,合法别名,拆包恢复,needs_review,TMDB官方别名,英文原名检索,迅雷防重复,已入库硬栅栏,最终导入过滤,四源统一,缺集硬栅栏,频道补偿,缓存补偿,新增订阅预热,频道历史回溯",
-    "version": "1.12.20",
+    "version": "1.12.21",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v1.12.21": "工程化稳定发布：修复 Provider 认证头误传导致查询失败、query hint 作用域污染、解析不兼容被 success 掩盖；TV 无缺集时立即收口；completed/source claim 引入老化释放；failed/needs_review 增加冷却与证据变化重开；source 新增并发互斥槽位避免重复提交/轮询；dispatch/retry API 返回真实入队结果并在未入队时回滚；状态页补充 source/task trace、异常处理指引与移动端排版精修。核心门禁与来源优先级保持不变。",
       "v1.12.20": "修复频道漏触发与消息完整性：兼容当前 tgm 热更频道“📺 剧集：标题 (年份) SxxExx / 🎬 电影：标题 (年份)”模板，类型标签、年份和季集尾巴只作为结构化元数据，不再污染严格媒体标题；频道分页如果没有追到刷新前旧游标，绝不把 channel_cursors 推到当前高水位，本轮有界扩大分页深度，仍未追完则恢复旧游标并持久化下一轮 catchup 预算，避免中间未读取消息永久丢失。5 分钟频道 Push、7 天缓存补偿、AiringDue、真实 payload 身份门禁、MoviePilot 权威缺集、reservation/source claim、不可分割物理文件栅栏、v1.12.18 空目录安全边界和来源优先级全部保持。",
       "v1.12.19": "发布候选排序、来源质量学习与高置信媒体匹配：外部 Provider 在全局截断前统一排序并受进程级 4 并发预算约束，成功参数名做 6 小时有界学习；电影的迅雷、光鸭分享、Magnet、ED2K 均要求真实 payload 视频和 MoviePilot/TMDB 可信标题证据，搜索卡片不能单独授权；剧集/动漫拆分 requested/candidate/resolved/transfer episodes，未 resolve 的意图不再提前形成强 claim，真实解析后再次以 MoviePilot 当前权威缺集和不可分割物理文件为最终门禁；来源状态写入增加进程级 RLock，仅资源可归因终态失败参与质量学习。来源优先级保持观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K，Magnet/ED2K 继续使用光鸭原生 cloudcollection。",
       "v1.12.18": "v1.12.18 修复失败转存/纯验证留下空目录：Magnet/ED2K 在创建目标目录前先完成 resolve；迅雷、光鸭分享和 cloudcollection 只跟踪本次调用前明确不存在的目录，失败且没有服务端 taskId 时才在远端再次确认为空后回收；已有目录、非空目录、目录事实未知、已有 taskId、pending verification、根目录和配置保存根一律保留；待落盘验证改用 get_item 纯只读查询，不再因复核本身创建目录。来源优先级、媒体身份、权威缺集和物理文件硬栅栏全部保持。",

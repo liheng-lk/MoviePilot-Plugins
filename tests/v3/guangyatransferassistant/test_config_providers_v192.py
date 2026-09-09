@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 import json
@@ -37,9 +37,9 @@ def test_v192_files_parse_and_release_metadata_is_consistent():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.12.20"
-    assert 'plugin_version = "1.12.20"' in entry_text
-    assert 'build_id = "20260909-r67"' in entry_text
+    assert package["version"] == local["version"] == "1.12.21"
+    assert 'plugin_version = "1.12.21"' in entry_text
+    assert 'build_id = "20260909-r68"' in entry_text
     assert "v1.12.5" in package["history"]
     assert "v1.12.3" in package["history"]
     assert "v1.10.16" in package["history"]
@@ -139,3 +139,4 @@ def test_runtime_mro_places_complete_gying_before_xunlei_provider_and_planner():
     order = ["GuangYaConfigUiMixin,", "GuangYaGyingHardeningMixin,", "GuangYaGyingFailoverMixin,", "GuangYaGyingRuntimeMixin,", "GuangYaXunleiHardeningMixin,", "GuangYaXunleiFlashMixin,", "GuangYaProviderSourcesMixin,", "GuangYaPlannerSafetyMixin,", "GuangYaResourcePlannerMixin,"]
     positions = [entry_text.index(token, start) for token in order]
     assert positions == sorted(positions)
+

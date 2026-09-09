@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from pathlib import Path
@@ -14,13 +14,14 @@ def test_final_v11217_tree_is_publishable_and_temp_tooling_is_removed():
     recall = (PLUGIN / "search_recall_v11217.py").read_text(encoding="utf-8")
     bilingual = (PLUGIN / "movie_bilingual_identity_v11216.py").read_text(encoding="utf-8")
 
-    assert 'plugin_version = "1.12.20"' in entry
-    assert 'build_id = "20260909-r67"' in entry
-    assert plugin["version"] == "1.12.20"
-    assert package["GuangYaTransferAssistant"]["version"] == "1.12.20"
+    assert 'plugin_version = "1.12.21"' in entry
+    assert 'build_id = "20260909-r68"' in entry
+    assert plugin["version"] == "1.12.21"
+    assert package["GuangYaTransferAssistant"]["version"] == "1.12.21"
     assert 'class GuangYaSearchRecallV11217Mixin' in recall
     assert 'class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaSearchRecallV11217Mixin):' in bilingual
     assert 'plugin_version = "1.12.16"' in bilingual
     assert 'build_id = "20260906-r63"' in bilingual
     assert not (ROOT / "scripts/_prepare_guangya_v11217.py").exists()
     assert not (ROOT / ".github/workflows/prepare-guangya-v11217.yml").exists()
+

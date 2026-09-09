@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "更新日历驱动的固定分流助手。v1.12.20 修复频道漏触发：兼容当前 tgm 热更模板中的剧集/动漫/电影标题结构；频道分页未追到旧游标时不再推进 cursor，而是有界扩大分页深度并在必要时持久化追赶预算，避免中间消息永久漏掉。继续完整保留 v1.12.19 的高置信真实 payload 媒体匹配、requested/candidate/resolved/transfer episodes、Provider 排序/质量学习，以及 MoviePilot 权威缺集、reservation/source claim、不可分割物理文件硬栅栏。v1.12.18 空目录安全边界不变：待落盘验证继续使用 get_item 纯只读查询；失败且没有服务端 taskId 时才允许回收本次新建并再次确认仍为空的目录，其余情况全部 fail-closed 保留。来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
-  "version": "1.12.20",
+  "description": "更新日历驱动的固定分流助手。v1.12.21 工程化稳定发布：修复 Provider 认证头/重试语义与解析失败 success 误报，补齐 completed/source claim 老化释放和 failed/needs_review 冷却重开；新增 source 并发互斥槽位，阻断 tick 与异步 worker 对同一来源重复提交/轮询；dispatch/retry API 改为真实入队回执并在未入队时回滚重试状态；状态页补充来源 trace 与操作提示并完成移动端排版精修。v1.12.18 的空目录安全边界继续保持：落盘验证仍使用 get_item 只读查询，非空/未知/已有 taskId 均 fail-closed 保留。来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+  "version": "1.12.21",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,

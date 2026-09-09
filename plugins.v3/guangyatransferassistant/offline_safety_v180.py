@@ -36,12 +36,18 @@ class GuangYaOfflineSafetyMixin:
         if not isinstance(data, dict):
             return result
 
+        task_status = data.get("task_status")
+        try:
+            task_status_code = int(task_status if task_status is not None else -1)
+        except (TypeError, ValueError):
+            task_status_code = -1
+
         # status=5 是光鸭明确返回的部分完成/失败，允许进入 retry/failed。
         # 其它失败若已有 taskId，则属于“查询暂不可用”，必须保留任务等待下轮，不得重新提交。
         if (
             str(source.get("task_id") or "").strip()
             and not bool(result.get("success"))
-            and int(data.get("task_status") if data.get("task_status") is not None else -1) != 5
+            and task_status_code != 5
         ):
             updated = self._update_source(
                 str(source.get("id") or ""),

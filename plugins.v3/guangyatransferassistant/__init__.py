@@ -1,4 +1,4 @@
-"""光鸭转存助手 v1.12.20 运行入口。
+"""光鸭转存助手 v1.12.21 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
@@ -23,7 +23,7 @@ v1.12.11 修复 /gycheck 只检查频道却未保证主动资源链的问题：�
 v1.12.12 修复 GYING 前置搜索未使用精确 TMDB 官方别名的问题：电影中文标题未命中当前媒体时，继续用同一 TMDB 身份与年份下的官方英文/原始标题搜索；无关卡片不再阻止降级，网络/认证失败仍硬停止；观影迅雷召回与 GYING Magnet/ED2K 共用该语义，不引入模糊匹配。
 v1.12.13 修复媒体库已有剧集仍被迅雷秒传重复导入：TV 迅雷硬目标改为媒体库 missing 与成功事实/订阅 missing 的交集，并在 JSON batch import 前逐视频二次过滤；跨边界多集文件整文件拒绝，媒体库缺集事实读取失败时跳过迅雷但继续后续来源。
 v1.12.14 统一核心资源链：频道/观影均支持光鸭分享、迅雷分享、Magnet、ED2K；TV/动漫按精确 TMDB 官方标题补召回；所有 TV 最终写盘收紧到 library missing ∩ logical/fact missing - reservation - other source claim，并对光鸭分享、迅雷、Magnet、ED2K 统一执行不可分割物理文件 episodes ⊆ allowed missing 与实际 payload 身份门禁。
-v1.12.20 修复频道漏触发：兼容当前 tgm 热更模板“📺 剧集：标题 (年份) SxxExx / 🎬 电影：标题 (年份)”，剥离模板类型、年份与季集尾巴但保留作品内部标点；频道分页若未追到刷新前旧游标，禁止把 cursor 推到当前高水位，本轮自动有界扩大分页深度，仍不完整则恢复旧游标并持久化下一轮追赶预算，确保中间未读取消息不会被永久越过。既有 5 分钟 Push、7 天缓存补偿、AiringDue、真实 payload 身份门禁、MoviePilot 权威缺集、reservation/source claim、不可分割物理文件栅栏与来源优先级全部保持。
+v1.12.21 工程化稳定发布：修复 Provider 认证头与重试语义、解析失败 success 误报、completed/source claim 老化释放、failed/needs_review 冷却重开；新增 source 并发互斥槽位，阻断 tick 与异步 worker 对同一来源重复提交/轮询；dispatch/retry API 改为真实入队回执并回滚失败重试状态；状态页补充来源 trace 与操作提示并完成移动端可读性精修。既有 5 分钟 Push、7 天缓存补偿、AiringDue、真实 payload 身份门禁、MoviePilot 权威缺集、reservation/source claim、不可分割物理文件栅栏与来源优先级全部保持。
 v1.12.19 发布候选排序、来源质量学习与高置信媒体匹配：电影四来源统一真实 payload 最终身份门禁；剧集/动漫拆分 requested/candidate/resolved/transfer episodes，未解析 intent 不再形成强 claim；Provider 候选在全局截断前排序并受全局 4 并发预算约束，查询参数做有界学习；来源状态写入与终态质量学习并发安全，只有资源可归因失败才计入质量。来源优先级和光鸭原生 cloudcollection 路线不变。
 v1.12.18 修复失败转存/纯验证留下空目录：Magnet/ED2K 在创建目标目录前先完成 resolve；迅雷、光鸭分享和 cloudcollection 只跟踪本次调用前明确不存在的目录，失败且没有服务端 taskId 时才在远端再次确认为空后回收；已有目录、非空目录、目录事实未知、已有 taskId、pending verification、根目录和配置保存根一律保留；待落盘验证改用 get_item 纯只读查询，不再因复核本身创建目录。来源优先级、媒体身份、权威缺集和物理文件硬栅栏全部保持。
 v1.12.17 重构资源召回：参考 MoviePilot 的结构化 release title + canonical identity 消歧，以及 Telegram/PanSou 的频道关键词定向搜索；GYING 最多生成 8 档官方别名检索词，主动检查在频道缓存未命中时对配置频道执行最多 4 档 ?q= 定向搜索并有界并发；READNFO/语言/清晰度/来源/编码/发布组等只在召回阶段作为噪声剥离，明确 TMDB/年份/季冲突仍硬拒绝，无年份第二别名必须由 MoviePilot 识别为同一 canonical identity；定向搜索只补既有 7 天 cache/index，不推进 channel_cursors、不伪造新事件，5 分钟 channel_event 仍完全被动；v1.12.13~v1.12.16 的真实 payload 身份、权威缺集、reservation/source claim 与不可分割物理文件最终门禁全部保持。
@@ -147,8 +147,8 @@ class GuangYaTransferAssistant(
 ):
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
 
-    plugin_version = "1.12.20"
-    build_id = "20260909-r67"
+    plugin_version = "1.12.21"
+    build_id = "20260909-r68"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""

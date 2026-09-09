@@ -1,4 +1,4 @@
-import ast
+﻿import ast
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
@@ -58,8 +58,8 @@ def test_xunlei_movie_match_is_wired_after_general_media_match():
     assert "from .movie_xunlei_match_v11219 import GuangYaMovieXunleiMatchV11219Mixin" in FAST
     head = FAST.split("class GuangYaFastRecallV1126Mixin(", 1)[1].split("):", 1)[0]
     assert head.index("GuangYaMediaMatchV11219Mixin") < head.index("GuangYaMovieXunleiMatchV11219Mixin")
-    assert 'plugin_version = "1.12.20"' in ENTRY
-    assert 'build_id = "20260909-r67"' in ENTRY
+    assert 'plugin_version = "1.12.21"' in ENTRY
+    assert 'build_id = "20260909-r68"' in ENTRY
 
 
 def test_parent_rejection_remains_rejected_without_rescue():
@@ -150,3 +150,4 @@ def test_movie_rejected_when_actual_gate_and_strict_bridge_both_fail():
     assert ok is False
     assert "真实 payload 身份拒绝" in reason
     assert "wrong actual movie" in reason
+

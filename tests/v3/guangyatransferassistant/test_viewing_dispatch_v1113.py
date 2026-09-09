@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 import json
@@ -24,9 +24,9 @@ def test_v1113_files_parse_and_release_is_published():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads(PLUGIN_JSON.read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.12.20"
-    assert 'plugin_version = "1.12.20"' in entry_text
-    assert 'build_id = "20260909-r67"' in entry_text
+    assert package["version"] == local["version"] == "1.12.21"
+    assert 'plugin_version = "1.12.21"' in entry_text
+    assert 'build_id = "20260909-r68"' in entry_text
     assert "v1.12.5" in package["history"]
     assert "v1.12.3" in package["history"]
     assert "v1.10.13" in package["history"]
@@ -127,3 +127,14 @@ def test_v1113_full_logs_cover_search_flash_cloudadd_poll_naming_and_errors():
         "规划结束",
     ):
         assert marker in combined
+
+
+def test_v1113_xunlei_summary_log_does_not_warn_for_expected_no_share_fallback():
+    dispatch = dispatch_text.split("    def _dispatch_xunlei_flash(", 1)[1].split(
+        "    # ------------------------------------------------------------------\n    # 观影 Magnet/ED2K -> 光鸭原生 cloudcollection", 1
+    )[0]
+    assert "expected_fallback" in dispatch
+    assert 'int(result.get("shares") or 0) <= 0' in dispatch
+    assert 'int(result.get("attempted_files") or 0) <= 0' in dispatch
+    assert '"INFO" if bool(result.get("success")) or expected_fallback else "WARNING"' in dispatch
+

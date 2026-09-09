@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
@@ -12,8 +12,8 @@ def test_fast_recall_is_outer_than_v1125_dispatch_layers():
     assert "from .fast_recall_v1126 import GuangYaFastRecallV1126Mixin" in ENTRY
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     assert head.index("GuangYaFastRecallV1126Mixin") < head.index("GuangYaDispatchPolicyFinalV1125Mixin")
-    assert 'plugin_version = "1.12.20"' in ENTRY
-    assert 'build_id = "20260909-r67"' in ENTRY
+    assert 'plugin_version = "1.12.21"' in ENTRY
+    assert 'build_id = "20260909-r68"' in ENTRY
 
 
 def test_airing_service_wakes_every_ten_minutes():
@@ -35,3 +35,4 @@ def test_five_minute_channel_tick_still_never_becomes_active_gying_poll():
     assert 'if bool(getattr(local, "channel_only", False)):' in DISPATCH
     assert 'return []' in DISPATCH
     assert '观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K' in FAST
+

@@ -199,6 +199,22 @@ class GuangYaStatusUiMixin:
         name = str(getattr(subscribe, "name", "") or row.get("name") or "光鸭转存任务")
         return f"光鸭转存 · {name}"
 
+    def _source_trace(self, row: Dict[str, Any]) -> str:
+        source_id = str(row.get("id") or "").strip()
+        task_id = str(row.get("task_id") or "").strip()
+        trace = f"追踪 source #{source_id[:16] or '-'}"
+        if task_id:
+            trace += f" · task {task_id[:20]}"
+        return trace
+
+    @staticmethod
+    def _source_action_hint(state: str) -> str:
+        if state == "needs_review":
+            return "建议：核对集号后再执行来源重试。"
+        if state == "failed":
+            return "建议：先刷新云任务确认最新状态，再执行来源重试。"
+        return ""
+
     def _attention_cards(self, overview: Dict[str, Any]) -> List[Dict[str, Any]]:
         cards: List[Dict[str, Any]] = []
         for item in overview.get("critical_checks") or []:
@@ -218,6 +234,10 @@ class GuangYaStatusUiMixin:
             state = str(row.get("state") or "")
             error = str(row.get("last_error") or "")
             detail = error or ("集号置信度不足，已停止自动拆包" if state == "needs_review" else "云添加任务失败")
+            hint = self._source_action_hint(state)
+            text = f"{_SOURCE_STATE_TEXT.get(state, state)} · {detail}\n（{self._source_trace(row)}）"
+            if hint:
+                text += f"\n{hint}"
             cards.append({
                 "component": "VAlert",
                 "props": {
@@ -226,7 +246,7 @@ class GuangYaStatusUiMixin:
                     "density": "compact",
                     "class": "mb-2",
                     "title": self._source_title(row),
-                    "text": f"{_SOURCE_STATE_TEXT.get(state, state)} · {detail}",
+                    "text": text,
                 },
             })
 
@@ -273,6 +293,7 @@ class GuangYaStatusUiMixin:
             detail = f"{_SOURCE_STATE_TEXT.get(state, state)} · {progress}%"
             if episode_text:
                 detail += f" · {episode_text}"
+            detail += f"\n（{self._source_trace(row)}）"
             cards.append({
                 "component": "VAlert",
                 "props": {
@@ -313,8 +334,9 @@ class GuangYaStatusUiMixin:
                 {
                     "component": "VCardText",
                     "text": (
-                        f"{overall_title} · 频道最近刷新 {overview['channel_updated']}。"
-                        " 资源策略：光鸭直接转存 > Magnet > ED2K；Magnet/ED2K 使用光鸭原生云添加。"
+                        f"{overall_title} · 最近刷新 {overview['channel_updated']}。\n"
+                        "资源策略：光鸭直接转存 > Magnet > ED2K。\n"
+                        "Magnet/ED2K 使用光鸭原生云添加。"
                     ),
                 },
                 {
@@ -339,6 +361,20 @@ class GuangYaStatusUiMixin:
                             "events": {"click": {"api": "plugin/GuangYaTransferAssistant/selfcheck", "method": "post"}},
                         },
                     ],
+                },
+                {
+                    "component": "VAlert",
+                    "props": {
+                        "type": "info",
+                        "variant": "tonal",
+                        "density": "compact",
+                        "class": "mt-2",
+                        "text": (
+                            "操作说明：\n"
+                            "1) 刷新云任务只轮询已有 taskId，不会重复创建云任务；\n"
+                            "2) 手动重试仅在失败/待确认状态下建议使用。"
+                        ),
+                    },
                 },
             ],
         }
@@ -434,12 +470,11 @@ class GuangYaStatusUiMixin:
                 {
                     "component": "VCardText",
                     "text": (
-                        f"光鸭登录：{flag('guangya_runtime')} · 搜索分流：{flag('search_guard')} · "
-                        f"RSS 门禁：{flag('match_guard')} · 下载断路器：{flag('download_guard')} · "
-                        f"原生云添加：{flag('native_offline')}。\n"
-                        f"频道索引 {overview['channel_count']} 条 · 最近错误 {overview['channel_errors']} 个 · "
-                        f"Magnet {sources['magnet']} · ED2K {sources['ed2k']} · "
-                        f"ResourceGroup 计划 {overview['resource_plan_count']} 个。\n"
+                        f"核心检查：登录 {flag('guangya_runtime')} / 搜索 {flag('search_guard')} / "
+                        f"RSS {flag('match_guard')} / 下载 {flag('download_guard')} / 原生云添加 {flag('native_offline')}。\n"
+                        f"索引 {overview['channel_count']} 条，最近错误 {overview['channel_errors']} 个；"
+                        f"Magnet {sources['magnet']}，ED2K {sources['ed2k']}，"
+                        f"计划 {overview['resource_plan_count']} 个。\n"
                         "详细诊断通过“运行自检”、/resource/plan 和 /status/overview 查看，首页不再展示长日志。"
                     ),
                 },

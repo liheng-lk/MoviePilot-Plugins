@@ -643,6 +643,24 @@ class GuangYaXunleiFlashMixin:
             except Exception as err:
                 self._plugin_log("WARNING", "【光鸭转存助手】【迅雷JSON】导入前媒体库进度同步失败：%s", str(err)[:260])
         missing = set(int(v) for v in (self._subscription_missing_episodes(subscribe) or []) if int(v or 0) > 0)
+        if not is_movie and not missing:
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【迅雷秒传】#%s 媒体库当前无缺集，跳过迅雷秒传与后续来源",
+                sid,
+            )
+            return {
+                "success": True,
+                "handled": True,
+                "priority": 0,
+                "shares": 0,
+                "attempted_files": 0,
+                "successful_files": 0,
+                "episodes": [],
+                "movie": False,
+                "errors": [],
+                "message": "媒体库当前无缺集，无需继续来源链补集",
+            }
         candidates, state = self._search_viewing_xunlei(self._provider_keyword(subscribe))
         if not candidates:
             return {"success": False, "handled": False, "message": str(state.get("message") or "观影没有迅雷分享候选")}

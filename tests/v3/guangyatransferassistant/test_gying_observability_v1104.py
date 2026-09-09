@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 from pathlib import Path
@@ -20,8 +20,8 @@ def test_observability_layer_parses_and_wraps_final_runtime():
     start = entry_text.index("class GuangYaTransferAssistant")
     assert entry_text.index("GuangYaGyingObservabilityV1104Mixin,", start) < entry_text.index("GuangYaChannelUiV1101Mixin,", start)
     assert entry_text.index("GuangYaGyingObservabilityV1104Mixin,", start) < entry_text.index("GuangYaGyingHardeningMixin,", start)
-    assert 'plugin_version = "1.12.20"' in entry_text
-    assert 'build_id = "20260909-r67"' in entry_text
+    assert 'plugin_version = "1.12.21"' in entry_text
+    assert 'build_id = "20260909-r68"' in entry_text
 
 
 def test_observability_covers_all_real_gying_stages():
@@ -55,3 +55,4 @@ def test_observability_is_non_destructive():
     lowered = text.lower()
     for forbidden in ("create_transfer", "flash_upload", "create_task", "add_download", "downloadchain(", "qbittorrent", "transmission", "aria2"):
         assert forbidden not in lowered
+

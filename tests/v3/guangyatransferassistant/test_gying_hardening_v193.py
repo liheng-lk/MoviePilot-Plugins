@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 import re
@@ -38,7 +38,7 @@ def test_gying_hardening_parses_and_is_final_node_layer():
     order = ["GuangYaConfigUiMixin,", "GuangYaGyingHardeningMixin,", "GuangYaGyingFailoverMixin,", "GuangYaGyingRuntimeMixin,", "GuangYaXunleiHardeningMixin,", "GuangYaXunleiFlashMixin,"]
     positions = [entry_text.index(token, start) for token in order]
     assert positions == sorted(positions)
-    assert 'build_id = "20260909-r67"' in entry_text
+    assert 'build_id = "20260909-r68"' in entry_text
 
 
 def test_unicode_and_punycode_are_one_node_identity():
@@ -86,3 +86,4 @@ def test_fake_404_or_angie_page_causes_node_failover():
     request = text.split("    def _gying_request(", 1)[1].split("    def _gying_raw_results", 1)[0]
     assert "response.status_code in {403, 404}" in request
     assert "观影节点当前出口被阻断" in request
+

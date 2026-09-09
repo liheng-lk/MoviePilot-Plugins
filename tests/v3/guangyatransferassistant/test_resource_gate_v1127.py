@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 import json
@@ -268,12 +268,56 @@ def test_needs_review_same_evidence_can_be_rechecked_after_six_hours():
     assert "6 小时" in str(probe.persisted.get("review_reopen_reason_v1127") or "")
 
 
+def test_failed_reopens_once_for_legacy_or_changed_evidence_but_not_every_ten_minutes():
+    subscribe = _tv("人生切割术", 2022, 2, ["人生切割术", "Severance"])
+    probe = _Probe(subscribe)
+    probe.existing = {
+        "id": "src-f1", "subscribe_id": 100, "state": "failed",
+        "target_episodes": [9, 10], "episode_hint": "S02E09-E10", "attempts": 3,
+        "task_id": "old-task", "task_status": 5, "progress": 80, "file_id": "x",
+    }
+
+    reopened = probe._existing_source(100, "magnet", "failed-abc")
+    assert reopened["state"] == "failed_reopen"
+    assert probe.persisted["state"] == "new"
+    assert probe.persisted["attempts"] == 0
+    assert probe.persisted["task_id"] == ""
+
+    probe.existing = {
+        **probe.persisted,
+        "state": "failed",
+        "failed_fingerprint_v1127": probe._review_fingerprint_v1127(subscribe, probe.persisted),
+        "failed_at_v1127": time.time(),
+        "attempts": 3,
+    }
+    stable = probe._existing_source(100, "magnet", "failed-abc")
+    assert stable["state"] == "failed"
+
+    subscribe.missing = [10]
+    changed = probe._existing_source(100, "magnet", "failed-abc")
+    assert changed["state"] == "failed_reopen"
+    assert probe.persisted["state"] == "new"
+
+
+def test_failed_same_evidence_can_be_rechecked_after_twelve_hours():
+    subscribe = _tv("Demo", 2026, 1, ["Demo"], missing=(3,))
+    probe = _Probe(subscribe)
+    source = {"id": "src-f2", "subscribe_id": 100, "state": "failed", "target_episodes": [3], "attempts": 3}
+    source["failed_fingerprint_v1127"] = probe._review_fingerprint_v1127(subscribe, source)
+    source["failed_at_v1127"] = time.time() - (12 * 60 * 60 + 1)
+    probe.existing = source
+    reopened = probe._existing_source(100, "magnet", "failed-def")
+    assert reopened["state"] == "failed_reopen"
+    assert "12 小时" in str(probe.persisted.get("failed_reopen_reason_v1127") or "")
+
+
 def test_v1127_public_metadata_keeps_v1126_history():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     plugin = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == plugin["version"] == "1.12.20"
+    assert package["version"] == plugin["version"] == "1.12.21"
     assert "v1.12.7" in package["history"]
     assert "v1.12.6" in package["history"]
     entry = ENTRY.read_text(encoding="utf-8")
-    assert 'plugin_version = "1.12.20"' in entry
-    assert 'build_id = "20260909-r67"' in entry
+    assert 'plugin_version = "1.12.21"' in entry
+    assert 'build_id = "20260909-r68"' in entry
+

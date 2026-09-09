@@ -36,6 +36,35 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
         self._offline_worker_ids: set[str] = set()
         super().init_plugin(config)
 
+    def _claim_source_dispatch_slot(self, source_id: str) -> bool:
+        source_id = str(source_id or "").strip()
+        if not source_id:
+            return False
+        lock = getattr(self, "_offline_worker_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            self._offline_worker_lock = lock
+        with lock:
+            workers = getattr(self, "_offline_worker_ids", None)
+            if not isinstance(workers, set):
+                workers = set()
+                self._offline_worker_ids = workers
+            if source_id in workers:
+                return False
+            workers.add(source_id)
+            return True
+
+    def _release_source_dispatch_slot(self, source_id: str) -> None:
+        source_id = str(source_id or "").strip()
+        if not source_id:
+            return
+        lock = getattr(self, "_offline_worker_lock", None)
+        workers = getattr(self, "_offline_worker_ids", None)
+        if lock is None or not isinstance(workers, set):
+            return
+        with lock:
+            workers.discard(source_id)
+
     # ------------------------------------------------------------------
     # 光鸭原生云添加 API
     # ------------------------------------------------------------------
@@ -374,6 +403,7 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                     file_id=file_id,
                     resolved_name=file_name[:300],
                     completed_at=self._now_text(),
+                    completed_ts=time.time(),
                     last_error="",
                     next_retry_at=0,
                 ) or source
@@ -447,27 +477,37 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
     # ------------------------------------------------------------------
     # 调度与 API
     # ------------------------------------------------------------------
-    def _spawn_source_dispatch(self, source_id: str) -> None:
+    def _spawn_source_dispatch(self, source_id: str) -> Dict[str, Any]:
         source_id = str(source_id or "").strip()
-        if not source_id or not self._enabled:
-            return
-        with self._offline_worker_lock:
-            if source_id in self._offline_worker_ids:
-                return
-            self._offline_worker_ids.add(source_id)
+        if not source_id:
+            return {"success": False, "message": "来源 ID 不能为空", "reason": "invalid_source_id"}
+        if not self._enabled:
+            return {"success": False, "message": "插件未启用，无法调度来源", "reason": "plugin_disabled"}
+        if not self._claim_source_dispatch_slot(source_id):
+            return {"success": False, "message": "来源正在处理中，请稍后重试", "reason": "already_running"}
 
         def worker() -> None:
             try:
                 self._submit_offline_source(source_id)
             finally:
-                with self._offline_worker_lock:
-                    self._offline_worker_ids.discard(source_id)
+                self._release_source_dispatch_slot(source_id)
 
-        threading.Thread(
-            target=worker,
-            name=f"GuangYaOffline-{source_id[:8]}",
-            daemon=True,
-        ).start()
+        try:
+            threading.Thread(
+                target=worker,
+                name=f"GuangYaOffline-{source_id[:8]}",
+                daemon=True,
+            ).start()
+        except Exception as err:
+            self._release_source_dispatch_slot(source_id)
+            self._plugin_log(
+                "WARNING",
+                "【光鸭转存助手】【原生云添加】启动来源调度线程失败：source=%s error=%s",
+                source_id[:60],
+                str(err)[:260],
+            )
+            return {"success": False, "message": f"启动后台调度失败：{str(err)[:120]}", "reason": "thread_start_failed"}
+        return {"success": True, "message": "已进入光鸭原生云添加后台队列", "reason": "queued"}
 
     def _offline_tick(self) -> None:
         if not self._enabled or not self._external_auto_dispatch:
@@ -493,10 +533,22 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                 if state in SOURCE_PENDING_STATES:
                     if next_retry_at > now:
                         continue
-                    self._submit_offline_source(str(source.get("id") or ""))
+                    source_id = str(source.get("id") or "")
+                    if not self._claim_source_dispatch_slot(source_id):
+                        continue
+                    try:
+                        self._submit_offline_source(source_id)
+                    finally:
+                        self._release_source_dispatch_slot(source_id)
                     handled += 1
                 elif state in SOURCE_INFLIGHT_STATES:
-                    self._poll_offline_source(source)
+                    source_id = str(source.get("id") or "")
+                    if not self._claim_source_dispatch_slot(source_id):
+                        continue
+                    try:
+                        self._poll_offline_source(source)
+                    finally:
+                        self._release_source_dispatch_slot(source_id)
                     handled += 1
         finally:
             self._offline_lock.release()
@@ -569,10 +621,20 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
         except Exception as err:
             return {"success": False, "message": str(err)}
         if dispatch:
-            self._spawn_source_dispatch(str(row.get("id") or ""))
+            dispatch_result = self._spawn_source_dispatch(str(row.get("id") or ""))
+            if dispatch_result.get("success"):
+                message = "来源已绑定订阅，并交给光鸭原生云添加"
+            else:
+                message = f"来源已绑定订阅，暂未进入后台队列：{dispatch_result.get('message')}"
+            return {
+                "success": True,
+                "message": message,
+                "data": row,
+                "dispatch": dispatch_result,
+            }
         return {
             "success": True,
-            "message": "来源已绑定订阅，并交给光鸭原生云添加" if dispatch else "来源已绑定订阅",
+            "message": "来源已绑定订阅",
             "data": row,
         }
 
@@ -587,16 +649,29 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
         source = self._source_store()["items"].get(str(source_id or ""))
         if not isinstance(source, dict):
             return {"success": False, "message": "来源不存在"}
-        self._spawn_source_dispatch(str(source_id))
-        return {"success": True, "message": "已进入光鸭原生云添加后台队列"}
+        dispatch_result = self._spawn_source_dispatch(str(source_id))
+        if not dispatch_result.get("success"):
+            return dispatch_result
+        return dispatch_result
 
     def api_source_retry(self, source_id: str = "") -> Dict[str, Any]:
         source = self._source_store()["items"].get(str(source_id or ""))
         if not isinstance(source, dict):
             return {"success": False, "message": "来源不存在"}
+        current_state = str(source.get("state") or "new")
+        if current_state in SOURCE_INFLIGHT_STATES:
+            return {"success": False, "message": "来源正在处理中，无需手动重试", "reason": "already_inflight"}
+        backup_fields = {
+            "state": source.get("state"),
+            "next_retry_at": source.get("next_retry_at", 0),
+            "last_error": source.get("last_error", ""),
+        }
         self._update_source(str(source_id), state="retry", next_retry_at=0, last_error="")
-        self._spawn_source_dispatch(str(source_id))
-        return {"success": True, "message": "已请求光鸭原生任务重试"}
+        dispatch_result = self._spawn_source_dispatch(str(source_id))
+        if not dispatch_result.get("success"):
+            self._update_source(str(source_id), **backup_fields)
+            return dispatch_result
+        return {"success": True, "message": "已请求光鸭原生任务重试", "dispatch": dispatch_result}
 
     def api_offline_refresh(self) -> Dict[str, Any]:
         threading.Thread(target=self._offline_tick, name="GuangYaOfflineRefresh", daemon=True).start()
@@ -633,7 +708,20 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
         except Exception as err:
             return {"success": False, "message": str(err)}
         if dispatch:
-            self._spawn_source_dispatch(str(row.get("id") or ""))
+            dispatch_result = self._spawn_source_dispatch(str(row.get("id") or ""))
+            if dispatch_result.get("success"):
+                message = f"观影来源已绑定 #{getattr(subscribe, 'id', 0)} {getattr(subscribe, 'name', '')}，使用光鸭原生云添加"
+            else:
+                message = (
+                    f"观影来源已绑定 #{getattr(subscribe, 'id', 0)} {getattr(subscribe, 'name', '')}，"
+                    f"暂未进入后台队列：{dispatch_result.get('message')}"
+                )
+            return {
+                "success": True,
+                "message": message,
+                "data": row,
+                "dispatch": dispatch_result,
+            }
         return {
             "success": True,
             "message": f"观影来源已绑定 #{getattr(subscribe, 'id', 0)} {getattr(subscribe, 'name', '')}，使用光鸭原生云添加",

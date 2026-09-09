@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import importlib.util
 import json
@@ -129,11 +129,13 @@ def test_status_ui_only_surfaces_real_attention_and_active_work():
     assert "MAGNET · 示例剧 A" in text
     assert "45%" in text
     assert "E05, E06" in text
+    assert "source #m1" in text
     assert "光鸭转存 · 示例剧 A" in text
     assert "资源暂未覆盖" not in text
     assert "E04, E05" not in text
     assert "等待资源" in text
     assert "正常等待，不算异常" in text
+    assert "建议：核对集号后再执行来源重试" in text
 
 
 def test_status_overview_counts_waiting_separately_from_attention():
@@ -162,6 +164,7 @@ def test_status_ui_primary_actions_are_only_three_clear_operations():
     assert "GuangYaTransferAssistant/refresh" in text
     assert "GuangYaTransferAssistant/offline/refresh" in text
     assert "GuangYaTransferAssistant/selfcheck" in text
+    assert "刷新云任务只轮询已有 taskId，不会重复创建云任务" in text
 
 
 def test_status_ui_exposes_overview_api_and_r7_keeps_single_display_owner():
@@ -184,10 +187,11 @@ def test_status_ui_v191_is_retained_by_current_release():
     entry = ENTRY.read_text(encoding="utf-8")
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.12.20"
-    assert 'plugin_version = "1.12.20"' in entry
-    assert 'build_id = "20260909-r67"' in entry
+    assert package["version"] == local["version"] == "1.12.21"
+    assert 'plugin_version = "1.12.21"' in entry
+    assert 'build_id = "20260909-r68"' in entry
     assert "v1.12.5" in package.get("history", {})
     assert "v1.12.3" in package.get("history", {})
     assert "v1.9.1" in package.get("history", {})
     assert "紧凑" in package["history"]["v1.9.1"]
+

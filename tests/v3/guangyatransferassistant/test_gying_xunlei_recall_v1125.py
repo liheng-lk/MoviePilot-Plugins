@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 import re
@@ -50,8 +50,8 @@ def _rank_namespace():
 def test_v1125_hardening_parses_without_changing_public_release_marker():
     ast.parse(text, filename=str(HARDENING))
     assert 'build_id = "20260904-r51"' in text
-    assert 'plugin_version = "1.12.20"' in entry
-    assert 'build_id = "20260909-r67"' in entry
+    assert 'plugin_version = "1.12.21"' in entry
+    assert 'build_id = "20260909-r68"' in entry
 
 
 def test_search_cards_are_ranked_before_existing_detail_request_limit():
@@ -171,3 +171,4 @@ def test_subscription_context_is_thread_local_and_transfer_chain_is_not_reimplem
         "aria2",
     ):
         assert forbidden not in lowered
+

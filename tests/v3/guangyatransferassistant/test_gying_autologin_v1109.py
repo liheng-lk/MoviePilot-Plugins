@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 import json
@@ -21,9 +21,9 @@ def test_v1109_files_parse_and_release_metadata_are_aligned():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.12.20"
-    assert 'plugin_version = "1.12.20"' in entry_text
-    assert 'build_id = "20260909-r67"' in entry_text
+    assert package["version"] == local["version"] == "1.12.21"
+    assert 'plugin_version = "1.12.21"' in entry_text
+    assert 'build_id = "20260909-r68"' in entry_text
     assert "v1.12.5" in package.get("history", {})
     assert "v1.12.3" in package.get("history", {})
     assert "v1.10.13" in package.get("history", {})
@@ -76,3 +76,4 @@ def test_start_api_converts_internal_exception_to_structured_json():
 def test_fixed_route_priority_and_native_cloudcollection_are_untouched():
     assert "观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K" in entry_text
     assert "Magnet/ED2K 继续使用光鸭原生 cloudcollection" in entry_text
+

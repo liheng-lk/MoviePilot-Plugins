@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 import html
@@ -60,9 +60,9 @@ def test_v193_files_parse_and_publish_current_version():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.12.20"
-    assert 'plugin_version = "1.12.20"' in entry_text
-    assert 'build_id = "20260909-r67"' in entry_text
+    assert package["version"] == local["version"] == "1.12.21"
+    assert 'plugin_version = "1.12.21"' in entry_text
+    assert 'build_id = "20260909-r68"' in entry_text
     assert "v1.12.5" in package["history"]
     assert "v1.9.3" in package["history"]
 
@@ -252,6 +252,9 @@ def test_xunlei_syncs_library_before_planning_and_rejects_ambiguous_tv_batch():
     assert 'if bool(selection.get("ambiguous")) or not planned_indexes:' in dispatch
     assert "完整模板已生成但不导入" in dispatch
     assert "continue" in dispatch.split('if bool(selection.get("ambiguous")) or not planned_indexes:', 1)[1]
+    assert "if not is_movie and not missing:" in dispatch
+    assert "媒体库当前无缺集" in dispatch
+    assert dispatch.index("if not is_movie and not missing:") < dispatch.index("candidates, state = self._search_viewing_xunlei")
 
 
 def test_successful_xunlei_batch_blocks_fallback_for_tv_and_movie():

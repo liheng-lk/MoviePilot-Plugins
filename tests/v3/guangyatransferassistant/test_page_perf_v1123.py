@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 from pathlib import Path
@@ -17,8 +17,8 @@ def test_v1124_page_layer_parses_and_is_outermost():
     start = ENTRY.index("class GuangYaTransferAssistant(")
     assert ENTRY.index("GuangYaPagePerfV1123Mixin,", start) < ENTRY.index("GuangYaAiringWeeklyV1121Mixin,", start)
     assert 'build_id = "20260904-r51"' in PATCH
-    assert 'plugin_version = "1.12.20"' in ENTRY
-    assert 'build_id = "20260909-r67"' in ENTRY
+    assert 'plugin_version = "1.12.21"' in ENTRY
+    assert 'build_id = "20260909-r68"' in ENTRY
 
 
 def test_data_page_reads_snapshot_first_and_moves_media_library_sync_to_background():
@@ -102,3 +102,4 @@ def test_large_subscription_manager_has_constant_height_single_item_toggle_workf
     assert "已固定接管" in form
     assert "字段高度与订阅数量彻底解耦" in form
     assert 'config.pop("_subscription_pick_v1124", None)' in init
+

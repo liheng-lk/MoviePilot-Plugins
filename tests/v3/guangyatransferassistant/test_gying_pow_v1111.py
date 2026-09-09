@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 import json
@@ -22,9 +22,9 @@ def test_v1111_release_and_layer_parse():
         ast.parse(text)
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.12.20"
-    assert 'plugin_version = "1.12.20"' in ENTRY
-    assert 'build_id = "20260909-r67"' in ENTRY
+    assert package["version"] == local["version"] == "1.12.21"
+    assert 'plugin_version = "1.12.21"' in ENTRY
+    assert 'build_id = "20260909-r68"' in ENTRY
     assert "v1.12.5" in package.get("history", {})
     assert "v1.12.3" in package.get("history", {})
     assert "v1.10.16" in package.get("history", {})
@@ -92,3 +92,4 @@ def test_pow_does_not_require_or_recommend_proxy():
 def test_fixed_transfer_priority_remains_unchanged():
     assert "观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K" in ENTRY
     assert "Magnet/ED2K 继续使用光鸭原生 cloudcollection" in ENTRY
+

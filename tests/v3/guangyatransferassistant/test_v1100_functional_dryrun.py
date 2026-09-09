@@ -162,7 +162,7 @@ class FunctionalDryRunTests(unittest.TestCase):
 
         headers = PROVIDER.GuangYaProviderReliabilityV1100Mixin._provider_headers("secret-token")
         self.assertEqual(headers["X-API-Key"], "secret-token")
-        self.assertEqual(headers["Authorization"], "Bearer secret-token")
+        self.assertNotIn("Authorization", headers)
 
         explicit = PROVIDER.GuangYaProviderReliabilityV1100Mixin._provider_headers("x-api-key:abc")
         self.assertEqual(explicit["X-API-Key"], "abc")
@@ -190,6 +190,43 @@ class FunctionalDryRunTests(unittest.TestCase):
         self.assertEqual(fake.calls[0]["params"], {"q": "Demo Show"})
         self.assertEqual(fake.calls[1]["params"], {"keyword": "Demo Show"})
         self.assertEqual(fake.calls[1]["headers"]["X-API-Key"], "secret-token")
+
+    def test_external_provider_marks_parse_incompatibility_as_failure(self):
+        class InvalidJsonResponse:
+            status_code = 200
+            headers = {"Content-Type": "application/json"}
+            text = "not-json-and-no-links"
+
+            @staticmethod
+            def json():
+                raise ValueError("invalid json")
+
+        class InvalidJsonSession:
+            def __init__(self):
+                self.proxies = {}
+                self.calls = []
+
+            def get(self, url, params=None, headers=None, **kwargs):
+                self.calls.append({"url": url, "params": dict(params or {}), "headers": dict(headers or {}), **kwargs})
+                return InvalidJsonResponse()
+
+        fake = InvalidJsonSession()
+        with patch.object(PROVIDER.requests, "Session", return_value=fake):
+            class Dummy(PROVIDER.GuangYaProviderReliabilityV1100Mixin):
+                _provider_proxy = False
+                _provider_timeout = 5
+                _provider_result_limit = 20
+
+            rows, state = Dummy()._search_api_provider({
+                "name": "mock",
+                "kind": "json",
+                "url": "https://example.invalid/search",
+                "token": "",
+            }, "Demo Show")
+
+        self.assertEqual(rows, [])
+        self.assertFalse(state["success"])
+        self.assertIn("解析失败", state["message"])
 
     def test_unified_search_really_merges_viewing_xunlei_magnet_and_ed2k(self):
         class Dummy(PROVIDER.GuangYaProviderReliabilityV1100Mixin):
@@ -305,7 +342,7 @@ def test_v1100_behavioral_dryrun_suite():
     if result.failures or result.errors:
         details = [text for _, text in [*result.failures, *result.errors]]
         raise AssertionError("v1.10.0 behavioral dry-run failed:\n" + "\n".join(details))
-    assert result.testsRun == 6
+    assert result.testsRun == 7
 
 
 if __name__ == "__main__":

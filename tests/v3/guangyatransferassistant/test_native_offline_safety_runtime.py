@@ -105,6 +105,20 @@ def test_explicit_guangya_status_5_is_not_masked_as_network_failure():
     assert result["data"]["task_status"] == 5
 
 
+def test_non_numeric_task_status_is_treated_as_transient_poll_failure():
+    source = {"id": "s1", "task_id": "task-1", "state": "waiting", "attempts": 2, "task_status": 1}
+    harness = _Harness(source)
+    harness.poll_result = {
+        "success": False,
+        "message": "status parse issue",
+        "data": {**source, "state": "failed", "task_status": "unknown"},
+    }
+    result = Mixin._poll_offline_source(harness, source)
+    assert result["success"] is False
+    assert result["data"]["state"] == "waiting"
+    assert result["data"]["attempts"] == 2
+
+
 def test_public_view_removes_raw_magnet_tracker_parameters():
     source = {
         "id": "s1",

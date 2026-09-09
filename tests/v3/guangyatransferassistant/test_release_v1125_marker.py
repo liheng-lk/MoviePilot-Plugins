@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 import json
@@ -15,10 +15,10 @@ XUNLEI = (PLUGIN / "xunlei_flash_v193.py").read_text(encoding="utf-8")
 
 
 def test_v1125_release_metadata_is_single_truth():
-    assert 'plugin_version = "1.12.20"' in ENTRY
-    assert 'build_id = "20260909-r67"' in ENTRY
-    assert LOCAL["version"] == "1.12.20"
-    assert PACKAGE["version"] == "1.12.20"
+    assert 'plugin_version = "1.12.21"' in ENTRY
+    assert 'build_id = "20260909-r68"' in ENTRY
+    assert LOCAL["version"] == "1.12.21"
+    assert PACKAGE["version"] == "1.12.21"
     assert "v1.12.5" in PACKAGE["history"]
 
 
@@ -59,3 +59,4 @@ def test_v1125_normal_chain_still_uses_xunlei_then_fallback():
     assert "flash = self._dispatch_xunlei_flash(subscribe)" in method
     assert 'if flash.get("handled")' in method
     assert "super()._try_transfer_subscription_inner" in method
+

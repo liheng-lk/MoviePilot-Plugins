@@ -181,22 +181,37 @@ class GuangYaProviderReliabilityV1100Mixin:
     @staticmethod
     def _provider_query_hint_key_v11219(item: Dict[str, str]) -> str:
         kind = str((item or {}).get("kind") or "json").strip().lower()
+        name = str((item or {}).get("name") or "").strip()
         url = str((item or {}).get("url") or "").strip()
-        return f"{kind}|{url}"[:1000] if url else ""
+        return f"{kind}|{name}|{url}"[:1000] if url else ""
+
+    def _provider_query_hint_store_v11219(self) -> Dict[str, Dict[str, Any]]:
+        store = getattr(self, "_provider_query_hints_v11219", None)
+        if isinstance(store, dict):
+            return store
+        try:
+            setattr(self, "_provider_query_hints_v11219", {})
+            created = getattr(self, "_provider_query_hints_v11219", None)
+            if isinstance(created, dict):
+                return created
+        except Exception:
+            pass
+        return _PROVIDER_QUERY_HINTS_V11219
 
     def _provider_query_hint_v11219(self, item: Dict[str, str]) -> str:
         key = self._provider_query_hint_key_v11219(item)
         if not key:
             return ""
         now = time.monotonic()
+        store = self._provider_query_hint_store_v11219()
         with _PROVIDER_QUERY_HINT_LOCK_V11219:
-            cached = dict(_PROVIDER_QUERY_HINTS_V11219.get(key) or {})
+            cached = dict(store.get(key) or {})
             try:
                 cached_at = float(cached.get("ts") or 0)
             except (TypeError, ValueError):
                 cached_at = 0.0
             if not cached or cached_at <= 0 or now - cached_at >= _PROVIDER_QUERY_HINT_TTL_V11219:
-                _PROVIDER_QUERY_HINTS_V11219.pop(key, None)
+                store.pop(key, None)
                 return ""
             return str(cached.get("param") or "").strip()
 
@@ -206,14 +221,15 @@ class GuangYaProviderReliabilityV1100Mixin:
         if not key or not param or param == "url_template":
             return
         now = time.monotonic()
+        store = self._provider_query_hint_store_v11219()
         with _PROVIDER_QUERY_HINT_LOCK_V11219:
-            if key not in _PROVIDER_QUERY_HINTS_V11219 and len(_PROVIDER_QUERY_HINTS_V11219) >= _PROVIDER_QUERY_HINT_MAX_V11219:
+            if key not in store and len(store) >= _PROVIDER_QUERY_HINT_MAX_V11219:
                 oldest_key = min(
-                    _PROVIDER_QUERY_HINTS_V11219,
-                    key=lambda value: float((_PROVIDER_QUERY_HINTS_V11219.get(value) or {}).get("ts") or 0),
+                    store,
+                    key=lambda value: float((store.get(value) or {}).get("ts") or 0),
                 )
-                _PROVIDER_QUERY_HINTS_V11219.pop(oldest_key, None)
-            _PROVIDER_QUERY_HINTS_V11219[key] = {"param": param, "ts": now}
+                store.pop(oldest_key, None)
+            store[key] = {"param": param, "ts": now}
 
     def _provider_query_variants_for_item_v11219(
         self,
@@ -245,14 +261,19 @@ class GuangYaProviderReliabilityV1100Mixin:
             headers["X-API-Key"] = raw.split(":", 1)[1].strip()
             return headers
         headers["X-API-Key"] = raw
-        headers["Authorization"] = f"Bearer {raw}"
         return headers
 
     @staticmethod
-    def _provider_response_candidates(response: requests.Response, *, kind: str, name: str) -> List[Dict[str, Any]]:
+    def _provider_response_candidates(
+        response: requests.Response,
+        *,
+        kind: str,
+        name: str,
+    ) -> Tuple[List[Dict[str, Any]], bool]:
         kind = str(kind or "json").strip().lower()
         candidates: List[Dict[str, Any]] = []
         content_type = str(response.headers.get("Content-Type") or "").lower()
+        parse_ok = False
 
         if kind == "torznab" or "xml" in content_type:
             try:
@@ -271,9 +292,9 @@ class GuangYaProviderReliabilityV1100Mixin:
                             payloads.append(attr.attrib.get("value"))
                     for payload in payloads:
                         candidates.extend(_find_links(payload, name=title, provider=name))
-                return _dedupe_candidates(candidates)
-
+                return _dedupe_candidates(candidates), True
         payload: Any
+        decoded = True
         try:
             payload = response.json()
         except Exception:
@@ -282,7 +303,9 @@ class GuangYaProviderReliabilityV1100Mixin:
                 payload = json.loads(text)
             except Exception:
                 payload = text
-        return _dedupe_candidates(_find_links(payload, provider=name))
+                decoded = False
+        rows = _dedupe_candidates(_find_links(payload, provider=name))
+        return rows, bool(parse_ok or decoded or rows)
 
     def _search_api_provider(self, item: Dict[str, str], keyword: str):
         name = str(item.get("name") or "API").strip() or "API"
@@ -301,6 +324,7 @@ class GuangYaProviderReliabilityV1100Mixin:
         variants = self._provider_query_variants_for_item_v11219(item, keyword)
         attempts: List[Dict[str, Any]] = []
         had_http_success = False
+        had_parse_incompatible = False
         last_error = ""
 
         for key, params in variants[:4]:
@@ -329,8 +353,11 @@ class GuangYaProviderReliabilityV1100Mixin:
                         break
                     continue
                 had_http_success = True
-                rows = self._provider_response_candidates(response, kind=kind, name=name)
-                attempts.append({"param": key, "status": status, "count": len(rows), "ok": True})
+                rows, parse_ok = self._provider_response_candidates(response, kind=kind, name=name)
+                attempts.append({"param": key, "status": status, "count": len(rows), "ok": bool(parse_ok)})
+                if not parse_ok:
+                    had_parse_incompatible = True
+                    last_error = f"{name} 响应结构不兼容或解析失败"
                 if rows:
                     self._remember_provider_query_hint_v11219(item, key)
                     limit = int(getattr(self, "_provider_result_limit", 20) or 20)
@@ -348,6 +375,15 @@ class GuangYaProviderReliabilityV1100Mixin:
                 last_error = str(err)[:240]
                 attempts.append({"param": key, "status": 0, "count": 0, "ok": False, "message": last_error})
 
+        if had_http_success and had_parse_incompatible:
+            return [], {
+                "provider": name,
+                "kind": kind,
+                "success": False,
+                "count": 0,
+                "message": last_error,
+                "attempts": attempts,
+            }
         if had_http_success:
             return [], {
                 "provider": name,

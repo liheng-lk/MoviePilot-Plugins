@@ -35,6 +35,7 @@ class GuangYaResourceGateV1127Mixin:
     plugin_version = "1.12.7"
     build_id = "20260905-r53"
     _review_recheck_seconds_v1127 = 6 * 60 * 60
+    _failed_recheck_seconds_v1127 = 12 * 60 * 60
 
     # ------------------------------------------------------------------
     # TV 身份上下文
@@ -317,7 +318,17 @@ class GuangYaResourceGateV1127Mixin:
             source, error, attempt_increment=attempt_increment
         ) or source)
         if str(updated.get("state") or "") != "needs_review":
-            return updated
+            if str(updated.get("state") or "") != "failed":
+                return updated
+            subscribe = self._find_subscription(int(updated.get("subscribe_id") or 0))
+            if not subscribe:
+                return updated
+            fingerprint = self._review_fingerprint_v1127(subscribe, updated)
+            return dict(self._update_source(
+                str(updated.get("id") or ""),
+                failed_fingerprint_v1127=fingerprint,
+                failed_at_v1127=time.time(),
+            ) or updated)
         subscribe = self._find_subscription(int(updated.get("subscribe_id") or 0))
         if not subscribe:
             return updated
@@ -330,46 +341,86 @@ class GuangYaResourceGateV1127Mixin:
 
     def _existing_source(self, subscribe_id: int, source_type: str, identity: str) -> Dict[str, Any]:
         existing = dict(super()._existing_source(subscribe_id, source_type, identity) or {})
-        if str(existing.get("state") or "") != "needs_review":
+        state = str(existing.get("state") or "")
+        if state not in {"needs_review", "failed"}:
             return existing
         subscribe = self._find_subscription(int(subscribe_id or 0))
         if not subscribe:
             return existing
 
         current = self._review_fingerprint_v1127(subscribe, existing)
-        previous = str(existing.get("review_fingerprint_v1127") or "")
         try:
-            reviewed_at = float(existing.get("review_at_v1127") or 0)
-        except (TypeError, ValueError):
-            reviewed_at = 0.0
-        now = time.time()
-        evidence_changed = bool(previous and previous != current)
-        legacy_review = not previous
-        expired = bool(reviewed_at and now - reviewed_at >= int(self._review_recheck_seconds_v1127))
-        if not (legacy_review or evidence_changed or expired):
-            return existing
+            now = time.time()
+            if state == "needs_review":
+                previous = str(existing.get("review_fingerprint_v1127") or "")
+                reviewed_at = float(existing.get("review_at_v1127") or 0)
+                evidence_changed = bool(previous and previous != current)
+                legacy_review = not previous
+                expired = bool(reviewed_at and now - reviewed_at >= int(self._review_recheck_seconds_v1127))
+                if not (legacy_review or evidence_changed or expired):
+                    return existing
+                reason = "旧版 needs_review 首次迁移复核" if legacy_review else ("缺集/季/目标证据已变化" if evidence_changed else "needs_review 已满 6 小时")
+                updated = dict(self._update_source(
+                    str(existing.get("id") or ""),
+                    state="new",
+                    enabled=True,
+                    auto_dispatch=True,
+                    attempts=0,
+                    task_id="",
+                    task_status=None,
+                    file_id="",
+                    progress=0,
+                    last_error="",
+                    next_retry_at=0,
+                    review_reopened_at_v1127=self._now_text(),
+                    review_reopen_reason_v1127=reason,
+                ) or existing)
+                self._plugin_log(
+                    "INFO",
+                    "【光鸭转存助手】【拆包v1.12.7】来源 %s 从 needs_review 自动重新评估：%s",
+                    str(existing.get("id") or "-"),
+                    reason,
+                )
+                # 调度层只根据本次返回值判断“是否已有活跃候选”；用临时非活跃状态让它继续
+                # 走既有 _upsert_source + _spawn_source_dispatch。持久状态已经恢复为 new。
+                updated["state"] = "review_reopen"
+                return updated
 
-        reason = "旧版 needs_review 首次迁移复核" if legacy_review else ("缺集/季/目标证据已变化" if evidence_changed else "needs_review 已满 6 小时")
-        updated = dict(self._update_source(
-            str(existing.get("id") or ""),
-            state="new",
-            enabled=True,
-            auto_dispatch=True,
-            last_error="",
-            next_retry_at=0,
-            review_reopened_at_v1127=self._now_text(),
-            review_reopen_reason_v1127=reason,
-        ) or existing)
-        self._plugin_log(
-            "INFO",
-            "【光鸭转存助手】【拆包v1.12.7】来源 %s 从 needs_review 自动重新评估：%s",
-            str(existing.get("id") or "-"),
-            reason,
-        )
-        # 调度层只根据本次返回值判断“是否已有活跃候选”；用临时非活跃状态让它继续
-        # 走既有 _upsert_source + _spawn_source_dispatch。持久状态已经恢复为 new。
-        updated["state"] = "review_reopen"
-        return updated
+            previous = str(existing.get("failed_fingerprint_v1127") or "")
+            failed_at = float(existing.get("failed_at_v1127") or 0)
+            evidence_changed = bool(previous and previous != current)
+            legacy_failed = not previous
+            expired = bool(failed_at and now - failed_at >= int(self._failed_recheck_seconds_v1127))
+            if not (legacy_failed or evidence_changed or expired):
+                return existing
+            reason = "旧版 failed 首次迁移复核" if legacy_failed else ("缺集/季/目标证据已变化" if evidence_changed else "failed 已满 12 小时")
+            updated = dict(self._update_source(
+                str(existing.get("id") or ""),
+                state="new",
+                enabled=True,
+                auto_dispatch=True,
+                attempts=0,
+                task_id="",
+                task_status=None,
+                file_id="",
+                progress=0,
+                last_error="",
+                next_retry_at=0,
+                failed_reopened_at_v1127=self._now_text(),
+                failed_reopen_reason_v1127=reason,
+                failed_fingerprint_v1127=current,
+                failed_at_v1127=now,
+            ) or existing)
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【拆包v1.12.7】来源 %s 从 failed 自动重新评估：%s",
+                str(existing.get("id") or "-"),
+                reason,
+            )
+            updated["state"] = "failed_reopen"
+            return updated
+        except (TypeError, ValueError):
+            return existing
 
 
 __all__ = ["GuangYaResourceGateV1127Mixin"]

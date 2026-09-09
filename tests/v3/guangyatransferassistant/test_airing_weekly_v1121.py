@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 from pathlib import Path
@@ -25,8 +25,8 @@ def test_v1121_parses_and_is_above_v1120_scheduler():
     weekly = ENTRY.index("GuangYaAiringWeeklyV1121Mixin,", start)
     scheduler = ENTRY.index("GuangYaAiringSchedulerV1120Mixin,", start)
     assert weekly < scheduler
-    assert 'plugin_version = "1.12.20"' in ENTRY
-    assert 'build_id = "20260909-r67"' in ENTRY
+    assert 'plugin_version = "1.12.21"' in ENTRY
+    assert 'build_id = "20260909-r68"' in ENTRY
     assert 'build_id = "20260903-r48-preview"' in GATE
 
 
@@ -174,3 +174,4 @@ def test_v1121_movies_keep_unscheduled_behavior_and_daily_catchup_survives():
     assert "if force and not due_force:" in run
     assert "def _daily_full_catchup_v1110" in RELEASE
     assert "04:10" in IMPL
+

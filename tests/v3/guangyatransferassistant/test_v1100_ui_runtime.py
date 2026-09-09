@@ -1,4 +1,4 @@
-import ast
+﻿import ast
 import json
 from pathlib import Path
 
@@ -16,9 +16,9 @@ def test_v1100_files_parse_and_publish_current_release():
         ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.12.20"
-    assert 'plugin_version = "1.12.20"' in ENTRY
-    assert 'build_id = "20260909-r67"' in ENTRY
+    assert package["version"] == local["version"] == "1.12.21"
+    assert 'plugin_version = "1.12.21"' in ENTRY
+    assert 'build_id = "20260909-r68"' in ENTRY
 
 def test_v1100_mro_installs_final_layers_before_old_layers():
     start = ENTRY.index("class GuangYaTransferAssistant")
@@ -32,7 +32,7 @@ def test_v1100_mro_installs_final_layers_before_old_layers():
 def test_unified_search_exposes_xunlei_and_adaptive_magnet_queries():
     for token in ('"q"', '"kw"', '"keyword"', '"search"', "_search_viewing_xunlei", '"xunlei"', '"/providers/search/selected"'):
         assert token in PROVIDER
-    assert 'headers["Authorization"] = f"Bearer {raw}"' in PROVIDER
+    assert 'headers["Authorization"] = f"Bearer {raw}"' not in PROVIDER
     assert 'headers["X-API-Key"] = raw' in PROVIDER
     assert "api_provider_test" in PROVIDER and "_search_api_provider(item, keyword)" in PROVIDER
 
@@ -70,3 +70,4 @@ def test_config_ui_keeps_models_and_folds_protocol_details():
         assert token in CONFIG
     for model in ("selected_subscriptions", "save_path", "channel_urls", "magnet_api_sources", "viewing_username", "viewing_password", "xunlei_flash_enabled"):
         assert model in CONFIG
+

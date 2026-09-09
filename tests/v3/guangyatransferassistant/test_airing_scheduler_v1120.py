@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 import datetime
@@ -21,8 +21,8 @@ def test_v1120_scheduler_parses_and_is_first_runtime_authority():
     identity_pos = ENTRY.index("GuangYaMediaIdentityGuardV1111Mixin,", start)
     release_pos = ENTRY.index("GuangYaReleaseV1110Mixin,", start)
     assert weekly_pos < scheduler_pos < identity_pos < release_pos
-    assert 'plugin_version = "1.12.20"' in ENTRY
-    assert 'build_id = "20260909-r67"' in ENTRY
+    assert 'plugin_version = "1.12.21"' in ENTRY
+    assert 'build_id = "20260909-r68"' in ENTRY
 
 
 def test_v1120_prefers_dailyassistant_and_keeps_tmdb_fallback():
@@ -129,3 +129,4 @@ def test_v1120_gying_keyword_fallback_reuses_per_keyword_cache():
     hardening = GYING[GYING.index("def _gying_raw_results"):GYING.index("@staticmethod\n    def _provider_candidate_matches")]
     assert "force=force or index > 0" not in hardening
     assert "super()._gying_raw_results(variant, force=force)" in hardening
+

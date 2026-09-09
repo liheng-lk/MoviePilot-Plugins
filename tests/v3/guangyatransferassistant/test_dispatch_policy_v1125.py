@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 import importlib.util
@@ -151,8 +151,8 @@ def test_v1125_policy_parses_and_sits_below_final_authority_above_weekly_schedul
     weekly = entry_text.index("GuangYaAiringWeeklyV1121Mixin,", start)
     scheduler = entry_text.index("GuangYaAiringSchedulerV1120Mixin,", start)
     assert page < final_policy < policy < weekly < scheduler
-    assert 'plugin_version = "1.12.20"' in entry_text
-    assert 'build_id = "20260909-r67"' in entry_text
+    assert 'plugin_version = "1.12.21"' in entry_text
+    assert 'build_id = "20260909-r68"' in entry_text
     assert 'build_id = "20260904-r51"' in policy_text
 
 
@@ -295,3 +295,4 @@ def test_daily_repair_is_strictly_channel_first_then_remaining_gying():
     assert "force=True" in method
     assert "_uncovered_missing_v1125" in method
     assert '"strategy": "channel_first_then_gying"' in method
+

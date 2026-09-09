@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from pathlib import Path
@@ -13,10 +13,10 @@ PACKAGE = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
 
 
 def test_v11217_public_release_truth_is_consistent():
-    assert 'plugin_version = "1.12.20"' in ENTRY
-    assert 'build_id = "20260909-r67"' in ENTRY
-    assert PLUGIN_JSON["version"] == "1.12.20"
-    assert PACKAGE["GuangYaTransferAssistant"]["version"] == "1.12.20"
+    assert 'plugin_version = "1.12.21"' in ENTRY
+    assert 'build_id = "20260909-r68"' in ENTRY
+    assert PLUGIN_JSON["version"] == "1.12.21"
+    assert PACKAGE["GuangYaTransferAssistant"]["version"] == "1.12.21"
     assert "v1.12.17" in PACKAGE["GuangYaTransferAssistant"]["history"]
     assert "v1.12.16" in PACKAGE["GuangYaTransferAssistant"]["history"]
 
@@ -39,3 +39,4 @@ def test_v11217_is_wide_recall_strict_write_and_passive_tick_safe():
     assert "cloudcollection/v1/create_task" not in RECALL
     assert "rapid_transfer" not in RECALL
     assert "观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K" in ENTRY
+

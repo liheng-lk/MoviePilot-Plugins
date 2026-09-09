@@ -308,8 +308,14 @@ class GuangYaViewingDispatchV1113Mixin:
             str(getattr(subscribe, "name", "") or ""),
         )
         result = dict(super()._dispatch_xunlei_flash(subscribe) or {})
+        expected_fallback = (
+            not bool(result.get("success"))
+            and int(result.get("shares") or 0) <= 0
+            and int(result.get("attempted_files") or 0) <= 0
+            and not list(result.get("errors") or [])
+        )
         self._plugin_log(
-            "INFO" if bool(result.get("success")) else "WARNING",
+            "INFO" if bool(result.get("success")) or expected_fallback else "WARNING",
             "【光鸭转存助手】【迅雷秒传】#%s 预检结束：shares=%s attempted=%s success_files=%s episodes=%s handled=%s 信息=%s",
             sid,
             int(result.get("shares") or 0),

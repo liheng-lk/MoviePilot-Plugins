@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, Iterable, List, Set
 
 from .episode_resolver_v190 import AUTO_SELECT_CONFIDENCE, reliable_episode_set, resolve_episode
@@ -106,6 +107,7 @@ class GuangYaMediaMatchV11219Mixin:
     """电影作品身份 + 剧集物理集两条最终匹配链的共同收口。"""
 
     match_schema_v11219 = 1
+    _completed_claim_grace_seconds_v11219 = 15 * 60
 
     def _candidate_episode_set_v11219(
         self,
@@ -168,6 +170,16 @@ class GuangYaMediaMatchV11219Mixin:
     def _active_source_claims(self, subscribe_id: int) -> Set[int]:
         claims: Set[int] = set()
         sid = int(subscribe_id or 0)
+        subscribe = self._find_subscription(sid) if sid else None
+        missing_now: Set[int] = set()
+        if subscribe is not None and not self._is_movie_subscription(subscribe):
+            for raw in (self._subscription_missing_episodes(subscribe) or []):
+                try:
+                    value = int(raw or 0)
+                except (TypeError, ValueError):
+                    continue
+                if value > 0:
+                    missing_now.add(value)
         try:
             items = (self._source_store().get("items") or {}).values()
         except Exception:
@@ -177,7 +189,33 @@ class GuangYaMediaMatchV11219Mixin:
                 continue
             if not bool(row.get("enabled", True)):
                 continue
-            claims.update(source_claim_episodes_v11219(row))
+            row_claims = source_claim_episodes_v11219(row)
+            if not row_claims:
+                continue
+            state = str(row.get("state") or "").strip().lower()
+            overlap = row_claims.intersection(missing_now)
+            if state == "completed" and overlap:
+                try:
+                    completed_ts = float(row.get("completed_ts") or 0)
+                except (TypeError, ValueError):
+                    completed_ts = 0.0
+                grace = max(60, int(getattr(self, "_completed_claim_grace_seconds_v11219", 15 * 60) or 15 * 60))
+                if completed_ts > 0 and time.time() - completed_ts >= grace:
+                    try:
+                        self._plugin_log(
+                            "INFO",
+                            "【光鸭转存助手】【来源Claim】#%s 释放过期 completed 占坑：source=%s episodes=%s age=%ss",
+                            sid,
+                            str(row.get("id") or "-")[:60],
+                            sorted(overlap),
+                            int(time.time() - completed_ts),
+                        )
+                    except Exception:
+                        pass
+                    row_claims = row_claims - overlap
+                    if not row_claims:
+                        continue
+            claims.update(row_claims)
         return claims
 
     def _other_source_claims_v11214(self, subscribe_id: int, current_source_id: str = "") -> Set[int]:

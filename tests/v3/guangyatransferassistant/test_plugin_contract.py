@@ -1,4 +1,4 @@
-import ast
+﻿import ast
 import hashlib
 import html
 import json
@@ -70,10 +70,10 @@ exec(compile(routing_mod, str(ROUTING), "exec"), routing_ns)
 def test_versions_and_layered_legacy_contract():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.12.20"
-    assert local["version"] == "1.12.20"
-    assert 'plugin_version = "1.12.20"' in entry_text
-    assert 'build_id = "20260909-r67"' in entry_text
+    assert package["version"] == "1.12.21"
+    assert local["version"] == "1.12.21"
+    assert 'plugin_version = "1.12.21"' in entry_text
+    assert 'build_id = "20260909-r68"' in entry_text
     assert 'plugin_version = "1.7.0"' in routing_text
     assert 'plugin_version = "1.6.5"' in legacy_text
     assert "from .routing_v170 import GuangYaTransferAssistant as _RoutingV170Assistant" in entry_text
@@ -237,3 +237,4 @@ def test_no_silent_native_fallback_for_selected_search_route():
     assert "self._guard_one_subscription" in one
     selected_branch = one.split("if subscribe and self._is_guangya_route(subscribe):", 1)[1]
     assert "return None" in selected_branch
+
