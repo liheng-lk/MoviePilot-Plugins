@@ -9,6 +9,12 @@ from __future__ import annotations
 import time
 from typing import List, Optional, Tuple
 
+from .host_compat import install_host_compat
+
+# 这是插件入口最早导入的本地模块之一。先补齐新版 MoviePilot V3 已移除的历史模块别名，
+# 再加载仍未完全迁移的 API/legacy 层，避免安装阶段直接 ImportError。
+install_host_compat()
+
 from app import schemas
 from app.log import logger
 
