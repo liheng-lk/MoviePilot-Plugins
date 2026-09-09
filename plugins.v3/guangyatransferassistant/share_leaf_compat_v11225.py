@@ -111,7 +111,9 @@ def _leaf_item_v11225(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     name = _safe_relative_path(name).rsplit("/", 1)[-1] if _safe_relative_path(name) else ""
     if not name:
         return None
-    if ext and "." not in name.rsplit("/", 1)[-1]:
+    # `最后目击.2026.1080p` 这种媒体 stem 本身包含多个点，不能据此误判为已有扩展名；
+    # 只在末尾已经等于接口声明扩展名时才认为完整，否则补回 `.mkv/.mp4/...`。
+    if ext and not name.casefold().endswith("." + ext.casefold()):
         name = f"{name}.{ext}"
 
     raw_type = None
