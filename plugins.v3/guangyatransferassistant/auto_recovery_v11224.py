@@ -31,7 +31,7 @@ def _norm_name_v11224(value: Any) -> str:
 
 def _safe_name_v11224(value: Any, limit: int = 120) -> str:
     text = _FORBIDDEN_NAME_V11224.sub(" ", str(value or ""))
-    text = re.sub(r"\s+", " ", text).strip(" .-_[]()（）【】")
+    text = re.sub(r"\s+", " ", text).strip(" .-_")
     return text[: max(1, int(limit or 120))].strip()
 
 
