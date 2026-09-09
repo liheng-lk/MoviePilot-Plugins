@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "更新日历驱动的固定分流助手。v1.12.19 统一电影与剧集/动漫的高置信真实资源匹配：电影四来源均以真实 payload 视频和 MoviePilot/TMDB 可信标题证据为最终门禁；剧集拆分 requested/candidate/resolved/transfer episodes，未解析候选不再提前占缺集；Provider 在全局截断前排序并受进程级 4 并发预算约束，来源质量只学习真实可归因结果。同时完整保留 v1.12.18 空目录安全边界：待落盘验证继续使用 get_item 纯只读查询；失败且没有服务端 taskId 时才允许回收本次新建并再次确认仍为空的目录，已有/非空/事实未知/taskId/pending/root 均 fail-closed 保留。来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
-  "version": "1.12.19",
+  "description": "更新日历驱动的固定分流助手。v1.12.20 修复频道漏触发：兼容当前 tgm 热更模板中的剧集/动漫/电影标题结构；频道分页未追到旧游标时不再推进 cursor，而是有界扩大分页深度并在必要时持久化追赶预算，避免中间消息永久漏掉。继续完整保留 v1.12.19 的高置信真实 payload 媒体匹配、requested/candidate/resolved/transfer episodes、Provider 排序/质量学习，以及 MoviePilot 权威缺集、reservation/source claim、不可分割物理文件和空目录安全边界。来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+  "version": "1.12.20",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
