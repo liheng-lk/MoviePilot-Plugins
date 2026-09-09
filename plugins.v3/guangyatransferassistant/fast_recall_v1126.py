@@ -20,18 +20,23 @@ v1.12.19 开发阶段把高质量媒体匹配作为本层 cooperative parent 接
 
 v1.12.24 继续把自动恢复层作为 cooperative parent 接入：同一频道分享可增长复核、
 handled 真缺口恢复、非更新日提前资源补漏以及识别文件夹名前缀命名均在该层收口。
+
+v1.12.25 增加光鸭分享叶子协议兼容：旧 probe 已读到叶子但路径全空时，补传 shareId
+重新调用 get_share_page_files_list，并兼容新版文件名/路径字段，避免“叶子存在但扩展名示例为 -”。
 """
 from __future__ import annotations
 
 import time
 from typing import Any, Dict, List
 
+from .share_leaf_compat_v11225 import GuangYaShareLeafCompatV11225Mixin
 from .auto_recovery_v11224 import GuangYaAutoRecoveryV11224Mixin
 from .media_match_v11219 import GuangYaMediaMatchV11219Mixin
 from .movie_xunlei_match_v11219 import GuangYaMovieXunleiMatchV11219Mixin
 
 
 class GuangYaFastRecallV1126Mixin(
+    GuangYaShareLeafCompatV11225Mixin,
     GuangYaAutoRecoveryV11224Mixin,
     GuangYaMediaMatchV11219Mixin,
     GuangYaMovieXunleiMatchV11219Mixin,
