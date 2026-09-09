@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import copy
 import re
 import threading
 import time
@@ -32,7 +31,9 @@ from .organizer_empty_folder_guard_v3410 import (
     _live_primary_media_state,
 )
 from .organizer_folder_batch_v342 import _FolderBatchEnvelope
-from .organizer_policy import FileDisposition, decide_existing_target
+from .organizer_queue_recovery import GuangYaQueueRecoveryMixin
+from .organizer_recognition import GuangYaOrganizerMixin as GuangYaRecognitionMixin
+from .organizer_runtime import organizer_runtime_bound_to
 
 
 _VERSION_RE = re.compile(r"(?:\s+-\s+版本(?P<num>\d+))$", re.IGNORECASE)
@@ -385,37 +386,47 @@ def _apply_version_to_render(render_str: str, version: int) -> str:
     return (rendered.parent / name).as_posix()
 
 
-def apply_version_rename_event(plugin: Any, event: Any) -> None:
-    """Apply the current thread-local version suffix to MoviePilot TransferRename."""
-    context = getattr(_RENAME_CONTEXT, "value", None)
-    if not isinstance(context, dict) or context.get("plugin_id") != id(plugin):
-        return
-    data = getattr(event, "event_data", None)
-    source_item = getattr(data, "source_item", None) if data is not None else None
-    if not source_item:
-        return
-    storage = str(getattr(source_item, "storage", "") or "")
-    valid_storages = {str(getattr(plugin, "_disk_name", "") or "")}
-    names_getter = getattr(plugin, "_storage_names", None)
-    if callable(names_getter):
-        try:
-            valid_storages.update(str(value) for value in (names_getter() or set()))
-        except Exception:
-            pass
-    if storage not in valid_storages:
+def _install_rename_handler() -> None:
+    if getattr(GuangYaRecognitionMixin, "_guangya_conflict_rename_v353", False):
         return
 
-    source = _norm(plugin, getattr(source_item, "path", "") or getattr(data, "source_path", ""))
-    primary = str(context.get("source") or "")
-    if source != primary and PurePosixPath(source).parent != PurePosixPath(primary).parent:
-        return
-    render_str = str(getattr(data, "render_str", "") or "")
-    if not render_str:
-        return
-    updated = _apply_version_to_render(render_str, int(context["version"]))
-    data.updated = True
-    data.updated_str = updated
-    data.source = "光鸭云盘助手-policy"
+    def organizer_transfer_rename(self: Any, event: Any) -> None:
+        if not organizer_runtime_bound_to(self):
+            return
+        context = getattr(_RENAME_CONTEXT, "value", None)
+        if not isinstance(context, dict) or context.get("plugin_id") != id(self):
+            return
+        data = getattr(event, "event_data", None)
+        source_item = getattr(data, "source_item", None) if data is not None else None
+        if not source_item:
+            return
+        storage = str(getattr(source_item, "storage", "") or "")
+        valid_storages = {str(getattr(self, "_disk_name", "") or "")}
+        names_getter = getattr(self, "_storage_names", None)
+        if callable(names_getter):
+            try:
+                valid_storages.update(str(value) for value in (names_getter() or set()))
+            except Exception:
+                pass
+        if storage not in valid_storages:
+            return
+
+        source = _norm(self, getattr(source_item, "path", "") or getattr(data, "source_path", ""))
+        primary = str(context.get("source") or "")
+        # 同一次单主视频同步整理中的字幕/音轨也必须带相同版本号，避免伴随文件重新撞名。
+        if source != primary:
+            if PurePosixPath(source).parent != PurePosixPath(primary).parent:
+                return
+        render_str = str(getattr(data, "render_str", "") or "")
+        if not render_str:
+            return
+        updated = _apply_version_to_render(render_str, int(context["version"]))
+        data.updated = True
+        data.updated_str = updated
+        data.source = "光鸭云盘助手-v3.5.3"
+
+    GuangYaRecognitionMixin.organizer_transfer_rename = organizer_transfer_rename
+    GuangYaRecognitionMixin._guangya_conflict_rename_v353 = True
 
 
 def _single_preview_target(
@@ -465,286 +476,6 @@ def _execute_member(
     except Exception as err:  # noqa: BLE001
         logger.exception("【光鸭云盘助手】【冲突消歧】单成员真实整理异常: %s - %s", source, err)
         return False, str(err)
-
-
-
-def _handle_single_existing_target(
-    plugin: Any,
-    item: _FolderBatchEnvelope,
-    transfer_chain: Any,
-    base_kwargs: Dict[str, Any],
-    rows: Dict[str, Dict[str, Any]],
-    *,
-    forced_version: Optional[int] = None,
-) -> Optional[Tuple[bool, str]]:
-    """单主视频已存在最终目标时执行唯一大小策略；没有已有目标则返回 None。"""
-    members = _member_map(plugin, item)
-    if len(members) != 1:
-        return None
-    source, member = next(iter(members.items()))
-    row = rows.get(source) or {}
-    if not bool(row.get("success")):
-        return None
-    target = _norm(plugin, row.get("target"))
-    if not target:
-        return None
-    api = getattr(plugin, "_guangya_api", None)
-    if not api:
-        return None
-    try:
-        existing = api.get_item(Path(target))
-    except Exception as err:  # noqa: BLE001
-        _mark_blocked(
-            plugin,
-            member,
-            f"无法可靠读取 MoviePilot 最终目标，禁止覆盖/删除: {target} - {err}",
-            result="existing_target_probe_blocked",
-        )
-        return True, "已有目标检查失败，源文件保持原位"
-    if not existing:
-        return None
-    if str(getattr(existing, "type", "file") or "file") != "file":
-        _mark_blocked(
-            plugin,
-            member,
-            f"MoviePilot 最终目标已存在但不是文件: {target}",
-            result="existing_target_probe_blocked",
-        )
-        return True, "已有目标类型异常，源文件保持原位"
-
-    disposition = decide_existing_target(_member_size(member), _member_size(existing))
-    if disposition == FileDisposition.BLOCK_SAFETY:
-        _mark_blocked(
-            plugin,
-            member,
-            f"已有目标但源/目标字节大小无法可靠取得，禁止自动删除或覆盖: {target}",
-            result="existing_target_size_unknown",
-        )
-        return True, "已有目标大小未知，源文件保持原位"
-
-    if disposition == FileDisposition.DELETE_DUPLICATE:
-        try:
-            refresh = getattr(api, "refresh_item", None)
-            current_source = refresh(Path(source)) if callable(refresh) else api.get_item(Path(source))
-            current_target = api.get_item(Path(target))
-        except Exception as err:  # noqa: BLE001
-            _mark_blocked(
-                plugin,
-                member,
-                f"重复删除前复核失败，源文件保持原位: {err}",
-                result="duplicate_delete_blocked",
-            )
-            return True, "重复删除前复核失败"
-        if not current_source:
-            retire = getattr(plugin._state(), "retire_path", None)
-            if callable(retire):
-                retire(path=source)
-            return True, "重复源已不存在"
-        if (
-            not current_target
-            or decide_existing_target(
-                _member_size(current_source),
-                _member_size(current_target),
-            ) != FileDisposition.DELETE_DUPLICATE
-        ):
-            _mark_blocked(
-                plugin,
-                member,
-                "重复删除前源/目标大小事实已变化，拒绝删除",
-                result="duplicate_delete_blocked",
-            )
-            return True, "重复删除前事实变化"
-        expected_fileid = str(getattr(member, "fileid", "") or "")
-        current_fileid = str(getattr(current_source, "fileid", "") or "")
-        if expected_fileid and current_fileid and expected_fileid != current_fileid:
-            _mark_blocked(
-                plugin,
-                member,
-                "重复删除前 fileId 已变化，拒绝删除",
-                result="duplicate_delete_blocked",
-            )
-            return True, "重复删除前 fileId 变化"
-        if not api.delete(current_source):
-            _mark_blocked(
-                plugin,
-                member,
-                "确认同大小重复，但移入回收站失败，源文件保持原位",
-                result="duplicate_delete_blocked",
-            )
-            return True, "重复文件删除失败"
-        retire = getattr(plugin._state(), "retire_path", None)
-        if callable(retire):
-            retire(path=source)
-        plugin._append_monitor_history({
-            "time": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "path": source,
-            "name": str(getattr(member, "name", "") or PurePosixPath(source).name),
-            "size": int(_member_size(member) or 0),
-            "result": "duplicate_deleted_existing_target",
-            "group_path": item.path,
-            "group_name": item.name,
-            "message": f"MoviePilot 已确认最终目标且字节大小完全一致，重复源已安全移入回收站: {target}",
-            "target": target,
-        })
-        logger.info(
-            "【光鸭云盘助手】【整理策略】【同大小去重】目标已存在且字节完全一致，删除重复源: %s -> %s",
-            source,
-            target,
-        )
-        return True, "同大小重复源已删除"
-
-    if forced_version is None:
-        numbers = _next_version_numbers(plugin, target, 1)
-        if not numbers:
-            _mark_blocked(
-                plugin,
-                member,
-                f"已有目标大小不同，但无法可靠分配版本号: {target}",
-                result="version_target_blocked",
-            )
-            return True, "不同大小版本无法分配版本号"
-        version = numbers[0]
-    else:
-        version = int(forced_version)
-    version_target, error = _single_preview_target(
-        plugin,
-        transfer_chain,
-        base_kwargs,
-        member,
-        version,
-    )
-    if not version_target or f"版本{version}" not in PurePosixPath(version_target).stem:
-        _mark_blocked(
-            plugin,
-            member,
-            error or "不同大小版本未形成唯一版本目标",
-            result="version_target_blocked",
-        )
-        return True, "版本目标预览失败"
-    try:
-        version_existing = api.get_item(Path(version_target))
-    except Exception as err:  # noqa: BLE001
-        _mark_blocked(
-            plugin,
-            member,
-            f"无法确认版本目标是否存在: {version_target} - {err}",
-            result="version_target_blocked",
-        )
-        return True, "版本目标检查失败"
-    if version_existing:
-        _mark_blocked(
-            plugin,
-            member,
-            f"版本目标已存在，拒绝覆盖: {version_target}",
-            result="version_target_blocked",
-        )
-        return True, "版本目标已存在"
-    logger.info(
-        "【光鸭云盘助手】【整理策略】【不同大小多版本】原目标已存在但大小不同，保留为版本%s: %s -> %s",
-        version,
-        source,
-        version_target,
-    )
-    return _execute_member(plugin, transfer_chain, base_kwargs, member, version)
-
-
-
-def _handle_existing_target_groups(
-    plugin: Any,
-    item: _FolderBatchEnvelope,
-    transfer_chain: Any,
-    base_kwargs: Dict[str, Any],
-    rows: Dict[str, Dict[str, Any]],
-) -> Dict[str, Any]:
-    """对预览中的每个最终目标统一应用已有目标策略。
-
-    只要远端目标已经存在，该目标下的所有源成员都在这里收口；目标不存在的成员原样留给
-    后续 MoviePilot 原生批处理/现有批内冲突消歧。相同已有目标下多个不同大小源会一次性
-    预分配互不重复的版本号，避免同一批成员各自看到相同“下一个版本”。
-    """
-    members = _member_map(plugin, item)
-    by_target: Dict[str, List[str]] = defaultdict(list)
-    for source, row in rows.items():
-        if source not in members or not bool((row or {}).get("success")):
-            continue
-        target = _norm(plugin, (row or {}).get("target"))
-        if target:
-            by_target[target].append(source)
-
-    api = getattr(plugin, "_guangya_api", None)
-    if not api:
-        return {"handled": set(), "failed": 0, "blocked": 0, "target_groups": 0}
-
-    handled: set[str] = set()
-    failed = blocked = target_groups = 0
-    for target, sources in sorted(by_target.items()):
-        try:
-            existing = api.get_item(Path(target))
-        except Exception as err:  # noqa: BLE001 - 目标存在性不确定时 fail closed
-            reason = f"无法可靠读取 MoviePilot 最终目标，禁止覆盖/删除: {target} - {err}"
-            for source in sources:
-                member = members[source]
-                _mark_blocked(plugin, member, reason, result="existing_target_probe_blocked")
-                handled.add(source)
-                blocked += 1
-            target_groups += 1
-            continue
-        if not existing:
-            continue
-
-        target_groups += 1
-        target_size = _member_size(existing)
-        version_sources = [
-            source
-            for source in sources
-            if _member_size(members[source]) is not None
-            and target_size is not None
-            and _member_size(members[source]) != target_size
-        ]
-        version_map: Dict[str, int] = {}
-        if version_sources:
-            numbers = _next_version_numbers(plugin, target, len(version_sources))
-            if not numbers:
-                for source in version_sources:
-                    _mark_blocked(
-                        plugin,
-                        members[source],
-                        f"已有目标大小不同，但无法可靠分配唯一版本号: {target}",
-                        result="version_target_blocked",
-                    )
-                    handled.add(source)
-                    blocked += 1
-            else:
-                version_map = dict(zip(version_sources, numbers))
-
-        for source in sorted(sources, key=lambda value: _member_sort_key(members[value], value)):
-            if source in handled:
-                continue
-            member = members[source]
-            shadow = copy.copy(item)
-            shadow.members = [member]
-            shadow.size = int(_member_size(member) or 0)
-            result = _handle_single_existing_target(
-                plugin,
-                shadow,
-                transfer_chain,
-                base_kwargs,
-                {source: rows[source]},
-                forced_version=version_map.get(source),
-            )
-            # 目标可能在组级读取和成员二次读取之间消失；这种情况不算 handled，交回正常整理。
-            if result is None:
-                continue
-            handled.add(source)
-            if not bool(result[0]):
-                failed += 1
-
-    return {
-        "handled": handled,
-        "failed": failed,
-        "blocked": blocked,
-        "target_groups": target_groups,
-    }
 
 
 def _block_guard_failure(
@@ -812,64 +543,11 @@ def _execute_conflict_aware(plugin: Any, item: _FolderBatchEnvelope) -> Tuple[bo
     if row_error:
         return _block_guard_failure(plugin, item, row_error, details)
 
-    # v3.7 先把“媒体库已有最终目标”作为比批内碰撞更高优先级的事实处理。
-    # duplicate_targets 只是“多个源规划到同一目标”的冲突事实，本身不能阻止已有目标 policy；
-    # 只有 missing/failed/empty_target 才说明预览成员事实不完整，必须先 fail closed。
-    preview_members_valid = not (
-        details.get("missing")
-        or details.get("failed")
-        or details.get("empty_target")
-    )
-    existing_handled: set[str] = set()
-    if preview_members_valid:
-        existing_result = _handle_existing_target_groups(plugin, item, transfer_chain, kwargs, rows)
-        existing_handled = set(existing_result.get("handled") or set())
-        if existing_handled:
-            remaining = [
-                member
-                for member in list(getattr(item, "members", None) or [])
-                if _norm(plugin, getattr(member, "path", "")) not in existing_handled
-            ]
-            if not remaining:
-                return True, (
-                    f"已有目标策略已收口全部成员={len(existing_handled)}；"
-                    "同大小重复已删除，不同大小已版本化或安全阻断"
-                )
-            # 原始目录任务不能再包含已经删除/版本化/阻断的成员；剩余成员继续沿用同一
-            # MoviePilot 识别上下文，但后续真实执行必须逐成员，避免目录批处理重新带回已收口成员。
-            work_item = copy.copy(item)
-            work_item.members = remaining
-            work_item.size = sum(int(_member_size(member) or 0) for member in remaining)
-            item = work_item
-            rows = {
-                source: row
-                for source, row in rows.items()
-                if source not in existing_handled
-            }
-
     collisions = _collision_groups(plugin, item, rows)
     # 不是重复目标问题时完全保持 v3.4.9 语义；其它预览异常仍整组阻止。
     if not collisions:
-        # safe 可能仅因原始 duplicate_targets=False；若这些冲突成员已被已有目标 policy 收口，
-        # 剩余成员仍是完整安全预览，不能再用旧 safe 标志把它们误阻断。
-        if not preview_members_valid:
+        if not safe:
             return _block_guard_failure(plugin, item, guard_message, details)
-        if existing_handled:
-            attempted = failed = 0
-            for member in list(getattr(item, "members", None) or []):
-                attempted += 1
-                success, message = _execute_member(plugin, transfer_chain, kwargs, member, None)
-                if not success:
-                    failed += 1
-                    logger.warning(
-                        "【光鸭云盘助手】【整理策略】已有目标成员收口后，剩余成员整理失败: %s - %s",
-                        getattr(member, "path", ""),
-                        message,
-                    )
-            return True, (
-                f"已有目标策略收口={len(existing_handled)}，剩余成员逐个整理={attempted}，"
-                f"调用失败={failed}"
-            )
         logger.info(
             "【光鸭云盘助手】【数据安全校验】通过: %s，%s 个主视频目标唯一；开始真实整理",
             item.path,
@@ -997,7 +675,7 @@ def _delete_duplicate_worker(plugin: Any, keeper: str, history_id: int, records:
         if not current:
             logger.info("【光鸭云盘助手】【重复资源】重复源已不存在，无需再次删除: %s", path)
             try:
-                plugin._state().retire_path(path=path)
+                plugin._state().mark_completed(path=path, fingerprint=str(record.get("fingerprint") or ""))
             except Exception:
                 pass
             continue
@@ -1027,7 +705,7 @@ def _delete_duplicate_worker(plugin: Any, keeper: str, history_id: int, records:
 
         deleted += 1
         try:
-            plugin._state().retire_path(path=path)
+            plugin._state().mark_completed(path=path, fingerprint=str(record.get("fingerprint") or ""))
         except Exception:
             pass
         plugin._append_monitor_history({
@@ -1058,38 +736,67 @@ def _delete_duplicate_worker(plugin: Any, keeper: str, history_id: int, records:
         )
 
 
-def handle_duplicate_terminal_event(plugin: Any, event: Any, success: bool) -> None:
-    """Consume duplicate waiters after the normal terminal/history chain has completed."""
-    payload_getter = getattr(plugin, "_event_payload", None)
-    payload = payload_getter(event) if callable(payload_getter) else {}
-    fileitem = payload.get("fileitem") if isinstance(payload, dict) else None
-    source = _norm(plugin, getattr(fileitem, "path", "")) if fileitem else ""
-    history_id = payload.get("transfer_history_id") if isinstance(payload, dict) else None
-    if not source:
+def _install_terminal_duplicate_cleanup() -> None:
+    if getattr(GuangYaRecognitionMixin, "_guangya_duplicate_terminal_v353", False):
         return
-    with _PENDING_LOCK:
-        records = _PENDING_DUPLICATES.pop(source, [])
-    if not records:
+    original_record = GuangYaRecognitionMixin._record_terminal_transfer
+
+    def record(self: Any, event: Any, success: bool) -> None:
+        payload_getter = getattr(self, "_event_payload", None)
+        payload = payload_getter(event) if callable(payload_getter) else {}
+        fileitem = payload.get("fileitem") if isinstance(payload, dict) else None
+        source = _norm(self, getattr(fileitem, "path", "")) if fileitem else ""
+        history_id = payload.get("transfer_history_id") if isinstance(payload, dict) else None
+
+        original_record(self, event, success)
+
+        if not source:
+            return
+        with _PENDING_LOCK:
+            records = _PENDING_DUPLICATES.pop(source, [])
+        if not records:
+            return
+        if not success or not history_id:
+            logger.warning(
+                "【光鸭云盘助手】【重复资源】保留副本未取得成功 history_id，不删除任何重复源: %s",
+                source,
+            )
+            return
+
+        threading.Thread(
+            target=_delete_duplicate_worker,
+            args=(self, source, int(history_id), records),
+            name=f"guangya-duplicate-cleanup-{int(time.time())}",
+            daemon=True,
+        ).start()
+
+    GuangYaRecognitionMixin._record_terminal_transfer = record
+    GuangYaRecognitionMixin._guangya_duplicate_terminal_v353 = True
+
+
+def install_conflict_resolution_v353() -> None:
+    if getattr(GuangYaQueueRecoveryMixin, "_guangya_conflict_resolution_v353", False):
         return
-    if not success or not history_id:
-        logger.warning(
-            "【光鸭云盘助手】【重复资源】保留副本未取得成功 history_id，不删除任何重复源: %s",
-            source,
-        )
-        return
-    threading.Thread(
-        target=_delete_duplicate_worker,
-        args=(plugin, source, int(history_id), records),
-        name=f"guangya-duplicate-cleanup-{int(time.time())}",
-        daemon=True,
-    ).start()
+
+    previous_execute = GuangYaQueueRecoveryMixin._execute_isolated_transfer
+
+    def execute(self: Any, item: Any):
+        if not isinstance(item, _FolderBatchEnvelope):
+            return previous_execute(self, item)
+        # 单主视频不可能发生“本批多个源映射同目标”，继续原有最快路径。
+        if len(list(getattr(item, "members", None) or [])) < 2:
+            return previous_execute(self, item)
+        return _execute_conflict_aware(self, item)
+
+    _install_rename_handler()
+    _install_terminal_duplicate_cleanup()
+    GuangYaQueueRecoveryMixin._execute_isolated_transfer = execute
+    GuangYaQueueRecoveryMixin._guangya_conflict_resolution_v353 = True
+    logger.info("【光鸭云盘助手】【v3.5.3】电影重复目标与剧集局部冲突消歧已启用")
 
 
 __all__ = [
-    "_execute_conflict_aware",
-    "_execute_member",
-    "apply_version_rename_event",
-    "handle_duplicate_terminal_event",
+    "install_conflict_resolution_v353",
     "_apply_version_to_render",
     "_episode_identity",
     "_group_unique_representatives",

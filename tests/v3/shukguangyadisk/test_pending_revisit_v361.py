@@ -56,10 +56,8 @@ def test_v361_waiting_resources_are_registered_and_due_resources_run_first():
 
 
 def test_v361_directory_due_time_waits_for_latest_member():
-    due = PATCH[PATCH.index("def _v361_due_at"):PATCH.index("def _v361_register_pending")]
-    assert "due_values.append(first_seen + max(float(self._organize_monitor_stability), 0.0))" in due
-    assert "due_values.append(retry_at)" in due
-    assert "return max(max(due_values or [now + _HISTORY_RECHECK_SECONDS]), now + 0.5)" in due
+    assert "目录级任务必须等所有 hard-wait 成员到期，所以取最晚时间" in PATCH
+    assert "return max(max(due_values or [now + _HISTORY_RECHECK_SECONDS]), now + 0.5)" in PATCH
 
 
 def test_v368_stale_pending_is_pruned_by_direct_member_state_not_descendants():

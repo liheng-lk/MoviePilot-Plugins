@@ -22,19 +22,20 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.chain.transfer import TransferChain
+from app.schemas.types import MediaType
 from app.sdk.logging import logger
 
 from .organizer_folder_batch_v342 import _FolderBatchEnvelope
 from .organizer_mp_folder_context_v346 import (
     _directory_fileitem,
+    _is_monitor_root_folder_task,
+    _is_tv_media,
     _moviepilot_directory_context,
+    _moviepilot_episode_format,
+    _moviepilot_tv_context_from_directory_meta,
+    _normalize_result,
 )
-
-from .organizer_episode_name_adapter_v3411 import (
-    apply_episode_name_adapter,
-    audit_episode_expectations,
-)
-from .organizer_category_consistency_v3412 import apply_category_consistency
+from .organizer_queue_recovery import GuangYaQueueRecoveryMixin
 
 
 def _normalize_path(plugin: Any, value: Any) -> str:
@@ -61,7 +62,7 @@ def _preview_result(result: Any) -> Tuple[bool, Optional[dict], str]:
 
 
 def _audit_preview(plugin: Any, item: _FolderBatchEnvelope, result: Any) -> Tuple[bool, str, Dict[str, Any]]:
-    """核对成员唯一目标，再显式执行弱命名集号终态复核。"""
+    """核对本轮成员是否一一映射到唯一目标；这里只审计，不自行计算目标路径。"""
     ok, payload, error = _preview_result(result)
     if not ok or payload is None:
         return False, error, {"preview_total": 0, "expected": len(item.members)}
@@ -130,25 +131,34 @@ def _audit_preview(plugin: Any, item: _FolderBatchEnvelope, result: Any) -> Tupl
 
     if problems:
         return False, "；".join(problems), details
-
-    episode_safe, episode_message, details = audit_episode_expectations(
-        plugin,
-        item,
-        payload,
-        details,
-    )
-    if not episode_safe:
-        return False, episode_message, details
     return True, "", details
 
+
 def _build_moviepilot_kwargs(plugin: Any, item: _FolderBatchEnvelope) -> Tuple[TransferChain, Any, Dict[str, Any], Optional[str]]:
-    """显式构建唯一 Preview 上下文：MP 识别 → 集数适配 → MP 分类核验。"""
+    """与 v3.4.8 实际目录整理保持同一 MoviePilot 上下文，不引入第二套识别规则。"""
     directory_item = _directory_fileitem(plugin, item)
     transfer_chain = TransferChain()
 
     context, recognize_error = _moviepilot_directory_context(directory_item.path)
     media = getattr(context, "media_info", None) if context else None
     meta = getattr(context, "meta_info", None) if context else None
+
+    epformat, episode_error = _moviepilot_episode_format(
+        transfer_chain=transfer_chain,
+        directory_item=directory_item,
+    )
+    if epformat and not _is_tv_media(media):
+        tv_media, tv_error = _moviepilot_tv_context_from_directory_meta(meta)
+        if tv_media:
+            media = tv_media
+            recognize_error = None
+        else:
+            return (
+                transfer_chain,
+                directory_item,
+                {},
+                str(tv_error or "MoviePilot 已检测到集数结构，但电视剧识别未确认"),
+            )
 
     kwargs: Dict[str, Any] = {
         "fileitem": directory_item,
@@ -160,26 +170,11 @@ def _build_moviepilot_kwargs(plugin: Any, item: _FolderBatchEnvelope) -> Tuple[T
         media_type = getattr(media, "type", None)
         if media_type:
             kwargs["mtype"] = media_type
+    elif epformat:
+        kwargs["mtype"] = MediaType.TV
+    if epformat:
+        kwargs["epformat"] = epformat
 
-    # v3.7.3：不再依赖 ContextVar/sample bridge 或 installer 链；整组成员直接进入 MP 推荐器。
-    kwargs, episode_error, episode_note = apply_episode_name_adapter(
-        plugin,
-        item,
-        transfer_chain,
-        directory_item,
-        kwargs,
-        directory_meta=meta,
-    )
-    if episode_error:
-        return transfer_chain, directory_item, {}, episode_error
-
-    # 分类事实必须晚于 episode TV 上下文收口，继续只使用 MoviePilot CategoryHelper。
-    kwargs, category_error = apply_category_consistency(item, kwargs)
-    if category_error:
-        return transfer_chain, directory_item, kwargs, category_error
-
-    media = kwargs.get("mediainfo")
-    epformat = kwargs.get("epformat")
     if media:
         logger.info(
             "【光鸭云盘助手】【数据安全校验】MoviePilot 目录上下文: %s -> %s；分类=%s",
@@ -193,14 +188,15 @@ def _build_moviepilot_kwargs(plugin: Any, item: _FolderBatchEnvelope) -> Tuple[T
             recognize_error,
             item.path,
         )
-    if episode_note and not epformat:
+    if episode_error and not epformat:
         logger.debug(
             "【光鸭云盘助手】【数据安全校验】MoviePilot 未推荐额外集数模板: %s - %s",
             item.path,
-            episode_note,
+            episode_error,
         )
 
     return transfer_chain, directory_item, kwargs, None
+
 
 def _defer_unconfirmed_members(plugin: Any, item: _FolderBatchEnvelope, reason: str) -> List[str]:
     """文件夹整体成功但成员无逐文件终态时，退回重试而不是直接 completed。"""
@@ -224,10 +220,118 @@ def _defer_unconfirmed_members(plugin: Any, item: _FolderBatchEnvelope, reason: 
     return deferred
 
 
+def install_loss_guard_v349() -> None:
+    if getattr(GuangYaQueueRecoveryMixin, "_guangya_loss_guard_v349", False):
+        return
 
-__all__ = [
-    "_audit_preview",
-    "_build_moviepilot_kwargs",
-    "_defer_unconfirmed_members",
-    "_preview_result",
-]
+    previous_execute = GuangYaQueueRecoveryMixin._execute_isolated_transfer
+    previous_fallback = GuangYaQueueRecoveryMixin._fallback_terminal_state
+
+    def execute(self, item: Any):
+        if not isinstance(item, _FolderBatchEnvelope):
+            return previous_execute(self, item)
+        if _is_monitor_root_folder_task(self, item):
+            return previous_execute(self, item)
+
+        transfer_chain, directory_item, kwargs, plan_error = _build_moviepilot_kwargs(self, item)
+        if plan_error:
+            logger.error(
+                "【光鸭云盘助手】【数据安全校验】阻止真实整理: %s - %s",
+                item.path,
+                plan_error,
+            )
+            return False, plan_error
+
+        preview_kwargs = dict(kwargs)
+        preview_kwargs["preview"] = True
+        logger.info(
+            "【光鸭云盘助手】【数据安全校验】整理前预览: %s，待核对成员=%s",
+            item.path,
+            len(item.members),
+        )
+        try:
+            preview = transfer_chain.do_transfer(**preview_kwargs)
+        except Exception as err:  # noqa: BLE001
+            message = f"MoviePilot 整理预览异常：{err}"
+            logger.exception("【光鸭云盘助手】【数据安全校验】%s - %s", item.path, message)
+            return False, message
+
+        safe, guard_message, details = _audit_preview(self, item, preview)
+        if not safe:
+            self._append_monitor_history({
+                "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "path": item.path,
+                "name": item.name,
+                "size": item.size,
+                "result": "folder_safety_blocked",
+                "group_path": item.path,
+                "group_name": item.name,
+                "batch_id": item.batch_id,
+                "message": guard_message,
+                "safety_details": details,
+            })
+            logger.error(
+                "【光鸭云盘助手】【数据安全校验】已阻止真实整理，源文件保持原位: %s - %s",
+                item.path,
+                guard_message,
+            )
+            return False, f"数据安全校验未通过：{guard_message}"
+
+        logger.info(
+            "【光鸭云盘助手】【数据安全校验】通过: %s，%s 个待整理成员均映射到唯一目标；开始真实整理",
+            item.path,
+            details.get("expected", len(item.members)),
+        )
+        logger.info(
+            "【光鸭云盘助手】【MP目录上下文】提交完整资源目录: %s，扫描成员=%s；"
+            "识别/分类/命名/目标路径全部由 MoviePilot 执行",
+            item.path,
+            len(item.members),
+        )
+        return _normalize_result(transfer_chain.do_transfer(**kwargs))
+
+    def fallback(self, item: Any, success: bool, message: str) -> None:
+        if not isinstance(item, _FolderBatchEnvelope):
+            return previous_fallback(self, item, success=success, message=message)
+
+        if not success:
+            return previous_fallback(self, item, success=False, message=message)
+
+        reason = "文件夹整理返回成功，但未收到该成员的 MoviePilot 单文件最终事件，已安全退回重试"
+        try:
+            deferred = _defer_unconfirmed_members(self, item, reason)
+        except Exception as err:  # noqa: BLE001
+            logger.exception("【光鸭云盘助手】【数据安全校验】成员终态核对失败: %s - %s", item.path, err)
+            # 终态核对自身失败时绝不能调用旧 success fallback，否则会误标 completed。
+            deferred = ["终态核对失败"]
+            reason = f"成员终态核对失败：{err}"
+
+        if deferred:
+            logger.error(
+                "【光鸭云盘助手】【数据安全校验】文件夹存在 %s 个未确认成员，不标记完成，已退回重试: %s",
+                len(deferred),
+                item.path,
+            )
+
+        self._append_monitor_history({
+            "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "path": item.path,
+            "name": item.name,
+            "size": item.size,
+            "result": "folder_partial" if deferred else "folder_completed",
+            "group_path": item.path,
+            "group_name": item.name,
+            "batch_id": item.batch_id,
+            "message": (
+                f"文件夹任务结束：成员 {len(item.members)}；"
+                + (f"{len(deferred)} 个未收到单文件终态，已退回重试" if deferred else "所有成员均收到 MoviePilot 单文件终态")
+                + (f"；{message}" if message else "")
+            ),
+        })
+
+    GuangYaQueueRecoveryMixin._execute_isolated_transfer = execute
+    GuangYaQueueRecoveryMixin._fallback_terminal_state = fallback
+    GuangYaQueueRecoveryMixin._guangya_loss_guard_v349 = True
+
+
+__all__ = ["install_loss_guard_v349"]

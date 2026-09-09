@@ -26,9 +26,6 @@ v3.5.6 升级后仅唤醒旧“目录预览缺员”retry，取消遗留指数�
 v3.5.8 为电视剧弱命名补 MoviePilot 原生 season 参数，并唤醒旧空 Season 目标失败重试。
 v3.5.9 改为 50 目录持久游标增量扫描，并在旧 worker 交接期间停止无效全量 refill。
 v3.6.3 在最终 MoviePilot kwargs 上增加 TV→MOVIE 安全消歧，仅对单主视频、无集号、非 Season 目录生效。
-v3.7.1 起冲突策略、预览缺员补救和旧 preview retry 唤醒由 Execution 核心显式调用，不再修改 QueueRecovery/FolderStream 类。
-v3.7.2 起 loss guard 终态核对与 empty-folder 陈旧任务收口也由 Execution 显式负责，两个旧 installer 退出运行图。
-v3.7.3 起集数整组样本/弱命名复核与分类一致性改为 loss guard 显式 Preview 上下文，不再串联三个 build/audit installer。
 """
 
 from __future__ import annotations
@@ -146,6 +143,11 @@ from .organizer_legacy_queue_cleanup_v343 import install_legacy_queue_cleanup_v3
 from .organizer_mp_folder_context_v346 import install_mp_folder_context_v346
 from .organizer_deep_folder_stream_v3413 import install_deep_folder_stream_v3413
 from .guangya_network_resilience_v347 import install_network_resilience_v347
+from .organizer_loss_guard_v349 import install_loss_guard_v349
+from .organizer_empty_folder_guard_v3410 import install_empty_folder_guard_v3410
+from .organizer_episode_name_adapter_v3411 import install_episode_name_adapter_v3411
+from .organizer_episode_sample_bridge_v3411 import install_episode_sample_bridge_v3411
+from .organizer_category_consistency_v3412 import install_category_consistency_v3412
 from .organizer_folder_identity_v350 import install_folder_identity_v350
 from .organizer_rename_diagnostics_v3414 import install_rename_diagnostics_v3414
 from .organizer_single_flight_v350 import install_single_flight_v350
@@ -153,7 +155,10 @@ from .organizer_single_flight_refill_v350 import install_single_flight_refill_v3
 from .organizer_orchestrator_v351 import install_orchestrator_v351
 from .organizer_tv_sticky_graceful_stop_v352 import install_tv_sticky_graceful_stop_v352
 from .organizer_task_semantics_v352 import install_task_semantics_v352
+from .organizer_conflict_resolution_v353 import install_conflict_resolution_v353
 from .organizer_completion_reconcile_v354 import install_completion_reconcile_v354
+from .organizer_preview_partial_v355 import install_preview_partial_v355
+from .organizer_preview_retry_wakeup_v356 import install_preview_retry_wakeup_v356
 from .organizer_season_context_v358 import install_season_context_v358
 from .organizer_media_type_disambiguation_v363 import install_media_type_disambiguation_v363
 from .organizer_paged_scan_handoff_v359 import install_paged_scan_handoff_v359
@@ -167,6 +172,11 @@ install_legacy_queue_cleanup_v343()
 install_mp_folder_context_v346()
 install_deep_folder_stream_v3413()
 install_network_resilience_v347()
+install_loss_guard_v349()
+install_empty_folder_guard_v3410()
+install_episode_name_adapter_v3411()
+install_episode_sample_bridge_v3411()
+install_category_consistency_v3412()
 # v3.5.0：先让作品目录身份覆盖错误文件名，再输出最终 MP 重命名诊断。
 install_folder_identity_v350()
 install_rename_diagnostics_v3414()
@@ -178,8 +188,14 @@ install_orchestrator_v351()
 # v3.5.2：先安装剧集事务粘性/安全停止，再最终收口电影与旁路文件任务语义。
 install_tv_sticky_graceful_stop_v352()
 install_task_semantics_v352()
+# v3.5.3 最后只处理 MP 已明确产生的重复目标，不改变普通命名/分类路径。
+install_conflict_resolution_v353()
 # v3.5.4 收口“完成”的证据边界，并对旧 completed 缓存做一次性自愈。
 install_completion_reconcile_v354()
+# v3.5.5 处理新的目录 preview 缺员：不放宽安全校验，只把异常成员局部隔离。
+install_preview_partial_v355()
+# v3.5.6 唤醒升级前已经进入 retry 的同类错误，让 v3.5.5 立即获得执行机会。
+install_preview_retry_wakeup_v356()
 # v3.5.8 补齐 MoviePilot 原生 season 上下文，并唤醒旧空 Season 失败重试。
 install_season_context_v358()
 # v3.6.3 必须位于 season/folder identity 之后，最终决定是否允许 TV→MOVIE 安全回退。

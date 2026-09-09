@@ -14,7 +14,7 @@ def test_v355_only_rescues_folder_preview_missing_member_failures():
     for token in (
         '_MISSING_PREVIEW_TOKEN = "源文件未进入 MoviePilot 预览"',
         'if success or _MISSING_PREVIEW_TOKEN not in str(message or ""):',
-        '_rescue_partial_preview(plugin, item)',
+        '_rescue_partial_preview(self, item)',
     ):
         assert token in PATCH, token
 
@@ -30,15 +30,14 @@ def test_v355_reuses_moviepilot_context_and_preview_for_each_member():
         assert token in PATCH, token
 
 
-def test_unpreviewable_member_uses_v370_policy_instead_of_one_generic_block():
+def test_unpreviewable_member_is_blocked_not_retried_forever():
     for token in (
-        'should_probe_source_presence(reason)',
-        'FileDisposition.LEAVE_UNRECOGNIZED',
-        'mark_non_actionable',
-        'FileDisposition.RETRY_TRANSIENT',
         'result="preview_member_isolated"',
+        '_conflict._mark_blocked(plugin, member, reason, result=result)',
+        '逐文件补预览仍无法确认',
     ):
         assert token in PATCH, token
+    # blocked 必须清理 retry/inflight，才能让 v3.5.2 TV sticky 事务释放。
     assert 'for name in ("stabilizing", "inflight", "retry"):' in STATE
 
 
@@ -61,21 +60,19 @@ def test_safe_members_continue_through_moviepilot_real_transfer():
         assert token in PATCH, token
 
 
-def test_preview_rescue_is_explicit_execution_helper_not_queue_monkey_patch():
-    execution = (PLUGIN / "organizer_execution_v360.py").read_text(encoding="utf-8")
-    assert "install_preview_partial_v355" not in CANDIDATE
-    assert "GuangYaQueueRecoveryMixin._execute_isolated_transfer = execute" not in PATCH
-    assert "rescue_partial_preview_if_needed(self, item, result)" in execution
+def test_v355_installs_after_v354_completion_evidence_layer():
+    reconcile_pos = CANDIDATE.index('install_completion_reconcile_v354()')
+    rescue_pos = CANDIDATE.index('install_preview_partial_v355()')
+    assert rescue_pos > reconcile_pos
+    assert 'from .organizer_preview_partial_v355 import install_preview_partial_v355' in CANDIDATE
 
 
 def test_v355_has_runtime_diagnostic_log():
     for token in (
-        '【整理策略】【预览局部补救】',
+        '【v3.5.5】【预览局部补救】',
         '逐文件确认=%s',
         '实际整理=%s',
-        '未识别保留=%s',
-        '暂时失败=%s',
-        '安全阻断=%s',
+        '隔离=%s',
         '不再因单个缺员拖死整个资源',
     ):
         assert token in PATCH, token
