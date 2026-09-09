@@ -2,6 +2,10 @@
 
 同一条频道消息是一个 ResourceGroup；光鸭分享、Magnet、ED2K 都只是该组的候选获取方式。
 本补丁保持 legacy 光鸭分享索引兼容，同时让“仅含磁力/ED2K”的消息也进入统一频道索引。
+
+v1.12.20 开发阶段补充两个频道完整性修复：
+- 兼容当前热更模板“📺 剧集：标题 (年份) SxxExx / 🎬 电影：标题 (年份)”，模板类型前缀和季集号不再污染媒体标题；
+- legacy 分页未追到旧游标时绝不提交新游标，单轮有界扩大分页深度，仍未追到则保留旧游标并持久化下一轮追赶预算。
 """
 
 from __future__ import annotations
@@ -17,6 +21,13 @@ from .source_types_v180 import normalize_source_uri
 
 _MAGNET_RE = re.compile(r"(?i)magnet:\?[^\s\"'<>]+")
 _ED2K_RE = re.compile(r"(?i)ed2k://\|file\|[^|\r\n<>]+\|\d+\|[0-9a-f]{32}\|/")
+_CHANNEL_CATCHUP_KEY_V11220 = "channel_catchup_v11220"
+_CHANNEL_CATCHUP_MAX_PAGES_V11220 = 256
+_CHANNEL_CATCHUP_ATTEMPTS_V11220 = 3
+_LIVE_CHANNEL_HEADER_V11220 = re.compile(
+    r"(?:🎬|📺)\s*(?:(?:电影|剧集|电视剧|动漫|动画)\s*[：:]\s*)?([^\n]{2,360})",
+    re.I,
+)
 
 
 def _resource_group_id(source_url: str, message_id: str, text: str) -> str:
@@ -54,6 +65,246 @@ def _better_episode_hint(text: Any, current: Any = "") -> str:
     return current[:120]
 
 
+def _clean_live_channel_title_v11220(value: Any) -> str:
+    """把频道模板字段剥离成作品标题；不做任何模糊标题改写。"""
+    title = html.unescape(str(value or "")).strip()
+    title = re.sub(r"^[\s🎬🎞🎥📺]+", "", title).strip()
+    title = re.sub(r"^(?:电影|剧集|电视剧|动漫|动画)\s*[：:]\s*", "", title, flags=re.I).strip()
+    title = re.sub(r"\s+", " ", title)
+    title = re.sub(
+        r"\s*[（(]\s*(?:19\d{2}|20\d{2})\s*[）)]"
+        r"(?:\s*S\d{1,2}(?:\s*[._ -]*E\d{1,4}(?:\s*[-~～—至+]\s*E?\d{1,4})?)?)?"
+        r"\s*(?:已?更新|更新中|已?完结|完结|全集|全季)?\s*$",
+        "",
+        title,
+        flags=re.I,
+    ).strip()
+    title = re.sub(r"\s*(?:已?更新|更新中|已?完结|完结)\s*$", "", title, flags=re.I).strip()
+    return title[:300]
+
+
+def _install_channel_title_compat_v11220(legacy_module: Any) -> None:
+    """热重载安全地把当前 tgm 热更模板接入 legacy 标题解析。"""
+    current_clean = getattr(legacy_module, "_clean_channel_display_title", None)
+    current_extract = getattr(legacy_module, "_extract_channel_display_title", None)
+    if not callable(current_clean) or not callable(current_extract):
+        return
+    if getattr(current_extract, "_guangya_live_channel_title_v11220", False):
+        return
+
+    original_clean = current_clean
+    original_extract = current_extract
+
+    @functools.wraps(original_clean)
+    def patched_clean(value: Any) -> str:
+        # 先复用既有清洗，再补当前频道的类型前缀/季集尾巴；如果旧清洗未处理则直接处理原值。
+        cleaned = _clean_live_channel_title_v11220(original_clean(value))
+        if cleaned:
+            return cleaned
+        return _clean_live_channel_title_v11220(value)
+
+    legacy_module._clean_channel_display_title = patched_clean
+
+    @functools.wraps(original_extract)
+    def patched_extract_title(value: Any) -> str:
+        raw = str(value or "")
+        matched = _LIVE_CHANNEL_HEADER_V11220.search(raw)
+        if matched:
+            candidate = str(matched.group(1) or "")
+            boundary = getattr(legacy_module, "_CHANNEL_META_BOUNDARY", None)
+            if boundary is not None:
+                try:
+                    candidate = boundary.split(candidate, maxsplit=1)[0]
+                except Exception:
+                    pass
+            cleaned = patched_clean(candidate)
+            if cleaned:
+                return cleaned
+        return patched_clean(original_extract(value))
+
+    patched_extract_title._guangya_live_channel_title_v11220 = True
+    patched_extract_title._guangya_original_extract_channel_title = original_extract
+    legacy_module._extract_channel_display_title = patched_extract_title
+
+
+def _cursor_snapshot_v11220(raw: Any) -> Dict[str, int]:
+    result: Dict[str, int] = {}
+    if not isinstance(raw, dict):
+        return result
+    for source, row in raw.items():
+        value = row.get("last_message_id") if isinstance(row, dict) else row
+        try:
+            cursor = int(value or 0)
+        except (TypeError, ValueError):
+            cursor = 0
+        result[str(source or "").strip()] = max(0, cursor)
+    return result
+
+
+def _channel_label_v11220(source_url: str) -> str:
+    return "光鸭云盘影视热更频道" if "regeng" in str(source_url or "").lower() else "光鸭云盘资源分享频道"
+
+
+def _install_channel_cursor_completeness_v11220(legacy_module: Any) -> None:
+    """包住 legacy.refresh_channels：没追到旧游标就回滚游标，绝不越过未读消息。"""
+    assistant_cls = getattr(legacy_module, "GuangYaTransferAssistant", None)
+    current_refresh = getattr(assistant_cls, "refresh_channels", None) if assistant_cls else None
+    if not callable(current_refresh) or getattr(current_refresh, "_guangya_channel_complete_v11220", False):
+        return
+    original_refresh = current_refresh
+
+    @functools.wraps(original_refresh)
+    def patched_refresh(self, force: bool = False):
+        source_urls = list(self._source_urls() or [])
+        before_raw = self.get_data("channel_cursors") or {}
+        before_cursors = _cursor_snapshot_v11220(before_raw)
+        catchup = self.get_data(_CHANNEL_CATCHUP_KEY_V11220) or {}
+        if not isinstance(catchup, dict):
+            catchup = {}
+        catchup = dict(catchup)
+        try:
+            configured_pages = max(1, int(getattr(self, "_history_pages", 1) or 1))
+        except (TypeError, ValueError):
+            configured_pages = 1
+        active_budgets = []
+        for source_url in source_urls:
+            row = catchup.get(source_url) or {}
+            try:
+                active_budgets.append(int((row or {}).get("page_budget") or 0))
+            except (TypeError, ValueError):
+                pass
+        page_budget = min(
+            _CHANNEL_CATCHUP_MAX_PAGES_V11220,
+            max([configured_pages, *active_budgets]),
+        )
+        rows: List[Dict[str, Any]] = []
+        incomplete: Dict[str, Dict[str, Any]] = {}
+        last_index: Dict[str, Any] = {}
+
+        for attempt in range(_CHANNEL_CATCHUP_ATTEMPTS_V11220):
+            previous_limit = getattr(self, "_history_pages", configured_pages)
+            self._history_pages = page_budget
+            try:
+                rows = list(original_refresh(self, force=bool(force or catchup or attempt > 0)) or [])
+            finally:
+                self._history_pages = previous_limit
+
+            after_raw = self.get_data("channel_cursors") or {}
+            after_cursors = _cursor_snapshot_v11220(after_raw)
+            last_index = dict(self.get_data("channel_index") or {})
+            source_status = dict(last_index.get("source_status") or {})
+            incomplete = {}
+            for source_url in source_urls:
+                old_cursor = int(before_cursors.get(source_url, 0) or 0)
+                new_cursor = int(after_cursors.get(source_url, 0) or 0)
+                status = dict(source_status.get(_channel_label_v11220(source_url)) or {})
+                if (
+                    old_cursor > 0
+                    and new_cursor > old_cursor
+                    and bool(status.get("success"))
+                    and not bool(status.get("reached_cursor"))
+                ):
+                    incomplete[source_url] = {
+                        "old_cursor": old_cursor,
+                        "high_watermark": new_cursor,
+                        "status": status,
+                    }
+
+            if not incomplete:
+                changed = False
+                for source_url in source_urls:
+                    status = dict(source_status.get(_channel_label_v11220(source_url)) or {})
+                    if bool(status.get("success")) and source_url in catchup:
+                        catchup.pop(source_url, None)
+                        changed = True
+                    if status and status.get("catchup_incomplete"):
+                        status["catchup_incomplete"] = False
+                        status["page_budget"] = page_budget
+                        source_status[_channel_label_v11220(source_url)] = status
+                        changed = True
+                if changed:
+                    catchup = {
+                        key: dict(value) for key, value in catchup.items()
+                        if key in set(source_urls) and isinstance(value, dict)
+                    }
+                    last_index["source_status"] = source_status
+                    self.save_data("channel_index", last_index)
+                    self.save_data(_CHANNEL_CATCHUP_KEY_V11220, catchup)
+                return rows
+
+            # legacy 已经把游标推进到当前抓取的最高 ID；在继续翻页前先恢复旧游标。
+            restored_cursors = dict(after_raw) if isinstance(after_raw, dict) else {}
+            for source_url, detail in incomplete.items():
+                old_row = dict((before_raw or {}).get(source_url) or {}) if isinstance((before_raw or {}).get(source_url), dict) else {}
+                old_row["last_message_id"] = int(detail["old_cursor"])
+                restored_cursors[source_url] = old_row
+            self.save_data("channel_cursors", restored_cursors)
+
+            if attempt + 1 < _CHANNEL_CATCHUP_ATTEMPTS_V11220 and page_budget < _CHANNEL_CATCHUP_MAX_PAGES_V11220:
+                page_budget = min(
+                    _CHANNEL_CATCHUP_MAX_PAGES_V11220,
+                    max(configured_pages * 2, page_budget * 2),
+                )
+                continue
+            break
+
+        # 本轮有界追赶仍未触达旧游标：保留旧游标，并为下轮继续扩大预算；这是延迟，不是静默丢失。
+        index = dict(self.get_data("channel_index") or last_index or {})
+        source_status = dict(index.get("source_status") or {})
+        next_budget = min(
+            _CHANNEL_CATCHUP_MAX_PAGES_V11220,
+            max(configured_pages * 2, page_budget * 2),
+        )
+        now_text = ""
+        now_reader = getattr(self, "_now_text", None)
+        if callable(now_reader):
+            try:
+                now_text = str(now_reader() or "")
+            except Exception:
+                now_text = ""
+        for source_url, detail in incomplete.items():
+            old_cursor = int(detail["old_cursor"])
+            high_watermark = int(detail["high_watermark"])
+            catchup[source_url] = {
+                "last_message_id": old_cursor,
+                "high_watermark": high_watermark,
+                "page_budget": next_budget,
+                "updated": now_text,
+            }
+            label = _channel_label_v11220(source_url)
+            status = dict(source_status.get(label) or detail.get("status") or {})
+            status.update({
+                "cursor": old_cursor,
+                "high_watermark": high_watermark,
+                "page_budget": page_budget,
+                "next_page_budget": next_budget,
+                "catchup_incomplete": True,
+            })
+            source_status[label] = status
+            self._plugin_log(
+                "WARNING",
+                "【光鸭转存助手】【频道完整性v1.12.20】%s 已抓到高水位 %s，但 %s 页预算仍未追到旧游标 %s；"
+                "已回退游标，下一轮页预算=%s，不会越过未读取消息",
+                label,
+                high_watermark,
+                page_budget,
+                old_cursor,
+                next_budget,
+            )
+        catchup = {
+            key: dict(value) for key, value in catchup.items()
+            if key in set(source_urls) and isinstance(value, dict)
+        }
+        index["source_status"] = source_status
+        self.save_data("channel_index", index)
+        self.save_data(_CHANNEL_CATCHUP_KEY_V11220, catchup)
+        return rows
+
+    patched_refresh._guangya_channel_complete_v11220 = True
+    patched_refresh._guangya_original_refresh_channels = original_refresh
+    assistant_cls.refresh_channels = patched_refresh
+
+
 def _external_sources_from_context(context_html: str) -> List[Dict[str, Any]]:
     decoded = html.unescape(str(context_html or "")).replace("\\/", "/")
     rows: List[Dict[str, Any]] = []
@@ -82,7 +333,10 @@ def _external_sources_from_context(context_html: str) -> List[Dict[str, Any]]:
 
 
 def install_channel_multisource_compat(legacy_module: Any):
-    """热重载安全地扩展频道解析器和消息稳定键。"""
+    """热重载安全地扩展频道解析器、消息稳定键和 v1.12.20 完整性补丁。"""
+    _install_channel_title_compat_v11220(legacy_module)
+    _install_channel_cursor_completeness_v11220(legacy_module)
+
     current_extract = getattr(legacy_module, "_extract_channel_entries", None)
     current_key = getattr(legacy_module, "_entry_process_key", None)
     if not callable(current_extract) or not callable(current_key):
