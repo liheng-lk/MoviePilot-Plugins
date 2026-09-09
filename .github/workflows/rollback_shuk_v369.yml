@@ -1,0 +1,62 @@
+name: Rollback ShukGuangYaDisk to v3.6.9
+
+on:
+  push:
+    paths:
+      - '.github/workflows/rollback_shuk_v369.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore exact v3.6.9 plugin tree
+        run: |
+          set -euo pipefail
+          BASE=57ced23bffa1aeb503b9f0064aca6edeb33f0142
+          git checkout "$BASE" -- plugins.v3/shukguangyadisk
+          if git cat-file -e "$BASE:tests/v3/shukguangyadisk" 2>/dev/null; then
+            git checkout "$BASE" -- tests/v3/shukguangyadisk
+          fi
+          python - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          base = '57ced23bffa1aeb503b9f0064aca6edeb33f0142'
+          current_path = Path('package.v3.json')
+          current = json.loads(current_path.read_text(encoding='utf-8'))
+          old = json.loads(subprocess.check_output(['git','show',f'{base}:package.v3.json'], text=True))
+          current['ShukGuangYaDisk'] = old['ShukGuangYaDisk']
+          current_path.write_text(json.dumps(current, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          assert current['ShukGuangYaDisk']['version'] == '3.6.9'
+          plugin = json.loads(Path('plugins.v3/shukguangyadisk/plugin.json').read_text(encoding='utf-8'))
+          assert plugin['version'] == '3.6.9'
+          entry = Path('plugins.v3/shukguangyadisk/__init__.py').read_text(encoding='utf-8')
+          assert 'plugin_version = "3.6.9"' in entry
+          remote = Path('plugins.v3/shukguangyadisk/dist/assets/remoteEntry.js').read_text(encoding='utf-8')
+          assert '?v=3.6.9' in remote
+          PY
+      - name: Validate restored plugin
+        run: |
+          python -m compileall -q plugins.v3/shukguangyadisk
+          python -m unittest discover -s tests/v3/shukguangyadisk -p 'test_*.py' -v
+          if [ -f tests/v3/shukguangyadisk/run_contract_tests.py ]; then
+            python tests/v3/shukguangyadisk/run_contract_tests.py
+          fi
+          python -m json.tool package.v3.json >/dev/null
+          python -m json.tool plugins.v3/shukguangyadisk/plugin.json >/dev/null
+      - name: Commit exact rollback and remove one-shot workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/rollback_shuk_v369.yml
+          git add plugins.v3/shukguangyadisk tests/v3/shukguangyadisk package.v3.json
+          git commit -m "rollback(shukguangyadisk): restore exact v3.6.9 release"
+          git push origin HEAD:main
