@@ -180,6 +180,45 @@ def test_matching_primary_result_short_circuits_without_alias_request():
     assert probe.raw_calls == [("失控陪审团 2003", False)]
 
 
+def test_all_exact_queries_with_only_unrelated_rows_return_no_candidates():
+    probe = _Probe()
+    unrelated = [{"search_title": "象行记之外的电影", "name": "无关资源 2160p"}]
+    probe.raw_map = {
+        "失控陪审团 2003": (unrelated, {"success": True, "cards": 25, "resources": 536}),
+        "Runaway Jury 2003": (unrelated, {"success": True, "cards": 25, "resources": 279}),
+    }
+    with probe._gying_alias_scope_v11212(MOVIE):
+        rows, state = probe._gying_raw_results("失控陪审团 2003")
+
+    assert rows == []
+    assert probe.raw_calls == [("失控陪审团 2003", False), ("Runaway Jury 2003", False)]
+    assert state["success"] is True
+    assert state["target_match"] is False
+    assert state["matched_resources"] == 0
+    assert state["raw_resources"] == 1
+    assert "未找到当前订阅精确候选" in state["message"]
+
+
+def test_matching_query_returns_only_rows_for_the_current_subscription():
+    probe = _Probe()
+    probe.raw_map = {
+        "失控陪审团 2003": (
+            [
+                {"search_title": "别的电影", "name": "别的电影 2160p"},
+                {"search_title": "失控陪审团", "name": "失控陪审团 2003 1080p"},
+            ],
+            {"success": True, "cards": 2, "resources": 2},
+        ),
+    }
+    with probe._gying_alias_scope_v11212(MOVIE):
+        rows, state = probe._gying_raw_results("失控陪审团 2003")
+
+    assert [row["search_title"] for row in rows] == ["失控陪审团"]
+    assert state["target_match"] is True
+    assert state["raw_resources"] == 2
+    assert state["matched_resources"] == 1
+
+
 def test_network_or_auth_failure_never_triggers_alias_request():
     probe = _Probe()
     probe.raw_map = {
@@ -190,6 +229,25 @@ def test_network_or_auth_failure_never_triggers_alias_request():
     assert rows == []
     assert state["success"] is False
     assert probe.raw_calls == [("失控陪审团 2003", False)]
+
+
+def test_later_alias_failure_is_incomplete_and_never_claims_zero_resources():
+    probe = _Probe()
+    probe.raw_map = {
+        "失控陪审团 2003": ([], {"success": True, "cards": 0, "message": "primary empty"}),
+        "Runaway Jury 2003": ([], {"success": False, "message": "alias timeout"}),
+    }
+    with probe._gying_alias_scope_v11212(MOVIE):
+        rows, state = probe._gying_raw_results("失控陪审团 2003")
+
+    assert rows == []
+    assert state["success"] is False
+    assert state["healthy"] is True
+    assert state["search_complete"] is False
+    assert state["target_match"] is None
+    assert state["partial_error"] is True
+    assert "中断" in state["message"]
+    assert "无法确认" in state["message"]
 
 
 def test_xunlei_search_retries_official_alias_only_after_primary_miss():
@@ -203,6 +261,23 @@ def test_xunlei_search_retries_official_alias_only_after_primary_miss():
     assert rows and rows[0]["share_id"] == "share-1"
     assert probe.xunlei_calls == ["失控陪审团 2003", "Runaway Jury 2003"]
     assert state["query_alias_v11212"] == "Runaway Jury 2003"
+
+
+def test_xunlei_later_alias_failure_is_reported_as_incomplete():
+    probe = _Probe()
+    probe.xunlei_map = {
+        "失控陪审团 2003": ([], {"success": True, "message": "primary empty"}),
+        "Runaway Jury 2003": ([], {"success": False, "message": "alias timeout"}),
+    }
+    with probe._gying_alias_scope_v11212(MOVIE):
+        rows, state = probe._search_viewing_xunlei("失控陪审团 2003")
+
+    assert rows == []
+    assert state["success"] is False
+    assert state["healthy"] is True
+    assert state["search_complete"] is False
+    assert state["target_match"] is None
+    assert "中断" in state["message"]
 
 
 def test_magnet_entry_gets_subscription_context_without_reimplementing_dispatch():

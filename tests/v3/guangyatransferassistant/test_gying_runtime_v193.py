@@ -40,6 +40,7 @@ def _pure_namespace():
         "_registry_node_candidate",
         "_solve_pow_hex",
         "_solve_legacy_nonces",
+        "_parse_search_payload_result_v11223",
         "_parse_search_payload",
     }
     body = []
@@ -159,6 +160,21 @@ def test_search_payload_parser_reads_nested_obj_search_arrays():
     html_text = '<script>_obj.search={"q":"星际穿越","n":"1","l":{"title":["星际穿越"],"year":[2014],"d":["mv"],"i":["abc1"],"info":["demo"]}};</script>'
     rows = parse(html_text)
     assert rows == [{"title": "星际穿越", "year": 2014, "type": "mv", "id": "abc1", "info": "demo"}]
+
+
+def test_search_payload_parser_distinguishes_valid_zero_results_from_invalid_html():
+    ns = _pure_namespace()
+    parse_result = ns["_parse_search_payload_result_v11223"]
+    valid_empty = '<script>_obj.search={"q":"象行记","n":"0","l":{"title":[],"year":[],"d":[],"i":[],"info":[]}};</script>'
+
+    assert parse_result(valid_empty) == (True, [])
+    assert parse_result("<html>站点公告，没有搜索对象</html>") == (False, [])
+    malformed = '<script>_obj.search={"l":{"title":["象行记"],"d":[],"i":["broken"]}};</script>'
+    scalar_schema = '<script>_obj.search={"l":{"title":"象行记","d":"mv","i":"broken"}};</script>'
+    contradictory_zero = '<script>_obj.search={"n":"1","l":{"title":[],"d":[],"i":[]}};</script>'
+    assert parse_result(malformed) == (False, [])
+    assert parse_result(scalar_schema) == (False, [])
+    assert parse_result(contradictory_zero) == (False, [])
 
 
 def test_challenge_session_is_persisted_but_public_api_never_returns_cookie():

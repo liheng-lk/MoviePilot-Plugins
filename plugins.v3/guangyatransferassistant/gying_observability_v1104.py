@@ -234,7 +234,7 @@ class GuangYaGyingObservabilityV1104Mixin:
         except Exception as err:
             self._gying_obs_log(
                 "WARNING",
-                "downurl失败：节点=%s 类型=%s 错误=%s",
+                "详情接口请求失败：节点=%s 类型=%s 错误=%s",
                 self._gying_node_label(node),
                 str(resource_type or "-")[:24],
                 str(err)[:220],
@@ -257,7 +257,7 @@ class GuangYaGyingObservabilityV1104Mixin:
         pan = len(pan_urls)
         self._gying_obs_log(
             "INFO",
-            "downurl成功：节点=%s 类型=%s 网盘=%s 迅雷=%s Magnet=%s",
+            "详情接口响应（仅表示请求成功，尚未证明属于当前订阅）：节点=%s 类型=%s 未核验网盘=%s 未核验迅雷=%s 未核验Magnet=%s",
             self._gying_node_label(node),
             str(resource_type or "-")[:24],
             pan,
@@ -268,7 +268,7 @@ class GuangYaGyingObservabilityV1104Mixin:
             "downurl",
             success=True,
             node=node,
-            message=f"网盘 {pan} · 迅雷 {xunlei} · Magnet {magnet}",
+            message=f"接口成功；未核验网盘 {pan} · 未核验迅雷 {xunlei} · 未核验 Magnet {magnet}",
             pan=pan,
             xunlei=xunlei,
             magnet=magnet,
@@ -288,16 +288,22 @@ class GuangYaGyingObservabilityV1104Mixin:
         state = dict(state or {})
         ok = bool(state.get("success"))
         node = str(state.get("node") or "")
-        cards = int(state.get("cards") or 0)
-        resources = len(rows or [])
+        cards = int(state.get("raw_cards") or state.get("cards") or 0)
+        detail_cards = int(state.get("detail_cards") or 0)
+        target_scoped = bool(state.get("target_scoped"))
+        matched_cards = int(state.get("matched_cards") or 0)
+        raw_links = len(rows or [])
+        card_match_text = str(matched_cards) if target_scoped else "未限定"
         message = str(state.get("message") or "")[:240]
         self._gying_obs_log(
             "INFO" if ok else "WARNING",
-            "搜索结果：成功=%s 节点=%s 影视卡片=%s 原始资源=%s 耗时=%.2fs 信息=%s",
+            "搜索请求完成：接口健康=%s 节点=%s 模糊卡片=%s 当前媒体卡片=%s 已展开=%s 目标卡原始链接（待订阅行核验）=%s 耗时=%.2fs 信息=%s",
             ok,
             self._gying_node_label(node),
             cards,
-            resources,
+            card_match_text,
+            detail_cards,
+            raw_links,
             time.monotonic() - started,
             message or "-",
         )
@@ -307,7 +313,12 @@ class GuangYaGyingObservabilityV1104Mixin:
             node=node,
             message=message,
             cards=cards,
-            resources=resources,
+            matched_cards=matched_cards,
+            detail_cards=detail_cards,
+            resources=raw_links,
+            candidate_stage="detail_unverified",
+            target_scoped=target_scoped,
+            card_target_match=bool(state.get("target_match")) if target_scoped else None,
             mode=str(state.get("login_mode") or ""),
         )
         return rows, state
@@ -320,12 +331,17 @@ class GuangYaGyingObservabilityV1104Mixin:
         ed2k = sum(
             1 for row in rows or [] if str((row or {}).get("type") or "") == "ed2k"
         )
-        self._gying_obs_log("INFO", "候选提取：Magnet=%s ED2K=%s", magnet, ed2k)
+        self._gying_obs_log(
+            "INFO",
+            "协议候选预筛（不是入库结果）：Magnet=%s ED2K=%s；仍需真实文件身份与入队回执核验",
+            magnet,
+            ed2k,
+        )
         self._gying_obs_record(
             "candidates",
             success=bool((state or {}).get("success")),
             node=str((state or {}).get("node") or ""),
-            message=f"Magnet {magnet} · ED2K {ed2k}",
+            message=f"预筛 Magnet {magnet} · ED2K {ed2k}；不是入库结果",
             magnet=magnet,
             ed2k=ed2k,
         )

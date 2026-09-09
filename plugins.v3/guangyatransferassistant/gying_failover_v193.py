@@ -142,7 +142,10 @@ class GuangYaGyingFailoverMixin:
             if str(store.get("active_node") or "") == failed_node:
                 store["active_node"] = ""
                 self._save_gying_state(store)
-            self._gying_search_cache.pop(str(keyword or "").strip(), None)
+            clean_keyword = " ".join(str(keyword or "").split())
+            cache_key_getter = getattr(self, "_gying_search_cache_key_v11223", None)
+            cache_key = cache_key_getter(clean_keyword) if callable(cache_key_getter) else clean_keyword
+            self._gying_search_cache.pop(cache_key, None)
         return last_rows, last_state
 
 

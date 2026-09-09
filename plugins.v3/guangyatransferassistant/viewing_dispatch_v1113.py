@@ -409,7 +409,7 @@ class GuangYaViewingDispatchV1113Mixin:
         counts = dict(meta.get("counts") or {})
         self._plugin_log(
             "INFO",
-            "【光鸭转存助手】【观影执行】#%s 搜索资源进入执行规划：关键词=%s 原始=%s Magnet=%s ED2K=%s 迅雷=%s 其它网盘=%s missing=%s reserved=%s claimed=%s",
+            "【光鸭转存助手】【观影执行】#%s 当前订阅精确候选进入执行规划：关键词=%s 精确资源=%s Magnet=%s ED2K=%s 迅雷=%s 其它网盘=%s missing=%s reserved=%s claimed=%s",
             sid,
             str(meta.get("keyword") or "-")[:180],
             int(meta.get("raw") or 0),
@@ -422,15 +422,26 @@ class GuangYaViewingDispatchV1113Mixin:
             ",".join(str(v) for v in sorted(active_claims)) or "-",
         )
         if not candidates:
+            search_state = dict(meta.get("state") or {})
+            no_match = bool(search_state.get("success")) and search_state.get("target_match") is False
+            incomplete = search_state.get("search_complete") is False
             return {
                 "success": False,
                 "actions": [],
-                "message": "观影没有可交给光鸭原生云添加的 Magnet/ED2K 候选",
+                "message": (
+                    "观影别名检索未完成，无法确认当前订阅是否有精确资源；未创建云添加任务"
+                    if incomplete
+                    else (
+                        "观影来源可访问，但当前订阅没有精确匹配资源；未创建云添加任务"
+                        if no_match else "观影没有可交给光鸭原生云添加的 Magnet/ED2K 候选"
+                    )
+                ),
                 "counts": counts,
             }
 
         actions: List[Dict[str, Any]] = []
         skipped: List[str] = []
+        matched_candidates = 0
         for candidate in candidates:
             source_type = str(candidate.get("type") or "")
             name = str(candidate.get("name") or "").strip()
@@ -440,6 +451,7 @@ class GuangYaViewingDispatchV1113Mixin:
                 skipped.append(reason)
                 self._plugin_log("INFO", "【光鸭转存助手】【观影执行】#%s 跳过：%s", sid, reason[:320])
                 continue
+            matched_candidates += 1
 
             identity = str(candidate.get("identity") or "")
             existing = self._existing_source(sid, source_type, identity)
@@ -535,8 +547,9 @@ class GuangYaViewingDispatchV1113Mixin:
 
         self._plugin_log(
             "INFO" if actions else "WARNING",
-            "【光鸭转存助手】【观影执行】#%s 规划结束：actions=%s remaining=%s skipped=%s",
+            "【光鸭转存助手】【观影执行】#%s 规划结束：当前媒体预筛=%s 真实入队=%s remaining=%s skipped=%s",
             sid,
+            matched_candidates,
             len(actions),
             ",".join(str(v) for v in sorted(uncovered)) or "-",
             len(skipped),
@@ -546,8 +559,12 @@ class GuangYaViewingDispatchV1113Mixin:
             "actions": actions,
             "remaining": sorted(uncovered),
             "skipped": skipped[:30],
+            "matched_candidates": matched_candidates,
             "counts": counts,
-            "message": f"观影已生成 {len(actions)} 个光鸭原生云添加任务" if actions else "观影候选已检查，但没有可安全执行的 Magnet/ED2K",
+            "message": (
+                f"观影已真实入队 {len(actions)} 个光鸭原生云添加任务"
+                if actions else "观影精确候选已核验，但没有资源取得真实入队回执"
+            ),
         }
 
     def _try_transfer_subscription_inner(

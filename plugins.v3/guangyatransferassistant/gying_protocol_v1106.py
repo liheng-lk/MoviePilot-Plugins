@@ -24,7 +24,7 @@ from urllib.parse import parse_qs, quote, urlparse
 
 import requests
 
-from .gying_runtime_v193 import _parse_search_payload
+from .gying_runtime_v193 import _parse_search_payload_result_v11223
 from .provider_sources_v192 import _dedupe_candidates, _find_links
 
 
@@ -472,7 +472,9 @@ class GuangYaGyingProtocolV1106Mixin:
         if not keyword:
             return [], {"provider": "viewing", "success": False, "message": "观影搜索关键词为空"}
 
-        cached = dict(self._gying_search_cache.get(keyword) or {})
+        cache_key_getter = getattr(self, "_gying_search_cache_key_v11223", None)
+        cache_key = cache_key_getter(keyword) if callable(cache_key_getter) else keyword
+        cached = dict(self._gying_search_cache.get(cache_key) or {})
         if cached and not force and time.time() - _safe_float(cached.get("ts"), 0.0) < 120:
             return list(cached.get("rows") or []), dict(cached.get("state") or {})
 
@@ -520,19 +522,24 @@ class GuangYaGyingProtocolV1106Mixin:
                     if mode == "browser":
                         continue
                     raise RuntimeError(f"观影搜索 HTTP {current.status_code}")
-                parsed = _parse_search_payload(current.text or "")
+                parsed_ok, parsed = _parse_search_payload_result_v11223(current.text or "")
+                if not parsed_ok:
+                    continue
                 response = current
                 search_mode = mode
-                if parsed:
-                    cards = parsed
-                    break
+                cards = parsed
+                break
 
             if response is None:
                 raise RuntimeError("观影搜索没有得到有效响应")
 
             rows: List[Dict[str, Any]] = []
             limit = max(1, min(_safe_int(getattr(self, "_provider_result_limit", 20), 20), 100))
-            for item in cards[:limit]:
+            selector = getattr(self, "_gying_select_detail_cards_v11223", None)
+            detail_cards = list(selector(keyword, cards, limit) if callable(selector) else cards[:limit])
+            target_getter = getattr(self, "_gying_target_subscribe_v11223", None)
+            target_scoped = bool(target_getter()) if callable(target_getter) else False
+            for item in detail_cards:
                 resource_type = str(item.get("type") or "").strip()
                 resource_id = str(item.get("id") or "").strip()
                 if not resource_type or not resource_id:
@@ -583,9 +590,15 @@ class GuangYaGyingProtocolV1106Mixin:
             state = {
                 "provider": "viewing",
                 "success": True,
+                "search_complete": True,
                 "node": node,
                 "login_mode": login.get("mode"),
                 "cards": len(cards),
+                "raw_cards": len(cards),
+                "matched_cards": len(detail_cards) if target_scoped else len(cards),
+                "detail_cards": len(detail_cards),
+                "target_scoped": target_scoped,
+                "target_match": bool(detail_cards) if target_scoped else None,
                 "resources": len(deduped),
                 "pan_resources": pan_count,
                 "magnet_resources": magnet_count,
@@ -593,17 +606,20 @@ class GuangYaGyingProtocolV1106Mixin:
                 "xunlei_resources": xunlei_count,
                 "search_mode": search_mode,
                 "message": (
-                    f"观影搜索成功：影视 {len(cards)} · 网盘 {pan_count} · 迅雷 {xunlei_count} · "
+                    f"观影搜索请求完成：模糊卡片 {len(cards)} · 当前媒体卡片 "
+                    f"{len(detail_cards) if target_scoped else '未限定'} · 已展开 {len(detail_cards)} · "
+                    f"未核验链接：网盘 {pan_count} · 迅雷 {xunlei_count} · "
                     f"Magnet {magnet_count} · ED2K {ed2k_count}"
                 ),
             }
-            self._gying_search_cache[keyword] = {"ts": time.time(), "rows": deduped, "state": state}
+            self._gying_search_cache[cache_key] = {"ts": time.time(), "rows": deduped, "state": state}
             return deduped, state
         except Exception as err:
             self._gying_mark_node(node, "search_error", str(err))
             return [], {
                 "provider": "viewing",
                 "success": False,
+                "search_complete": False,
                 "node": node,
                 "login_mode": login.get("mode"),
                 "message": str(err)[:400],

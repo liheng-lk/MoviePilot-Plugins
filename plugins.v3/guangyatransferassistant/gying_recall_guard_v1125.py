@@ -128,12 +128,21 @@ class GuangYaGyingRecallGuardV1125Mixin:
         explicit = self._candidate_episode_hint_v1125(subscribe, row)
         return not explicit or bool(explicit.intersection(missing))
 
-    def _promote_search_bundle_v1125(self, primary: str, variants: Iterable[str]) -> None:
+    def _promote_search_bundle_v1125(
+        self,
+        primary: str,
+        variants: Iterable[str],
+        subscribe: Any = None,
+    ) -> None:
         """只合并仍在 TTL 内的真实成功缓存；任何成员都不能因 bundle 合并被延长寿命。"""
         cache = getattr(self, "_gying_search_cache", None)
         primary = " ".join(str(primary or "").split())
         if not isinstance(cache, dict) or not primary:
             return
+        cache_key_getter = getattr(self, "_gying_search_cache_key_v11223", None)
+
+        def scoped_key(value: str) -> str:
+            return cache_key_getter(value, subscribe) if callable(cache_key_getter) else value
 
         valid_variants: List[str] = []
         merged: List[Dict[str, Any]] = []
@@ -146,7 +155,7 @@ class GuangYaGyingRecallGuardV1125Mixin:
             variant = " ".join(str(raw_variant or "").split())
             if not variant or variant in valid_variants:
                 continue
-            entry = dict(cache.get(variant) or {})
+            entry = dict(cache.get(scoped_key(variant)) or {})
             if not entry:
                 continue
             state = entry.get("state")
@@ -185,7 +194,7 @@ class GuangYaGyingRecallGuardV1125Mixin:
             "bundle_variants": valid_variants,
             "bundle_resources": len(merged),
         })
-        cache[primary] = {
+        cache[scoped_key(primary)] = {
             # 取最老有效成员的真实请求时间：所有合并行都会在各自原 TTL 之前一起失效。
             "ts": oldest_ts,
             "rows": merged[:800],
@@ -230,7 +239,10 @@ class GuangYaGyingRecallGuardV1125Mixin:
                 pass
             cache = getattr(self, "_gying_search_cache", None)
             if isinstance(cache, dict):
-                cache.pop(" ".join(str(keyword or "").split()), None)
+                clean_keyword = " ".join(str(keyword or "").split())
+                cache_key_getter = getattr(self, "_gying_search_cache_key_v11223", None)
+                cache_key = cache_key_getter(clean_keyword) if callable(cache_key_getter) else clean_keyword
+                cache.pop(cache_key, None)
         return last_candidates, last_state
 
     def _search_viewing_xunlei(self, keyword: str):
@@ -318,7 +330,9 @@ class GuangYaGyingRecallGuardV1125Mixin:
                 if absolute_index > 0:
                     bundle_variants = [all_variants[0], *successful] if start_index else successful
                     self._promote_search_bundle_v1125(all_variants[0], bundle_variants)
-                    promoted = dict(getattr(self, "_gying_search_cache", {}).get(all_variants[0]) or {})
+                    cache_key_getter = getattr(self, "_gying_search_cache_key_v11223", None)
+                    primary_key = cache_key_getter(all_variants[0]) if callable(cache_key_getter) else all_variants[0]
+                    promoted = dict(getattr(self, "_gying_search_cache", {}).get(primary_key) or {})
                     promoted_state = promoted.get("state") if isinstance(promoted.get("state"), dict) else {}
                     if promoted_state:
                         last_state.update({
@@ -336,7 +350,9 @@ class GuangYaGyingRecallGuardV1125Mixin:
         bundle_variants = [all_variants[0], *successful] if start_index else successful
         if len(set(bundle_variants)) > 1:
             self._promote_search_bundle_v1125(all_variants[0], bundle_variants)
-            promoted = dict(getattr(self, "_gying_search_cache", {}).get(all_variants[0]) or {})
+            cache_key_getter = getattr(self, "_gying_search_cache_key_v11223", None)
+            primary_key = cache_key_getter(all_variants[0]) if callable(cache_key_getter) else all_variants[0]
+            promoted = dict(getattr(self, "_gying_search_cache", {}).get(primary_key) or {})
             promoted_state = promoted.get("state") if isinstance(promoted.get("state"), dict) else {}
             if promoted_state:
                 last_state.update({
@@ -440,7 +456,9 @@ class GuangYaGyingRecallGuardV1125Mixin:
 
         # 没有“严格关键词成功搜索”的事实时，不能因为资源站故障继续扩大请求。
         cache = getattr(self, "_gying_search_cache", None)
-        strict_entry = dict(cache.get(variants[0]) or {}) if isinstance(cache, dict) else {}
+        cache_key_getter = getattr(self, "_gying_search_cache_key_v11223", None)
+        strict_key = cache_key_getter(variants[0], subscribe) if callable(cache_key_getter) else variants[0]
+        strict_entry = dict(cache.get(strict_key) or {}) if isinstance(cache, dict) else {}
         strict_state = strict_entry.get("state") if isinstance(strict_entry.get("state"), dict) else {}
         if not strict_entry or strict_state.get("success") is False:
             return result
@@ -448,12 +466,17 @@ class GuangYaGyingRecallGuardV1125Mixin:
         attempted: List[str] = [variants[0]]
         last_result = result
         for variant in variants[1:]:
-            _unused_xunlei, state = self._gying_xunlei_precise_variant_v1125(variant)
+            alias_scope = getattr(self, "_gying_alias_scope_v11212", None)
+            if callable(alias_scope):
+                with alias_scope(subscribe):
+                    _unused_xunlei, state = self._gying_xunlei_precise_variant_v1125(variant)
+            else:
+                _unused_xunlei, state = self._gying_xunlei_precise_variant_v1125(variant)
             state = dict(state or {})
             if not state.get("success"):
                 return last_result
             attempted.append(variant)
-            self._promote_search_bundle_v1125(variants[0], attempted)
+            self._promote_search_bundle_v1125(variants[0], attempted, subscribe=subscribe)
             current = dict(super()._dispatch_viewing_external_v1113(subscribe) or {})
             current["query_fallback_v1125"] = variant
             current["search_bundle_v1125"] = True

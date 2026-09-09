@@ -1,4 +1,4 @@
-﻿import json
+import json
 from pathlib import Path
 
 
@@ -12,10 +12,10 @@ PACKAGE_JSON = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8")
 
 
 def test_media_match_slice_is_public_v11219_release():
-    assert 'plugin_version = "1.12.22"' in ENTRY
-    assert 'build_id = "20260909-r69"' in ENTRY
-    assert PLUGIN_JSON["version"] == "1.12.22"
-    assert PACKAGE_JSON["version"] == "1.12.22"
+    assert 'plugin_version = "1.12.23"' in ENTRY
+    assert 'build_id = "20260909-r70"' in ENTRY
+    assert PLUGIN_JSON["version"] == "1.12.23"
+    assert PACKAGE_JSON["version"] == "1.12.23"
     assert "v1.12.19" in PACKAGE_JSON["history"]
     assert "GuangYaMediaMatchV11219Mixin" in FAST
     assert "requested_episodes" in MATCH
