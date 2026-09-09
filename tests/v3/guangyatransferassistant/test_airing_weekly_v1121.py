@@ -25,8 +25,8 @@ def test_v1121_parses_and_is_above_v1120_scheduler():
     weekly = ENTRY.index("GuangYaAiringWeeklyV1121Mixin,", start)
     scheduler = ENTRY.index("GuangYaAiringSchedulerV1120Mixin,", start)
     assert weekly < scheduler
-    assert 'plugin_version = "1.12.23"' in ENTRY
-    assert 'build_id = "20260909-r70"' in ENTRY
+    assert 'plugin_version = "1.12.25"' in ENTRY
+    assert 'build_id = "20260910-r72"' in ENTRY
     assert 'build_id = "20260903-r48-preview"' in GATE
 
 
@@ -137,8 +137,6 @@ def test_v1122_same_day_miss_retries_after_external_cooldown_until_day_gate_clos
     assert "now - last_at >= cooldown" in claim
     assert "self.save_data(\"external_search_guard\", state)" in claim
 
-    # 只有“已经没有缺集”才完成订阅；仍缺集的搜索 miss 只进入冷却。
-    # 只要当天门禁仍开放，下一次 tick 达到冷却后会再次进入观影；跨日后停止普通重试。
     assert "off_day_missing" in GATE
 
 
@@ -154,13 +152,7 @@ def test_v1122_new_subscription_cache_miss_repairs_channel_once_before_viewing()
 def test_v1121_page_matches_calendar_card_product_direction():
     page = IMPL[IMPL.index("def _weekly_page_v1121"):]
     for token in (
-        '"追剧日历"',
-        '"本周更新"',
-        '"今日更新"',
-        '"已入库"',
-        '"待补"',
-        '"电影待匹配"',
-        '"VRow"',
+        '"追剧日历"', '"本周更新"', '"今日更新"', '"已入库"', '"待补"', '"电影待匹配"', '"VRow"',
     ):
         assert token in page
     assert '"VImg"' in IMPL
@@ -174,4 +166,3 @@ def test_v1121_movies_keep_unscheduled_behavior_and_daily_catchup_survives():
     assert "if force and not due_force:" in run
     assert "def _daily_full_catchup_v1110" in RELEASE
     assert "04:10" in IMPL
-
