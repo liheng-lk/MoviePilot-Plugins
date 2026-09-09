@@ -1,0 +1,81 @@
+name: Publish ShukGuangYaDisk v3.7.5
+
+on:
+  push:
+    paths:
+      - '.github/workflows/publish_shuk_v375.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Publish v3.7.5 metadata atomically
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          VERSION = "3.7.5"
+          HISTORY = (
+              "安装恢复版：优先恢复 MoviePilot V3 真机可安装性；将 v3.7.4 新增的自动整理运行时改动回退到 v3.7.3 已验证基线，"
+              "补充新版 MoviePilot 宿主对 app.log / app.helper.storage 旧导入路径的兼容桥，并提升包版本强制绕过 3.7.4 安装缓存。"
+              "本版不新增文件处置规则，未识别原地保留、同大小目标确认后去重、不同大小版本共存等安全规则保持不变。"
+          )
+
+          entry = Path("plugins.v3/shukguangyadisk/__init__.py")
+          text = entry.read_text(encoding="utf-8")
+          text = text.replace('plugin_version = "3.7.4"', f'plugin_version = "{VERSION}"')
+          entry.write_text(text, encoding="utf-8")
+
+          plugin_json = Path("plugins.v3/shukguangyadisk/plugin.json")
+          plugin = json.loads(plugin_json.read_text(encoding="utf-8"))
+          plugin["version"] = VERSION
+          history = dict(plugin.get("history") or {})
+          history.pop(f"v{VERSION}", None)
+          plugin["history"] = {f"v{VERSION}": HISTORY, **history}
+          plugin_json.write_text(json.dumps(plugin, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          package_json = Path("package.v3.json")
+          package = json.loads(package_json.read_text(encoding="utf-8"))
+          item = package["ShukGuangYaDisk"]
+          item["version"] = VERSION
+          history = dict(item.get("history") or {})
+          history.pop(f"v{VERSION}", None)
+          item["history"] = {f"v{VERSION}": HISTORY, **history}
+          package_json.write_text(json.dumps(package, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          remote = Path("plugins.v3/shukguangyadisk/dist/assets/remoteEntry.js")
+          text = remote.read_text(encoding="utf-8")
+          text = text.replace("?v=3.7.4", f"?v={VERSION}")
+          remote.write_text(text, encoding="utf-8")
+
+          release_test = Path("tests/v3/shukguangyadisk/test_release_v373.py")
+          if release_test.exists():
+              text = release_test.read_text(encoding="utf-8")
+              text = text.replace('VERSION = "3.7.4"', f'VERSION = "{VERSION}"')
+              text = text.replace("test_v374_", "test_v375_")
+              release_test.write_text(text, encoding="utf-8")
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "v3.7.5 already published"
+            exit 0
+          fi
+          git add plugins.v3/shukguangyadisk/__init__.py \
+                  plugins.v3/shukguangyadisk/plugin.json \
+                  plugins.v3/shukguangyadisk/dist/assets/remoteEntry.js \
+                  package.v3.json \
+                  tests/v3/shukguangyadisk/test_release_v373.py
+          git commit -m "release(shukguangyadisk): publish v3.7.5 install recovery"
+          git push origin HEAD:main
