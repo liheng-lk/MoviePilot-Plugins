@@ -189,7 +189,7 @@ def test_cursor_backlog_never_advances_past_unread_pages_and_auto_catches_up():
     assert source_url not in (harness.store.get("channel_catchup_v11220") or {})
 
 
-def test_channel_completeness_patch_is_idempotent_and_public_version_stays_v11219():
+def test_channel_completeness_patch_is_idempotent_and_public_release_is_v11220():
     ns = _compat_runtime()
 
     class LegacyAssistant:
@@ -215,9 +215,10 @@ def test_channel_completeness_patch_is_idempotent_and_public_version_stays_v1121
     entry = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
-    assert 'plugin_version = "1.12.19"' in entry
-    assert 'build_id = "20260907-r66"' in entry
-    assert local["version"] == package["version"] == "1.12.19"
+    assert 'plugin_version = "1.12.20"' in entry
+    assert 'build_id = "20260909-r67"' in entry
+    assert local["version"] == package["version"] == "1.12.20"
+    assert "v1.12.20" in package.get("history", {})
 
 
 def test_installer_connects_title_and_cursor_patches_before_multisource_early_return():
