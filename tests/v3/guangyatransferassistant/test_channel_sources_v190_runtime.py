@@ -151,3 +151,39 @@ def test_duplicate_magnet_in_one_post_is_collapsed_by_btih_identity():
     assert len(rows) == 1
     assert len(rows[0]["external_sources"]) == 1
     assert rows[0]["external_sources"][0]["identity"] == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+
+def test_root_domain_channel_url_is_expanded_to_default_paths():
+    legacy = types.SimpleNamespace(
+        DEFAULT_CHANNEL_URLS=[
+            "https://tgm.li668.asia/regengguangya",
+            "https://tgm.li668.asia/yunpanguangya",
+        ]
+    )
+    urls = channel._normalize_channel_source_urls_v11221(["tgm.li668.asia"], legacy)
+    assert urls == [
+        "https://tgm.li668.asia/regengguangya",
+        "https://tgm.li668.asia/yunpanguangya",
+    ]
+
+
+def test_source_urls_patch_keeps_explicit_path_and_adds_https_for_host_only():
+    class _Assistant:
+        def __init__(self):
+            self._channel_urls = "tgm.li668.asia\nhttps://tgm.li668.asia/regengguangya\n"
+
+        def _source_urls(self):
+            return [line.strip() for line in self._channel_urls.splitlines() if line.strip()]
+
+    legacy = _legacy_stub()
+    legacy.DEFAULT_CHANNEL_URLS = [
+        "https://tgm.li668.asia/regengguangya",
+        "https://tgm.li668.asia/yunpanguangya",
+    ]
+    legacy.GuangYaTransferAssistant = _Assistant
+    channel.install_channel_multisource_compat(legacy)
+    urls = _Assistant()._source_urls()
+    assert urls == [
+        "https://tgm.li668.asia/regengguangya",
+        "https://tgm.li668.asia/yunpanguangya",
+    ]

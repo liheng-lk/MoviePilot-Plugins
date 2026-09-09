@@ -126,7 +126,6 @@ def test_v1120_handled_old_share_no_longer_blocks_uncovered_due_gap():
 
 
 def test_v1120_gying_keyword_fallback_reuses_per_keyword_cache():
-    hardening = GYING[GYING.index("def _gying_raw_results"):GYING.index("@staticmethod\n    def _provider_candidate_matches")]
+    hardening = GYING[GYING.index("def _gying_raw_results"):GYING.index("def _provider_candidate_matches")]
     assert "force=force or index > 0" not in hardening
     assert "super()._gying_raw_results(variant, force=force)" in hardening
-

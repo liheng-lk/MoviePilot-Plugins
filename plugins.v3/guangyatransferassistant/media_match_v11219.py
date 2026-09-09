@@ -200,6 +200,20 @@ class GuangYaMediaMatchV11219Mixin:
                 except (TypeError, ValueError):
                     completed_ts = 0.0
                 grace = max(60, int(getattr(self, "_completed_claim_grace_seconds_v11219", 15 * 60) or 15 * 60))
+                if completed_ts <= 0:
+                    try:
+                        self._plugin_log(
+                            "INFO",
+                            "【光鸭转存助手】【来源Claim】#%s 释放无 completed_ts 的 completed 占坑：source=%s episodes=%s",
+                            sid,
+                            str(row.get("id") or "-")[:60],
+                            sorted(overlap),
+                        )
+                    except Exception:
+                        pass
+                    row_claims = row_claims - overlap
+                    if not row_claims:
+                        continue
                 if completed_ts > 0 and time.time() - completed_ts >= grace:
                     try:
                         self._plugin_log(

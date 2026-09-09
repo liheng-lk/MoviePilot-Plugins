@@ -250,3 +250,66 @@ def test_completed_claim_is_released_after_grace_when_episode_still_missing():
     probe = Probe()
     assert probe._active_source_claims(100) == set()
     assert any("释放过期 completed 占坑" in row[1] for row in probe.logs)
+
+
+def test_completed_claim_without_completed_ts_is_released_to_avoid_permanent_block():
+    tree = ast.parse(SOURCE, filename=str(MATCH))
+    keep = []
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name in {"_positive_episode_set_v11219", "source_claim_episodes_v11219"}:
+            keep.append(node)
+        if isinstance(node, ast.ClassDef) and node.name == "GuangYaMediaMatchV11219Mixin":
+            keep.append(node)
+    module = ast.Module(body=keep, type_ignores=[])
+    ast.fix_missing_locations(module)
+    ns = {
+        "Any": Any,
+        "Dict": Dict,
+        "Iterable": Iterable,
+        "List": list,
+        "Set": Set,
+        "time": time,
+        "_STRONG_SOURCE_STATES_V11219": {"submitted", "queued", "waiting", "completed"},
+    }
+    exec(compile(module, str(MATCH), "exec"), ns)
+    Mixin = ns["GuangYaMediaMatchV11219Mixin"]
+
+    class Probe(Mixin):
+        def __init__(self):
+            self._completed_claim_grace_seconds_v11219 = 60
+            self.logs = []
+            self.store = {
+                "items": {
+                    "s1": {
+                        "id": "s1",
+                        "subscribe_id": 100,
+                        "enabled": True,
+                        "state": "completed",
+                        "task_id": "task-1",
+                        "transfer_episodes": [7],
+                        "completed_ts": 0,
+                    }
+                }
+            }
+
+        def _source_store(self):
+            return self.store
+
+        @staticmethod
+        def _find_subscription(_sid):
+            return object()
+
+        @staticmethod
+        def _is_movie_subscription(_subscribe):
+            return False
+
+        @staticmethod
+        def _subscription_missing_episodes(_subscribe):
+            return [7]
+
+        def _plugin_log(self, level, message, *args):
+            self.logs.append((level, message % args if args else message))
+
+    probe = Probe()
+    assert probe._active_source_claims(100) == set()
+    assert any("释放无 completed_ts 的 completed 占坑" in row[1] for row in probe.logs)

@@ -560,21 +560,102 @@ class GuangYaGyingHardeningMixin:
             else:
                 context.subscribe = previous
 
-    @staticmethod
-    def _provider_candidate_matches(subscribe: Any, row: Dict[str, Any]) -> bool:
-        expected = _normalize_media_text(getattr(subscribe, "name", ""))
-        actual = _normalize_media_text(row.get("search_title") or row.get("name") or "")
-        if not expected or not actual or not (expected in actual or actual in expected):
+    def _provider_candidate_matches(self, subscribe: Any, row: Dict[str, Any]) -> bool:
+        base_matcher = getattr(super(), "_provider_candidate_matches", None)
+        if callable(base_matcher) and bool(base_matcher(subscribe, row)):
+            return True
+
+        row = dict(row or {})
+        structured = getattr(self, "_structured_candidate_match_v11217", None)
+        if callable(structured):
+            try:
+                matched, detail = structured(subscribe, row)
+            except Exception as err:
+                self._plugin_log(
+                    "WARNING",
+                    "【光鸭转存助手】【资源召回v1.12.17】结构化候选匹配异常，回退到基础匹配：%s",
+                    str(err)[:220],
+                )
+            else:
+                if matched:
+                    self._plugin_log(
+                        "INFO",
+                        "【光鸭转存助手】【资源召回v1.12.17】#%s %s 搜索候选由结构化匹配救回：alias=%s score=%s reason=%s",
+                        int(getattr(subscribe, "id", 0) or 0),
+                        str(getattr(subscribe, "name", "") or ""),
+                        str(detail.get("matched_alias") or "-")[:100],
+                        int(detail.get("score") or 0),
+                        str(detail.get("reason") or "")[:220],
+                    )
+                    return True
+
+        raw_actual = " ".join(
+            str(value or "").strip()
+            for value in (
+                row.get("search_title"),
+                row.get("name"),
+                row.get("label"),
+                row.get("display_title"),
+            )
+            if str(value or "").strip()
+        )
+        actual = _normalize_media_text(raw_actual)
+        if not actual:
+            return False
+
+        alias_values: List[str] = []
+        for field in (
+            "name", "title", "original_name", "original_title", "en_name", "cn_name",
+            "media_name", "aka", "aliases", "alias",
+        ):
+            raw = getattr(subscribe, field, None)
+            if raw in (None, ""):
+                continue
+            if isinstance(raw, dict):
+                candidates = list(raw.values())
+            elif isinstance(raw, (list, tuple, set)):
+                candidates = list(raw)
+            else:
+                candidates = [raw]
+            for candidate in candidates:
+                text = str(candidate or "").strip()
+                if text:
+                    alias_values.append(text)
+
+        expected_keys: List[str] = []
+        seen = set()
+        for alias in alias_values:
+            key = _normalize_media_text(alias)
+            if len(key) < 2 or key in seen:
+                continue
+            seen.add(key)
+            expected_keys.append(key)
+        if not expected_keys:
+            return False
+        if not any(key in actual or actual in key for key in expected_keys):
+            return False
+
+        expected_year = str(getattr(subscribe, "year", "") or "").strip()
+        actual_years = set(re.findall(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)", raw_actual))
+        row_year = str(row.get("year") or row.get("year_hint") or "").strip()
+        if row_year and row_year.isdigit():
+            actual_years.add(row_year)
+        if expected_year and actual_years and expected_year not in actual_years:
+            return False
+
+        seasons = {
+            int(value)
+            for pair in re.findall(r"(?i)(?:\bS(?:eason)?\s*0*(\d{1,2})\b|第\s*0*(\d{1,2})\s*季)", raw_actual)
+            for value in pair if value
+        }
+        is_movie = "movie" in str(getattr(subscribe, "type", "") or "").lower() or "电影" in str(getattr(subscribe, "type", "") or "")
+        if is_movie and seasons:
             return False
         try:
-            expected_year = int(getattr(subscribe, "year", 0) or 0)
+            expected_season = int(getattr(subscribe, "season", 0) or 0)
         except (TypeError, ValueError):
-            expected_year = 0
-        try:
-            actual_year = int(row.get("year") or 0)
-        except (TypeError, ValueError):
-            actual_year = 0
-        if expected_year and actual_year and expected_year != actual_year:
+            expected_season = 0
+        if not is_movie and expected_season > 0 and seasons and expected_season not in seasons:
             return False
         return True
 

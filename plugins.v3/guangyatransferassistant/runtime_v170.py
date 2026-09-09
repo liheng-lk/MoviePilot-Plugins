@@ -196,10 +196,21 @@ class GuangYaRuntimeFinalizerMixin:
         state: Optional[str] = "R",
         manual: Optional[bool] = False,
         progress_callback=None,
+        **kwargs,
     ):
         """宿主 scheduler takeover 的最终固定分流。"""
         if not self._runtime_is_current() or not self._enabled:
             return True
+
+        if sid is None and kwargs.get("sid") is not None:
+            sid = kwargs.get("sid")
+        if kwargs.get("state") is not None:
+            state = kwargs.get("state")
+        if kwargs.get("manual") is not None:
+            manual = kwargs.get("manual")
+        callback = kwargs.get("progress_callback")
+        if progress_callback is None and callable(callback):
+            progress_callback = callback
 
         selected = set(int(value) for value in self._selected_subscriptions if str(value).isdigit())
         if sid:

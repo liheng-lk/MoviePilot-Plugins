@@ -15,6 +15,7 @@ import hashlib
 import html
 import re
 from typing import Any, Dict, List
+from urllib.parse import urlsplit, urlunsplit
 
 from .source_types_v180 import normalize_source_uri
 
@@ -28,6 +29,66 @@ _LIVE_CHANNEL_HEADER_V11220 = re.compile(
     r"(?:🎬|📺)\s*(?:(?:电影|剧集|电视剧|动漫|动画)\s*[：:]\s*)?([^\n]{2,360})",
     re.I,
 )
+
+
+def _normalize_channel_source_urls_v11221(values: List[str], legacy_module: Any) -> List[str]:
+    """兼容根域名配置：tgm.li668.asia -> 默认频道路径。"""
+    defaults = list(getattr(legacy_module, "DEFAULT_CHANNEL_URLS", []) or [])
+    default_paths: List[str] = []
+    default_hosts = set()
+    for item in defaults:
+        raw = str(item or "").strip()
+        if not raw:
+            continue
+        try:
+            parsed = urlsplit(raw)
+        except ValueError:
+            continue
+        host = (parsed.hostname or "").lower()
+        if host:
+            default_hosts.add(host)
+        path = str(parsed.path or "").strip()
+        if path and path != "/" and path not in default_paths:
+            default_paths.append(path.rstrip("/"))
+
+    rows: List[str] = []
+    seen = set()
+    for item in values:
+        raw = html.unescape(str(item or "")).replace("\\/", "/").strip()
+        if not raw:
+            continue
+        if not re.match(r"(?i)^https?://", raw):
+            raw = "https://" + raw.lstrip("/")
+        try:
+            parsed = urlsplit(raw)
+        except ValueError:
+            continue
+        host = (parsed.hostname or "").lower()
+        if not host:
+            continue
+        scheme = parsed.scheme or "https"
+        netloc = parsed.netloc
+        path = str(parsed.path or "").strip()
+        query = str(parsed.query or "").strip()
+        if path and path != "/":
+            normalized = urlunsplit((scheme, netloc, path.rstrip("/"), query, ""))
+            if normalized not in seen:
+                seen.add(normalized)
+                rows.append(normalized)
+            continue
+        if host in default_hosts and default_paths:
+            for default_path in default_paths:
+                expanded = urlunsplit((scheme, netloc, default_path, query, ""))
+                if expanded in seen:
+                    continue
+                seen.add(expanded)
+                rows.append(expanded)
+            continue
+        normalized = urlunsplit((scheme, netloc, "", query, ""))
+        if normalized not in seen:
+            seen.add(normalized)
+            rows.append(normalized)
+    return rows
 
 
 def _resource_group_id(source_url: str, message_id: str, text: str) -> str:
@@ -336,6 +397,23 @@ def install_channel_multisource_compat(legacy_module: Any):
     """热重载安全地扩展频道解析器、消息稳定键和 v1.12.20 完整性补丁。"""
     _install_channel_title_compat_v11220(legacy_module)
     _install_channel_cursor_completeness_v11220(legacy_module)
+    assistant_cls = getattr(legacy_module, "GuangYaTransferAssistant", None)
+    current_source_urls = getattr(assistant_cls, "_source_urls", None) if assistant_cls else None
+    if callable(current_source_urls) and not getattr(current_source_urls, "_guangya_source_urls_v11221", False):
+        original_source_urls = current_source_urls
+
+        @functools.wraps(original_source_urls)
+        def patched_source_urls(self) -> List[str]:
+            original = [str(item or "").strip() for item in (original_source_urls(self) or []) if str(item or "").strip()]
+            normalized = _normalize_channel_source_urls_v11221(original, legacy_module)
+            if normalized:
+                return normalized
+            fallbacks = [str(item or "").strip() for item in (getattr(legacy_module, "DEFAULT_CHANNEL_URLS", []) or []) if str(item or "").strip()]
+            return fallbacks
+
+        patched_source_urls._guangya_source_urls_v11221 = True
+        patched_source_urls._guangya_original_source_urls = original_source_urls
+        assistant_cls._source_urls = patched_source_urls
 
     current_extract = getattr(legacy_module, "_extract_channel_entries", None)
     current_key = getattr(legacy_module, "_entry_process_key", None)

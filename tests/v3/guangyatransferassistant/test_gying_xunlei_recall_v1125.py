@@ -157,7 +157,7 @@ def test_precise_xunlei_results_are_reused_by_later_magnet_search():
 
 def test_subscription_context_is_thread_local_and_transfer_chain_is_not_reimplemented():
     dispatch = text.split("    def _dispatch_xunlei_flash(self, subscribe: Any)", 1)[1].split(
-        "    @staticmethod\n    def _provider_candidate_matches", 1
+        "    def _provider_candidate_matches", 1
     )[0]
     assert "threading.local()" in dispatch
     assert "context.subscribe = subscribe" in dispatch
@@ -171,4 +171,3 @@ def test_subscription_context_is_thread_local_and_transfer_chain_is_not_reimplem
         "aria2",
     ):
         assert forbidden not in lowered
-

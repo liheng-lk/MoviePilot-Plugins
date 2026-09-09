@@ -70,14 +70,15 @@ def test_gying_query_falls_back_from_season_and_year_to_title():
     assert variants("Demo Show 2024 S01") == ["Demo Show 2024 S01", "Demo Show 2024", "Demo Show"]
     assert variants("Demo Show S02") == ["Demo Show S02", "Demo Show"]
     assert variants("Demo Show") == ["Demo Show"]
-    runtime = text.split("    def _gying_raw_results(", 1)[1].split("    @staticmethod\n    def _provider_candidate_matches", 1)[0]
+    runtime = text.split("    def _gying_raw_results(", 1)[1].split("    def _provider_candidate_matches", 1)[0]
     assert "if int(state.get(\"cards\") or 0) > 0 or rows" in runtime
     assert 'last_state["query_fallback"] = variant' in runtime
 
 
 def test_candidate_title_match_is_year_aware_when_both_years_exist():
     method = text.split("    def _provider_candidate_matches", 1)[1]
-    assert "expected_year and actual_year and expected_year != actual_year" in method
+    assert "expected_year and actual_years and expected_year not in actual_years" in method
+    assert "_structured_candidate_match_v11217" in method
     assert "return False" in method
 
 
@@ -86,4 +87,3 @@ def test_fake_404_or_angie_page_causes_node_failover():
     request = text.split("    def _gying_request(", 1)[1].split("    def _gying_raw_results", 1)[0]
     assert "response.status_code in {403, 404}" in request
     assert "观影节点当前出口被阻断" in request
-
