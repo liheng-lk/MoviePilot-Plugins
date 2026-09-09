@@ -1,4 +1,4 @@
-"""光鸭转存助手 v1.12.22 运行入口。
+"""光鸭转存助手 v1.12.23 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
@@ -23,6 +23,7 @@ v1.12.11 修复 /gycheck 只检查频道却未保证主动资源链的问题：�
 v1.12.12 修复 GYING 前置搜索未使用精确 TMDB 官方别名的问题：电影中文标题未命中当前媒体时，继续用同一 TMDB 身份与年份下的官方英文/原始标题搜索；无关卡片不再阻止降级，网络/认证失败仍硬停止；观影迅雷召回与 GYING Magnet/ED2K 共用该语义，不引入模糊匹配。
 v1.12.13 修复媒体库已有剧集仍被迅雷秒传重复导入：TV 迅雷硬目标改为媒体库 missing 与成功事实/订阅 missing 的交集，并在 JSON batch import 前逐视频二次过滤；跨边界多集文件整文件拒绝，媒体库缺集事实读取失败时跳过迅雷但继续后续来源。
 v1.12.14 统一核心资源链：频道/观影均支持光鸭分享、迅雷分享、Magnet、ED2K；TV/动漫按精确 TMDB 官方标题补召回；所有 TV 最终写盘收紧到 library missing ∩ logical/fact missing - reservation - other source claim，并对光鸭分享、迅雷、Magnet、ED2K 统一执行不可分割物理文件 episodes ⊆ allowed missing 与实际 payload 身份门禁。
+v1.12.23 修复观影零结果被误切旧接口并展开默认推荐卡片；订阅检索在 downurl 前按精确标题、年份、类型筛选，所有官方别名完成且未命中时不再上送无关链接，中途失败标记检索未完成；“我的资源检索”在数量截断前按订阅过滤并分离来源健康与精确候选；缓存按订阅身份隔离并合并同一检索的并发请求；日志明确区分模糊卡片、待核验链接、精确候选、真实入队和最终落盘。
 v1.12.22 修复电影首个频道帖子无可执行资源时提前结束、遗漏后续匹配帖子；Provider 跳过仍在冷却的 failed/needs_review 和禁用候选，保留到期重开；频道、Provider、观影自动执行按真实入队回执计数，入队失败不再虚报成功或扣除缺集；统一规划与最终写盘的 completed claim 老化释放，防止旧任务在提交阶段再次阻断真实缺集。保留媒体身份、年份、质量、在途去重与光鸭原生 cloudcollection 门禁。
 v1.12.21 工程化稳定发布：修复 Provider 认证头与重试语义、解析失败 success 误报、completed/source claim 老化释放、failed/needs_review 冷却重开；新增 source 并发互斥槽位，阻断 tick 与异步 worker 对同一来源重复提交/轮询；dispatch/retry API 改为真实入队回执并回滚失败重试状态；状态页补充来源 trace 与操作提示并完成移动端可读性精修。既有 5 分钟 Push、7 天缓存补偿、AiringDue、真实 payload 身份门禁、MoviePilot 权威缺集、reservation/source claim、不可分割物理文件栅栏与来源优先级全部保持。
 v1.12.19 发布候选排序、来源质量学习与高置信媒体匹配：电影四来源统一真实 payload 最终身份门禁；剧集/动漫拆分 requested/candidate/resolved/transfer episodes，未解析 intent 不再形成强 claim；Provider 候选在全局截断前排序并受全局 4 并发预算约束，查询参数做有界学习；来源状态写入与终态质量学习并发安全，只有资源可归因失败才计入质量。来源优先级和光鸭原生 cloudcollection 路线不变。
@@ -73,6 +74,7 @@ from .gying_observability_v1104 import GuangYaGyingObservabilityV1104Mixin
 from .gying_protocol_v1106 import GuangYaGyingProtocolV1106Mixin
 from .gying_recall_guard_v1125 import GuangYaGyingRecallGuardV1125Mixin
 from .gying_runtime_v193 import GuangYaGyingRuntimeMixin
+from .gying_search_truth_v11223 import GuangYaGyingSearchTruthV11223Mixin
 from .gying_transport_v1108 import GuangYaGyingTransportV1108Mixin
 from .multisource_v180 import GuangYaMultiSourceMixin
 from .media_identity_guard_v1111 import GuangYaMediaIdentityGuardV1111Mixin
@@ -120,6 +122,7 @@ class GuangYaTransferAssistant(
     GuangYaStabilityV1106Mixin,
     GuangYaContentResilienceV1105Mixin,
     GuangYaGyingObservabilityV1104Mixin,
+    GuangYaGyingSearchTruthV11223Mixin,
     GuangYaChannelUiV1101Mixin,
     GuangYaConfigUiV1100Mixin,
     GuangYaConsoleUiV1100Mixin,
@@ -148,8 +151,8 @@ class GuangYaTransferAssistant(
 ):
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
 
-    plugin_version = "1.12.22"
-    build_id = "20260909-r69"
+    plugin_version = "1.12.23"
+    build_id = "20260909-r70"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""

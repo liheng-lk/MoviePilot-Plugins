@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import ast
 import functools
@@ -215,9 +215,9 @@ def test_channel_completeness_patch_is_idempotent_and_public_release_is_v11220()
     entry = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
-    assert 'plugin_version = "1.12.22"' in entry
-    assert 'build_id = "20260909-r69"' in entry
-    assert local["version"] == package["version"] == "1.12.22"
+    assert 'plugin_version = "1.12.23"' in entry
+    assert 'build_id = "20260909-r70"' in entry
+    assert local["version"] == package["version"] == "1.12.23"
     assert "v1.12.20" in package.get("history", {})
 
 

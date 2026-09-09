@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import ast
 import re
@@ -38,7 +38,7 @@ def test_gying_hardening_parses_and_is_final_node_layer():
     order = ["GuangYaConfigUiMixin,", "GuangYaGyingHardeningMixin,", "GuangYaGyingFailoverMixin,", "GuangYaGyingRuntimeMixin,", "GuangYaXunleiHardeningMixin,", "GuangYaXunleiFlashMixin,"]
     positions = [entry_text.index(token, start) for token in order]
     assert positions == sorted(positions)
-    assert 'build_id = "20260909-r69"' in entry_text
+    assert 'build_id = "20260909-r70"' in entry_text
 
 
 def test_unicode_and_punycode_are_one_node_identity():
@@ -71,7 +71,9 @@ def test_gying_query_falls_back_from_season_and_year_to_title():
     assert variants("Demo Show S02") == ["Demo Show S02", "Demo Show"]
     assert variants("Demo Show") == ["Demo Show"]
     runtime = text.split("    def _gying_raw_results(", 1)[1].split("    def _provider_candidate_matches", 1)[0]
-    assert "if int(state.get(\"cards\") or 0) > 0 or rows" in runtime
+    assert 'target_scoped = bool(state.get("target_scoped"))' in runtime
+    assert 'int(state.get("matched_cards") or 0) > 0' in runtime
+    assert "if target_hit or rows" in runtime
     assert 'last_state["query_fallback"] = variant' in runtime
 
 

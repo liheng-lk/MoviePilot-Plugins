@@ -252,7 +252,15 @@ class GuangYaConsoleUiV1100Mixin:
                     "xunlei": int(counts.get("xunlei") or 0),
                     "magnet": int(counts.get("magnet") or 0),
                     "ed2k": int(counts.get("ed2k") or 0),
-                    "state": "可用" if item.get("success") else "未命中/异常",
+                    "state": (
+                        "有精确候选"
+                        if item.get("matched")
+                        else (
+                            "来源异常"
+                            if not item.get("healthy", item.get("success"))
+                            else ("检索未完成" if item.get("search_complete") is False else "未命中（来源正常）")
+                        )
+                    ),
                 })
         search_content: List[Dict[str, Any]] = []
         if search_rows:

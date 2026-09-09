@@ -1,4 +1,4 @@
-﻿"""v1.8.0 Magnet/ED2K -> 光鸭原生云添加契约测试。
+"""v1.8.0 Magnet/ED2K -> 光鸭原生云添加契约测试。
 
 当前发布版本可以高于 1.8.0，但 v1.8 的原生云添加与 taskId 防重复契约必须继续成立。
 """
@@ -40,8 +40,8 @@ def test_v180_files_parse_as_python():
 def test_v180_contract_is_retained_by_current_runtime():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.12.22"
-    assert 'plugin_version = "1.12.22"' in entry_text
+    assert package["version"] == local["version"] == "1.12.23"
+    assert 'plugin_version = "1.12.23"' in entry_text
     assert "GuangYaOfflineSafetyMixin" in entry_text
     assert "GuangYaMultiSourceMixin" in entry_text
     assert entry_text.index("GuangYaOfflineSafetyMixin,", entry_text.index("class GuangYaTransferAssistant")) < entry_text.index(

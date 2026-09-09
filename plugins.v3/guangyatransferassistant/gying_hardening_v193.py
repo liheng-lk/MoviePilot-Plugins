@@ -25,7 +25,7 @@ import requests
 
 from .episode_resolver_v190 import AUTO_SELECT_CONFIDENCE, reliable_episode_set, resolve_episode
 from .gying_protocol_v1106 import extract_resource_rows_v1106
-from .gying_runtime_v193 import _apply_cookie_header, _parse_search_payload
+from .gying_runtime_v193 import _apply_cookie_header, _parse_search_payload_result_v11223
 from .legacy import _normalize_media_text
 from .provider_sources_v192 import _proxy_dict
 
@@ -331,7 +331,9 @@ class GuangYaGyingHardeningMixin:
             last_rows, last_state = rows, dict(state or {})
             if not state.get("success"):
                 return rows, state
-            if int(state.get("cards") or 0) > 0 or rows:
+            target_scoped = bool(state.get("target_scoped"))
+            target_hit = int(state.get("matched_cards") or 0) > 0 if target_scoped else int(state.get("cards") or 0) > 0
+            if target_hit or rows:
                 if variant != variants[0]:
                     last_state["query_fallback"] = variant
                     last_state["message"] = f"{last_state.get('message') or '观影搜索成功'} · 已自动使用纯标题查询"
@@ -344,16 +346,31 @@ class GuangYaGyingHardeningMixin:
         if not keyword:
             return [], {"provider": "viewing_xunlei", "success": False, "message": "观影搜索关键词为空"}
 
-        cached = dict(getattr(self, "_gying_search_cache", {}).get(keyword) or {})
+        cache_key_getter = getattr(self, "_gying_search_cache_key_v11223", None)
+        cache_key = cache_key_getter(keyword) if callable(cache_key_getter) else keyword
+        cached = dict(getattr(self, "_gying_search_cache", {}).get(cache_key) or {})
         cached_state = dict(cached.get("state") or {})
         if (
             cached
-            and cached_state.get("recall_ranked_v1125")
+            and (
+                cached_state.get("recall_ranked_v1125")
+                or (
+                    cached_state.get("target_scoped")
+                    and "matched_cards" in cached_state
+                    and "detail_cards" in cached_state
+                )
+            )
             and time.time() - float(cached.get("ts") or 0) < 120
         ):
             rows = list(cached.get("rows") or [])
             limit = max(40, min(120, int(getattr(self, "_provider_result_limit", 20) or 20) * 4))
-            return _xunlei_candidates_from_rows_v1125(rows, limit=limit), cached_state
+            candidates = _xunlei_candidates_from_rows_v1125(rows, limit=limit)
+            cached_state.update({
+                "provider": "viewing_xunlei",
+                "xunlei_resources": len(candidates),
+                "detail_snapshot_reused_v11223": True,
+            })
+            return candidates, cached_state
 
         session, login = self._viewing_session()
         if not login.get("success"):
@@ -399,18 +416,25 @@ class GuangYaGyingHardeningMixin:
                     if mode == "browser":
                         continue
                     raise RuntimeError(f"观影搜索 HTTP {current.status_code}")
-                parsed = _parse_search_payload(current.text or "")
+                parsed_ok, parsed = _parse_search_payload_result_v11223(current.text or "")
+                if not parsed_ok:
+                    continue
                 response = current
                 search_mode = mode
-                if parsed:
-                    cards = parsed
-                    break
+                cards = parsed
+                break
             if response is None:
                 raise RuntimeError("观影搜索没有得到有效响应")
 
             ranked_cards = rank_gying_cards_v1125(keyword, cards)
             detail_limit = max(1, min(int(getattr(self, "_provider_result_limit", 20) or 20), 100))
-            detail_cards = ranked_cards[:detail_limit]
+            selector = getattr(self, "_gying_select_detail_cards_v11223", None)
+            detail_cards = list(
+                selector(keyword, ranked_cards, detail_limit)
+                if callable(selector) else ranked_cards[:detail_limit]
+            )
+            target_getter = getattr(self, "_gying_target_subscribe_v11223", None)
+            target_scoped = bool(target_getter()) if callable(target_getter) else False
             rows: List[Dict[str, Any]] = []
             for item in detail_cards:
                 resource_type = str(item.get("type") or "").strip()
@@ -454,26 +478,34 @@ class GuangYaGyingHardeningMixin:
             state = {
                 "provider": "viewing_xunlei",
                 "success": True,
+                "search_complete": True,
                 "node": node,
                 "login_mode": login.get("mode"),
                 "cards": len(cards),
+                "raw_cards": len(cards),
+                "matched_cards": len(detail_cards) if target_scoped else len(cards),
                 "detail_cards": len(detail_cards),
+                "target_scoped": target_scoped,
+                "target_match": bool(detail_cards) if target_scoped else None,
                 "resources": len(deduped),
                 "xunlei_resources": len(candidates),
                 "search_mode": search_mode,
                 "recall_ranked_v1125": True,
                 "message": (
-                    f"观影迅雷精准搜索：影视 {len(cards)} · 展开 {len(detail_cards)} · 迅雷 {len(candidates)}"
+                    f"观影迅雷请求完成：模糊卡片 {len(cards)} · 当前媒体卡片 "
+                    f"{len(detail_cards) if target_scoped else '未限定'} · 展开 {len(detail_cards)} · "
+                    f"未核验迅雷 {len(candidates)}"
                 ),
             }
             # 与 Magnet 复用本次详情结果；后续来源不需要再重复打开同一批 downurl。
-            self._gying_search_cache[keyword] = {"ts": time.time(), "rows": deduped, "state": state}
+            self._gying_search_cache[cache_key] = {"ts": time.time(), "rows": deduped, "state": state}
             return candidates, state
         except Exception as err:
             self._gying_mark_node(node, "search_error", str(err))
             return [], {
                 "provider": "viewing_xunlei",
                 "success": False,
+                "search_complete": False,
                 "node": node,
                 "login_mode": login.get("mode"),
                 "message": str(err)[:400],

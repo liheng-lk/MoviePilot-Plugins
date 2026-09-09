@@ -59,7 +59,8 @@ def test_explicit_old_episode_cannot_stop_fallback_but_unknown_pack_can():
 
 def test_bundle_only_keeps_live_successful_entries_and_never_extends_oldest_member_ttl():
     bundle = _method("_promote_search_bundle_v1125", "_gying_xunlei_precise_variant_v1125")
-    assert 'entry = dict(cache.get(variant) or {})' in bundle
+    assert 'entry = dict(cache.get(scoped_key(variant)) or {})' in bundle
+    assert 'cache[scoped_key(primary)]' in bundle
     assert "if not entry:" in bundle
     assert 'state.get("success") is False' in bundle
     assert "entry_ts = float(entry.get(\"ts\") or 0)" in bundle
@@ -146,7 +147,8 @@ def test_magnet_broadening_requires_successful_strict_search_and_stops_on_wide_s
     failure = method.split('if not state.get("success"):', 1)[1].split("attempted.append(variant)", 1)[0]
     assert "return last_result" in failure
     assert "attempted.append(variant)" not in failure
-    assert "_promote_search_bundle_v1125(variants[0], attempted)" in method
+    assert "_promote_search_bundle_v1125(variants[0], attempted, subscribe=subscribe)" in method
+    assert "with alias_scope(subscribe):" in method
 
 
 def test_fallback_stops_only_after_media_and_missing_coverage_filter():

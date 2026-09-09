@@ -145,3 +145,15 @@ def test_accepted_movie_queue_stops_after_one_candidate():
         result = h.provider(h.sub, set()) if route == "provider" else getattr(h, route)(h.sub)
         assert result["source_id"] == "first" if route == "provider" else len(result["actions"]) == 1
         assert h.spawned == ["first"]
+
+
+def test_unrelated_viewing_candidates_never_create_or_queue_cloud_sources():
+    h = Harness()
+    for row in h.rows:
+        row["matches"] = False
+    result = h.viewing(h.sub)
+    assert result["success"] is False
+    assert result["actions"] == []
+    assert result["matched_candidates"] == 0
+    assert h.upserts == []
+    assert h.spawned == []

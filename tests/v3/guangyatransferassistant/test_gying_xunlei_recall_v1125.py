@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import ast
 import re
@@ -50,8 +50,8 @@ def _rank_namespace():
 def test_v1125_hardening_parses_without_changing_public_release_marker():
     ast.parse(text, filename=str(HARDENING))
     assert 'build_id = "20260904-r51"' in text
-    assert 'plugin_version = "1.12.22"' in entry
-    assert 'build_id = "20260909-r69"' in entry
+    assert 'plugin_version = "1.12.23"' in entry
+    assert 'build_id = "20260909-r70"' in entry
 
 
 def test_search_cards_are_ranked_before_existing_detail_request_limit():
@@ -59,7 +59,8 @@ def test_search_cards_are_ranked_before_existing_detail_request_limit():
         "    @staticmethod\n    def _xunlei_candidate_priority_v1125", 1
     )[0]
     assert "ranked_cards = rank_gying_cards_v1125(keyword, cards)" in method
-    assert "detail_cards = ranked_cards[:detail_limit]" in method
+    assert 'selector = getattr(self, "_gying_select_detail_cards_v11223", None)' in method
+    assert "selector(keyword, ranked_cards, detail_limit)" in method
     assert "detail_limit = max(1, min(int(getattr(self, \"_provider_result_limit\", 20) or 20), 100))" in method
     assert "for item in cards[:" not in method
 
@@ -151,7 +152,8 @@ def test_precise_xunlei_results_are_reused_by_later_magnet_search():
     precise = text.split("    def _gying_xunlei_precise_variant_v1125", 1)[1].split(
         "    @staticmethod\n    def _xunlei_candidate_priority_v1125", 1
     )[0]
-    assert 'self._gying_search_cache[keyword] = {"ts": time.time(), "rows": deduped, "state": state}' in precise
+    assert 'self._gying_search_cache[cache_key] = {"ts": time.time(), "rows": deduped, "state": state}' in precise
+    assert '_gying_search_cache_key_v11223' in precise
     assert "recall_ranked_v1125" in precise
 
 

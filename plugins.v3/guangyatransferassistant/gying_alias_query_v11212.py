@@ -112,21 +112,31 @@ class GuangYaGyingAliasQueryV11212Mixin(GuangYaXunleiSeasonFenceV11210Mixin):
         return rows
 
     def _gying_rows_match_v11212(self, subscribe: Any, rows: Iterable[Dict[str, Any]]) -> bool:
+        return bool(self._gying_matching_rows_v11223(subscribe, rows))
+
+    def _gying_matching_rows_v11223(
+        self,
+        subscribe: Any,
+        rows: Iterable[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """只把属于当前订阅的资源行交给上层；请求成功不等于媒体命中。"""
+        source_rows = [dict(row or {}) for row in rows or []]
         matcher = getattr(self, "_provider_candidate_matches", None)
         if not callable(matcher):
-            return bool(list(rows or []))
-        for row in rows or []:
+            return []
+        matched: List[Dict[str, Any]] = []
+        for row in source_rows:
             try:
                 if matcher(subscribe, dict(row or {})):
-                    return True
+                    matched.append(row)
             except Exception:
                 continue
-        return False
+        return matched
 
     def _gying_raw_results(self, keyword: str, force: bool = False):
         subscribe = self._gying_alias_subscribe_v11212()
         queries = self._gying_alias_keywords_v11212(subscribe, keyword)
-        if subscribe is None or len(queries) <= 1:
+        if subscribe is None:
             return super()._gying_raw_results(keyword, force=force)
 
         first_rows: List[Dict[str, Any]] = []
@@ -141,27 +151,61 @@ class GuangYaGyingAliasQueryV11212Mixin(GuangYaXunleiSeasonFenceV11210Mixin):
                 first_rows, first_state = rows, state
             if state.get("success") is False:
                 if index == 0:
-                    return rows, state
-                first_state["alias_query_error_v11212"] = str(state.get("message") or "")[:300]
+                    state.update({
+                        "raw_resources": len(rows),
+                        "matched_resources": 0,
+                        "target_match": None,
+                        "search_complete": False,
+                    })
+                    return [], state
+                alias_error = str(state.get("message") or "官方别名请求失败")[:300]
+                first_state.update({
+                    "success": False,
+                    "healthy": True,
+                    "search_complete": False,
+                    "partial_error": True,
+                    "alias_query_error_v11212": alias_error,
+                    "target_match": None,
+                    "message": (
+                        f"主查询请求正常，但官方别名检索在 {query} 中断：{alias_error}；"
+                        "无法确认当前订阅是否存在精确候选"
+                    )[:500],
+                })
                 break
-            if self._gying_rows_match_v11212(subscribe, rows):
+            matched_rows = self._gying_matching_rows_v11223(subscribe, rows)
+            if matched_rows:
+                state.update({
+                    "raw_resources": len(rows),
+                    "matched_resources": len(matched_rows),
+                    "target_match": True,
+                    "search_complete": True,
+                })
                 if index > 0:
                     state["query_alias_v11212"] = query
                     state["searched_aliases_v11212"] = list(attempted)
                     state["message"] = (
-                        f"{state.get('message') or '观影搜索成功'} · 中文关键词无当前媒体可用候选，"
+                        f"{state.get('message') or '观影搜索请求完成'} · 中文关键词无当前媒体精确候选，"
                         f"已使用 TMDB 官方别名 {query}"
                     )
-                return rows, state
+                return matched_rows, state
 
         first_state = dict(first_state or {})
         first_state["searched_aliases_v11212"] = list(attempted)
-        if first_state.get("success"):
+        first_state.update({
+            "raw_resources": len(first_rows),
+            "matched_resources": 0,
+        })
+        if first_state.get("search_complete") is False:
+            first_state["target_match"] = None
+        else:
+            first_state["search_complete"] = True
+            first_state["target_match"] = False
+        if first_state.get("success") and first_state.get("search_complete"):
             first_state["message"] = (
-                f"{first_state.get('message') or '观影搜索完成'} · 已尝试 {len(attempted)} 档精确官方标题，"
-                "仍无当前媒体可用候选"
+                f"观影搜索请求正常；已尝试 {len(attempted)} 档精确官方标题，"
+                "未找到当前订阅精确候选"
             )
-        return first_rows, first_state
+        return [], first_state
 
     def _search_viewing_xunlei(self, keyword: str):
         subscribe = self._gying_alias_subscribe_v11212()
@@ -180,10 +224,24 @@ class GuangYaGyingAliasQueryV11212Mixin(GuangYaXunleiSeasonFenceV11210Mixin):
                 first_state = state
             if state.get("success") is False:
                 if index == 0:
+                    state.update({"search_complete": False, "target_match": None})
                     return rows, state
-                first_state["alias_query_error_v11212"] = str(state.get("message") or "")[:300]
+                alias_error = str(state.get("message") or "官方别名请求失败")[:300]
+                first_state.update({
+                    "success": False,
+                    "healthy": True,
+                    "search_complete": False,
+                    "partial_error": True,
+                    "alias_query_error_v11212": alias_error,
+                    "target_match": None,
+                    "message": (
+                        f"主查询请求正常，但官方别名迅雷检索在 {query} 中断：{alias_error}；"
+                        "无法确认当前订阅是否存在精确迅雷候选"
+                    )[:500],
+                })
                 break
             if rows:
+                state.update({"search_complete": True, "target_match": True})
                 if index > 0:
                     state["query_alias_v11212"] = query
                     state["searched_aliases_v11212"] = list(attempted)
@@ -194,7 +252,11 @@ class GuangYaGyingAliasQueryV11212Mixin(GuangYaXunleiSeasonFenceV11210Mixin):
 
         first_state = dict(first_state or {})
         first_state["searched_aliases_v11212"] = list(attempted)
-        if first_state.get("success"):
+        if first_state.get("search_complete") is False:
+            first_state["target_match"] = None
+        else:
+            first_state.update({"search_complete": True, "target_match": False})
+        if first_state.get("success") and first_state.get("search_complete"):
             first_state["message"] = (
                 f"{first_state.get('message') or '观影迅雷搜索完成'} · 已尝试 {len(attempted)} 档精确官方标题，"
                 "仍无当前媒体可用迅雷"

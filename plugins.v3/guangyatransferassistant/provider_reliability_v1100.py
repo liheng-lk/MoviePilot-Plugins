@@ -30,6 +30,7 @@ import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from typing import Any, Dict, List, Tuple
 from urllib.parse import quote
 from xml.etree import ElementTree
@@ -104,6 +105,43 @@ class GuangYaProviderReliabilityV1100Mixin:
     """最终外部 Provider 搜索、探测和统一搜索 API。"""
 
     build_id = "20260901-r11"
+
+    @contextmanager
+    def _provider_subscription_search_scope_v11223(self, subscribe: Any):
+        """让 selected-search 在候选池截断前使用当前订阅身份。"""
+        local_fn = getattr(self, "_candidate_rank_local_v11219", None)
+        local = local_fn() if callable(local_fn) else None
+        previous_subscribe = (
+            hasattr(local, "subscribe"),
+            getattr(local, "subscribe", None),
+        ) if local is not None else (False, None)
+        previous_uncovered = (
+            hasattr(local, "uncovered"),
+            getattr(local, "uncovered", None),
+        ) if local is not None else (False, None)
+        if local is not None:
+            local.subscribe = subscribe
+            local.uncovered = set()
+        alias_scope = getattr(self, "_gying_alias_scope_v11212", None)
+        try:
+            if callable(alias_scope):
+                with alias_scope(subscribe):
+                    yield
+            else:
+                yield
+        finally:
+            if local is not None:
+                for name, previous in (
+                    ("subscribe", previous_subscribe),
+                    ("uncovered", previous_uncovered),
+                ):
+                    if previous[0]:
+                        setattr(local, name, previous[1])
+                    else:
+                        try:
+                            delattr(local, name)
+                        except AttributeError:
+                            pass
 
     def _upsert_source(self, *args: Any, **kwargs: Any):
         """串行化完整 source upsert cooperative chain，避免多 worker 覆盖同一持久化快照。"""
@@ -657,21 +695,77 @@ class GuangYaProviderReliabilityV1100Mixin:
             if sid not in selected:
                 continue
             keyword = self._provider_keyword(subscribe) or str(getattr(subscribe, "name", "") or "")
-            search = self._unified_provider_search(keyword)
-            counts = dict(search.get("counts") or {})
+            search_scope = getattr(self, "_provider_subscription_search_scope_v11223", None)
+            if callable(search_scope):
+                with search_scope(subscribe):
+                    search = self._unified_provider_search(keyword)
+            else:
+                search = self._unified_provider_search(keyword)
+            search_states = [
+                dict(state or {})
+                for state in (search.get("states") or [])
+                if isinstance(state, dict)
+            ]
+            healthy = bool(search.get("success")) or any(
+                state.get("healthy") is True for state in search_states
+            )
+            search_complete = bool(search.get("search_complete", True)) and not any(
+                state.get("search_complete") is False for state in search_states
+            ) and all(
+                state.get("success") is not False
+                for state in search_states
+                if state.get("enabled", True) is not False
+            )
+            matcher = getattr(self, "_provider_candidate_matches", None)
+
+            def exact_rows(values):
+                matched_rows: List[Dict[str, Any]] = []
+                if not callable(matcher):
+                    return matched_rows
+                for raw in values or []:
+                    row = dict(raw or {})
+                    try:
+                        if matcher(subscribe, row):
+                            matched_rows.append(row)
+                    except Exception:
+                        continue
+                return matched_rows
+
+            exact_xunlei = exact_rows(search.get("xunlei") or [])
+            exact_data = exact_rows(search.get("data") or [])
+            counts = {
+                "xunlei": len(exact_xunlei),
+                "magnet": sum(1 for row in exact_data if str(row.get("type") or "").strip().lower() == "magnet"),
+                "ed2k": sum(1 for row in exact_data if str(row.get("type") or "").strip().lower() == "ed2k"),
+            }
+            matched = any(counts.values())
             previews: List[Dict[str, Any]] = []
-            for row in (search.get("xunlei") or [])[:3]:
+            for row in exact_xunlei[:3]:
                 previews.append({"type": "xunlei", "name": str(row.get("name") or row.get("search_title") or "")[:160]})
-            for row in (search.get("data") or [])[:5]:
+            for row in exact_data[:5]:
                 previews.append({"type": str(row.get("type") or ""), "name": str(row.get("name") or row.get("search_title") or "")[:160]})
+            if matched:
+                item_message = (
+                    f"当前影片精确候选：迅雷 {counts['xunlei']} · "
+                    f"Magnet {counts['magnet']} · ED2K {counts['ed2k']}"
+                )
+            elif not healthy:
+                item_message = f"资源来源异常：{str(search.get('message') or '请求失败')[:240]}"
+            elif not search_complete:
+                item_message = "资源来源部分可访问，但部分来源或官方别名检索中断，无法确认当前影片是否有精确候选"
+            else:
+                item_message = "资源来源可访问，但当前影片没有精确匹配资源"
             items.append({
                 "subscribe_id": sid,
                 "name": str(getattr(subscribe, "name", "") or ""),
                 "year": str(getattr(subscribe, "year", "") or ""),
                 "keyword": keyword,
-                "success": bool(search.get("success")),
+                "success": healthy,
+                "healthy": healthy,
+                "search_complete": search_complete,
+                "matched": matched,
                 "counts": counts,
-                "message": str(search.get("message") or "")[:300],
+                "message": item_message,
                 "preview": previews,
             })
             if len(items) >= 12:
@@ -682,9 +776,26 @@ class GuangYaProviderReliabilityV1100Mixin:
             "magnet": sum(int((item.get("counts") or {}).get("magnet") or 0) for item in items),
             "ed2k": sum(int((item.get("counts") or {}).get("ed2k") or 0) for item in items),
         }
+        healthy = any(bool(item.get("healthy")) for item in items)
+        search_complete = all(bool(item.get("search_complete", True)) for item in items)
+        matched = any(bool(item.get("matched")) for item in items)
+        if matched:
+            message = (
+                f"已精确搜索 {len(items)} 个固定转存订阅：迅雷 {total['xunlei']} · "
+                f"Magnet {total['magnet']} · ED2K {total['ed2k']}"
+            )
+        elif healthy and not search_complete:
+            message = f"已搜索 {len(items)} 个固定转存订阅；部分来源或别名检索中断，无法确认是否存在精确资源"
+        elif healthy:
+            message = f"已搜索 {len(items)} 个固定转存订阅；来源可访问，但没有当前影片精确资源"
+        else:
+            message = f"已搜索 {len(items)} 个固定转存订阅；资源来源请求异常"
         result = {
-            "success": any(bool(item.get("success")) for item in items),
-            "message": f"已搜索 {len(items)} 个固定转存订阅：迅雷 {total['xunlei']} · Magnet {total['magnet']} · ED2K {total['ed2k']}",
+            "success": healthy,
+            "healthy": healthy,
+            "search_complete": search_complete,
+            "matched": matched,
+            "message": message,
             "counts": total,
             "items": items,
             "updated_at": self._now_text(),

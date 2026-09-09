@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from pathlib import Path
@@ -13,10 +13,10 @@ PACKAGE = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
 
 
 def test_v11217_public_release_truth_is_consistent():
-    assert 'plugin_version = "1.12.22"' in ENTRY
-    assert 'build_id = "20260909-r69"' in ENTRY
-    assert PLUGIN_JSON["version"] == "1.12.22"
-    assert PACKAGE["GuangYaTransferAssistant"]["version"] == "1.12.22"
+    assert 'plugin_version = "1.12.23"' in ENTRY
+    assert 'build_id = "20260909-r70"' in ENTRY
+    assert PLUGIN_JSON["version"] == "1.12.23"
+    assert PACKAGE["GuangYaTransferAssistant"]["version"] == "1.12.23"
     assert "v1.12.17" in PACKAGE["GuangYaTransferAssistant"]["history"]
     assert "v1.12.16" in PACKAGE["GuangYaTransferAssistant"]["history"]
 

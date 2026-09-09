@@ -169,23 +169,40 @@ def _solve_legacy_nonces(challenges: Iterable[str], salt: str, diff: int) -> Lis
     return [found[item] for item in wanted]
 
 
-def _parse_search_payload(text: str) -> List[Dict[str, Any]]:
+def _parse_search_payload_result_v11223(text: str) -> Tuple[bool, List[Dict[str, Any]]]:
+    """区分“搜索结果确实为空”和“页面结构无法解析”。
+
+    GYING 的新版搜索页会用合法的 ``_obj.search`` 对象表达零结果。旧调用方只看
+    空列表，因而把合法零结果误当作协议不兼容并切到 legacy 搜索；部分节点的 legacy
+    页面会返回默认推荐卡片。布尔值只描述响应能否被解析，不描述目标是否命中。
+    """
     match = _GYING_SEARCH_RE.search(str(text or ""))
     if not match:
-        return []
+        return False, []
     try:
         payload = json.loads(match.group(1))
     except Exception:
-        return []
+        return False, []
     listing = payload.get("l") if isinstance(payload, dict) else None
     if not isinstance(listing, dict):
-        return []
-    titles = list(listing.get("title") or [])
-    years = list(listing.get("year") or [])
-    kinds = list(listing.get("d") or [])
-    ids = list(listing.get("i") or [])
-    infos = list(listing.get("info") or [])
-    size = max(len(titles), len(years), len(kinds), len(ids), 0)
+        return False, []
+    core_values = (listing.get("title"), listing.get("d"), listing.get("i"))
+    if not all(isinstance(value, (list, tuple)) for value in core_values):
+        return False, []
+    titles, kinds, ids = (list(value) for value in core_values)
+    if len({len(titles), len(kinds), len(ids)}) != 1:
+        return False, []
+    years_value = listing.get("year")
+    infos_value = listing.get("info")
+    years = list(years_value) if isinstance(years_value, (list, tuple)) else []
+    infos = list(infos_value) if isinstance(infos_value, (list, tuple)) else []
+    size = len(titles)
+    declared_count = payload.get("n") if isinstance(payload, dict) else None
+    try:
+        if size == 0 and declared_count not in (None, "") and int(declared_count) > 0:
+            return False, []
+    except (TypeError, ValueError):
+        pass
     rows: List[Dict[str, Any]] = []
     for index in range(size):
         title = str(titles[index] if index < len(titles) else "").strip()
@@ -200,7 +217,15 @@ def _parse_search_payload(text: str) -> List[Dict[str, Any]]:
             "id": resource_id,
             "info": str(infos[index] if index < len(infos) else "").strip(),
         })
-    return rows
+    # 非空核心数组中出现空标题、空类型或空 ID 属于结构损坏，不能伪装成合法零结果。
+    if size and len(rows) != size:
+        return False, []
+    return True, rows
+
+
+def _parse_search_payload(text: str) -> List[Dict[str, Any]]:
+    """兼容旧调用方；新搜索链使用带解析状态的 v1.12.23 helper。"""
+    return _parse_search_payload_result_v11223(text)[1]
 
 
 def _extract_panlist(payload: Any) -> Dict[str, List[Any]]:
@@ -587,7 +612,9 @@ class GuangYaGyingRuntimeMixin:
         keyword = str(keyword or "").strip()
         if not keyword:
             return [], {"success": False, "message": "观影搜索关键词为空"}
-        cached = dict(self._gying_search_cache.get(keyword) or {})
+        cache_key_getter = getattr(self, "_gying_search_cache_key_v11223", None)
+        cache_key = cache_key_getter(keyword) if callable(cache_key_getter) else keyword
+        cached = dict(self._gying_search_cache.get(cache_key) or {})
         if cached and not force and time.time() - float(cached.get("ts") or 0) < 120:
             return list(cached.get("rows") or []), dict(cached.get("state") or {})
         session, login = self._viewing_session()
@@ -604,7 +631,9 @@ class GuangYaGyingRuntimeMixin:
                 response = self._gying_request(session, node, "GET", search_url, headers={"Referer": node + "/"})
             if response.status_code >= 400:
                 raise RuntimeError(f"观影搜索 HTTP {response.status_code}")
-            cards = _parse_search_payload(response.text or "")
+            parsed_ok, cards = _parse_search_payload_result_v11223(response.text or "")
+            if not parsed_ok:
+                raise RuntimeError("观影搜索响应缺少有效 _obj.search 数据")
             rows: List[Dict[str, Any]] = []
             for item in cards[: int(getattr(self, "_provider_result_limit", 20) or 20)]:
                 try:
@@ -635,7 +664,7 @@ class GuangYaGyingRuntimeMixin:
                 "resources": len(rows),
                 "message": f"观影搜索成功：{len(cards)} 个影视结果，{len(rows)} 条网盘/资源链接",
             }
-            self._gying_search_cache[keyword] = {"ts": time.time(), "rows": rows, "state": state}
+            self._gying_search_cache[cache_key] = {"ts": time.time(), "rows": rows, "state": state}
             return rows, state
         except Exception as err:
             self._gying_mark_node(node, "search_error", str(err))
@@ -751,6 +780,7 @@ __all__ = [
     "GuangYaGyingRuntimeMixin",
     "_normalize_node_url",
     "_parse_search_payload",
+    "_parse_search_payload_result_v11223",
     "_solve_pow_hex",
     "_solve_legacy_nonces",
 ]

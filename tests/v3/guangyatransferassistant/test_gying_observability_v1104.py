@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import ast
 from pathlib import Path
@@ -20,13 +20,28 @@ def test_observability_layer_parses_and_wraps_final_runtime():
     start = entry_text.index("class GuangYaTransferAssistant")
     assert entry_text.index("GuangYaGyingObservabilityV1104Mixin,", start) < entry_text.index("GuangYaChannelUiV1101Mixin,", start)
     assert entry_text.index("GuangYaGyingObservabilityV1104Mixin,", start) < entry_text.index("GuangYaGyingHardeningMixin,", start)
-    assert 'plugin_version = "1.12.22"' in entry_text
-    assert 'build_id = "20260909-r69"' in entry_text
+    assert 'plugin_version = "1.12.23"' in entry_text
+    assert 'build_id = "20260909-r70"' in entry_text
 
 
 def test_observability_covers_all_real_gying_stages():
-    for token in ("运行时初始化", "节点刷新完成", "检测到浏览器 PoW", "PoW通过", "登录检查", "登录结果", "会话结果", "搜索开始", "搜索结果", "downurl成功", "候选提取：Magnet", "迅雷召回", "迅雷执行", "人工操作：测试观影会话", "viewing_observability_state"):
+    for token in ("运行时初始化", "节点刷新完成", "检测到浏览器 PoW", "PoW通过", "登录检查", "登录结果", "会话结果", "搜索开始", "搜索请求完成", "详情接口响应", "协议候选预筛", "迅雷召回", "迅雷执行", "人工操作：测试观影会话", "viewing_observability_state"):
         assert token in text
+
+
+def test_search_logs_separate_endpoint_health_exact_match_and_real_import():
+    for token in (
+        "接口健康=",
+        "模糊卡片=",
+        "当前媒体卡片=",
+        "目标卡原始链接（待订阅行核验）=",
+        "仅表示请求成功，尚未证明属于当前订阅",
+        "不是入库结果",
+        "真实文件身份与入队回执核验",
+    ):
+        assert token in text
+    assert "downurl成功" not in text
+    assert "搜索结果：成功=" not in text
 
 
 def test_console_gets_explicit_viewing_test_action():

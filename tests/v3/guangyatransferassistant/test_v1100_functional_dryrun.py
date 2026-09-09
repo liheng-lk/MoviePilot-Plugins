@@ -3,6 +3,7 @@ import importlib.util
 import sys
 import types
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -253,6 +254,169 @@ class FunctionalDryRunTests(unittest.TestCase):
         self.assertEqual(result["counts"], {"xunlei": 1, "magnet": 1, "ed2k": 1})
         self.assertEqual(result["xunlei"][0]["share_id"], "share-1")
 
+    def test_selected_subscription_search_counts_only_exact_media_candidates(self):
+        movie = types.SimpleNamespace(id=1, name="象行记", year=2026)
+
+        class Dummy(PROVIDER.GuangYaProviderReliabilityV1100Mixin):
+            _selected_subscriptions = [1]
+
+            def __init__(self):
+                self.scoped_subscribe = None
+
+            @staticmethod
+            def _list_subscriptions(_state):
+                return [movie]
+
+            @staticmethod
+            def _provider_keyword(_subscribe):
+                return "象行记 2026"
+
+            @staticmethod
+            def _provider_candidate_matches(_subscribe, row):
+                return str(row.get("search_title") or "") == "象行记"
+
+            @contextmanager
+            def _gying_alias_scope_v11212(self, subscribe):
+                previous = self.scoped_subscribe
+                self.scoped_subscribe = subscribe
+                try:
+                    yield
+                finally:
+                    self.scoped_subscribe = previous
+
+            def _unified_provider_search(self, _keyword):
+                assert self.scoped_subscribe is movie
+                return {
+                    "success": True,
+                    "message": "请求完成",
+                    "xunlei": [
+                        {"search_title": "无关电影", "name": "无关迅雷"},
+                        {"search_title": "象行记", "name": "象行记 迅雷"},
+                    ],
+                    "data": [
+                        {"type": "magnet", "search_title": "无关电影", "name": "无关 Magnet"},
+                        {"type": "ed2k", "search_title": "象行记", "name": "象行记 ED2K"},
+                    ],
+                }
+
+            @staticmethod
+            def _now_text():
+                return "2026-09-09 17:00:00"
+
+            def save_data(self, key, value):
+                self.saved = (key, value)
+
+        result = Dummy().api_provider_search_selected()
+        self.assertTrue(result["healthy"])
+        self.assertTrue(result["matched"])
+        self.assertEqual(result["counts"], {"xunlei": 1, "magnet": 0, "ed2k": 1})
+        self.assertEqual(result["items"][0]["preview"], [
+            {"type": "xunlei", "name": "象行记 迅雷"},
+            {"type": "ed2k", "name": "象行记 ED2K"},
+        ])
+
+    def test_selected_search_reports_healthy_zero_match_without_fake_resource_hit(self):
+        movie = types.SimpleNamespace(id=1, name="象行记", year=2026)
+
+        class Dummy(PROVIDER.GuangYaProviderReliabilityV1100Mixin):
+            _selected_subscriptions = [1]
+            _list_subscriptions = staticmethod(lambda _state: [movie])
+            _provider_keyword = staticmethod(lambda _subscribe: "象行记 2026")
+            _provider_candidate_matches = staticmethod(lambda _subscribe, _row: False)
+            _unified_provider_search = staticmethod(lambda _keyword: {
+                "success": True,
+                "message": "搜索完成：Magnet 20",
+                "xunlei": [],
+                "data": [{"type": "magnet", "search_title": "无关电影"}],
+            })
+            _now_text = staticmethod(lambda: "2026-09-09 17:00:00")
+
+            def save_data(self, key, value):
+                self.saved = (key, value)
+
+        result = Dummy().api_provider_search_selected()
+        self.assertTrue(result["healthy"])
+        self.assertFalse(result["matched"])
+        self.assertEqual(result["counts"], {"xunlei": 0, "magnet": 0, "ed2k": 0})
+        self.assertIn("来源可访问", result["items"][0]["message"])
+        self.assertIn("没有当前影片精确资源", result["message"])
+
+    def test_selected_search_filters_identity_before_global_pool_limit(self):
+        movie = types.SimpleNamespace(id=1, name="象行记", year=2026)
+        unrelated = [
+            {
+                "type": "magnet",
+                "url": f"magnet:?xt=urn:btih:unrelated{index:04d}",
+                "search_title": f"无关影片{index}",
+            }
+            for index in range(80)
+        ]
+        target = {
+            "type": "magnet",
+            "url": "magnet:?xt=urn:btih:target",
+            "search_title": "象行记",
+        }
+
+        class Dummy(PROVIDER.GuangYaProviderReliabilityV1100Mixin):
+            _selected_subscriptions = [1]
+            _provider_result_limit = 20
+            _viewing_enabled = False
+
+            def __init__(self):
+                self.rank_local = types.SimpleNamespace()
+
+            _list_subscriptions = staticmethod(lambda _state: [movie])
+            _provider_keyword = staticmethod(lambda _subscribe: "象行记 2026")
+            _provider_candidate_matches = staticmethod(
+                lambda _subscribe, row: str(row.get("search_title") or "") == "象行记"
+            )
+            _parallel_api_provider_search_v11219 = staticmethod(
+                lambda _keyword: ([*unrelated, target], [{"provider": "API", "success": True}], 1)
+            )
+            _candidate_quality_key_v11219 = staticmethod(lambda _row: "")
+            _candidate_quality_snapshot_v11219 = staticmethod(lambda: {})
+            _candidate_episode_hint_v1125 = staticmethod(lambda _subscribe, _row: set())
+            _is_movie_subscription = staticmethod(lambda _subscribe: True)
+            _now_text = staticmethod(lambda: "2026-09-09 17:00:00")
+
+            def _candidate_rank_local_v11219(self):
+                return self.rank_local
+
+            def save_data(self, key, value):
+                self.saved = (key, value)
+
+        result = Dummy().api_provider_search_selected()
+        self.assertTrue(result["matched"])
+        self.assertEqual(result["counts"], {"xunlei": 0, "magnet": 1, "ed2k": 0})
+        self.assertEqual(result["items"][0]["preview"][0]["name"], "象行记")
+
+    def test_selected_search_does_not_turn_partial_alias_failure_into_confirmed_zero(self):
+        movie = types.SimpleNamespace(id=1, name="象行记", year=2026)
+
+        class Dummy(PROVIDER.GuangYaProviderReliabilityV1100Mixin):
+            _selected_subscriptions = [1]
+            _list_subscriptions = staticmethod(lambda _state: [movie])
+            _provider_keyword = staticmethod(lambda _subscribe: "象行记 2026")
+            _provider_candidate_matches = staticmethod(lambda _subscribe, _row: False)
+            _unified_provider_search = staticmethod(lambda _keyword: {
+                "success": False,
+                "message": "别名请求失败",
+                "states": [{"success": False, "healthy": True, "search_complete": False}],
+                "xunlei": [],
+                "data": [],
+            })
+            _now_text = staticmethod(lambda: "2026-09-09 17:00:00")
+
+            def save_data(self, key, value):
+                self.saved = (key, value)
+
+        result = Dummy().api_provider_search_selected()
+        self.assertTrue(result["healthy"])
+        self.assertFalse(result["search_complete"])
+        self.assertFalse(result["matched"])
+        self.assertIn("检索中断", result["items"][0]["message"])
+        self.assertIn("无法确认", result["message"])
+
     def test_xunlei_cid_uses_exact_three_bounded_stream_ranges(self):
         fake = _FakeRapidSession()
         with patch.object(XUNLEI.requests, "Session", return_value=fake):
@@ -342,7 +506,7 @@ def test_v1100_behavioral_dryrun_suite():
     if result.failures or result.errors:
         details = [text for _, text in [*result.failures, *result.errors]]
         raise AssertionError("v1.10.0 behavioral dry-run failed:\n" + "\n".join(details))
-    assert result.testsRun == 7
+    assert result.testsRun == 11
 
 
 if __name__ == "__main__":

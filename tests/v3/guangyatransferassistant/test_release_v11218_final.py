@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import ast
 import json
@@ -21,10 +21,10 @@ def test_final_v11218_release_truth_and_historical_recall_marker():
     package = json.loads(PACKAGE.read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     recall = RECALL.read_text(encoding="utf-8")
 
-    assert 'plugin_version = "1.12.22"' in entry
-    assert 'build_id = "20260909-r69"' in entry
-    assert local["version"] == "1.12.22"
-    assert package["version"] == "1.12.22"
+    assert 'plugin_version = "1.12.23"' in entry
+    assert 'build_id = "20260909-r70"' in entry
+    assert local["version"] == "1.12.23"
+    assert package["version"] == "1.12.23"
     assert "v1.12.18" in package.get("history", {})
 
     # v1.12.17 is a historical search/recall layer, not mechanically promoted.
