@@ -249,7 +249,19 @@ def test_completed_claim_is_released_after_grace_when_episode_still_missing():
 
     probe = Probe()
     assert probe._active_source_claims(100) == set()
+    assert probe._other_source_claims_v11214(100, current_source_id="new-task") == set()
     assert any("释放过期 completed 占坑" in row[1] for row in probe.logs)
+
+    # The final write gate still protects fresh completions and real inflight work.
+    row = probe.store["items"]["s1"]
+    row["completed_ts"] = time.time()
+    assert probe._other_source_claims_v11214(100, "new-task") == {3}
+    assert probe._other_source_claims_v11214(100, "s1") == set()
+    row["state"] = "waiting"
+    row["completed_ts"] = time.time() - 3600
+    assert probe._other_source_claims_v11214(100, "new-task") == {3}
+    row["enabled"] = False
+    assert probe._other_source_claims_v11214(100, "new-task") == set()
 
 
 def test_completed_claim_without_completed_ts_is_released_to_avoid_permanent_block():
@@ -312,4 +324,5 @@ def test_completed_claim_without_completed_ts_is_released_to_avoid_permanent_blo
 
     probe = Probe()
     assert probe._active_source_claims(100) == set()
+    assert probe._other_source_claims_v11214(100, current_source_id="new-task") == set()
     assert any("释放无 completed_ts 的 completed 占坑" in row[1] for row in probe.logs)

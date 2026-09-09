@@ -496,6 +496,14 @@ class GuangYaViewingDispatchV1113Mixin:
                 "search_title": search_title,
                 "resource_name": name,
             }
+            dispatch = self._spawn_source_dispatch(source_id) or {}
+            if not dispatch.get("success"):
+                reason = str(dispatch.get("message") or "来源未入队")
+                skipped.append(reason)
+                self._plugin_log("WARNING", "【光鸭转存助手】【观影执行】#%s 来源 %s 未入队：%s", sid, source_id, reason)
+                if dispatch.get("reason") == "already_running":
+                    break
+                continue
             actions.append(action)
             notify_selected = getattr(self, "_notify_acquisition_v1113", None)
             if callable(notify_selected) and not updated.get("selection_notified_at"):
@@ -519,7 +527,6 @@ class GuangYaViewingDispatchV1113Mixin:
                 search_title[:160] or "-",
                 name[:200] or "-",
             )
-            self._spawn_source_dispatch(source_id)
             if is_movie:
                 break
             uncovered -= target

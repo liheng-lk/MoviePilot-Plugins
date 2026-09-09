@@ -314,10 +314,10 @@ def test_failed_same_evidence_can_be_rechecked_after_twelve_hours():
 def test_v1127_public_metadata_keeps_v1126_history():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     plugin = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == plugin["version"] == "1.12.21"
+    assert package["version"] == plugin["version"] == "1.12.22"
     assert "v1.12.7" in package["history"]
     assert "v1.12.6" in package["history"]
     entry = ENTRY.read_text(encoding="utf-8")
-    assert 'plugin_version = "1.12.21"' in entry
-    assert 'build_id = "20260909-r68"' in entry
+    assert 'plugin_version = "1.12.22"' in entry
+    assert 'build_id = "20260909-r69"' in entry
 
