@@ -519,6 +519,7 @@ class GuangYaResourcePlannerMixin:
         actions = []
         skipped = []
         magnet_selected = False
+        dispatch_busy = False
         for entry, match_reason in matched_entries:
             external = list(entry.get("external_sources") or [])
             external.sort(key=lambda row: 0 if str(row.get("type") or "") == "magnet" else 1)
@@ -570,15 +571,21 @@ class GuangYaResourcePlannerMixin:
                     "episodes": sorted(target),
                     "reason": f"{match_reason}；光鸭直接转存未覆盖这些目标集；候选优先级 {rank}",
                 }
+                dispatch = self._spawn_source_dispatch(str(row.get("id") or "")) or {}
+                if not dispatch.get("success"):
+                    skipped.append({"type": source_type, "reason": str(dispatch.get("message") or "来源未入队")})
+                    if dispatch.get("reason") == "already_running":
+                        dispatch_busy = True
+                        break
+                    continue
                 actions.append(action)
                 if source_type == "magnet":
                     magnet_selected = True
                 if not is_movie:
                     uncovered -= target
-                self._spawn_source_dispatch(str(row.get("id") or ""))
                 if is_movie or not uncovered:
                     break
-            if is_movie or not uncovered:
+            if dispatch_busy or (is_movie and actions) or (not is_movie and not uncovered):
                 break
 
         self._save_resource_plan(subscribe, {

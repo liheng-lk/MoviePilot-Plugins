@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "更新日历驱动的固定分流助手。v1.12.21 工程化稳定发布：修复 Provider 认证头/重试语义与解析失败 success 误报，补齐 completed/source claim 老化释放和 failed/needs_review 冷却重开；新增 source 并发互斥槽位，阻断 tick 与异步 worker 对同一来源重复提交/轮询；dispatch/retry API 改为真实入队回执并在未入队时回滚重试状态；状态页补充来源 trace 与操作提示并完成移动端排版精修。v1.12.18 的空目录安全边界继续保持：落盘验证仍使用 get_item 只读查询，非空/未知/已有 taskId 均 fail-closed 保留。来源优先级仍为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
-  "version": "1.12.21",
+  "description": "更新日历驱动的固定分流助手。v1.12.22：修复电影首个频道帖子无可执行资源时提前结束、遗漏后续匹配帖子；Provider 跳过仍在冷却的 failed/needs_review 和禁用候选，保留到期重开；频道、Provider、观影自动执行按真实入队回执计数，入队失败不再虚报成功或扣除缺集；统一规划与最终写盘的 completed claim 老化释放，防止旧任务在提交阶段再次阻断真实缺集。保留媒体身份、年份、质量、在途去重与光鸭原生 cloudcollection 门禁。落盘验证使用 get_item 只读查询；非空/未知/已有 taskId 的目录继续 fail-closed 保留。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+  "version": "1.12.22",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,

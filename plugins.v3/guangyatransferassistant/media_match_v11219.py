@@ -168,6 +168,10 @@ class GuangYaMediaMatchV11219Mixin:
         return dict(updated or row)
 
     def _active_source_claims(self, subscribe_id: int) -> Set[int]:
+        return self._effective_source_claims_v11222(subscribe_id)
+
+    def _effective_source_claims_v11222(self, subscribe_id: int, current_source_id: str = "") -> Set[int]:
+        """Planning and final payload checks must use the same claim lifetime."""
         claims: Set[int] = set()
         sid = int(subscribe_id or 0)
         subscribe = self._find_subscription(sid) if sid else None
@@ -186,6 +190,8 @@ class GuangYaMediaMatchV11219Mixin:
             return claims
         for row in items:
             if not isinstance(row, dict) or int(row.get("subscribe_id") or 0) != sid:
+                continue
+            if current_source_id and str(row.get("id") or "") == str(current_source_id):
                 continue
             if not bool(row.get("enabled", True)):
                 continue
@@ -233,21 +239,7 @@ class GuangYaMediaMatchV11219Mixin:
         return claims
 
     def _other_source_claims_v11214(self, subscribe_id: int, current_source_id: str = "") -> Set[int]:
-        claims: Set[int] = set()
-        sid = int(subscribe_id or 0)
-        try:
-            items = (self._source_store().get("items") or {}).items()
-        except Exception:
-            return claims
-        for source_id, row in items:
-            if not isinstance(row, dict) or int(row.get("subscribe_id") or 0) != sid:
-                continue
-            if str(source_id or row.get("id") or "") == str(current_source_id or ""):
-                continue
-            if not bool(row.get("enabled", True)):
-                continue
-            claims.update(source_claim_episodes_v11219(row))
-        return claims
+        return self._effective_source_claims_v11222(subscribe_id, current_source_id)
 
     @staticmethod
     def _source_episode_targets_v1124(source: Dict[str, Any]) -> Set[int]:

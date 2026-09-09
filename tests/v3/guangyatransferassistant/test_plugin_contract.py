@@ -70,10 +70,10 @@ exec(compile(routing_mod, str(ROUTING), "exec"), routing_ns)
 def test_versions_and_layered_legacy_contract():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.12.21"
-    assert local["version"] == "1.12.21"
-    assert 'plugin_version = "1.12.21"' in entry_text
-    assert 'build_id = "20260909-r68"' in entry_text
+    assert package["version"] == "1.12.22"
+    assert local["version"] == "1.12.22"
+    assert 'plugin_version = "1.12.22"' in entry_text
+    assert 'build_id = "20260909-r69"' in entry_text
     assert 'plugin_version = "1.7.0"' in routing_text
     assert 'plugin_version = "1.6.5"' in legacy_text
     assert "from .routing_v170 import GuangYaTransferAssistant as _RoutingV170Assistant" in entry_text

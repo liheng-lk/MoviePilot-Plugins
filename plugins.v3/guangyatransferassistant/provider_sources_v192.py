@@ -465,6 +465,13 @@ class GuangYaProviderSourcesMixin:
             existing = self._existing_source(sid, source_type, str(candidate.get("identity") or ""))
             if existing and str(existing.get("state") or "") in _ACTIVE_SOURCE_STATES:
                 continue
+            # Only _existing_source may reopen cooled-down terminal candidates.
+            # Re-upserting a failed first result would starve every later result.
+            if existing and (
+                not existing.get("enabled", True)
+                or str(existing.get("state") or "") in {"failed", "needs_review", "disabled"}
+            ):
+                continue
             row = self._upsert_source(
                 sid,
                 str(candidate.get("uri") or ""),
@@ -476,7 +483,16 @@ class GuangYaProviderSourcesMixin:
                 source_label=str(candidate.get("provider") or "外部搜索")[:120],
                 candidate_rank=1 if source_type == "magnet" else 2,
             )
-            self._spawn_source_dispatch(str(row.get("id") or ""))
+            dispatch = self._spawn_source_dispatch(str(row.get("id") or "")) or {}
+            if not dispatch.get("success"):
+                self._plugin_log(
+                    "WARNING", "【光鸭转存助手】【Provider调度】来源 %s 未入队：%s",
+                    str(row.get("id") or ""), str(dispatch.get("message") or "无入队回执"),
+                )
+                # A busy worker already owns this source; do not create an alternative.
+                if dispatch.get("reason") == "already_running":
+                    return None
+                continue
             return {
                 "source_id": str(row.get("id") or ""),
                 "type": source_type,
