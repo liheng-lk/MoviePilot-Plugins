@@ -175,6 +175,7 @@ def test_backend_exposes_monitor_controls():
         "/organize/monitor/config",
         "/organize/monitor/scan",
         "/organize/monitor/status",
+        "/organize/monitor/diagnostics",
         "/organize/monitor/selfcheck",
         "/organize/monitor/unblock",
     ):
@@ -182,10 +183,33 @@ def test_backend_exposes_monitor_controls():
     assert "apis.extend(self.get_organizer_api())" in INIT
 
 
+def test_monitor_diagnostics_exposes_alerts_and_fixed_summaries():
+    for token in (
+        "def api_organize_monitor_diagnostics",
+        '"diagnostic_version": "v1"',
+        '"alerts": alerts',
+        '"last_scan_summary": last_scan_summary',
+        '"last_upload_summary": last_upload_summary',
+        '"code": code',
+        '"severity": severity',
+    ):
+        assert token in ORGANIZER
+    for token in (
+        "def get_upload_diagnostics",
+        '"total_events": total',
+        '"recent_events": rows',
+        '"last_event": rows[-1] if rows else (events[-1] if events else None)',
+    ):
+        assert token in (PLUGIN / "guangya_api.py").read_text(encoding="utf-8")
+
+
 def test_ui_remains_a_state_console_not_a_second_organizer():
     for token in (
         "监控目录",
         "启用自动监控整理",
+        "工程诊断",
+        "扫描阶段",
+        "上传阶段",
         "保存设置",
         "立即扫描",
         "安全停止并清理待执行",

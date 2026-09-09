@@ -209,7 +209,7 @@ def install_media_type_disambiguation_v363() -> None:
 
     _loss_guard._build_moviepilot_kwargs = build
     _loss_guard._guangya_media_type_disambiguation_v363 = True
-    logger.info(
+    logger.debug(
         "【光鸭云盘助手】【v3.6.3】TV→MOVIE 安全消歧已启用：仅单主视频、无集号、非 Season 目录且 MoviePilot 电影复核一致时切换"
     )
 

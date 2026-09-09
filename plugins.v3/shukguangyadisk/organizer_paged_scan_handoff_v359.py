@@ -495,7 +495,7 @@ def install_paged_scan_handoff_v359(candidate_mixin: Any) -> None:
 
     GuangYaFolderHistoryMixin.api_organize_monitor_status = api_status
     GuangYaFolderStreamMixin._guangya_paged_scan_handoff_v359 = True
-    logger.info("【光鸭云盘助手】【v3.5.9】50 目录增量扫描、sticky 优先与 Worker 交接暂停已启用")
+    logger.debug("【光鸭云盘助手】【v3.5.9】50 目录增量扫描、sticky 优先与 Worker 交接暂停已启用")
 
 
 __all__ = [

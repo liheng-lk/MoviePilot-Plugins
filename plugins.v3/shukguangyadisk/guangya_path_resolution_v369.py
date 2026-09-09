@@ -195,7 +195,7 @@ def install_path_resolution_v369() -> None:
     GuangYaApi.get_item = get_item
     GuangYaApi.refresh_item = refresh_item
     setattr(GuangYaApi, _PATCH_FLAG, True)
-    logger.info(
+    logger.debug(
         "【光鸭云盘助手】【v3.6.9】路径查询增强已启用：完整分页、实例缓存隔离、严格目录失败语义"
     )
 

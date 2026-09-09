@@ -64,7 +64,7 @@ def install_move_confirmation_v360() -> None:
 
     GuangYaApi.move_item = move_item
     GuangYaApi._guangya_move_confirmation_v360 = True
-    logger.info("【光鸭云盘助手】【v3.6.0】同盘 move 终态改为 MoviePilot 目标名+大小确认")
+    logger.debug("【光鸭云盘助手】【v3.6.0】同盘 move 终态改为 MoviePilot 目标名+大小确认")
 
 
 __all__ = ["install_move_confirmation_v360"]

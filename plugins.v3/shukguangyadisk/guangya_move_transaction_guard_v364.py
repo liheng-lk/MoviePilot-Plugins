@@ -526,7 +526,7 @@ def install_move_transaction_guard_v364() -> None:
     GuangYaApi._schedule_purge_from_recycle = schedule_purge
     GuangYaApi._purge_from_recycle = purge
     GuangYaApi._guangya_move_transaction_guard_v364 = True
-    logger.warning(
+    logger.debug(
         "【光鸭云盘助手】【v3.6.4】移动失败事务保护已启用：失败先确认/回滚，未确认文件禁止 delete 与永久回收站清理"
     )
 

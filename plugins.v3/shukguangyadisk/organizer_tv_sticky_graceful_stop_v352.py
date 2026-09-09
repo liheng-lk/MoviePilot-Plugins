@@ -486,7 +486,7 @@ def install_tv_sticky_graceful_stop_v352() -> None:
     GuangYaFolderHistoryMixin.api_organize_monitor_status = api_status
 
     GuangYaFolderStreamMixin._guangya_tv_sticky_graceful_stop_v352 = True
-    logger.info("【光鸭云盘助手】【v3.5.2】剧集目录粘性事务与手动安全停止已启用")
+    logger.debug("【光鸭云盘助手】【v3.5.2】剧集目录粘性事务与手动安全停止已启用")
 
 
 __all__ = [

@@ -159,7 +159,7 @@ def install_task_semantics_v352() -> None:
 
     GuangYaFolderStreamMixin.run_organize_monitor_scan = run_scan
     GuangYaFolderStreamMixin._guangya_task_semantics_v352 = True
-    logger.info("【光鸭云盘助手】【v3.5.2】电影集数推荐隔离与主视频任务语义已启用")
+    logger.debug("【光鸭云盘助手】【v3.5.2】电影集数推荐隔离与主视频任务语义已启用")
 
 
 __all__ = [

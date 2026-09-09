@@ -244,7 +244,7 @@ def install_preview_partial_v355() -> None:
 
     GuangYaQueueRecoveryMixin._execute_isolated_transfer = execute
     GuangYaQueueRecoveryMixin._guangya_preview_partial_v355 = True
-    logger.info("【光鸭云盘助手】【v3.5.5】目录预览缺员局部补救已启用")
+    logger.debug("【光鸭云盘助手】【v3.5.5】目录预览缺员局部补救已启用")
 
 
 __all__ = ["install_preview_partial_v355"]

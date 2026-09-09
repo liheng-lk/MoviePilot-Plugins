@@ -65,7 +65,7 @@ class GuangYaOrganizerEngineV360Mixin:
         self._v360_engine_initialized = True
         self._v360_clear_legacy_sticky()
         self._v360_migrate_legacy_discovery_state_once()
-        logger.info(
+        logger.debug(
             "【光鸭云盘助手】【v3.6.0】统一整理引擎已启用：50目录 discovery → 单资源 scheduler → 私有 worker → MoviePilot 最终证据"
         )
 

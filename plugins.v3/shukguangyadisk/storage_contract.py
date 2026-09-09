@@ -269,13 +269,37 @@ class V3StorageContractMixin:
         if event_data and self._matches_storage(getattr(event_data, "storage", None)):
             event_data.storage_oper = self._guangya_api
 
+    @staticmethod
+    def _normalize_posix_path(path: Any) -> str:
+        """统一把任意 Windows 或相对路径标准化为 MoviePilot V3 约定的 POSIX 路径。"""
+        value = str(path or "/").replace("\\", "/")
+        if value in ("", "."):
+            return "/"
+        if not value.startswith("/"):
+            value = f"/{value}"
+        value = value.rstrip("/") or "/"
+        return value
+
     def get_folder(self, storage: str, path: Path):
         """适配 V3 ``StorageChain.get_folder(storage, path)``，兼容历史名称。"""
         if not self._matches_storage(storage):
             return None
         if not self._guangya_api:
             return None
-        return self._guangya_api.get_folder(path)
+
+        folder = self._guangya_api.get_folder(path)
+        if folder is None:
+            return None
+
+        if isinstance(folder, dict):
+            if "path" in folder:
+                folder["path"] = self._normalize_posix_path(folder.get("path"))
+            return folder
+
+        existing_path = getattr(folder, "path", None)
+        if existing_path is not None:
+            folder.path = self._normalize_posix_path(existing_path)
+        return folder
 
     def _action_response(self, result: Any, default_message: str = "") -> Dict[str, Any]:
         """把插件原有登录动作结果转换为 V3 storage_manage envelope。"""

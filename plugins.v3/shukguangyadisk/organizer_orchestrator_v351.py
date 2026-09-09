@@ -320,7 +320,7 @@ def install_orchestrator_v351() -> None:
     GuangYaFolderHistoryMixin.api_organize_monitor_status = api_status
     _bind_moviepilot_history_to_terminal_event()
     _single._guangya_orchestrator_v351 = True
-    logger.info("【光鸭云盘助手】【v3.5.1】任务边界、主视频门禁、运行态和 MP 历史确认已启用")
+    logger.debug("【光鸭云盘助手】【v3.5.1】任务边界、主视频门禁、运行态和 MP 历史确认已启用")
 
 
 __all__ = [

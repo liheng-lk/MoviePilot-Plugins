@@ -123,6 +123,18 @@ def test_v369_network_unavailable_defers_continuous_discovery_without_state_loss
     assert "保留状态" in block
 
 
+def test_v369_priority_revisit_without_schedule_still_advances_discovery():
+    block = _between(
+        MONITOR_PATCH,
+        "def run_monitor_scan",
+        "GuangYaOrganizerEngineV360Mixin._v360_list_directory =",
+    )
+    assert 'priority_revisit = bool(data.get("priority_revisit"))' in block
+    assert 'if priority_revisit and not bool(data.get("scheduled")):' in block
+    assert "避免新目录只能靠手动整理才被发现" in block
+    assert "GuangYaOrganizerEngineV360Mixin.run_organize_monitor_scan(plugin, manual=False)" in block
+
+
 def test_v369_wiring_applies_path_patch_before_runtime_operations_and_monitor_patch_lazily():
     assert "from .guangya_path_resolution_v369 import install_path_resolution_v369" in EXECUTION
     import_pos = EXECUTION.index("from .guangya_path_resolution_v369 import install_path_resolution_v369")

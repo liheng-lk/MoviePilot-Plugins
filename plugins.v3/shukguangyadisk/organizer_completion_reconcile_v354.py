@@ -328,7 +328,7 @@ def install_completion_reconcile_v354() -> None:
 
     GuangYaFolderStreamMixin.run_organize_monitor_scan = run_scan
     GuangYaQueueRecoveryMixin._guangya_completion_reconcile_v354 = True
-    logger.info("【光鸭云盘助手】【v3.5.4】完成态证据校验与旧缓存自愈已启用")
+    logger.debug("【光鸭云盘助手】【v3.5.4】完成态证据校验与旧缓存自愈已启用")
 
 
 __all__ = [

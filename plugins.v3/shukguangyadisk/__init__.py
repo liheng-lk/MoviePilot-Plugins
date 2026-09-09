@@ -55,7 +55,7 @@ class ShukGuangYaDisk(
 
     plugin_name = "光鸭云盘助手"
     plugin_desc = "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。"
-    plugin_version = "3.6.9"
+    plugin_version = "3.7.0"
     plugin_author = "liheng-lk"
     plugin_label = "存储,光鸭云盘,自动整理,目录监控,MoviePilot,挂载,Emby,WebDAV"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -81,7 +81,11 @@ class ShukGuangYaDisk(
                 )
                 logger.info("【光鸭云盘助手】MoviePilot V3 已注册存储: %s", self._disk_name)
             if any(storage.type == self._legacy_disk_name for storage in storages):
-                logger.info("【光鸭云盘助手】检测到历史存储名称 %s；V3 使用当前存储 %s，不直接修改宿主内部配置", self._legacy_disk_name, self._disk_name)
+                logger.debug(
+                    "【光鸭云盘助手】检测到历史存储名称 %s；V3 使用当前存储 %s，不直接修改宿主内部配置",
+                    self._legacy_disk_name,
+                    self._disk_name,
+                )
         except Exception as err:
             logger.warning("【光鸭云盘助手】V3 存储注册检查失败: %s", err)
 

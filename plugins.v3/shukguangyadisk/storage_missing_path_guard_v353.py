@@ -54,7 +54,7 @@ def install_storage_missing_path_guard_v353() -> None:
     plugin_cls.any_files = any_files
     plugin_cls.list_files = list_files
     plugin_cls._guangya_missing_query_path_guard_v353 = True
-    logger.info("【光鸭云盘助手】【v3.5.3】整理后旧路径查询容错已启用")
+    logger.debug("【光鸭云盘助手】【v3.5.3】整理后旧路径查询容错已启用")
 
 
 __all__ = ["install_storage_missing_path_guard_v353"]

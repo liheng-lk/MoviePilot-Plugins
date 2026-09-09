@@ -460,15 +460,22 @@ class GuangYaOrganizerMonitorV366Mixin:
             known_resource_errors=errors,
             known_resource_scan_at=now,
         )
-        logger.info(
-            "【光鸭云盘助手】【v3.6.7】【增量监控】已知资源=%s，检查=%s，内容变化=%s，移除空目录=%s，错误=%s，提交=%s",
-            len(rows),
-            checked,
-            changed,
-            removed,
-            errors,
-            1 if scheduled_result else 0,
-        )
+        if scheduled_result or changed or removed or errors:
+            logger.info(
+                "【光鸭云盘助手】【增量监控】已知资源=%s，检查=%s，内容变化=%s，移除空目录=%s，错误=%s，提交=%s",
+                len(rows),
+                checked,
+                changed,
+                removed,
+                errors,
+                1 if scheduled_result else 0,
+            )
+        else:
+            logger.debug(
+                "【光鸭云盘助手】【增量监控】本轮无变化：已知资源=%s，检查=%s",
+                len(rows),
+                checked,
+            )
         return {
             "success": True,
             "message": "已知资源目录增量检查完成" if not scheduled_result else "已知资源变化已提交",
@@ -513,6 +520,13 @@ class GuangYaOrganizerMonitorV366Mixin:
         if callable(priority_getter):
             priority = priority_getter()
             if priority is not None:
+                priority_data = dict((priority or {}).get("data") or {}) if isinstance(priority, dict) else {}
+                if priority_data.get("priority_revisit"):
+                    self._save_monitor_status(
+                        runtime_phase="revisit",
+                        runtime_label="优先回访待稳定资源",
+                        current_task_path=str(priority_data.get("path") or ""),
+                    )
                 return priority
 
         known_result = self._v366_scan_known_resources()
@@ -520,6 +534,11 @@ class GuangYaOrganizerMonitorV366Mixin:
             return known_result
 
         if manual or self._v366_baseline_due():
+            self._save_monitor_status(
+                runtime_phase="discovering",
+                runtime_label="正在执行基线目录发现",
+                current_task_path=self._v360_norm(getattr(self, "_organize_monitor_path", "")),
+            )
             baseline = super().run_organize_monitor_scan(manual=manual)
             data = dict((baseline or {}).get("data") or {}) if isinstance(baseline, dict) else {}
             if data.get("cycle_complete"):
@@ -528,6 +547,15 @@ class GuangYaOrganizerMonitorV366Mixin:
                 logger.info("【光鸭云盘助手】【v3.6.7】【基线发现】本轮完整 discovery cycle 已完成；切换为资源目录增量监控")
             return baseline
 
+        known_data = dict((known_result or {}).get("data") or {}) if isinstance(known_result, dict) else {}
+        self._save_monitor_status(
+            runtime_phase="idle",
+            runtime_label="已完成已知资源增量检查，等待下一轮",
+            current_task_path="",
+            known_resource_total=int(known_data.get("known_total") or 0),
+            known_resource_checked=int(known_data.get("known_checked") or 0),
+            known_resource_changed=int(known_data.get("known_changed") or 0),
+        )
         return known_result
 
     def api_organize_monitor_scan(self, payload: dict = None) -> Dict[str, Any]:

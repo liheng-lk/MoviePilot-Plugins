@@ -85,7 +85,7 @@ def _wake_legacy_preview_retries(plugin: Any) -> Dict[str, Any]:
         except Exception:
             pass
     else:
-        logger.info("【光鸭云盘助手】【v3.5.6】【升级自愈】没有发现需要唤醒的旧预览缺员 retry")
+        logger.debug("【光鸭云盘助手】【v3.5.6】【升级自愈】没有发现需要唤醒的旧预览缺员 retry")
 
     return marker
 
@@ -106,7 +106,7 @@ def install_preview_retry_wakeup_v356() -> None:
 
     GuangYaFolderStreamMixin.run_organize_monitor_scan = run_scan
     GuangYaFolderStreamMixin._guangya_preview_retry_wakeup_v356 = True
-    logger.info("【光鸭云盘助手】【v3.5.6】旧预览缺员 retry 一次性唤醒已启用")
+    logger.debug("【光鸭云盘助手】【v3.5.6】旧预览缺员 retry 一次性唤醒已启用")
 
 
 __all__ = ["install_preview_retry_wakeup_v356", "_wake_legacy_preview_retries"]

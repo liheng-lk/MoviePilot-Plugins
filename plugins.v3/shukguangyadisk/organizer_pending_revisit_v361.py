@@ -43,7 +43,7 @@ class GuangYaOrganizerPendingRevisitV361Mixin:
         repaired = self._v361_repair_zero_first_seen()
         seeded = self._v361_seed_existing_stabilizing()
         pruned = self._v361_prune_stale_pending()
-        logger.info(
+        logger.debug(
             "【光鸭云盘助手】【v3.6.8】稳定资源优先回访已启用：pending 到期即优先处理，不等待整库 cycle；"
             "first_seen 修复=%s，升级种入资源=%s，陈旧 pending 自愈=%s",
             repaired,

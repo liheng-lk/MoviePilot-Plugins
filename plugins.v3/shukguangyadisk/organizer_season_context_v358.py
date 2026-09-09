@@ -257,7 +257,7 @@ def install_season_context_v358() -> None:
         return previous_scan(self, manual=manual)
 
     GuangYaFolderStreamMixin.run_organize_monitor_scan = run_scan
-    logger.info("【光鸭云盘助手】【v3.5.8】电视剧季号上下文补全与空季重试自愈已启用")
+    logger.debug("【光鸭云盘助手】【v3.5.8】电视剧季号上下文补全与空季重试自愈已启用")
 
 
 __all__ = [

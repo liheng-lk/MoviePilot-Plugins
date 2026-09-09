@@ -188,10 +188,16 @@ def install_organizer_hardening_v369() -> None:
             for key in ("scheduled", "busy", "handoff", "disabled", "scan_busy")
         ):
             return result
+        priority_revisit = bool(data.get("priority_revisit"))
         # 只有 v3.6.7 日常 known scan 正常结束后才补推进 discovery；初始/周期 baseline 已经
         # 自己调用了 engine，不能重复扫描第二页。
+        # 另外，当 pending 优先回访本轮未真正入队（scheduled=False）时，不能让它长期饿死
+        # discovery；仍需继续推进一页目录发现，避免新目录只能靠手动整理才被发现。
         if not data.get("known_scan"):
-            return result
+            if priority_revisit and not bool(data.get("scheduled")):
+                logger.info("【光鸭云盘助手】【监控】pending 回访本轮未入队，继续推进 discovery 防止新目录漏扫")
+            else:
+                return result
 
         network = _network_status(plugin)
         if not network.get("available", True):
@@ -252,7 +258,7 @@ def install_organizer_hardening_v369() -> None:
     GuangYaOrganizerEngineV360Mixin._v360_list_directory = list_directory
     GuangYaOrganizerMonitorV366Mixin.run_organize_monitor_scan = run_monitor_scan
     setattr(GuangYaOrganizerMonitorV366Mixin, _PATCH_FLAG, True)
-    logger.info(
+    logger.debug(
         "【光鸭云盘助手】【v3.6.9】监控硬化已启用：known预算=%s + 每周期连续50目录discovery + 严格远端读取 + 状态局部回收",
         _v366._KNOWN_SCAN_LIMIT,
     )

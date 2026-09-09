@@ -565,6 +565,128 @@ class GuangYaOrganizerMixin:
         healthy = all(bool(checks.get(name)) for name in critical) if self._organize_monitor_enabled else bool(checks["runtime_bridge"])
         return {"healthy": healthy, "checks": checks, "mp": self._moviepilot_directory_summary()}
 
+    def _runtime_network_status(self) -> Dict[str, Any]:
+        api = getattr(self, "_guangya_api", None)
+        client = getattr(api, "client", None) or getattr(self, "_client", None)
+        getter = getattr(client, "get_network_status", None)
+        if not callable(getter):
+            return {"available": True, "hosts": {}, "message": "宿主未暴露网络状态探针"}
+        try:
+            payload = dict(getter() or {})
+            payload.setdefault("available", True)
+            payload.setdefault("hosts", {})
+            payload.setdefault("message", "")
+            return payload
+        except Exception as err:
+            return {"available": False, "hosts": {}, "message": f"读取网络状态失败: {err}"}
+
+    @staticmethod
+    def _diagnostic_tips(
+        *,
+        selfcheck: Dict[str, Any],
+        status: Dict[str, Any],
+        network: Dict[str, Any],
+        upload: Dict[str, Any],
+    ) -> List[str]:
+        tips: List[str] = []
+        checks = dict(selfcheck.get("checks") or {})
+        if not checks.get("monitor_path_selected"):
+            tips.append("请先在监控设置里选择具体监控目录（不能是根目录 /）。")
+        if checks.get("monitor_path_selected") and not checks.get("monitor_path_exists"):
+            tips.append("当前监控目录在云盘不可访问，请重新选择目录或检查登录态。")
+        if not checks.get("runtime_bridge"):
+            tips.append("运行时事件桥未绑定，建议重启插件后重试自动整理。")
+        if not bool(network.get("available", True)):
+            tips.append("云盘 API 当前不可用，建议先恢复网络后再观察自动整理。")
+        if int(status.get("state_blocked") or 0) > 0:
+            tips.append("存在 blocked 等待项，可在修复 MoviePilot 准入冲突后执行“解除阻塞”。")
+        if int(status.get("state_retry_wait") or 0) > 0:
+            tips.append("存在 retry 等待项，建议先关注最近失败记录与远端目录可见性。")
+        last_upload = upload.get("last_event") if isinstance(upload, dict) else None
+        if isinstance(last_upload, dict) and str(last_upload.get("status") or "") == "error":
+            tips.append(f"最近上传失败阶段：{last_upload.get('stage') or 'unknown'}，请先按该阶段排查。")
+        if not tips:
+            tips.append("运行状态健康，可继续观察自动监控与上传阶段日志。")
+        return tips[:8]
+
+    @staticmethod
+    def _diagnostic_alerts(
+        *,
+        selfcheck: Dict[str, Any],
+        status: Dict[str, Any],
+        network: Dict[str, Any],
+        upload: Dict[str, Any],
+    ) -> List[Dict[str, str]]:
+        alerts: List[Dict[str, str]] = []
+        checks = dict(selfcheck.get("checks") or {})
+
+        def add(code: str, severity: str, message: str, action: str) -> None:
+            alerts.append({
+                "code": code,
+                "severity": severity,
+                "message": message,
+                "action": action,
+            })
+
+        if not checks.get("monitor_path_selected"):
+            add("MONITOR_PATH_NOT_SELECTED", "warn", "未选择具体监控目录", "在监控设置中选择非根目录后保存。")
+        if checks.get("monitor_path_selected") and not checks.get("monitor_path_exists"):
+            add("MONITOR_PATH_NOT_FOUND", "error", "监控目录在云盘不存在或不可访问", "重新选择目录并确认登录态有效。")
+        if not checks.get("runtime_bridge"):
+            add("RUNTIME_BRIDGE_NOT_BOUND", "error", "运行时事件桥未绑定", "重启插件后再次查看状态。")
+        if not bool(network.get("available", True)):
+            add("NETWORK_UNAVAILABLE", "error", "云盘网络/API不可用", "先恢复网络连通性，再观察自动整理。")
+        if int(status.get("state_blocked") or 0) > 0:
+            add("BLOCKED_ITEMS_PENDING", "warn", "存在 blocked 等待项", "修复 MoviePilot 准入冲突后执行解除阻塞。")
+        if int(status.get("state_retry_wait") or 0) > 0:
+            add("RETRY_ITEMS_PENDING", "warn", "存在 retry 等待项", "查看最近失败原因并等待下轮自动重试。")
+
+        last_upload = upload.get("last_event") if isinstance(upload, dict) else None
+        if isinstance(last_upload, dict) and str(last_upload.get("status") or "") == "error":
+            stage = str(last_upload.get("stage") or "unknown")
+            add("UPLOAD_LAST_EVENT_ERROR", "error", f"最近上传在阶段 {stage} 失败", "从上传诊断 recent_events 定位失败细节。")
+
+        if not alerts:
+            add("HEALTHY", "info", "当前运行状态健康", "保持自动监控运行并持续观察。")
+        return alerts[:12]
+
+    @staticmethod
+    def _last_scan_summary(status: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "runtime_phase": str(status.get("runtime_phase") or ""),
+            "runtime_label": str(status.get("runtime_label") or ""),
+            "current_task_path": str(status.get("current_task_path") or ""),
+            "scan_in_progress": bool(status.get("scan_in_progress")),
+            "scan_dirs_scanned": int(status.get("scan_dirs_scanned") or 0),
+            "scan_files_seen": int(status.get("scan_files_seen") or 0),
+            "scan_resource_dirs": int(status.get("scan_resource_dirs") or 0),
+            "scan_cursor_cycle": int(status.get("scan_cursor_cycle") or 0),
+            "scan_cursor_page": int(status.get("scan_cursor_page") or 0),
+            "scan_cursor_remaining_dirs": int(status.get("scan_cursor_remaining_dirs") or 0),
+            "scan_cycle_complete": bool(status.get("scan_cycle_complete")),
+            "known_resource_total": int(status.get("known_resource_total") or 0),
+            "known_resource_checked": int(status.get("known_resource_checked") or 0),
+            "known_resource_changed": int(status.get("known_resource_changed") or 0),
+            "scan_errors": list(status.get("scan_errors") or [])[:10],
+        }
+
+    @staticmethod
+    def _last_upload_summary(upload: Dict[str, Any]) -> Dict[str, Any]:
+        recent = list(upload.get("recent_events") or []) if isinstance(upload, dict) else []
+        last_event = upload.get("last_event") if isinstance(upload, dict) else None
+        error_events = [row for row in recent if str((row or {}).get("status") or "") == "error"]
+        return {
+            "total_events": int((upload or {}).get("total_events") or 0) if isinstance(upload, dict) else 0,
+            "recent_event_count": len(recent),
+            "recent_error_count": len(error_events),
+            "last_stage": str((last_event or {}).get("stage") or ""),
+            "last_status": str((last_event or {}).get("status") or ""),
+            "last_level": str((last_event or {}).get("level") or ""),
+            "last_target_name": str((last_event or {}).get("target_name") or ""),
+            "last_message": str((last_event or {}).get("message") or ""),
+            "last_time": int((last_event or {}).get("time") or 0),
+        }
+
     def api_organize_monitor_config(self) -> Dict[str, Any]:
         return {"success": True, "data": {"config": self._monitor_config_payload(), "mp": self._moviepilot_directory_summary()}}
 
@@ -631,6 +753,52 @@ class GuangYaOrganizerMixin:
             },
         }
 
+    def api_organize_monitor_diagnostics(self) -> Dict[str, Any]:
+        self.init_organizer_monitor()
+        status_response = self.api_organize_monitor_status()
+        status_payload = dict(status_response.get("data") or {})
+        selfcheck = self._organizer_selfcheck()
+        network = self._runtime_network_status()
+        upload_diag_getter = getattr(self._guangya_api, "get_upload_diagnostics", None)
+        upload_diag = upload_diag_getter(limit=30) if callable(upload_diag_getter) else {
+            "total_events": 0,
+            "recent_events": [],
+            "last_event": None,
+        }
+        status = dict(status_payload.get("status") or {})
+        alerts = self._diagnostic_alerts(
+            selfcheck=selfcheck,
+            status=status,
+            network=network,
+            upload=upload_diag,
+        )
+        tips = self._diagnostic_tips(
+            selfcheck=selfcheck,
+            status=status,
+            network=network,
+            upload=upload_diag,
+        )
+        last_scan_summary = self._last_scan_summary(status)
+        last_upload_summary = self._last_upload_summary(upload_diag)
+        return {
+            "success": True,
+            "message": "诊断数据已生成",
+            "data": {
+                "diagnostic_version": "v1",
+                "timestamp": int(time.time()),
+                "config": status_payload.get("config") or {},
+                "status": status,
+                "history": status_payload.get("history") or [],
+                "selfcheck": selfcheck,
+                "network": network,
+                "upload": upload_diag,
+                "alerts": alerts,
+                "last_scan_summary": last_scan_summary,
+                "last_upload_summary": last_upload_summary,
+                "tips": tips,
+            },
+        }
+
     def api_organize_monitor_selfcheck(self) -> Dict[str, Any]:
         report = self._organizer_selfcheck()
         return {"success": True, "message": "自动整理自检完成", "data": report}
@@ -681,6 +849,7 @@ class GuangYaOrganizerMixin:
             {"path": "/organize/monitor/config", "endpoint": self.api_organize_monitor_save, "auth": "bear", "methods": ["POST"], "summary": "保存自动整理监控设置", "response_model": GuangYaOrganizerResponse},
             {"path": "/organize/monitor/scan", "endpoint": self.api_organize_monitor_scan, "auth": "bear", "methods": ["POST"], "summary": "立即扫描并交给 MoviePilot 整理", "response_model": GuangYaOrganizerResponse},
             {"path": "/organize/monitor/status", "endpoint": self.api_organize_monitor_status, "auth": "bear", "methods": ["GET"], "summary": "自动整理状态与最近记录", "response_model": GuangYaOrganizerResponse},
+            {"path": "/organize/monitor/diagnostics", "endpoint": self.api_organize_monitor_diagnostics, "auth": "bear", "methods": ["GET"], "summary": "自动整理与上传诊断数据", "response_model": GuangYaOrganizerResponse},
             {"path": "/organize/monitor/selfcheck", "endpoint": self.api_organize_monitor_selfcheck, "auth": "bear", "methods": ["GET"], "summary": "自动整理运行时自检", "response_model": GuangYaOrganizerResponse},
             {"path": "/organize/monitor/unblock", "endpoint": self.api_organize_monitor_unblock, "auth": "bear", "methods": ["POST"], "summary": "重新检查被 MoviePilot 门控的文件", "response_model": GuangYaOrganizerResponse},
         ]

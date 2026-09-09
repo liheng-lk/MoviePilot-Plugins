@@ -4,6 +4,7 @@
 """
 
 import time
+import threading
 from datetime import datetime
 from hashlib import md5
 from pathlib import Path
@@ -38,6 +39,70 @@ class GuangYaApi(_GuangYaApi):
             index += 1
         return f"{value:.2f} {units[index]}"
 
+    def _record_upload_event(
+        self,
+        stage: str,
+        target_name: str,
+        message: str,
+        *,
+        level: str,
+        status: str,
+    ) -> None:
+        lock = getattr(self, "_upload_event_lock", None)
+        if lock is None:
+            lock = threading.RLock()
+            self._upload_event_lock = lock
+        events = getattr(self, "_upload_events", None)
+        if events is None:
+            events = []
+            self._upload_events = events
+        limit = int(getattr(self, "_upload_event_limit", 80) or 80)
+        row = {
+            "time": int(time.time()),
+            "stage": str(stage or ""),
+            "target_name": str(target_name or ""),
+            "message": str(message or ""),
+            "level": str(level or "info"),
+            "status": str(status or "running"),
+        }
+        with lock:
+            events.append(row)
+            if len(events) > limit:
+                del events[: len(events) - limit]
+
+    def get_upload_diagnostics(self, limit: int = 20) -> dict:
+        events = list(getattr(self, "_upload_events", []) or [])
+        total = len(events)
+        if limit <= 0:
+            rows = []
+        else:
+            rows = events[-int(limit) :]
+        return {
+            "total_events": total,
+            "recent_events": rows,
+            "last_event": rows[-1] if rows else (events[-1] if events else None),
+        }
+
+    def _log_upload_stage(
+        self,
+        stage: str,
+        target_name: str,
+        message: str,
+        *,
+        level: str = "info",
+        status: str = "running",
+    ) -> None:
+        text = f"【光鸭云盘助手】【上传】【{stage}】{target_name} - {message}"
+        if level == "warning":
+            logger.warning(text)
+        elif level == "error":
+            logger.error(text)
+        elif level == "debug":
+            logger.debug(text)
+        else:
+            logger.info(text)
+        self._record_upload_event(stage, target_name, message, level=level, status=status)
+
     def _wait_task_done(
         self,
         task_id: str,
@@ -59,7 +124,7 @@ class GuangYaApi(_GuangYaApi):
                 return True
 
             if self._is_task_missing(status_response):
-                logger.info(
+                logger.debug(
                     "【光鸭云盘助手】任务 %s 状态记录已失效(code=%s)，转由目标文件可见性确认",
                     task_id,
                     status_code,
@@ -77,7 +142,7 @@ class GuangYaApi(_GuangYaApi):
                 return True
 
             if self._is_task_missing(info_response):
-                logger.info(
+                logger.debug(
                     "【光鸭云盘助手】任务 %s 文件回执已失效(code=%s)，转由目标文件可见性确认",
                     task_id,
                     info_code,
@@ -223,12 +288,18 @@ class GuangYaApi(_GuangYaApi):
     ) -> Optional[schemas.FileItem]:
         """上传单个文件，并提供进度、目录恢复、幂等检查与上传后可见性兜底确认。"""
         target_name = target_name or local_path.name
-        target_path = Path(target_dir_path) / target_name
+        normalized_target_dir = self._normalize_path(target_dir_path)
+        target_path = self._normalize_path(
+            f"{normalized_target_dir.rstrip('/')}/{target_name}"
+            if normalized_target_dir != "/"
+            else f"/{target_name}"
+        )
         file_size = local_path.stat().st_size
         started_at = monotonic()
 
-        existing = self._find_existing_uploaded_item(target_dir_path, target_name, file_size)
+        existing = self._find_existing_uploaded_item(normalized_target_dir, target_name, file_size)
         if existing:
+            self._log_upload_stage("幂等跳过", target_name, f"目标已存在同名同大小文件 fileId={existing.fileid}", status="success")
             logger.warning(
                 "【光鸭云盘助手】【上传】目标已存在同名同大小文件，跳过重复上传: %s, fileId=%s",
                 target_name,
@@ -242,6 +313,7 @@ class GuangYaApi(_GuangYaApi):
             target_path,
             self._fmt_bytes(file_size),
         )
+        self._log_upload_stage("准备", target_name, f"目标={normalized_target_dir}, 大小={self._fmt_bytes(file_size)}")
 
         hash_md5 = md5()
         with open(local_path, "rb") as file_obj:
@@ -252,7 +324,7 @@ class GuangYaApi(_GuangYaApi):
         if self.upload_progress_log:
             logger.info("【光鸭云盘助手】【上传】MD5 完成: %s, md5=%s", target_name, file_md5)
 
-        mp_progress = transfer_process(local_path.as_posix())
+        mp_progress = transfer_process(target_path)
         last_logged_bucket = -1
 
         def progress(consumed: int, total: int) -> None:
@@ -291,6 +363,7 @@ class GuangYaApi(_GuangYaApi):
                 data = flash_response.get("data", {}) or {}
                 mp_progress(100)
                 elapsed = monotonic() - started_at
+                self._log_upload_stage("秒传", target_name, f"成功 fileId={data.get('fileId', '')}, 耗时={elapsed:.2f}s", status="success")
                 logger.info(
                     "【光鸭云盘助手】【上传】秒传成功: %s, fileId=%s, 耗时=%.2fs",
                     target_name,
@@ -300,7 +373,7 @@ class GuangYaApi(_GuangYaApi):
                 return schemas.FileItem(
                     storage=self._disk_name,
                     fileid=str(data.get("fileId", "")),
-                    path=str(target_path),
+                    path=target_path,
                     type="file",
                     name=data.get("fileName", target_name),
                     basename=Path(target_name).stem,
@@ -313,9 +386,10 @@ class GuangYaApi(_GuangYaApi):
             logger.debug("【光鸭云盘助手】【上传】秒传检查失败: %s - %s", target_name, err)
 
         try:
+            self._log_upload_stage("凭证", target_name, "开始获取上传凭证")
             response, folder_id = self._get_upload_token_with_folder_recovery(
                 folder_id=folder_id,
-                target_dir_path=target_dir_path,
+                target_dir_path=normalized_target_dir,
                 target_name=target_name,
                 file_size=file_size,
                 file_md5=file_md5,
@@ -326,18 +400,20 @@ class GuangYaApi(_GuangYaApi):
                 if self.upload_progress_log:
                     logger.info("【光鸭云盘助手】【上传】服务端任务已存在: %s, task_id=%s", target_name, task_id)
                 if task_id:
-                    self._wait_task_done(task_id)
+                    self._log_upload_stage("任务确认", target_name, f"复用服务端任务 task_id={task_id}")
+                    self._wait_task_done(task_id, allow_missing=True)
                     task_response = self.client.get_file_info_by_task_id(task_id)
                     data = task_response.get("data", {}) or {}
                     file_id = str(data.get("fileId", ""))
                     if file_id:
-                        self._cache_path_id(str(target_path), file_id)
+                        self._cache_path_id(target_path, file_id)
                         mp_progress(100)
+                        self._log_upload_stage("完成", target_name, f"任务回执成功 fileId={file_id}", status="success")
                         logger.info("【光鸭云盘助手】【上传】任务完成: %s, fileId=%s", target_name, file_id)
                         return schemas.FileItem(
                             storage=self._disk_name,
                             fileid=file_id,
-                            path=str(target_path),
+                            path=target_path,
                             type="file",
                             name=data.get("fileName", target_name),
                             basename=Path(target_name).stem,
@@ -346,9 +422,10 @@ class GuangYaApi(_GuangYaApi):
                             size=file_size,
                             modify_time=int(datetime.now().timestamp()),
                         )
-                confirmed = self._confirm_uploaded_item(target_dir_path, target_name, file_size)
+                confirmed = self._confirm_uploaded_item(normalized_target_dir, target_name, file_size)
                 if confirmed:
                     mp_progress(100)
+                    self._log_upload_stage("目录确认", target_name, f"任务回执缺失，按目录可见性确认成功 fileId={confirmed.fileid}", status="success")
                     logger.info("【光鸭云盘助手】【上传】通过目录可见性确认成功: %s, fileId=%s", target_name, confirmed.fileid)
                     return confirmed
 
@@ -370,6 +447,7 @@ class GuangYaApi(_GuangYaApi):
                 logger.info("【光鸭云盘助手】【上传】凭证获取成功: %s, task_id=%s", target_name, task_id)
 
             if endpoint and bucket_name and object_path and access_key_id and secret_access_key and session_token:
+                self._log_upload_stage("分片上传", target_name, f"开始上传到 bucket={bucket_name}, task_id={task_id or 'none'}")
                 parsed = urlparse(endpoint if endpoint.startswith("http") else f"https://{endpoint}")
                 host = parsed.netloc or parsed.path
                 if bucket_name and host.startswith(bucket_name + "."):
@@ -384,19 +462,47 @@ class GuangYaApi(_GuangYaApi):
                     security_token=session_token,
                     progress_callback=progress,
                 )
+            else:
+                missing_fields = [
+                    name
+                    for name, value in (
+                        ("endPoint", endpoint),
+                        ("bucketName", bucket_name),
+                        ("objectPath", object_path),
+                        ("accessKeyID", access_key_id),
+                        ("secretAccessKey", secret_access_key),
+                        ("sessionToken", session_token),
+                    )
+                    if not value
+                ]
+                logger.error(
+                    "【光鸭云盘助手】【上传】上传凭证缺少关键字段，无法执行分片上传: %s, file=%s, task_id=%s",
+                    ",".join(missing_fields),
+                    target_name,
+                    task_id or "none",
+                )
+                self._log_upload_stage(
+                    "凭证异常",
+                    target_name,
+                    f"上传凭证缺少关键字段: {','.join(missing_fields)}",
+                    level="error",
+                    status="error",
+                )
+                return None
 
             if task_id:
-                self._wait_task_done(task_id)
+                self._log_upload_stage("任务确认", target_name, f"等待云端任务完成 task_id={task_id}")
+                self._wait_task_done(task_id, allow_missing=True)
                 task_response = self.client.get_file_info_by_task_id(task_id)
                 task_data = task_response.get("data", {}) or {}
                 file_id = str(task_data.get("fileId", ""))
                 if file_id:
-                    self._cache_path_id(str(target_path), file_id)
+                    self._cache_path_id(target_path, file_id)
                     mp_progress(100)
                     uploaded_item = schemas.FileItem(
                         storage=self._disk_name,
                         fileid=file_id,
-                        path=str(target_path),
+                        path=target_path,
                         type="file",
                         name=task_data.get("fileName", target_name),
                         basename=Path(target_name).stem,
@@ -414,31 +520,38 @@ class GuangYaApi(_GuangYaApi):
                         elapsed,
                         self._fmt_bytes(file_size / elapsed),
                     )
+                    self._log_upload_stage("完成", target_name, f"任务确认成功 fileId={file_id}, 耗时={elapsed:.2f}s", status="success")
                     return uploaded_item
 
-            confirmed = self._confirm_uploaded_item(target_dir_path, target_name, file_size)
+            confirmed = self._confirm_uploaded_item(normalized_target_dir, target_name, file_size)
             if confirmed:
                 mp_progress(100)
                 elapsed = max(monotonic() - started_at, 0.001)
+                self._log_upload_stage("目录确认", target_name, f"任务无 fileId，按目录确认成功 fileId={confirmed.fileid}")
                 logger.warning(
                     "【光鸭云盘助手】【上传】任务回执缺少 fileId，但目标文件已确认存在，按成功返回: %s, fileId=%s, 耗时=%.2fs",
                     target_name,
                     confirmed.fileid,
                     elapsed,
                 )
+                self._log_upload_stage("完成", target_name, f"目录确认成功 fileId={confirmed.fileid}, 耗时={elapsed:.2f}s", status="success")
                 return confirmed
 
+            self._log_upload_stage("失败", target_name, "上传后 90 秒仍未确认目标文件", level="error", status="error")
             logger.error("【光鸭云盘助手】【上传】失败: %s，上传后 90 秒仍未确认目标文件", target_name)
             return None
         except Exception as err:
-            confirmed = self._confirm_uploaded_item(target_dir_path, target_name, file_size, max_try=30)
+            confirmed = self._confirm_uploaded_item(normalized_target_dir, target_name, file_size, max_try=30)
             if confirmed:
                 mp_progress(100)
+                self._log_upload_stage("异常恢复", target_name, f"出现异常但目录确认成功: {err}", level="warning")
                 logger.warning(
                     "【光鸭云盘助手】【上传】过程出现异常但目标文件已存在，按成功返回: %s, error=%s",
                     target_name,
                     err,
                 )
+                self._log_upload_stage("完成", target_name, f"异常恢复后确认成功 fileId={confirmed.fileid}", status="success")
                 return confirmed
+            self._log_upload_stage("失败", target_name, str(err), level="error", status="error")
             logger.error("【光鸭云盘助手】【上传】失败: %s - %s", target_name, err)
             return None
