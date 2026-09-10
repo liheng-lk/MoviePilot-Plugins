@@ -26,7 +26,7 @@ v3.5.6 升级后仅唤醒旧“目录预览缺员”retry，取消遗留指数�
 v3.5.8 为电视剧弱命名补 MoviePilot 原生 season 参数，并唤醒旧空 Season 目标失败重试。
 v3.5.9 改为 50 目录持久游标增量扫描，并在旧 worker 交接期间停止无效全量 refill。
 v3.6.3 在最终 MoviePilot kwargs 上增加 TV→MOVIE 安全消歧，仅对单主视频、无集号、非 Season 目录生效。
-v3.7.6 增加显式增量扫描与持久全量兜底入口，统一 scan_id 阶段日志。
+v3.7.6 增加显式增量扫描与持久全量兜底入口，统一 scan_id 阶段日志；安装延迟到运行期，避免热更新装配阶段反向 patch monitor。
 """
 
 from __future__ import annotations
@@ -163,7 +163,6 @@ from .organizer_preview_retry_wakeup_v356 import install_preview_retry_wakeup_v3
 from .organizer_season_context_v358 import install_season_context_v358
 from .organizer_media_type_disambiguation_v363 import install_media_type_disambiguation_v363
 from .organizer_paged_scan_handoff_v359 import install_paged_scan_handoff_v359
-from .organizer_dual_scan_v376 import install_dual_scan_v376
 
 # 存储层补丁必须最先安装，确保 MoviePilot 真正执行 move/copy 时拿到的是强确认接口。
 install_rename_integrity_v3414()
@@ -204,8 +203,6 @@ install_season_context_v358()
 install_media_type_disambiguation_v363()
 # v3.5.9 最后替换 discovery：50 目录游标分页，sticky 优先，worker 交接期间不扫库。
 install_paged_scan_handoff_v359(GuangYaCandidateFilterMixin)
-# v3.7.6：最终暴露增量/全量双通道扫描入口与结构化日志。
-install_dual_scan_v376()
 
 
 __all__ = ["GuangYaCandidateFilterMixin"]
