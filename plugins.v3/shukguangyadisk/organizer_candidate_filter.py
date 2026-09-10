@@ -30,6 +30,7 @@ v3.7.1 起冲突策略、预览缺员补救和旧 preview retry 唤醒由 Execut
 v3.7.2 起 loss guard 终态核对与 empty-folder 陈旧任务收口也由 Execution 显式负责，两个旧 installer 退出运行图。
 v3.7.3 起集数整组样本/弱命名复核与分类一致性改为 loss guard 显式 Preview 上下文，不再串联三个 build/audit installer。
 v3.7.5 部分 ready 成员提交成功后保留有等待态兄弟成员的目录 pending，避免后半批被 known 签名饿死。
+v3.7.6 将发现层拆为增量监控与完整全量扫描双通道，并统一 scan_id/阶段日志。
 """
 
 from __future__ import annotations
@@ -159,6 +160,7 @@ from .organizer_season_context_v358 import install_season_context_v358
 from .organizer_media_type_disambiguation_v363 import install_media_type_disambiguation_v363
 from .organizer_paged_scan_handoff_v359 import install_paged_scan_handoff_v359
 from .organizer_partial_revisit_v375 import install_partial_revisit_v375
+from .organizer_dual_scan_v376 import install_dual_scan_v376
 
 # 存储层补丁必须最先安装，确保 MoviePilot 真正执行 move/copy 时拿到的是强确认接口。
 install_rename_integrity_v3414()
@@ -190,6 +192,8 @@ install_media_type_disambiguation_v363()
 install_paged_scan_handoff_v359(GuangYaCandidateFilterMixin)
 # v3.7.5：partial-ready 成员提交后仍有 hard-wait sibling 时保留 pending，续跑后半批。
 install_partial_revisit_v375()
+# v3.7.6：最终覆盖 monitor 调度入口，明确增量/全量双通道和结构化扫描日志。
+install_dual_scan_v376()
 
 
 __all__ = ["GuangYaCandidateFilterMixin"]
