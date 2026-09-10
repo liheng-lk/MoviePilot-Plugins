@@ -217,8 +217,9 @@ class DualScanV376RuntimeTest(unittest.TestCase):
         self.assertEqual(status["log_stage_schema"], "1触发/2准备/3发现/4判定/5入队/6完成")
         self.assertEqual(status["log_filter_hint"], "【光鸭云盘助手】【整理】")
 
-        base = FakeBaseOrganizer()
-        paths = {row["path"] for row in base.get_organizer_api()}
+        # 真正插件实例同时具备 Monitor 与 BaseOrganizer 能力；用 monitor 作为 self 调用
+        # 已安装到 BaseOrganizer 上的 API 聚合器，避免构造一个缺少 monitor 方法的假实例。
+        paths = {row["path"] for row in FakeBaseOrganizer.get_organizer_api(monitor)}
         self.assertIn("/organize/monitor/incremental-scan", paths)
         self.assertIn("/organize/monitor/full-scan", paths)
         self.assertIn("/organize/monitor/full-scan/stop", paths)
