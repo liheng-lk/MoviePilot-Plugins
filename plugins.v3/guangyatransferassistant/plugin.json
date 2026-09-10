@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "固定接管订阅并自动转存：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。含频道标题清洗与剧集名季集命名。2.0.5 清理失败加载残留的订阅链补丁。",
-  "version": "2.0.5",
+  "description": "更新日历驱动的固定分流助手。基于 1.12.26 稳定实现：修复频道标题模板噪声；转存命名为剧集名 + 季集号（SxxExx），电影仅用剧名。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+  "version": "2.0.6",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,

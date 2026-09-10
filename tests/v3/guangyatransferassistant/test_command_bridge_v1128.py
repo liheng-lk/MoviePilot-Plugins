@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
@@ -27,7 +27,7 @@ def test_gysub_ack_is_sent_before_tmdb_lookup():
 
 
 def test_v1128_metadata_and_previous_resource_gate_remain_active():
-    assert 'plugin_version = "2.0.5"' in ENTRY
-    assert 'build_id = "20260910-r85"' in ENTRY
+    assert 'plugin_version = "2.0.6"' in ENTRY
+    assert 'build_id = "20260910-r86"' in ENTRY
     assert "GuangYaResourceGateV1127Mixin" in ENTRY
 

@@ -12,7 +12,7 @@ https://github.com/liheng-lk/MoviePilot-Plugins
 
 光鸭云盘 MoviePilot 存储插件，支持扫码/短信登录、目录浏览、整理上传、上传进度监控、DNS/OSS 网络容错与 WebDAV。
 
-### 光鸭转存助手 v2.0.5
+### 光鸭转存助手 v2.0.6
 
 固定接管 MoviePilot 订阅，按观影迅雷秒传、光鸭直接转存、Magnet、ED2K 的顺序补充媒体库。2.0 提供声明式 Setup/Run/Calendar 界面、可解释匹配轨迹、统一 NamingPolicy 与 WriteGate。v2.0.3 按官方规范启用 Release 压缩包安装，并确保 PluginLoader 只加载最终插件类。
 

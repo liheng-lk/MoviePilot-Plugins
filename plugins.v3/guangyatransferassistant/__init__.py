@@ -101,6 +101,8 @@ from .status_hardening_v193 import GuangYaStatusHardeningMixin
 from .viewing_logging_v1113 import GuangYaViewingLoggingV1113Mixin
 from .xunlei_flash_v193 import GuangYaXunleiFlashMixin
 from .xunlei_hardening_v193 import GuangYaXunleiHardeningMixin
+
+
 install_episode_filename_compat(_legacy_module)
 install_channel_multisource_compat(_legacy_module)
 install_channel_title_rename_v11226(_legacy_module)
@@ -152,11 +154,10 @@ class GuangYaTransferAssistant(
     GuangYaExperienceMixin,
     _RoutingV170Assistant,
 ):
-    """1.12.26 行为基线（2.0.5：修复加载失败后残留 SubscribeChain 补丁导致订阅 nodata）。"""
+    """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
 
-    plugin_version = "2.0.5"
-    build_id = "20260910-r85"
-    plugin_desc = "固定接管订阅并自动转存：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。含频道标题清洗与剧集名季集命名。2.0.5 清理失败加载残留的订阅链补丁并收紧 PluginLoader 暴露面。"
+    plugin_version = "2.0.6"
+    build_id = "20260910-r86"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
@@ -354,13 +355,11 @@ class GuangYaTransferAssistant(
         return pages
 
 
-# MoviePilot PluginLoader 按模块 globals 插入顺序寻找第一个合法插件类
-# （需同时具备 init_plugin + plugin_name）。只保留最终插件类，避免误选 Mixin。
 __all__ = ["GuangYaTransferAssistant"]
 
 
 def _emergency_restore_subscribe_chain_patches() -> None:
-    """清理失败加载留下的孤儿补丁，避免整站订阅匹配/列表异常。"""
+    """清理失败插件加载留下的孤儿 SubscribeChain 补丁。"""
     try:
         current = getattr(SubscribeChain, "match", None)
         if current is not None and getattr(current, "_guangya_match_guard", False):
@@ -386,14 +385,4 @@ def _emergency_restore_subscribe_chain_patches() -> None:
         pass
 
 
-def _scrub_public_mixin_exports() -> None:
-    """从包命名空间移除公开 Mixin，只留下 GuangYaTransferAssistant 给 PluginLoader。"""
-    for name, obj in list(globals().items()):
-        if name.startswith("_") or name == "GuangYaTransferAssistant":
-            continue
-        if isinstance(obj, type) and name.endswith("Mixin"):
-            globals().pop(name, None)
-
-
 _emergency_restore_subscribe_chain_patches()
-_scrub_public_mixin_exports()

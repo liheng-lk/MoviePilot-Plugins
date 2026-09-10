@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import importlib.util
 import json
@@ -187,9 +187,9 @@ def test_status_ui_v191_is_retained_by_current_release():
     entry = ENTRY.read_text(encoding="utf-8")
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "2.0.5"
-    assert 'plugin_version = "2.0.5"' in entry
-    assert 'build_id = "20260910-r85"' in entry
+    assert package["version"] == local["version"] == "2.0.6"
+    assert 'plugin_version = "2.0.6"' in entry
+    assert 'build_id = "20260910-r86"' in entry
     assert "v1.12.5" in package.get("history", {})
     assert "v1.12.3" in package.get("history", {})
     assert "v1.9.1" in package.get("history", {})

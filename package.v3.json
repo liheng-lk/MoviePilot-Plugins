@@ -92,15 +92,16 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "固定接管订阅并自动转存：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。含频道标题清洗与剧集名季集命名。2.0.5 清理失败加载残留的订阅链补丁。",
+    "description": "更新日历驱动的固定分流助手。基于 1.12.26 稳定实现：修复频道标题模板噪声；转存命名为剧集名 + 季集号（SxxExx），电影仅用剧名。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
     "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,缺集,追更,频道标题清洗,剧集名季集命名",
-    "version": "2.0.5",
+    "version": "2.0.6",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "release": true,
     "history": {
+      "v2.0.6": "完整回退到已验证可用的 1.12.26 实现（频道标题清洗 + 剧集名季集命名），移除全部 2.0 V2/gy2 代码。保留 Release 整包安装；导入时清理失败加载残留的 SubscribeChain 孤儿补丁。",
       "v2.0.5": "修复订阅 nodata / 整站订阅异常：失败的 2.0.x 加载可能留下孤儿 SubscribeChain.match 补丁；2.0.5 在导入时自动清理无主补丁，并清除模块内公开 Mixin 暴露面，确保 PluginLoader 只加载最终插件类。运行行为仍回退到 1.12.26 主链（不接入 V2 mixin）。",
       "v2.0.4": "紧急回滚：卸下 2.0 V2 mixin（声明式 UI/编排器）导致实机“插件加载失败 / 不存在或未加载”，订阅页 nodata。恢复为 1.12.26 成熟配置页与数据页及转存主链；继续 Release 整包安装。gy2_* 源码保留但不接入运行入口。",
       "v2.0.3": "修复“已装 2.0.x 却看不到新版/无法更新”：V2 mixin 类名改为私有 `_GuangYaTransferV2Mixin`，避免 PluginLoader 误选中间类；继续走 GitHub Release 整包安装。若本地已卡在 2.0.x 且加载失败，请先卸载再安装本版；Release 安装需配置可用的 GitHub Token。",
