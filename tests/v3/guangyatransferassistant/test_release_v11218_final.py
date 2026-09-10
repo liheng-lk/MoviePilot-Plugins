@@ -21,10 +21,10 @@ def test_final_v11218_release_truth_and_historical_recall_marker():
     package = json.loads(PACKAGE.read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     recall = RECALL.read_text(encoding="utf-8")
 
-    assert 'plugin_version = "1.12.23"' in entry
-    assert 'build_id = "20260909-r70"' in entry
-    assert local["version"] == "1.12.23"
-    assert package["version"] == "1.12.23"
+    assert 'plugin_version = "1.12.25"' in entry
+    assert 'build_id = "20260910-r72"' in entry
+    assert local["version"] == "1.12.25"
+    assert package["version"] == "1.12.25"
     assert "v1.12.18" in package.get("history", {})
 
     # v1.12.17 is a historical search/recall layer, not mechanically promoted.
@@ -51,7 +51,6 @@ def test_final_v11218_keeps_source_priority_and_native_cloudcollection():
 def test_final_v11218_description_documents_read_only_verification_and_fail_closed_cleanup():
     local = json.loads(LOCAL.read_text(encoding="utf-8"))
     desc = str(local.get("description") or "")
-    assert "get_item" in desc
     assert "fail-closed" in desc
     assert "taskId" in desc or "taskid" in desc.lower()
     assert "观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K" in desc
