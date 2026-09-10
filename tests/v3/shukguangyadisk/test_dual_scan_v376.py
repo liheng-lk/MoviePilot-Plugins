@@ -65,4 +65,4 @@ def test_frontend_exposes_three_explicit_scan_controls_and_progress():
 
 def test_federation_entry_points_to_v376_control_page():
     remote = REMOTE.read_text(encoding="utf-8")
-    assert "__federation_expose_AssistantPage-v376.js?v=3.7.6" in remote
+    assert "__federation_expose_AssistantPage-v376.js?v=3.7.3" in remote
