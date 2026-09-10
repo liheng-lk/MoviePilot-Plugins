@@ -1,7 +1,7 @@
 """光鸭云盘助手 MoviePilot V3 插件入口。
 
-V3 版本保留已验证的光鸭认证、存储和上传实现，只在宿主边界使用 V3 稳定 SDK、
-明确 API 响应模型，并补齐可重复的生命周期清理。
+v3.9.0 收口原则：安装注册路径保持无监控副作用；最终插件类是模块中唯一公开的插件候选。
+媒体整理业务仍复用已验证的 MoviePilot/历史安全层。
 """
 
 import time
@@ -19,43 +19,43 @@ from .models import (
     GuangYaConfigData,
     GuangYaConfigSaveResponse,
 )
-# 先完整加载纯历史层，再加载 v3.6 Engine。旧 orchestrator 在 Engine 导入期间会反向引用
-# organizer_folder_history；此顺序确保引用的是已经定义完成的类，避免循环导入。
-from .organizer_folder_history import GuangYaFolderHistoryMixin
-from .organizer_execution_v360 import GuangYaOrganizerExecutionV360Mixin
-from .organizer_pending_revisit_v361 import GuangYaOrganizerPendingRevisitV361Mixin
-from .organizer_monitor_v366 import GuangYaOrganizerMonitorV366Mixin
-from .organizer_worker_guard import GuangYaWorkerGuardMixin
-from .organizer_queue_recovery import GuangYaQueueRecoveryMixin
-from .organizer_candidate_filter import GuangYaCandidateFilterMixin
-from .organizer_folder_stream import GuangYaFolderStreamMixin
-from .organizer_recognition import GuangYaOrganizerMixin
-from .storage_contract import V3StorageContractMixin
+# 所有 MRO 组件使用私有别名，避免 MoviePilot PluginLoader 按模块符号顺序误选 mixin。
+from .organizer_monitor_final_v390 import GuangYaFinalMonitorV390Mixin as _GuangYaFinalMonitorV390Mixin
+from .organizer_folder_history import GuangYaFolderHistoryMixin as _GuangYaFolderHistoryMixin
+from .organizer_execution_v360 import GuangYaOrganizerExecutionV360Mixin as _GuangYaOrganizerExecutionV360Mixin
+from .organizer_pending_revisit_v361 import GuangYaOrganizerPendingRevisitV361Mixin as _GuangYaOrganizerPendingRevisitV361Mixin
+from .organizer_monitor_v366 import GuangYaOrganizerMonitorV366Mixin as _GuangYaOrganizerMonitorV366Mixin
+from .organizer_worker_guard import GuangYaWorkerGuardMixin as _GuangYaWorkerGuardMixin
+from .organizer_queue_recovery import GuangYaQueueRecoveryMixin as _GuangYaQueueRecoveryMixin
+from .organizer_candidate_filter import GuangYaCandidateFilterMixin as _GuangYaCandidateFilterMixin
+from .organizer_folder_stream import GuangYaFolderStreamMixin as _GuangYaFolderStreamMixin
+from .organizer_recognition import GuangYaOrganizerMixin as _GuangYaOrganizerMixin
+from .storage_contract import V3StorageContractMixin as _V3StorageContractMixin
 
 _legacy_module.GuangYaApi = _StableGuangYaApi
 _LegacyPlugin = _legacy_module.ShukGuangYaDisk
 
 
 class ShukGuangYaDisk(
-    # v3.6.6 必须位于最前：最终控制真实 interval、资源增量发现、目录批量准入边界与
-    # admission conflict；v3.6.1 继续提供稳定等待 pending 回访，其余兼容层不抢占调度权。
-    GuangYaOrganizerMonitorV366Mixin,
-    GuangYaOrganizerPendingRevisitV361Mixin,
-    GuangYaOrganizerExecutionV360Mixin,
-    GuangYaFolderHistoryMixin,
-    GuangYaWorkerGuardMixin,
-    GuangYaQueueRecoveryMixin,
-    GuangYaCandidateFilterMixin,
-    GuangYaFolderStreamMixin,
-    GuangYaOrganizerMixin,
-    V3StorageContractMixin,
+    # v3.9.0 静态最终监控必须是 MRO 第一层；其 get_service 在安装事务内不初始化监控。
+    _GuangYaFinalMonitorV390Mixin,
+    _GuangYaOrganizerMonitorV366Mixin,
+    _GuangYaOrganizerPendingRevisitV361Mixin,
+    _GuangYaOrganizerExecutionV360Mixin,
+    _GuangYaFolderHistoryMixin,
+    _GuangYaWorkerGuardMixin,
+    _GuangYaQueueRecoveryMixin,
+    _GuangYaCandidateFilterMixin,
+    _GuangYaFolderStreamMixin,
+    _GuangYaOrganizerMixin,
+    _V3StorageContractMixin,
     _LegacyPlugin,
 ):
     """光鸭云盘助手 MoviePilot V3 专用实现。"""
 
     plugin_name = "光鸭云盘助手"
     plugin_desc = "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。"
-    plugin_version = "3.8.1"
+    plugin_version = "3.9.0"
     plugin_author = "liheng-lk"
     plugin_label = "存储,光鸭云盘,自动整理,目录监控,MoviePilot,挂载,Emby,WebDAV"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
