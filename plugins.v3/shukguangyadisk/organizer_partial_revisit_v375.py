@@ -5,16 +5,19 @@ history_wait / retry_wait / inflight 的兄弟成员整体阻塞。但提交成�
 会删除整个目录的 pending；与此同时 known-resource 已记录的是完整目录签名，因此等待态
 到期但文件路径/大小未变化时，增量扫描会认为目录“无变化”，剩余成员可能永久失联。
 
-本补丁只在“本次已成功提交 + 仍存在可回访等待态成员”时重新登记目录 pending：
-- 已提交成员仍按原流程进入 worker，不回滚、不重复提交；
-- 剩余 stabilizing/retry/history/inflight 成员按 v3.6.1 的 due_at 机制优先回访；
-- completed/blocked/ignored/unknown 不会为了续跑而制造永久 pending；
-- 全成员 ready 或目录已真正完成时仍按原逻辑删除 pending。
+本补丁处理两件事：
+- “本次已成功提交 + 仍存在可回访等待态成员”时重新登记目录 pending；
+- 升级后强制执行一次完整 baseline discovery，把旧版本已经丢失 pending 的半整理目录
+  重新发现出来；完成一次后写持久标记，不会每次重启都强制全量扫描。
+
+已提交成员仍按原流程进入 worker，不回滚、不重复提交；completed/blocked/ignored/unknown
+不会为了续跑制造永久 pending，全成员 ready 或目录真正完成时仍按原逻辑删除 pending。
 """
 
 from __future__ import annotations
 
 from functools import wraps
+import time
 from typing import Any, Dict, Sequence
 
 from app.sdk.logging import logger
@@ -24,6 +27,7 @@ from .organizer_monitor_v366 import GuangYaOrganizerMonitorV366Mixin
 
 _WAIT_PHASES = ("stabilizing", "history_wait", "retry_wait", "inflight")
 _INSTALL_FLAG = "_v375_partial_revisit_installed"
+_RECOVERY_KEY = "organize_v375_partial_revisit_recovery"
 
 
 def _remaining_wait_count(result: Dict[str, Any]) -> int:
@@ -32,21 +36,23 @@ def _remaining_wait_count(result: Dict[str, Any]) -> int:
 
 
 def install_partial_revisit_v375() -> None:
-    """给 v3.6.6 最终调度边界补上“部分提交后继续回访”的目录级 pending。"""
+    """给最终调度边界补上部分续跑，并一次性唤醒旧版本遗留的半整理目录。"""
     cls = GuangYaOrganizerMonitorV366Mixin
     if bool(getattr(cls, _INSTALL_FLAG, False)):
         return
 
-    original = cls._v366_finish_schedule
+    original_finish = cls._v366_finish_schedule
+    original_baseline_due = cls._v366_baseline_due
+    original_mark_baseline_complete = cls._v366_mark_baseline_complete
 
-    @wraps(original)
-    def wrapped(
+    @wraps(original_finish)
+    def finish_wrapped(
         self,
         group_path: str,
         files: Sequence[Any],
         result: Dict[str, Any],
     ) -> Dict[str, Any]:
-        returned = original(self, group_path, files, result)
+        returned = original_finish(self, group_path, files, result)
 
         if not bool(result.get("scheduled")):
             return returned
@@ -59,8 +65,8 @@ def install_partial_revisit_v375() -> None:
         if not callable(register_pending):
             return returned
 
-        # original() 会在 scheduled=True 时先删除目录 pending。这里仅对仍有 hard-wait
-        # sibling 的“部分成功”重新登记；due_at 仍完全交给 v3.6.1 pending 层计算。
+        # original_finish() 会在 scheduled=True 时先删除目录 pending。这里仅对仍有
+        # hard-wait sibling 的“部分成功”重新登记；due_at 仍由 v3.6.1 pending 层计算。
         pending_result = dict(result)
         pending_result["scheduled"] = False
         pending_result["reason"] = "partial_wait"
@@ -83,8 +89,36 @@ def install_partial_revisit_v375() -> None:
         )
         return returned
 
-    setattr(wrapped, "_v375_partial_revisit_wrapper", True)
-    cls._v366_finish_schedule = wrapped
+    @wraps(original_baseline_due)
+    def baseline_due_wrapped(self) -> bool:
+        """旧版本可能已经把 pending 丢掉；升级后强制一次完整 discovery 自愈。"""
+        raw = self.get_data(_RECOVERY_KEY) or {}
+        if not isinstance(raw, dict) or not float(raw.get("completed_at") or 0):
+            return True
+        return bool(original_baseline_due(self))
+
+    @wraps(original_mark_baseline_complete)
+    def mark_baseline_complete_wrapped(self) -> None:
+        result = original_mark_baseline_complete(self)
+        raw = self.get_data(_RECOVERY_KEY) or {}
+        if not isinstance(raw, dict) or not float(raw.get("completed_at") or 0):
+            self.save_data(
+                _RECOVERY_KEY,
+                {
+                    "completed_at": time.time(),
+                    "reason": "v3.7.5 partial-ready pending recovery completed",
+                },
+            )
+            logger.info(
+                "【光鸭云盘助手】【v3.7.5】【部分续跑】升级自愈基线已完成；"
+                "旧版本可能遗留的半整理目录已重新进入发现范围"
+            )
+        return result
+
+    setattr(finish_wrapped, "_v375_partial_revisit_wrapper", True)
+    cls._v366_finish_schedule = finish_wrapped
+    cls._v366_baseline_due = baseline_due_wrapped
+    cls._v366_mark_baseline_complete = mark_baseline_complete_wrapped
     setattr(cls, _INSTALL_FLAG, True)
 
 
