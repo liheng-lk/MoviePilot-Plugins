@@ -2,14 +2,14 @@
 
 只编排扫描触发和可观测性；MoviePilot 继续负责识别、分类、命名、目标目录、冲突和真实整理。
 全量扫描直接复用 v3.6 Engine 的持久游标，因此不会被 known/pending 快速路径饿死；增量扫描
-每轮先走现有 pending/known 逻辑，非阻塞 pending 后仍继续推进一页 discovery。
+每轮先走现有 pending/known 逻辑，只有确认是无活动执行的等待态才继续推进 discovery。
 """
 from __future__ import annotations
 
 import datetime
 import time
 import uuid
-from typing import Any, Dict, Sequence
+from typing import Any, Dict
 
 from app.sdk.logging import logger
 
@@ -109,33 +109,86 @@ def _trace(plugin: Any, stage: int, title: str, message: str, *, level: str = "i
         pass
 
 
+def _current_task_path(plugin: Any) -> str:
+    try:
+        status = dict(plugin.get_data(plugin._monitor_status_key) or {})
+        return str(status.get("current_task_path") or "")
+    except Exception:
+        return ""
+
+
+def _safe_pending_yield(data: Dict[str, Any]) -> bool:
+    """仅允许“真实等待、无活动执行”让出本轮；读取失败/陈旧清理/inflight/准入失败都 fail closed。"""
+    if not data.get("priority_revisit") or data.get("scheduled"):
+        return False
+    nested = data.get("result")
+    if not isinstance(nested, dict):
+        return False
+    reason = str(nested.get("reason") or "")
+    phases = dict(nested.get("phases") or {})
+    if reason == "worker_not_accept":
+        return False
+    try:
+        if int(phases.get("inflight") or 0) > 0:
+            return False
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _log_result_stages(plugin: Any, data: Dict[str, Any], *, full: bool, session: Dict[str, Any] | None = None) -> None:
+    """严格按 3→4→5 输出，便于只过滤【光鸭云盘助手】【整理】即可阅读完整主链。"""
+    if full and session is not None:
+        discover = (
+            f"全量页={int(session.get('pages') or 0)} 本页目录={int(data.get('dirs_scanned') or 0)} "
+            f"本页文件={int(data.get('files_seen') or 0)} 累计目录={int(session.get('dirs_scanned') or 0)} "
+            f"剩余游标={int(session.get('remaining_dirs') or 0)}"
+        )
+    elif data.get("priority_revisit"):
+        discover = f"pending回访={data.get('path') or '-'}"
+    elif data.get("known_scan"):
+        discover = (
+            f"known检查={int(data.get('known_checked') or 0)}/{int(data.get('known_total') or 0)} "
+            f"变化={int(data.get('known_changed') or 0)} 移除={int(data.get('known_removed') or 0)}"
+        )
+    else:
+        discover = (
+            f"discovery目录={int(data.get('dirs_scanned') or 0)} 文件={int(data.get('files_seen') or 0)} "
+            f"资源目录={int(data.get('resource_dirs') or 0)} 剩余游标={int(data.get('remaining_dirs') or 0)}"
+        )
+    _trace(plugin, 3, "发现", discover)
+
+    if data.get("busy"):
+        _trace(plugin, 4, "判定", f"Worker 正在整理：{data.get('current_task_path') or _current_task_path(plugin) or '-'}")
+        _trace(plugin, 5, "入队", "本步不提交新资源，等待当前任务收尾")
+        return
+    if data.get("handoff"):
+        _trace(plugin, 4, "判定", "旧 Worker 正在安全交接")
+        _trace(plugin, 5, "入队", "交接期间不提交新资源")
+        return
+    if data.get("scan_busy"):
+        _trace(plugin, 4, "判定", "已有 discovery 正在运行")
+        _trace(plugin, 5, "入队", "本步不重复提交")
+        return
+
+    scheduled = bool(data.get("scheduled"))
+    task_path = _current_task_path(plugin)
+    if scheduled:
+        _trace(plugin, 4, "判定", f"发现可执行资源：{task_path or data.get('path') or '-'}")
+        _trace(plugin, 5, "入队", f"已交给单 Worker：{task_path or data.get('path') or '-'}")
+    else:
+        _trace(plugin, 4, "判定", "本轮没有新的可执行资源，保留等待态/游标")
+        _trace(plugin, 5, "入队", "本轮无需提交新资源")
+
+
 def install_dual_scan_v376() -> None:
-    """幂等安装。运行期 hardening 可继续改 Engine 读取能力，不会覆盖这里的扫描会话闭包。"""
+    """幂等安装。运行期 hardening 继续增强 Engine 读取能力，不覆盖这里的扫描会话。"""
     if bool(getattr(_MonitorMixin, _INSTALL_FLAG, False)):
         return
 
-    original_schedule = _MonitorMixin._v360_schedule_resource
     original_monitor_run = _MonitorMixin.run_organize_monitor_scan
     original_status = _MonitorMixin.api_organize_monitor_status
     original_get_api = _BaseOrganizerMixin.get_organizer_api
-
-    def schedule_wrapped(self, group_path: str, files: Sequence[Any]) -> Dict[str, Any]:
-        if getattr(self, "_v376_active_scan_id", ""):
-            _trace(
-                self,
-                4,
-                "判定",
-                f"资源={_norm(self, group_path)} 主媒体={len(self._v360_primary_files(files))}",
-            )
-        result = dict(original_schedule(self, group_path, files) or {})
-        if getattr(self, "_v376_active_scan_id", "") and result.get("scheduled"):
-            _trace(
-                self,
-                5,
-                "入队",
-                f"资源={_norm(self, group_path)} submitted={int(result.get('submitted') or 0)}",
-            )
-        return result
 
     def run_incremental(self, trigger: str = "monitor") -> Dict[str, Any]:
         scan_id = _new_scan_id("incremental")
@@ -147,40 +200,24 @@ def install_dual_scan_v376() -> None:
                 self,
                 2,
                 "准备",
-                f"目录={_norm(self, getattr(self, '_organize_monitor_path', ''))}；pending→known→discovery",
+                f"目录={_norm(self, getattr(self, '_organize_monitor_path', ''))}；顺序=pending→known→discovery",
             )
-            # manual=True 强制 known 后推进一页 discovery；这是“新目录不能只等低频 baseline”的关键。
+            # manual=True 强制 known 后推进 discovery；新目录不再只等低频 baseline。
             result = dict(original_monitor_run(self, manual=True) or {})
             data = dict(result.get("data") or {})
-            if (
-                data.get("priority_revisit")
-                and not data.get("scheduled")
-                and not any(data.get(k) for k in ("busy", "handoff", "scan_busy"))
-            ):
-                # 非阻塞 pending 只完成回访，直接推进一页 Engine，避免旧等待项饿死新目录。
+            if _safe_pending_yield(data):
+                priority_path = str(data.get("path") or "")
                 result = dict(_EngineMixin.run_organize_monitor_scan(self, manual=True) or {})
                 data = dict(result.get("data") or {})
-                data["priority_revisit_yielded"] = True
-            if data.get("known_scan"):
-                detail = (
-                    f"known={int(data.get('known_checked') or 0)}/{int(data.get('known_total') or 0)} "
-                    f"changed={int(data.get('known_changed') or 0)} scheduled={int(bool(data.get('scheduled')))}"
-                )
-            elif data.get("priority_revisit"):
-                detail = f"pending={data.get('path') or '-'} scheduled={int(bool(data.get('scheduled')))}"
-            else:
-                detail = (
-                    f"discovery目录={int(data.get('dirs_scanned') or 0)} 文件={int(data.get('files_seen') or 0)} "
-                    f"资源={int(data.get('resource_dirs') or 0)} 剩余={int(data.get('remaining_dirs') or 0)}"
-                )
-            _trace(self, 3, "发现", detail)
+                data.update({"priority_revisit_yielded": True, "priority_revisit_path": priority_path})
+            _log_result_stages(self, data, full=False)
             elapsed = round(time.time() - started, 3)
             self._save_monitor_status(
                 incremental_last_at=time.time(),
                 incremental_last_scan_id=scan_id,
                 incremental_last_duration=elapsed,
             )
-            _trace(self, 6, "完成", f"增量轮次结束，耗时={elapsed}s")
+            _trace(self, 6, "完成", f"增量轮次结束，耗时={elapsed}s；下轮从持久游标继续")
             data.update({"scan_id": scan_id, "scan_mode": "incremental", "scan_trigger": trigger})
             result["data"] = data
             result.setdefault("message", "增量扫描完成")
@@ -194,27 +231,19 @@ def install_dual_scan_v376() -> None:
     def run_full_step(self, trigger: str = "resume") -> Dict[str, Any]:
         session = _load_full(self)
         if not session.get("active"):
-            return {
-                "success": True,
-                "message": "当前没有运行中的全量扫描",
-                "data": {"full_scan_active": False},
-            }
+            return {"success": True, "message": "当前没有运行中的全量扫描", "data": {"full_scan_active": False}}
         scan_id = str(session.get("scan_id") or _new_scan_id("full"))
         old = _set_context(self, scan_id, "full", str(session.get("trigger") or trigger))
         try:
-            # 全量只推进 Engine 持久游标，不经过 known/pending 快速返回；owner/Worker busy 门禁仍在 Engine 内。
+            # 全量直接推进 Engine 游标；owner/Worker busy 门禁仍由 Engine 自身执行。
             result = dict(_EngineMixin.run_organize_monitor_scan(self, manual=True) or {})
             data = dict(result.get("data") or {})
-            if any(data.get(k) for k in ("busy", "handoff", "scan_busy")):
-                reason = (
-                    "worker_busy"
-                    if data.get("busy")
-                    else "handoff"
-                    if data.get("handoff")
-                    else "scan_busy"
-                )
+
+            if any(data.get(key) for key in ("busy", "handoff", "scan_busy")):
+                reason = "worker_busy" if data.get("busy") else "handoff" if data.get("handoff") else "scan_busy"
                 session.update({"paused": True, "pause_reason": reason})
                 _save_full(self, session)
+                _log_result_stages(self, data, full=True, session=session)
                 self._save_monitor_status(
                     full_scan_active=True,
                     full_scan_id=scan_id,
@@ -224,13 +253,7 @@ def install_dual_scan_v376() -> None:
                 return {
                     "success": True,
                     "message": "全量扫描会话已保留；Worker 空闲后自动继续",
-                    "data": {
-                        **data,
-                        "scan_id": scan_id,
-                        "scan_mode": "full",
-                        "full_scan_active": True,
-                        "full_scan_paused": True,
-                    },
+                    "data": {**data, "scan_id": scan_id, "scan_mode": "full", "full_scan_active": True, "full_scan_paused": True},
                 }
 
             page_dirs = int(data.get("dirs_scanned") or 0)
@@ -248,14 +271,7 @@ def install_dual_scan_v376() -> None:
             if "remaining_dirs" in data:
                 session["remaining_dirs"] = int(data.get("remaining_dirs") or 0)
 
-            _trace(
-                self,
-                3,
-                "发现",
-                f"全量页={int(session.get('pages') or 0)} 本页目录={page_dirs} 本页文件={page_files} "
-                f"累计目录={int(session.get('dirs_scanned') or 0)} 剩余={int(session.get('remaining_dirs') or 0)}",
-            )
-
+            _log_result_stages(self, data, full=True, session=session)
             if data.get("cycle_complete"):
                 completed_at = time.time()
                 session.update({"active": False, "completed_at": completed_at, "remaining_dirs": 0})
@@ -275,9 +291,9 @@ def install_dual_scan_v376() -> None:
                     self,
                     6,
                     "完成",
-                    f"全量遍历完成：页={int(session.get('pages') or 0)} "
-                    f"目录={int(session.get('dirs_scanned') or 0)} 文件={int(session.get('files_seen') or 0)} "
-                    f"资源={int(session.get('resource_dirs') or 0)} 提交={int(session.get('scheduled_resources') or 0)}",
+                    f"全量遍历完成：页={int(session.get('pages') or 0)} 目录={int(session.get('dirs_scanned') or 0)} "
+                    f"文件={int(session.get('files_seen') or 0)} 资源={int(session.get('resource_dirs') or 0)} "
+                    f"提交={int(session.get('scheduled_resources') or 0)}",
                 )
 
             _save_full(self, session)
@@ -305,22 +321,14 @@ def install_dual_scan_v376() -> None:
                 }
             )
             result["data"] = data
-            result["message"] = (
-                "全量扫描已完整遍历监控目录"
-                if not session.get("active")
-                else "全量扫描正在进行；会自动续页直到完整遍历"
-            )
+            result["message"] = "全量扫描已完整遍历监控目录" if not session.get("active") else "全量扫描正在进行；会自动续页直到完整遍历"
             return result
         except Exception as err:
             session["last_error"] = str(err)
             session["errors"] = int(session.get("errors") or 0) + 1
             _save_full(self, session)
             _trace(self, 6, "失败", f"全量扫描异常，断点保留: {err}", level="error")
-            return {
-                "success": False,
-                "message": f"全量扫描失败，断点已保留: {err}",
-                "data": {"scan_id": scan_id, "scan_mode": "full", "full_scan_active": True},
-            }
+            return {"success": False, "message": f"全量扫描失败，断点已保留: {err}", "data": {"scan_id": scan_id, "scan_mode": "full", "full_scan_active": True}}
         finally:
             _restore_context(self, old)
 
@@ -366,11 +374,7 @@ def install_dual_scan_v376() -> None:
     def stop_full(self, trigger: str = "manual") -> Dict[str, Any]:
         session = _load_full(self)
         if not session.get("active"):
-            return {
-                "success": True,
-                "message": "当前没有运行中的全量扫描",
-                "data": {"full_scan_active": False},
-            }
+            return {"success": True, "message": "当前没有运行中的全量扫描", "data": {"full_scan_active": False}}
         stopped_at = time.time()
         session.update({"active": False, "stopped_at": stopped_at, "stopped_by": trigger})
         _save_full(self, session)
@@ -383,11 +387,7 @@ def install_dual_scan_v376() -> None:
                 "stopped_scan_id": session.get("scan_id"),
             },
         )
-        self._save_monitor_status(
-            full_scan_active=False,
-            full_scan_paused=False,
-            full_scan_suppressed_until=stopped_at + _FULL_SCAN_INTERVAL,
-        )
+        self._save_monitor_status(full_scan_active=False, full_scan_paused=False, full_scan_suppressed_until=stopped_at + _FULL_SCAN_INTERVAL)
         return {
             "success": True,
             "message": "已停止全量扫描续页；当前整理不中断，30 分钟内不会自动重启全量",
@@ -470,36 +470,14 @@ def install_dual_scan_v376() -> None:
                 row["endpoint"] = self.api_organize_monitor_scan
                 row["summary"] = "启动完整全量扫描"
         extra = [
-            {
-                "path": "/organize/monitor/incremental-scan",
-                "endpoint": self.api_organize_monitor_incremental_scan,
-                "auth": "bear",
-                "methods": ["POST"],
-                "summary": "执行一次增量扫描",
-                "response_model": GuangYaOrganizerResponse,
-            },
-            {
-                "path": "/organize/monitor/full-scan",
-                "endpoint": self.api_organize_monitor_full_scan,
-                "auth": "bear",
-                "methods": ["POST"],
-                "summary": "开始或继续完整全量扫描",
-                "response_model": GuangYaOrganizerResponse,
-            },
-            {
-                "path": "/organize/monitor/full-scan/stop",
-                "endpoint": self.api_organize_monitor_full_scan_stop,
-                "auth": "bear",
-                "methods": ["POST"],
-                "summary": "停止全量扫描续页",
-                "response_model": GuangYaOrganizerResponse,
-            },
+            {"path": "/organize/monitor/incremental-scan", "endpoint": self.api_organize_monitor_incremental_scan, "auth": "bear", "methods": ["POST"], "summary": "执行一次增量扫描", "response_model": GuangYaOrganizerResponse},
+            {"path": "/organize/monitor/full-scan", "endpoint": self.api_organize_monitor_full_scan, "auth": "bear", "methods": ["POST"], "summary": "开始或继续完整全量扫描", "response_model": GuangYaOrganizerResponse},
+            {"path": "/organize/monitor/full-scan/stop", "endpoint": self.api_organize_monitor_full_scan_stop, "auth": "bear", "methods": ["POST"], "summary": "停止全量扫描续页", "response_model": GuangYaOrganizerResponse},
         ]
         existing = {str(row.get("path") or "") for row in apis}
         apis.extend(row for row in extra if row["path"] not in existing)
         return apis
 
-    _MonitorMixin._v360_schedule_resource = schedule_wrapped
     _MonitorMixin.organize_monitor_tick = tick_wrapped
     _MonitorMixin.api_organize_monitor_scan = api_scan
     _MonitorMixin.api_organize_monitor_incremental_scan = api_incremental
@@ -511,4 +489,4 @@ def install_dual_scan_v376() -> None:
     logger.info("【光鸭云盘助手】【整理】v3.7.6 双通道扫描已启用：增量监控 + 持久全量兜底")
 
 
-__all__ = ["install_dual_scan_v376", "_FULL_SESSION_KEY", "_FULL_LAST_KEY", "_full_due"]
+__all__ = ["install_dual_scan_v376", "_FULL_SESSION_KEY", "_FULL_LAST_KEY", "_full_due", "_safe_pending_yield"]
