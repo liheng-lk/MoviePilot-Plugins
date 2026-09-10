@@ -57,8 +57,11 @@ class DualScanV376ContractTest(unittest.TestCase):
         self.assertIn("【光鸭云盘助手】【整理】【%s】【%s/%s %s】%s", source)
         self.assertIn('"log_stage_schema": "1触发/2准备/3发现/4判定/5入队/6完成"', source)
         log_helper = source.split("def _log_result_stages", 1)[1].split("def install_dual_scan_v376", 1)[0]
-        self.assertLess(log_helper.index('_trace(plugin, 3, "发现"'), log_helper.index('_trace(plugin, 4, "判定"')))
-        self.assertLess(log_helper.index('_trace(plugin, 4, "判定"'), log_helper.index('_trace(plugin, 5, "入队"')))
+        stage3 = log_helper.index('_trace(plugin, 3, "发现"')
+        stage4 = log_helper.index('_trace(plugin, 4, "判定"')
+        stage5 = log_helper.index('_trace(plugin, 5, "入队"')
+        self.assertLess(stage3, stage4)
+        self.assertLess(stage4, stage5)
 
     def test_manual_controls_are_exposed_in_backend_and_ui(self):
         backend = DUAL.read_text(encoding="utf-8")
