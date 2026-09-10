@@ -1,6 +1,6 @@
 // v3.8.1 uses a fresh page chunk filename instead of reusing v376 with only a query-string cache bust.
 const moduleMap = {
-  './Page': () => import('./__federation_expose_AssistantPage-v381.js').then((mod) => () => mod.default),
+  './Page': () => import('./__federation_expose_AssistantPage-v381.js?v=3.8.1').then((mod) => () => mod.default),
   './Config': () => import('./__federation_expose_AssistantConfig-v300.js?v=3.0.0').then((mod) => () => mod.default),
 };
 
