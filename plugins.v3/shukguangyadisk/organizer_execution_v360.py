@@ -3,8 +3,8 @@
 该层显式位于插件 MRO 前部：
 1. 导入阶段先安装 v3.6.9 光鸭路径分页/严格读取基础补丁；
 2. monitor 初始化时安装 v3.6.9 连续发现/状态回收，再安装 v3.7.6 双通道扫描、v3.8.0
-   部分 ready 调度、持续目录观察流水和全量策略，最后安装 v3.6.0 move 终态修复与
-   v3.6.4 move 失败事务保护；
+   部分 ready 调度、持续目录观察流水和全量策略，最后安装 v3.8.2 运行存活保护与
+   v3.6.0/v3.6.4 move 安全补丁；
 3. 弱命名 folder envelope 内部逐文件执行时，最终状态统一回到 v3.6 fallback；
 4. 状态 API 最后投影 v3.6 Worker/discovery 事实，屏蔽旧 v3.5.9 cursor/sticky 的展示残留。
 
@@ -39,46 +39,42 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
     _v380_partial_scheduler_patch_ready: bool = False
     _v380_watch_pipeline_patch_ready: bool = False
     _v380_watch_policy_patch_ready: bool = False
+    _v382_runtime_survival_patch_ready: bool = False
 
     def init_organizer_monitor(self) -> None:
         if not self._v369_monitor_patch_ready:
-            # 延迟到运行期导入，避免插件 __init__ 尚在装配 MRO 时让 v3.6.9 反向提前导入
-            # organizer_monitor_v366。此时所有类已经定义完成，patch 安装安全且可重复。
             from .organizer_hardening_v369 import install_organizer_hardening_v369
 
             install_organizer_hardening_v369()
             self._v369_monitor_patch_ready = True
         if not self._v376_dual_scan_patch_ready:
-            # v3.7.6 同样必须等插件主类/MRO 完整装配后再 patch monitor；并且必须排在
-            # v3.6.9 hardening 之后，使增量扫描捕获到的是最终严格读取/连续发现实现。
             from .organizer_dual_scan_v376 import install_dual_scan_v376
 
             install_dual_scan_v376()
             self._v376_dual_scan_patch_ready = True
         if not self._v380_partial_scheduler_patch_ready:
-            # v3.8.0 在最终观察流水前先收口“部分 ready 可先行”，否则资源虽已被持续发现，
-            # 仍可能被同目录中的 stabilizing/history_wait sibling 整组阻塞。
             from .organizer_partial_scheduler_v380 import install_partial_scheduler_v380
 
             install_partial_scheduler_v380()
             self._v380_partial_scheduler_patch_ready = True
         if not self._v380_watch_pipeline_patch_ready:
-            # v3.8.0 是最终监控调度权：v376 仅保留 API/前端兼容，v380 把“发现”和“执行”
-            # 解耦。必须延迟安装，且位于 v369/v376/partial scheduler 之后。
             from .organizer_watch_pipeline_v380 import install_watch_pipeline_v380
 
             install_watch_pipeline_v380()
             self._v380_watch_pipeline_patch_ready = True
         if not self._v380_watch_policy_patch_ready:
-            # 策略层只替换 v380 的模块级 full-scan 策略函数：停止抑制自动复活、手动升级
-            # 强校验，并补齐状态字段。它必须在 watch pipeline 已安装后接管最终语义。
             from .organizer_watch_policy_v380 import install_watch_policy_v380
 
             install_watch_policy_v380()
             self._v380_watch_policy_patch_ready = True
+        if not self._v382_runtime_survival_patch_ready:
+            # 必须最后包住最终 tick/status：任何远端扫描异常只能伤到本轮监控，不能冒泡到
+            # APScheduler/MoviePilot 插件生命周期；同时为刚安装/热更新提供 180s 自动全量保护期。
+            from .organizer_runtime_survival_v382 import install_runtime_survival_v382
+
+            install_runtime_survival_v382()
+            self._v382_runtime_survival_patch_ready = True
         if not self._v360_storage_patch_ready:
-            # 安装顺序不可交换：v3.6.4 必须包在 v3.6.0 最终 move_item 外层，才能在
-            # MoviePilot 收到失败前进行延长确认、回滚和 delete/purge 保护。
             install_move_confirmation_v360()
             install_move_transaction_guard_v364()
             self._v360_storage_patch_ready = True
@@ -86,7 +82,6 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
 
     def _execute_isolated_transfer(self, item: Any) -> Tuple[bool, str]:
         if not isinstance(item, _FolderBatchEnvelope) or item.directory_mode:
-            # 原生目录模式继续经过现有 loss-guard / conflict / season 等 MoviePilot 安全链。
             return super()._execute_isolated_transfer(item)
 
         all_success = True
@@ -101,8 +96,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
                 success, message = super()._execute_isolated_transfer(member)
             except Exception as err:  # noqa: BLE001
                 success, message = False, str(err)
-            # 每个成员在这里独立收口。TransferComplete/TransferFailed 如果已经先到，v3.6
-            # fallback 会看到成员不再 inflight 并保持幂等，不覆盖真实 MP 最终事件。
+            # TransferComplete/TransferFailed 若已经先到，成员终态保持幂等；fallback 仅补宿主未回执边界。
             self._fallback_terminal_state(member, success=bool(success), message=str(message or ""))
             all_success = all_success and bool(success)
             if message:
@@ -111,7 +105,6 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
         return all_success, "；".join(messages[:3])
 
     def _fallback_terminal_state(self, item: Any, success: bool, message: str) -> None:
-        """弱命名 envelope 已逐成员收口，禁止 Worker 外层再用聚合 True/False 覆盖成员结果。"""
         if isinstance(item, _FolderBatchEnvelope) and not item.directory_mode:
             logger.debug(
                 "【光鸭云盘助手】【v3.6.0】【最终结果】弱命名 envelope 已逐成员收口，跳过聚合 fallback: %s",
@@ -121,7 +114,6 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
         return super()._fallback_terminal_state(item, success=success, message=message)
 
     def api_organize_monitor_status(self) -> Dict[str, Any]:
-        """旧兼容层先补历史，最后由 3.6 用真实 Worker/cursor 事实覆盖调度展示。"""
         response = super().api_organize_monitor_status()
         if not isinstance(response, dict) or not response.get("success"):
             return response
@@ -135,8 +127,6 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
         running_path = str(snapshot.get("running_path") or "")
         handoff = bool(status.get("worker_handoff_waiting"))
 
-        # 3.6 不再以 sticky 作为调度状态。即使旧 v3.5.2/v3.5.9 API wrapper 仍存在，
-        # 最终响应也必须明确归零，避免 UI 再显示“当前剧集=/”。
         status.update({
             "organizer_engine": "v3.6.0",
             "scheduler_mode": "single_resource_worker",
@@ -164,7 +154,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
                 "scan_cursor_page": int(cursor.get("page") or 0),
                 "scan_cursor_remaining_dirs": len(cursor.get("queue") or []),
             })
-        except Exception as err:  # noqa: BLE001 - status must remain observable
+        except Exception as err:  # noqa: BLE001
             status["scan_cursor_error"] = str(err)
 
         return response
