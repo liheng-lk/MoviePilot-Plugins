@@ -1,4 +1,4 @@
-"""Run the real candidate dispatch methods with deterministic queue/source doubles."""
+﻿"""Run the real candidate dispatch methods with deterministic queue/source doubles."""
 from __future__ import annotations
 
 import ast

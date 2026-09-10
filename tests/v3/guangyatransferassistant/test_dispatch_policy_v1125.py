@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 import importlib.util
@@ -151,8 +151,8 @@ def test_v1125_policy_parses_and_sits_below_final_authority_above_weekly_schedul
     weekly = entry_text.index("GuangYaAiringWeeklyV1121Mixin,", start)
     scheduler = entry_text.index("GuangYaAiringSchedulerV1120Mixin,", start)
     assert page < final_policy < policy < weekly < scheduler
-    assert 'plugin_version = "1.12.25"' in entry_text
-    assert 'build_id = "20260910-r72"' in entry_text
+    assert 'plugin_version = "1.12.26"' in entry_text
+    assert 'build_id = "20260910-r73"' in entry_text
     assert 'build_id = "20260904-r51"' in policy_text
 
 

@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 SAFETY = (ROOT / "plugins.v3" / "guangyatransferassistant" / "offline_safety_v180.py").read_text(encoding="utf-8")

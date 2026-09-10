@@ -1,4 +1,4 @@
-"""脱离 MoviePilot 运行时验证 v1.8.0 安全层的真实方法行为。"""
+﻿"""脱离 MoviePilot 运行时验证 v1.8.0 安全层的真实方法行为。"""
 
 from __future__ import annotations
 

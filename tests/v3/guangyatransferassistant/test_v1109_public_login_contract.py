@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 AUTO = (ROOT / "plugins.v3" / "guangyatransferassistant" / "gying_autologin_v1109.py").read_text(encoding="utf-8")

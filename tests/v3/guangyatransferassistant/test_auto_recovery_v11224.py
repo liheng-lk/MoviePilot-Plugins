@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 import re
@@ -21,7 +21,7 @@ def test_v11224_files_parse_and_recovery_is_wired_into_final_mro_chain():
     ast.parse(fast_text, filename=str(FAST))
     assert "from .auto_recovery_v11224 import GuangYaAutoRecoveryV11224Mixin" in fast_text
     class_head = fast_text.split("class GuangYaFastRecallV1126Mixin(", 1)[1].split("):", 1)[0]
-    assert class_head.index("GuangYaAutoRecoveryV11224Mixin") < class_head.index("GuangYaMediaMatchV11219Mixin")
+    assert class_head.index("GuangYaChannelTitleRenameV11226Mixin") < class_head.index("GuangYaAutoRecoveryV11224Mixin") < class_head.index("GuangYaMediaMatchV11219Mixin")
 
 
 def test_v11224_growing_channel_share_is_rechecked_but_file_level_dedup_remains_authoritative():

@@ -23,6 +23,7 @@ v1.12.11 修复 /gycheck 只检查频道却未保证主动资源链的问题：�
 v1.12.12 修复 GYING 前置搜索未使用精确 TMDB 官方别名的问题：电影中文标题未命中当前媒体时，继续用同一 TMDB 身份与年份下的官方英文/原始标题搜索；无关卡片不再阻止降级，网络/认证失败仍硬停止；观影迅雷召回与 GYING Magnet/ED2K 共用该语义，不引入模糊匹配。
 v1.12.13 修复媒体库已有剧集仍被迅雷秒传重复导入：TV 迅雷硬目标改为媒体库 missing 与成功事实/订阅 missing 的交集，并在 JSON batch import 前逐视频二次过滤；跨边界多集文件整文件拒绝，媒体库缺集事实读取失败时跳过迅雷但继续后续来源。
 v1.12.14 统一核心资源链：频道/观影均支持光鸭分享、迅雷分享、Magnet、ED2K；TV/动漫按精确 TMDB 官方标题补召回；所有 TV 最终写盘收紧到 library missing ∩ logical/fact missing - reservation - other source claim，并对光鸭分享、迅雷、Magnet、ED2K 统一执行不可分割物理文件 episodes ⊆ allowed missing 与实际 payload 身份门禁。
+v1.12.26 修复频道标题模板噪声导致匹配失败；转存落盘命名改为剧集名 + 季集号（SxxExx），电影仅用剧名。
 v1.12.25 修复光鸭频道分享“有叶子但文件名为空”导致资源存在却无法转存：异常分享重读时补传 shareId+accessToken，兼容嵌套文件名/路径/扩展字段并正确补全独立 fileExt；协议仍异常时显式报错而非伪报无视频。
 v1.12.24 修复自动转存恢复与识别命名：真实缺口存在时可复核增长中的旧频道分享，不再让 handled=True 静默阻断观影后备链；非更新日增加有界提前资源补漏；转存文件统一以识别文件夹名作为前缀。
 v1.12.23 修复观影零结果被误切旧接口并展开默认推荐卡片；订阅检索在 downurl 前按精确标题、年份、类型筛选，所有官方别名完成且未命中时不再上送无关链接，中途失败标记检索未完成；“我的资源检索”在数量截断前按订阅过滤并分离来源健康与精确候选；缓存按订阅身份隔离并合并同一检索的并发请求；日志明确区分模糊卡片、待核验链接、精确候选、真实入队和最终落盘。
@@ -53,6 +54,7 @@ from app.sdk.events import Event, eventmanager
 
 from . import legacy as _legacy_module
 from .channel_sources_v190 import install_channel_multisource_compat
+from .channel_title_rename_v11226 import install_channel_title_rename_v11226
 from .channel_ui_v1101 import GuangYaChannelUiV1101Mixin
 from .config_ui_v1100 import GuangYaConfigUiV1100Mixin
 from .console_ui_v1100 import GuangYaConsoleUiV1100Mixin
@@ -103,6 +105,7 @@ from .xunlei_hardening_v193 import GuangYaXunleiHardeningMixin
 
 install_episode_filename_compat(_legacy_module)
 install_channel_multisource_compat(_legacy_module)
+install_channel_title_rename_v11226(_legacy_module)
 
 
 class GuangYaTransferAssistant(
@@ -153,8 +156,8 @@ class GuangYaTransferAssistant(
 ):
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
 
-    plugin_version = "1.12.25"
-    build_id = "20260910-r72"
+    plugin_version = "1.12.26"
+    build_id = "20260910-r73"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""

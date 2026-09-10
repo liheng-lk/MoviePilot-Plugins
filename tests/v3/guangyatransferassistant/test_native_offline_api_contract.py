@@ -1,4 +1,4 @@
-"""锁定光鸭 cloudcollection API 字段/状态映射，防止后续误改成下载器语义。"""
+﻿"""锁定光鸭 cloudcollection API 字段/状态映射，防止后续误改成下载器语义。"""
 
 from pathlib import Path
 

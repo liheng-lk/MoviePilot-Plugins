@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 README = (ROOT / "plugins.v3" / "guangyatransferassistant" / "README.md").read_text(encoding="utf-8")

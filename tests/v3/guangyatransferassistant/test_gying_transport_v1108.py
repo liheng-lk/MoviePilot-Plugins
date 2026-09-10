@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 import json
@@ -33,9 +33,9 @@ def test_v1108_files_parse_and_release_metadata_are_aligned():
     ast.parse(entry_text, filename=str(ENTRY))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "1.12.25"
-    assert 'plugin_version = "1.12.25"' in entry_text
-    assert 'build_id = "20260910-r72"' in entry_text
+    assert package["version"] == local["version"] == "1.12.26"
+    assert 'plugin_version = "1.12.26"' in entry_text
+    assert 'build_id = "20260910-r73"' in entry_text
     assert "v1.12.5" in package.get("history", {})
     assert "v1.12.3" in package.get("history", {})
     assert "v1.10.12" in package.get("history", {})

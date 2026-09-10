@@ -23,12 +23,16 @@ handled 真缺口恢复、非更新日提前资源补漏以及识别文件夹名
 
 v1.12.25 增加光鸭分享叶子协议兼容：旧 probe 已读到叶子但路径全空时，补传 shareId
 重新调用 get_share_page_files_list，并兼容新版文件名/路径字段，避免“叶子存在但扩展名示例为 -”。
+
+v1.12.26 频道标题清洗与转存命名：兼容 `名称：` / `[剧集·光鸭]` 模板噪声；落盘文件名改为
+`剧集名 SxxExx`（电影仅剧名）。
 """
 from __future__ import annotations
 
 import time
 from typing import Any, Dict, List
 
+from .channel_title_rename_v11226 import GuangYaChannelTitleRenameV11226Mixin
 from .share_leaf_compat_v11225 import GuangYaShareLeafCompatV11225Mixin
 from .auto_recovery_v11224 import GuangYaAutoRecoveryV11224Mixin
 from .media_match_v11219 import GuangYaMediaMatchV11219Mixin
@@ -36,6 +40,7 @@ from .movie_xunlei_match_v11219 import GuangYaMovieXunleiMatchV11219Mixin
 
 
 class GuangYaFastRecallV1126Mixin(
+    GuangYaChannelTitleRenameV11226Mixin,
     GuangYaShareLeafCompatV11225Mixin,
     GuangYaAutoRecoveryV11224Mixin,
     GuangYaMediaMatchV11219Mixin,
