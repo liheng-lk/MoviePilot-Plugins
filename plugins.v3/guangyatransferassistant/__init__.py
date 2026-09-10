@@ -101,16 +101,12 @@ from .status_hardening_v193 import GuangYaStatusHardeningMixin
 from .viewing_logging_v1113 import GuangYaViewingLoggingV1113Mixin
 from .xunlei_flash_v193 import GuangYaXunleiFlashMixin
 from .xunlei_hardening_v193 import GuangYaXunleiHardeningMixin
-from .gy2_plugin import _GuangYaTransferV2Mixin
-
-
 install_episode_filename_compat(_legacy_module)
 install_channel_multisource_compat(_legacy_module)
 install_channel_title_rename_v11226(_legacy_module)
 
 
 class GuangYaTransferAssistant(
-    _GuangYaTransferV2Mixin,
     GuangYaPagePerfV1123Mixin,
     GuangYaMovieIdentityV1129Mixin,
     GuangYaResourceGateV1127Mixin,
@@ -156,11 +152,11 @@ class GuangYaTransferAssistant(
     GuangYaExperienceMixin,
     _RoutingV170Assistant,
 ):
-    """2.0：声明式 UI + 可解释匹配 + 统一命名/门禁；底层仍复用 1.x 协议与调度。"""
+    """1.12.26 行为基线（2.0.4 紧急回滚：不接入 V2 mixin）。"""
 
-    plugin_version = "2.0.3"
-    build_id = "20260910-r83"
-    plugin_desc = "2.0：声明式界面 + 可解释匹配 + 统一命名/写盘门禁；兼容 1.x 配置与状态。来源优先级：观影迅雷秒传 → 光鸭直接转存 → Magnet → ED2K。"
+    plugin_version = "2.0.4"
+    build_id = "20260910-r84"
+    plugin_desc = "固定接管订阅并自动转存：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。含频道标题清洗与剧集名季集命名。2.0.4 紧急回滚卸下导致加载失败的 V2 层。"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
