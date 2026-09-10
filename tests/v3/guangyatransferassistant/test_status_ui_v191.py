@@ -189,7 +189,7 @@ def test_status_ui_v191_is_retained_by_current_release():
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     assert package["version"] == local["version"] == "2.0.7"
     assert 'plugin_version = "2.0.7"' in entry
-    assert 'build_id = "20260910-r88"' in entry
+    assert 'build_id = "20260910-r89"' in entry
     assert "v1.12.5" in package.get("history", {})
     assert "v1.12.3" in package.get("history", {})
     assert "v1.9.1" in package.get("history", {})

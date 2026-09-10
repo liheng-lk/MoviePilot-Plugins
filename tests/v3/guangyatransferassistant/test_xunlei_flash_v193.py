@@ -62,7 +62,7 @@ def test_v193_files_parse_and_publish_current_version():
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     assert package["version"] == local["version"] == "2.0.7"
     assert 'plugin_version = "2.0.7"' in entry_text
-    assert 'build_id = "20260910-r88"' in entry_text
+    assert 'build_id = "20260910-r89"' in entry_text
     assert "v1.12.5" in package["history"]
     assert "v1.9.3" in package["history"]
 

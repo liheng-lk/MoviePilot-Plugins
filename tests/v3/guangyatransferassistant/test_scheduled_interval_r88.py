@@ -17,7 +17,7 @@ ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 
 def test_r88_version_markers():
     assert 'plugin_version = "2.0.7"' in ENTRY
-    assert 'build_id = "20260910-r88"' in ENTRY
+    assert 'build_id = "20260910-r89"' in ENTRY
 
 
 def test_r88_due_filter_contract_in_routing_and_runtime():
@@ -25,7 +25,7 @@ def test_r88_due_filter_contract_in_routing_and_runtime():
     assert "_load_search_subscriptions" in ROUTING
     assert "is_scheduled_scan" in ROUTING
     assert "is_targeted" in ROUTING
-    assert "bind_partial(chain_self, *args" in ROUTING
+    assert "bind_partial(chain_self, *args" in ROUTING or "_normalize_search_call" in ROUTING
     assert "is_scheduled_scan" in RUNTIME
     assert "_load_due_search_subscriptions" in RUNTIME or "_load_search_subscriptions" in RUNTIME
     # 禁止周期扫描直接 list 全量再转 sids 的旧路径作为唯一路径
@@ -36,6 +36,11 @@ def test_r88_due_filter_contract_in_routing_and_runtime():
     assert "candidates = self._list_subscriptions(state or \"N,R\")" not in guard.split(
         "elif is_scheduled_scan:", 1
     )[0]
+    due = ROUTING.split("    def _load_due_search_subscriptions(", 1)[1].split(
+        "    def _is_active_transfer_state", 1
+    )[0]
+    assert "return None" in due
+    assert "_list_subscriptions" not in due
 
 
 def _make_sub(sid: int, *, selected: bool = False, state: str = "R", due: bool = True):

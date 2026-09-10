@@ -73,7 +73,7 @@ def test_versions_and_layered_legacy_contract():
     assert package["version"] == "2.0.7"
     assert local["version"] == "2.0.7"
     assert 'plugin_version = "2.0.7"' in entry_text
-    assert 'build_id = "20260910-r88"' in entry_text
+    assert 'build_id = "20260910-r89"' in entry_text
     assert 'plugin_version = "1.7.0"' in routing_text
     assert 'plugin_version = "1.6.5"' in legacy_text
     assert "from .routing_v170 import GuangYaTransferAssistant as _RoutingV170Assistant" in entry_text

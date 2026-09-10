@@ -157,7 +157,7 @@ class GuangYaTransferAssistant(
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
 
     plugin_version = "2.0.7"
-    build_id = "20260910-r88"
+    build_id = "20260910-r89"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""

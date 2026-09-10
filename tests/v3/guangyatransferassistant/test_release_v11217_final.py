@@ -15,7 +15,7 @@ def test_final_v11217_tree_is_publishable_and_temp_tooling_is_removed():
     bilingual = (PLUGIN / "movie_bilingual_identity_v11216.py").read_text(encoding="utf-8")
 
     assert 'plugin_version = "2.0.7"' in entry
-    assert 'build_id = "20260910-r88"' in entry
+    assert 'build_id = "20260910-r89"' in entry
     assert plugin["version"] == "2.0.7"
     assert package["GuangYaTransferAssistant"]["version"] == "2.0.7"
     assert 'class GuangYaSearchRecallV11217Mixin' in recall

@@ -21,7 +21,7 @@ def test_observability_layer_parses_and_wraps_final_runtime():
     assert entry_text.index("GuangYaGyingObservabilityV1104Mixin,", start) < entry_text.index("GuangYaChannelUiV1101Mixin,", start)
     assert entry_text.index("GuangYaGyingObservabilityV1104Mixin,", start) < entry_text.index("GuangYaGyingHardeningMixin,", start)
     assert 'plugin_version = "2.0.7"' in entry_text
-    assert 'build_id = "20260910-r88"' in entry_text
+    assert 'build_id = "20260910-r89"' in entry_text
 
 
 def test_observability_covers_all_real_gying_stages():

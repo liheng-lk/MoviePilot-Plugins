@@ -42,6 +42,24 @@ def _enum_value(value: Any) -> str:
     return str(getattr(value, "value", value) or "").strip().lower()
 
 
+def _flatten_bound_search_kwargs(signature, values: Dict[str, Any]) -> Dict[str, Any]:
+    """去掉实例首参，并把 VAR_KEYWORD（常名 kwargs）展平为可二次 ** 转发的平面表。"""
+    out = dict(values)
+    first = next(iter(signature.parameters), None)
+    if first:
+        out.pop(first, None)
+    out.pop("self", None)
+    for name, param in signature.parameters.items():
+        if param.kind == inspect.Parameter.VAR_KEYWORD and name in out:
+            nested = out.pop(name) or {}
+            if isinstance(nested, dict):
+                out.update(nested)
+        elif param.kind == inspect.Parameter.VAR_POSITIONAL and name in out:
+            # 搜索 ABI 不应依赖 *args 残留；丢弃以免再次位置重复
+            out.pop(name, None)
+    return out
+
+
 def _route_identity(media_source: Any, media_id: Any, season: Any = None) -> str:
     """生成订阅创建前后都可比较的媒体路由身份。"""
     source = _enum_value(media_source)
@@ -245,18 +263,29 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
         return original(chain_self, *args, **kwargs)
 
     @staticmethod
-    def _bind_search_args(original, chain_self, args, kwargs) -> Dict[str, Any]:
-        """从 *args/**kwargs 提取已知字段，不丢弃未知 kwargs。
+    def _normalize_search_call(func, instance, args=(), kwargs=None) -> Dict[str, Any]:
+        """把 *args/**kwargs 归一成仅 kwargs；已 bind 后不得再带原 args。
 
-        wrapper 已剥离 self，必须把 chain_self 作为第一位置参数参与 bind，
-        否则 ``search(123, "R")`` 会被误解析成 self=123。
+        保留全部已绑定参数（含未来 ABI），只去掉实例首参（self / chain_self 等）。
         """
         merged = dict(kwargs or {})
         try:
-            bound = inspect.signature(original).bind_partial(chain_self, *args, **merged)
+            signature = inspect.signature(func)
+            bound = signature.bind_partial(instance, *(args or ()), **merged)
             bound.apply_defaults()
-            values = dict(bound.arguments)
-            values.pop("self", None)
+            return _flatten_bound_search_kwargs(signature, dict(bound.arguments))
+        except TypeError:
+            return dict(merged)
+
+    @staticmethod
+    def _bind_search_args(original, chain_self, args, kwargs) -> Dict[str, Any]:
+        """从 *args/**kwargs 提取已知字段；forward 使用完整归一化 kwargs。"""
+        merged = dict(kwargs or {})
+        try:
+            signature = inspect.signature(original)
+            bound = signature.bind_partial(chain_self, *(args or ()), **merged)
+            bound.apply_defaults()
+            values = _flatten_bound_search_kwargs(signature, dict(bound.arguments))
         except TypeError:
             values = dict(merged)
         return {
@@ -270,8 +299,9 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
             "scheduled_interval": values.get(
                 "scheduled_interval", merged.get("scheduled_interval")
             ),
-            "kwargs": merged,
-            "args": args,
+            # 归一化后的完整参数表（kwargs-only），禁止再附带原 args
+            "kwargs": values,
+            "args": (),
         }
 
     def _load_due_search_subscriptions(
@@ -280,36 +310,44 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
         *,
         state: Any = "N",
         scheduled_interval: Any = None,
-    ) -> List[Any]:
-        """优先调用宿主 due 筛选；禁止自行复制 subscription_search_due。"""
+    ) -> Optional[List[Any]]:
+        """调用宿主 due 筛选。
+
+        返回：
+        - list：成功（可为 empty）
+        - None：失败 / 无法确认 ABI → 调用方必须 fail-closed 或完整交还原生
+        绝不以全量列举订阅兜底。
+        """
         loader = getattr(chain_self, "_load_search_subscriptions", None)
-        if callable(loader):
-            try:
-                rows = loader(
-                    sid=None,
-                    sids=None,
-                    state=state,
-                    scheduled_interval=scheduled_interval,
-                )
-                return [item for item in (rows or []) if item is not None]
-            except TypeError:
-                # 旧宿主签名可能尚无 scheduled_interval
-                try:
-                    rows = loader(sid=None, sids=None, state=state)
-                    return [item for item in (rows or []) if item is not None]
-                except Exception as err:
-                    self._plugin_log(
-                        "WARNING",
-                        "【光鸭转存助手】【调度】宿主 _load_search_subscriptions 兼容调用失败：%s；回退列表",
-                        str(err)[:240],
-                    )
-            except Exception as err:
-                self._plugin_log(
-                    "WARNING",
-                    "【光鸭转存助手】【调度】宿主 due 筛选失败：%s；回退列表",
-                    str(err)[:240],
-                )
-        return [item for item in (self._list_subscriptions(state or "N,R") or []) if item is not None]
+        if not callable(loader):
+            self._plugin_log(
+                "WARNING",
+                "【光鸭转存助手】【调度】【due失败】宿主无 _load_search_subscriptions；本轮取消周期搜索",
+            )
+            return None
+        try:
+            parameters = inspect.signature(loader).parameters
+        except (TypeError, ValueError):
+            parameters = {}
+        if not parameters:
+            self._plugin_log(
+                "WARNING",
+                "【光鸭转存助手】【调度】【due失败】无法确认宿主搜索 ABI；本轮取消周期搜索",
+            )
+            return None
+        call_kwargs: Dict[str, Any] = {"sid": None, "sids": None, "state": state}
+        if "scheduled_interval" in parameters:
+            call_kwargs["scheduled_interval"] = scheduled_interval
+        try:
+            rows = loader(**call_kwargs)
+            return [item for item in (rows or []) if item is not None]
+        except Exception as err:
+            self._plugin_log(
+                "ERROR",
+                "【光鸭转存助手】【调度】【due失败】宿主到期订阅筛选失败，本轮取消周期搜索：%s",
+                str(err)[:360],
+            )
+            return None
 
     @staticmethod
     def _is_active_transfer_state(subscribe: Any) -> bool:
@@ -396,7 +434,6 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
             progress_callback = parsed["progress_callback"]
             scheduled_interval = parsed.get("scheduled_interval", scheduled_interval)
             forward_kwargs = dict(parsed["kwargs"])
-            forward_args = tuple(parsed["args"])
         elif legacy_kwargs_only:
             forward_kwargs = {
                 "sid": sid,
@@ -406,10 +443,9 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
             }
             if sids is not None:
                 forward_kwargs["sids"] = sids
-            forward_args = ()
         else:
-            forward_kwargs = dict(kwargs)
-            forward_args = tuple(args)
+            # 无位置参数时仍归一化一次，避免后续再拼 *args
+            forward_kwargs = self._normalize_search_call(original, chain_self, (), kwargs)
 
         is_targeted = sid is not None or sids is not None
         is_scheduled_scan = (
@@ -425,8 +461,8 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
                 if result.get("handled", True):
                     return None
                 # 非活跃等：交还原生完整调用（含 scheduled_interval）
-                return self._call_original_search(original, chain_self, *forward_args, **forward_kwargs)
-            return self._call_original_search(original, chain_self, *forward_args, **forward_kwargs)
+                return self._call_original_search(original, chain_self, **forward_kwargs)
+            return self._call_original_search(original, chain_self, **forward_kwargs)
 
         if sids is not None:
             # 定向批量：保持宿主语义，不做 due 过滤
@@ -438,6 +474,13 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
                 state=state or "N",
                 scheduled_interval=scheduled_interval,
             )
+            if candidates is None:
+                # due 失败：完整交还原生（保留 scheduled_interval，由宿主自行 due），禁止全量→sids
+                self._plugin_log(
+                    "ERROR",
+                    "【光鸭转存助手】【调度】【due失败】完整交还原生周期搜索，本轮不自行枚举订阅",
+                )
+                return self._call_original_search(original, chain_self, **forward_kwargs)
             self._plugin_log(
                 "INFO",
                 "【光鸭转存助手】【调度】周期扫描先经宿主 due 筛选：interval=%s state=%s due=%s",
@@ -470,7 +513,13 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
             # due 已完成（若是周期扫描）：此时用 sids 定向交还是安全的
             try:
                 sig = inspect.signature(original)
-                supports_batch_sids = "sids" in sig.parameters
+                supports_batch_sids = (
+                    "sids" in sig.parameters
+                    or any(
+                        p.kind == inspect.Parameter.VAR_KEYWORD
+                        for p in sig.parameters.values()
+                    )
+                )
             except (TypeError, ValueError):
                 supports_batch_sids = True
             if supports_batch_sids:

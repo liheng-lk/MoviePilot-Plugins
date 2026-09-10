@@ -13,7 +13,7 @@ def test_v1111_release_marker():
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     assert package["version"] == local["version"] == "2.0.7"
     assert 'plugin_version = "2.0.7"' in entry
-    assert 'build_id = "20260910-r88"' in entry
+    assert 'build_id = "20260910-r89"' in entry
     assert "v1.12.5" in package["history"]
     assert "v1.12.3" in package["history"]
     assert "v1.10.13" in package["history"]

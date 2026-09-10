@@ -191,41 +191,49 @@ class GuangYaRuntimeFinalizerMixin:
             self._queue_async_route_check(ids, trigger=trigger)
         return rows
 
-    def _dispatch_subscribe_search(self, *args, **kwargs):
+    def _dispatch_subscribe_search(self, *args, progress_callback=None, **kwargs):
         """宿主 scheduler takeover 的最终固定分流。
 
-        只异步接管「已选且活跃(N/R)」的光鸭订阅；其余交还 SubscribeChain.search。
-        周期扫描必须先走宿主 due 筛选，禁止把全量 R 转成 sids 绕开 interval。
+        - 显式 progress_callback：供 Scheduler inspect.signature 检测；
+        - 位置参数只归一化一次，之后一律 **kwargs 转发，禁止 *args + 同名 kwargs；
+        - 周期扫描 due 失败时 fail-closed / 交还原生，禁止全量→sids。
         """
         if not self._runtime_is_current() or not self._enabled:
             return True
 
-        forward_kwargs = dict(kwargs or {})
+        if progress_callback is not None:
+            kwargs.setdefault("progress_callback", progress_callback)
+
+        probe = SubscribeChain()
+        normalizer = getattr(self, "_normalize_search_call", None)
+        if callable(normalizer):
+            forward_kwargs = dict(
+                normalizer(SubscribeChain.search, probe, args, kwargs) or {}
+            )
+        else:
+            # 极端兜底：无路由层时仍避免 *args 与 kwargs 重复
+            forward_kwargs = dict(kwargs)
+            if args:
+                try:
+                    bound = inspect.signature(SubscribeChain.search).bind_partial(
+                        probe, *args, **forward_kwargs
+                    )
+                    bound.apply_defaults()
+                    forward_kwargs = dict(bound.arguments)
+                    forward_kwargs.pop("self", None)
+                except TypeError:
+                    self._plugin_log(
+                        "ERROR",
+                        "【光鸭转存助手】【调度分流】位置参数归一化失败；本轮取消",
+                    )
+                    return True
+
         sid = forward_kwargs.get("sid")
         state = forward_kwargs.get("state", "R")
         manual = forward_kwargs.get("manual", False)
         progress_callback = forward_kwargs.get("progress_callback")
         sids = forward_kwargs.get("sids")
         scheduled_interval = forward_kwargs.get("scheduled_interval")
-        if args:
-            # 位置参数：必须带上 self 再 bind，避免 sid 被当成 self
-            try:
-                probe = SubscribeChain()
-                bound = inspect.signature(SubscribeChain.search).bind_partial(
-                    probe, *args, **forward_kwargs
-                )
-                bound.apply_defaults()
-                values = dict(bound.arguments)
-                values.pop("self", None)
-                sid = values.get("sid", sid)
-                state = values.get("state", state)
-                manual = values.get("manual", manual)
-                progress_callback = values.get("progress_callback", progress_callback)
-                sids = values.get("sids", sids)
-                scheduled_interval = values.get("scheduled_interval", scheduled_interval)
-                forward_kwargs.update(values)
-            except TypeError:
-                return SubscribeChain().search(*args, **forward_kwargs)
 
         selected = set(int(value) for value in self._selected_subscriptions if str(value).isdigit())
         if sid is not None:
@@ -252,7 +260,7 @@ class GuangYaRuntimeFinalizerMixin:
                     current_sid,
                     str(getattr(subscribe, "state", "") or "-") if subscribe else "-",
                 )
-            return SubscribeChain().search(*args, **forward_kwargs)
+            return SubscribeChain().search(**forward_kwargs)
 
         is_targeted = sids is not None
         is_scheduled_scan = (
@@ -267,29 +275,23 @@ class GuangYaRuntimeFinalizerMixin:
             subscriptions = [self._find_subscription(int(value)) for value in sids]
             subscriptions = [item for item in subscriptions if item is not None]
         elif is_scheduled_scan:
-            chain = SubscribeChain()
             loader = getattr(self, "_load_due_search_subscriptions", None)
-            if callable(loader):
-                subscriptions = list(
-                    loader(chain, state=state or "R", scheduled_interval=scheduled_interval) or []
+            if not callable(loader):
+                self._plugin_log(
+                    "ERROR",
+                    "【光鸭转存助手】【调度分流】【due失败】缺少 due 加载器；完整交还原生周期搜索",
                 )
-            else:
-                host_loader = getattr(chain, "_load_search_subscriptions", None)
-                if callable(host_loader):
-                    try:
-                        subscriptions = list(
-                            host_loader(
-                                sid=None,
-                                sids=None,
-                                state=state or "R",
-                                scheduled_interval=scheduled_interval,
-                            )
-                            or []
-                        )
-                    except TypeError:
-                        subscriptions = list(self._list_subscriptions(state or "N,R") or [])
-                else:
-                    subscriptions = list(self._list_subscriptions(state or "N,R") or [])
+                return self._runtime_call_native_search(**forward_kwargs)
+            subscriptions = loader(
+                probe, state=state or "R", scheduled_interval=scheduled_interval
+            )
+            if subscriptions is None:
+                self._plugin_log(
+                    "ERROR",
+                    "【光鸭转存助手】【调度分流】【due失败】完整交还原生周期搜索，禁止全量枚举",
+                )
+                return self._runtime_call_native_search(**forward_kwargs)
+            subscriptions = list(subscriptions or [])
             self._plugin_log(
                 "INFO",
                 "【光鸭转存助手】【调度分流】周期扫描宿主 due 后候选=%s interval=%s",
@@ -320,10 +322,23 @@ class GuangYaRuntimeFinalizerMixin:
             native_kwargs = dict(forward_kwargs)
             native_kwargs.pop("sid", None)
             native_kwargs["sids"] = tuple(native_ids)
-            # due 已完成时用 sids 交还是安全的；定向/手动同理
             return SubscribeChain().search(**native_kwargs)
         if progress_callback:
             progress_callback(value=100, text="固定转存订阅已全部交由光鸭后台检查")
+        return True
+
+    def _runtime_call_native_search(self, **forward_kwargs):
+        """due 失败时尽量调用未包装的原生 search，避免再次进入 guard 死循环。"""
+        current = SubscribeChain.search
+        original = getattr(current, "_guangya_original_search", None)
+        chain = SubscribeChain()
+        if callable(original) and original is not current:
+            return original(chain, **forward_kwargs)
+        # 无 original 可追溯时取消本轮，绝不全量→sids
+        self._plugin_log(
+            "ERROR",
+            "【光鸭转存助手】【调度分流】【due失败】无法安全交还原生；本轮取消周期搜索",
+        )
         return True
 
     def _try_transfer_subscription(
