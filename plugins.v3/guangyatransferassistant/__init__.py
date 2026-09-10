@@ -1,4 +1,4 @@
-"""光鸭转存助手 v1.12.23 运行入口。
+"""光鸭转存助手 v1.12.25 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
@@ -23,6 +23,8 @@ v1.12.11 修复 /gycheck 只检查频道却未保证主动资源链的问题：�
 v1.12.12 修复 GYING 前置搜索未使用精确 TMDB 官方别名的问题：电影中文标题未命中当前媒体时，继续用同一 TMDB 身份与年份下的官方英文/原始标题搜索；无关卡片不再阻止降级，网络/认证失败仍硬停止；观影迅雷召回与 GYING Magnet/ED2K 共用该语义，不引入模糊匹配。
 v1.12.13 修复媒体库已有剧集仍被迅雷秒传重复导入：TV 迅雷硬目标改为媒体库 missing 与成功事实/订阅 missing 的交集，并在 JSON batch import 前逐视频二次过滤；跨边界多集文件整文件拒绝，媒体库缺集事实读取失败时跳过迅雷但继续后续来源。
 v1.12.14 统一核心资源链：频道/观影均支持光鸭分享、迅雷分享、Magnet、ED2K；TV/动漫按精确 TMDB 官方标题补召回；所有 TV 最终写盘收紧到 library missing ∩ logical/fact missing - reservation - other source claim，并对光鸭分享、迅雷、Magnet、ED2K 统一执行不可分割物理文件 episodes ⊆ allowed missing 与实际 payload 身份门禁。
+v1.12.25 修复光鸭频道分享“有叶子但文件名为空”导致资源存在却无法转存：异常分享重读时补传 shareId+accessToken，兼容嵌套文件名/路径/扩展字段并正确补全独立 fileExt；协议仍异常时显式报错而非伪报无视频。
+v1.12.24 修复自动转存恢复与识别命名：真实缺口存在时可复核增长中的旧频道分享，不再让 handled=True 静默阻断观影后备链；非更新日增加有界提前资源补漏；转存文件统一以识别文件夹名作为前缀。
 v1.12.23 修复观影零结果被误切旧接口并展开默认推荐卡片；订阅检索在 downurl 前按精确标题、年份、类型筛选，所有官方别名完成且未命中时不再上送无关链接，中途失败标记检索未完成；“我的资源检索”在数量截断前按订阅过滤并分离来源健康与精确候选；缓存按订阅身份隔离并合并同一检索的并发请求；日志明确区分模糊卡片、待核验链接、精确候选、真实入队和最终落盘。
 v1.12.22 修复电影首个频道帖子无可执行资源时提前结束、遗漏后续匹配帖子；Provider 跳过仍在冷却的 failed/needs_review 和禁用候选，保留到期重开；频道、Provider、观影自动执行按真实入队回执计数，入队失败不再虚报成功或扣除缺集；统一规划与最终写盘的 completed claim 老化释放，防止旧任务在提交阶段再次阻断真实缺集。保留媒体身份、年份、质量、在途去重与光鸭原生 cloudcollection 门禁。
 v1.12.21 工程化稳定发布：修复 Provider 认证头与重试语义、解析失败 success 误报、completed/source claim 老化释放、failed/needs_review 冷却重开；新增 source 并发互斥槽位，阻断 tick 与异步 worker 对同一来源重复提交/轮询；dispatch/retry API 改为真实入队回执并回滚失败重试状态；状态页补充来源 trace 与操作提示并完成移动端可读性精修。既有 5 分钟 Push、7 天缓存补偿、AiringDue、真实 payload 身份门禁、MoviePilot 权威缺集、reservation/source claim、不可分割物理文件栅栏与来源优先级全部保持。
@@ -151,8 +153,8 @@ class GuangYaTransferAssistant(
 ):
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
 
-    plugin_version = "1.12.23"
-    build_id = "20260909-r70"
+    plugin_version = "1.12.25"
+    build_id = "20260910-r72"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
