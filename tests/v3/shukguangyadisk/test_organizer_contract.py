@@ -26,7 +26,7 @@ def test_current_version_and_federation_entry_are_consistent():
     current = package["version"]
     assert local["version"] == current
     assert f'plugin_version = "{current}"' in INIT
-    assert f"__federation_expose_AssistantPage-v352.js?v={current}" in REMOTE
+    assert f"__federation_expose_AssistantPage-v376.js?v={current}" in REMOTE
     assert "v3.4.12" in package["history"]
     assert "category.yaml" in package["history"]["v3.4.12"]
 
