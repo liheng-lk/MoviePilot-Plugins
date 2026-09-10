@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import ast
-import hashlib
+import json
 import unittest
 from pathlib import Path
 
@@ -10,26 +10,33 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
 WATCH = PLUGIN / "organizer_watch_pipeline_v380.py"
 PARTIAL = PLUGIN / "organizer_partial_scheduler_v380.py"
+POLICY = PLUGIN / "organizer_watch_policy_v380.py"
 EXECUTION = PLUGIN / "organizer_execution_v360.py"
 PAGE = PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v376.js"
+REMOTE = PLUGIN / "dist" / "assets" / "remoteEntry.js"
 
 
 class WatchPipelineV380ContractTest(unittest.TestCase):
     def test_python_sources_parse(self):
         ast.parse(WATCH.read_text(encoding="utf-8"))
         ast.parse(PARTIAL.read_text(encoding="utf-8"))
+        ast.parse(POLICY.read_text(encoding="utf-8"))
         ast.parse(EXECUTION.read_text(encoding="utf-8"))
 
     def test_runtime_install_order_is_safe_and_final(self):
         source = EXECUTION.read_text(encoding="utf-8")
+        watch_source = WATCH.read_text(encoding="utf-8")
         hardening = source.index("install_organizer_hardening_v369()")
         dual = source.index("install_dual_scan_v376()")
         partial = source.index("install_partial_scheduler_v380()")
         watch = source.index("install_watch_pipeline_v380()")
+        policy = source.index("install_watch_policy_v380()")
         self.assertLess(hardening, dual)
         self.assertLess(dual, partial)
         self.assertLess(partial, watch)
-        self.assertNotIn("install_watch_pipeline_v380()\n\n\n__all__", WATCH)
+        self.assertLess(watch, policy)
+        self.assertNotIn("install_watch_pipeline_v380()\n\n\n__all__", watch_source)
+        self.assertIn("_v380_watch_policy_patch_ready", source)
 
     def test_detection_happens_before_worker_dispatch_and_is_not_worker_gated(self):
         source = WATCH.read_text(encoding="utf-8")
@@ -51,7 +58,7 @@ class WatchPipelineV380ContractTest(unittest.TestCase):
         source = WATCH.read_text(encoding="utf-8")
         dispatch = source.split("def _dispatch_one", 1)[1].split("def install_watch_pipeline_v380", 1)[0]
         self.assertIn("if plugin._v360_worker_busy(snapshot):", dispatch)
-        self.assertIn('"resource_dispatch_wait_reason": "worker_busy"', dispatch)
+        self.assertIn('resource_dispatch_wait_reason="worker_busy"', dispatch)
         scheduled = dispatch.split('if result.get("scheduled"):', 1)[1].split("if _queue_terminal", 1)[0]
         self.assertIn("rows[path] = row", scheduled)
         self.assertNotIn("rows.pop(path", scheduled)
@@ -85,7 +92,6 @@ class WatchPipelineV380ContractTest(unittest.TestCase):
         self.assertIn("vanished = old_children - new_children", scan)
         self.assertIn("_drop_subtree(watch_rows, missing)", scan)
         self.assertIn("_drop_subtree(resource_rows, missing)", scan)
-        # prune 位于成功 _v360_list_directory 之后，读取异常会直接抛出，不会伪装成删除。
         self.assertLess(scan.index("_v360_list_directory"), scan.index("vanished ="))
 
     def test_partial_ready_scheduler_no_longer_has_whole_resource_hard_wait(self):
@@ -98,6 +104,14 @@ class WatchPipelineV380ContractTest(unittest.TestCase):
         self.assertIn("and all_primary_ready", schedule)
         self.assertIn("partial_wait", source)
 
+    def test_stop_suppresses_scheduled_full_and_manual_can_upgrade_force_verify(self):
+        source = POLICY.read_text(encoding="utf-8")
+        self.assertIn('if float(raw.get("suppressed_until") or 0) > now:', source)
+        self.assertIn('"suppressed_until": now + _watch._FULL_SCAN_INTERVAL', source)
+        self.assertIn('if existing.get("active") and force_verify and not existing.get("force_verify"):', source)
+        self.assertIn('existing["force_verify"] = True', source)
+        self.assertIn("manual-force-upgrade", source)
+
     def test_monitor_ui_explains_real_pipeline_and_exposes_controls(self):
         page = PAGE.read_text(encoding="utf-8")
         for label in ("增量观察一次", "强制全量巡检", "停止全量巡检", "刷新状态"):
@@ -105,6 +119,18 @@ class WatchPipelineV380ContractTest(unittest.TestCase):
         for marker in ("watch_registry_total", "watch_hot_total", "resource_queue_depth", "full_scan_remaining_dirs"):
             self.assertIn(marker, page)
         self.assertIn("正在整理时监控不会停止", page)
+
+    def test_public_release_is_real_v380_update(self):
+        package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
+        plugin = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
+        init = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
+        remote = REMOTE.read_text(encoding="utf-8")
+        self.assertEqual(package["version"], "3.8.0")
+        self.assertEqual(plugin["version"], "3.8.0")
+        self.assertIn('plugin_version = "3.8.0"', init)
+        self.assertIn('__federation_expose_AssistantPage-v376.js?v=3.8.0', remote)
+        self.assertIn("v3.8.0", package["history"])
+        self.assertEqual(package["history"]["v3.8.0"], plugin["history"]["v3.8.0"])
 
 
 if __name__ == "__main__":
