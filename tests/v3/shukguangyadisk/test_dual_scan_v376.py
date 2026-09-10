@@ -11,7 +11,7 @@ PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
 DUAL = PLUGIN / "organizer_dual_scan_v376.py"
 CANDIDATE = PLUGIN / "organizer_candidate_filter.py"
 EXECUTION = PLUGIN / "organizer_execution_v360.py"
-PAGE = PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v376.js"
+PAGE = PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v381.js"
 REMOTE = PLUGIN / "dist" / "assets" / "remoteEntry.js"
 
 
@@ -26,10 +26,10 @@ class DualScanV376ContractTest(unittest.TestCase):
         plugin = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
         init = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
         remote = REMOTE.read_text(encoding="utf-8")
-        self.assertEqual(package["version"], "3.8.0")
-        self.assertEqual(plugin["version"], "3.8.0")
-        self.assertIn('plugin_version = "3.8.0"', init)
-        self.assertIn('__federation_expose_AssistantPage-v376.js?v=3.8.0', remote)
+        self.assertEqual(package["version"], "3.8.1")
+        self.assertEqual(plugin["version"], "3.8.1")
+        self.assertIn('plugin_version = "3.8.1"', init)
+        self.assertIn('__federation_expose_AssistantPage-v381.js?v=3.8.1', remote)
         # v376 作为历史兼容层必须保留，但不再拥有最终监控调度权。
         self.assertIn("v3.7.6", package["history"])
         self.assertEqual(package["history"]["v3.7.6"], plugin["history"]["v3.7.6"])
