@@ -12,7 +12,7 @@ from .gy2_trace import DecisionTraceStore
 from .gy2_ui import build_config_form, build_data_page
 
 
-class GuangYaTransferV2Mixin:
+class _GuangYaTransferV2Mixin:
     """置于最终插件类 MRO 最前，覆盖表单/页面并增强匹配可观测性。
 
     注意：不要在此 Mixin 上声明 plugin_name/plugin_version。

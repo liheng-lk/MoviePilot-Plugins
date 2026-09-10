@@ -18,6 +18,6 @@ def test_v196_keeps_early_v3_fallback():
 
 
 def test_v196_release_marker():
-    assert 'plugin_version = "2.0.2"' in ENTRY
-    assert 'build_id = "20260910-r82"' in ENTRY
+    assert 'plugin_version = "2.0.3"' in ENTRY
+    assert 'build_id = "20260910-r83"' in ENTRY
 
