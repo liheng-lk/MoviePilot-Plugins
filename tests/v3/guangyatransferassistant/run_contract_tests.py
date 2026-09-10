@@ -19,7 +19,13 @@ def main() -> int:
     total = 0
     failures = []
     for path in sorted(HERE.glob("test_*.py")):
-        namespace = runpy.run_path(str(path))
+        try:
+            namespace = runpy.run_path(str(path))
+        except Exception as err:  # noqa: BLE001 - surface module-load crashes clearly
+            label = f"{path.name}::<module>"
+            failures.append((label, err, traceback.format_exc()))
+            print(f"FAIL {label}: {err}")
+            continue
         tests = [
             (name, value)
             for name, value in namespace.items()

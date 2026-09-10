@@ -13,8 +13,6 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Sequence, Set
 from unittest.mock import MagicMock
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
