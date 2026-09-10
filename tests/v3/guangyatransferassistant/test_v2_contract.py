@@ -12,7 +12,6 @@ from typing import Any, Dict
 
 ROOT = Path(__file__).resolve().parents[3]
 PKG = ROOT / "plugins.v3" / "guangyatransferassistant"
-V2 = PKG / "v2"
 
 
 def _ensure_pkg(name: str, path: Path) -> types.ModuleType:
@@ -38,20 +37,17 @@ def _load(name: str, file_path: Path):
 def _import_v2():
     _ensure_pkg("plugins", ROOT / "plugins")
     _ensure_pkg("plugins.v3", ROOT / "plugins.v3")
-    _ensure_pkg("plugins.v3.guangyatransferassistant", PKG)
-    _ensure_pkg("plugins.v3.guangyatransferassistant.v2", V2)
-    _ensure_pkg("plugins.v3.guangyatransferassistant.v2.domain", V2 / "domain")
-    _ensure_pkg("plugins.v3.guangyatransferassistant.v2.ui", V2 / "ui")
+    base = "plugins.v3.guangyatransferassistant"
+    _ensure_pkg(base, PKG)
 
-    base = "plugins.v3.guangyatransferassistant.v2"
-    config = _load(f"{base}.config", V2 / "config.py")
-    media = _load(f"{base}.domain.media", V2 / "domain" / "media.py")
-    naming = _load(f"{base}.domain.naming", V2 / "domain" / "naming.py")
-    match = _load(f"{base}.domain.match", V2 / "domain" / "match.py")
-    plan = _load(f"{base}.domain.plan", V2 / "domain" / "plan.py")
-    migrate = _load(f"{base}.migrate", V2 / "migrate.py")
-    trace = _load(f"{base}.trace", V2 / "trace.py")
-    schema = _load(f"{base}.ui.schema", V2 / "ui" / "schema.py")
+    config = _load(f"{base}.gy2_config", PKG / "gy2_config.py")
+    media = _load(f"{base}.gy2_media", PKG / "gy2_media.py")
+    naming = _load(f"{base}.gy2_naming", PKG / "gy2_naming.py")
+    match = _load(f"{base}.gy2_match", PKG / "gy2_match.py")
+    plan = _load(f"{base}.gy2_plan", PKG / "gy2_plan.py")
+    migrate = _load(f"{base}.gy2_migrate", PKG / "gy2_migrate.py")
+    trace = _load(f"{base}.gy2_trace", PKG / "gy2_trace.py")
+    schema = _load(f"{base}.gy2_ui", PKG / "gy2_ui.py")
     return SimpleNamespace(
         CONFIG_DEFAULTS_V2=config.CONFIG_DEFAULTS_V2,
         merge_config_defaults=config.merge_config_defaults,
@@ -89,13 +85,16 @@ def test_indexes_and_entry_are_v2():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PKG / "plugin.json").read_text(encoding="utf-8"))
     entry = (PKG / "__init__.py").read_text(encoding="utf-8")
-    assert package["version"] == local["version"] == "2.0.0"
+    assert package["version"] == local["version"] == "2.0.1"
+    assert "v2.0.1" in package["history"]
     assert "v2.0.0" in package["history"]
     assert "v1.12.26" in package["history"]
-    assert 'plugin_version = "2.0.0"' in entry
-    assert 'build_id = "20260910-r80"' in entry
+    assert 'plugin_version = "2.0.1"' in entry
+    assert 'build_id = "20260910-r81"' in entry
     assert "GuangYaTransferV2Mixin" in entry
-    assert "from .v2.plugin import GuangYaTransferV2Mixin" in entry
+    assert "from .gy2_plugin import GuangYaTransferV2Mixin" in entry
+    assert not (PKG / "v2").exists()
+    assert (PKG / "gy2_plugin.py").exists()
     head = entry.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     assert head.index("GuangYaTransferV2Mixin") < head.index("GuangYaPagePerfV1123Mixin")
 

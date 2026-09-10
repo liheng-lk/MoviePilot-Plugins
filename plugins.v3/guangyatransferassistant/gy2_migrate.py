@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from .config import CONFIG_DEFAULTS_V2, STATE_KEYS_V2
+from .gy2_config import CONFIG_DEFAULTS_V2, STATE_KEYS_V2
 
 
 SCHEMA_KEY = "plugin_schema_v2"

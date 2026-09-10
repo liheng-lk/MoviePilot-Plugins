@@ -4,19 +4,19 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from .config import CONFIG_DEFAULTS_V2, merge_config_defaults
-from .domain.naming import NamingPolicy
-from .migrate import ConfigMigratorV2
-from .pipeline.orchestrator import TransferOrchestrator
-from .trace import DecisionTraceStore
-from .ui.schema import build_config_form, build_data_page
+from .gy2_config import CONFIG_DEFAULTS_V2, merge_config_defaults
+from .gy2_naming import NamingPolicy
+from .gy2_migrate import ConfigMigratorV2
+from .gy2_orchestrator import TransferOrchestrator
+from .gy2_trace import DecisionTraceStore
+from .gy2_ui import build_config_form, build_data_page
 
 
 class GuangYaTransferV2Mixin:
     """置于最终插件类 MRO 最前，覆盖表单/页面并增强匹配可观测性。"""
 
-    plugin_version = "2.0.0"
-    build_id = "20260910-r80"
+    plugin_version = "2.0.1"
+    build_id = "20260910-r81"
     plugin_name = "光鸭转存助手"
     plugin_desc = "2.0：声明式界面 + 可解释匹配 + 统一命名/写盘门禁；兼容 1.x 配置与状态。"
 

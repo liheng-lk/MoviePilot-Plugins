@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from .media import MediaIdentity
+from .gy2_media import MediaIdentity
 
 
 # 拒绝码：运行台与轨迹共用。

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from ..adapters.channel import ChannelAdapter
-from ..domain.match import MatchEngine
-from ..domain.media import MediaIdentity
-from ..domain.naming import NamingPolicy
-from ..domain.plan import WriteGate, order_candidates
-from ..trace import DecisionTraceStore
+from .gy2_channel import ChannelAdapter
+from .gy2_match import MatchEngine
+from .gy2_media import MediaIdentity
+from .gy2_naming import NamingPolicy
+from .gy2_plan import WriteGate, order_candidates
+from .gy2_trace import DecisionTraceStore
 
 
 class TransferOrchestrator:

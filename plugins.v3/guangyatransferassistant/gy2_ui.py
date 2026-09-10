@@ -64,7 +64,7 @@ def _section(title: str, subtitle: str, rows: List[Dict[str, Any]]) -> Dict[str,
 
 
 def build_config_form(defaults: Dict[str, Any], *, subscription_props: Optional[Dict[str, Any]] = None) -> tuple[List[dict], Dict[str, Any]]:
-    from ..config import CONFIG_DEFAULTS_V2
+    from .gy2_config import CONFIG_DEFAULTS_V2
 
     merged = dict(CONFIG_DEFAULTS_V2)
     if isinstance(defaults, dict):

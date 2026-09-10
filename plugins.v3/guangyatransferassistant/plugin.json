@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
   "description": "2.0：声明式 Setup/Run/Calendar 界面 + 可解释匹配轨迹 + 统一 NamingPolicy/WriteGate。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。兼容 1.x 配置与状态。",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
