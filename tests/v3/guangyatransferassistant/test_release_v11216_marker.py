@@ -13,10 +13,10 @@ PACKAGE = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
 
 
 def test_v11217_public_release_truth_promotes_v11216_history():
-    assert 'plugin_version = "2.0.4"' in ENTRY
-    assert 'build_id = "20260910-r84"' in ENTRY
-    assert PLUGIN_JSON["version"] == "2.0.4"
-    assert PACKAGE["GuangYaTransferAssistant"]["version"] == "2.0.4"
+    assert 'plugin_version = "2.0.5"' in ENTRY
+    assert 'build_id = "20260910-r85"' in ENTRY
+    assert PLUGIN_JSON["version"] == "2.0.5"
+    assert PACKAGE["GuangYaTransferAssistant"]["version"] == "2.0.5"
     assert "v1.12.17" in PACKAGE["GuangYaTransferAssistant"]["history"]
 
 

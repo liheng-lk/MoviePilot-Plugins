@@ -85,14 +85,16 @@ def test_indexes_and_entry_are_v2():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PKG / "plugin.json").read_text(encoding="utf-8"))
     entry = (PKG / "__init__.py").read_text(encoding="utf-8")
-    assert package["version"] == local["version"] == "2.0.4"
-    assert "v2.0.4" in package["history"]
+    assert package["version"] == local["version"] == "2.0.5"
+    assert "v2.0.5" in package["history"]
     assert "v2.0.0" in package["history"]
     assert "v1.12.26" in package["history"]
-    assert 'plugin_version = "2.0.4"' in entry
-    assert 'build_id = "20260910-r84"' in entry
+    assert 'plugin_version = "2.0.5"' in entry
+    assert 'build_id = "20260910-r85"' in entry
     assert "_GuangYaTransferV2Mixin" not in entry
     assert "gy2_plugin" not in entry
+    assert "_emergency_restore_subscribe_chain_patches" in entry
+    assert "_scrub_public_mixin_exports" in entry
     assert package.get("release") is True
     assert not (PKG / "v2").exists()
     assert (PKG / "gy2_plugin.py").exists()

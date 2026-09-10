@@ -152,11 +152,11 @@ class GuangYaTransferAssistant(
     GuangYaExperienceMixin,
     _RoutingV170Assistant,
 ):
-    """1.12.26 行为基线（2.0.4 紧急回滚：不接入 V2 mixin）。"""
+    """1.12.26 行为基线（2.0.5：修复加载失败后残留 SubscribeChain 补丁导致订阅 nodata）。"""
 
-    plugin_version = "2.0.4"
-    build_id = "20260910-r84"
-    plugin_desc = "固定接管订阅并自动转存：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。含频道标题清洗与剧集名季集命名。2.0.4 紧急回滚卸下导致加载失败的 V2 层。"
+    plugin_version = "2.0.5"
+    build_id = "20260910-r85"
+    plugin_desc = "固定接管订阅并自动转存：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。含频道标题清洗与剧集名季集命名。2.0.5 清理失败加载残留的订阅链补丁并收紧 PluginLoader 暴露面。"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
@@ -354,6 +354,46 @@ class GuangYaTransferAssistant(
         return pages
 
 
-# MoviePilot PluginLoader 按模块 globals 插入顺序寻找第一个合法插件类。
-# 中间 Mixin / 旧路由类必须以 _ 前缀导入，只暴露最终 GuangYaTransferAssistant。
+# MoviePilot PluginLoader 按模块 globals 插入顺序寻找第一个合法插件类
+# （需同时具备 init_plugin + plugin_name）。只保留最终插件类，避免误选 Mixin。
 __all__ = ["GuangYaTransferAssistant"]
+
+
+def _emergency_restore_subscribe_chain_patches() -> None:
+    """清理失败加载留下的孤儿补丁，避免整站订阅匹配/列表异常。"""
+    try:
+        current = getattr(SubscribeChain, "match", None)
+        if current is not None and getattr(current, "_guangya_match_guard", False):
+            plugin_ref = getattr(current, "_guangya_plugin_ref", None)
+            owner = plugin_ref() if callable(plugin_ref) else None
+            if owner is None:
+                original = getattr(current, "_guangya_original_match", None)
+                if original is not None:
+                    SubscribeChain.match = original
+    except Exception:
+        pass
+    try:
+        method_name = "_SubscribeChain__download_best_version_with_full_pack_first"
+        current = getattr(SubscribeChain, method_name, None)
+        if current is not None and getattr(current, "_guangya_download_guard", False):
+            plugin_ref = getattr(current, "_guangya_plugin_ref", None)
+            owner = plugin_ref() if callable(plugin_ref) else None
+            if owner is None:
+                original = getattr(current, "_guangya_original_download", None)
+                if original is not None:
+                    setattr(SubscribeChain, method_name, original)
+    except Exception:
+        pass
+
+
+def _scrub_public_mixin_exports() -> None:
+    """从包命名空间移除公开 Mixin，只留下 GuangYaTransferAssistant 给 PluginLoader。"""
+    for name, obj in list(globals().items()):
+        if name.startswith("_") or name == "GuangYaTransferAssistant":
+            continue
+        if isinstance(obj, type) and name.endswith("Mixin"):
+            globals().pop(name, None)
+
+
+_emergency_restore_subscribe_chain_patches()
+_scrub_public_mixin_exports()

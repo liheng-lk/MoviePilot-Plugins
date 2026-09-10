@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "固定接管订阅并自动转存：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。含频道标题清洗与剧集名季集命名。2.0.4 紧急回滚卸下导致加载失败的 V2 层。",
-  "version": "2.0.4",
+  "description": "固定接管订阅并自动转存：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。含频道标题清洗与剧集名季集命名。2.0.5 清理失败加载残留的订阅链补丁。",
+  "version": "2.0.5",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
