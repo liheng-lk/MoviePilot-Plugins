@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
   "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
-  "version": "3.8.1",
+  "version": "3.9.0",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v3.9.0": "最终架构收口：针对 MoviePilot V3 安装事务在 COMMIT 前执行 runtime reload/registration refresh 的机制，移除 get_service→init_organizer_monitor 阶段的 v376/v380/v382 动态监控补丁栈，改为 MRO 第一层静态 FinalMonitor；安装注册只声明 heartbeat，不初始化监控、不访问远端、不改写类方法，真正 heartbeat 后再惰性恢复状态。持续目录快照、持久 resource queue、Worker 忙时继续发现、独立全量巡检、部分 ready 先行和异常冷却全部保留；插件入口 Mixin 改为私有别名，降低 Loader 误选风险；前端使用全新 v390 Federation chunk。",
     "v3.8.1": "修复 v3.8.0 更新后前端提示‘无法加载组件’：不再复用 v376 chunk 仅依赖 query-string 刷新，改为全新 AssistantPage-v381 Federation 资源文件，并让 remoteEntry 直接引用新 chunk；监控后端、持久 resource queue、部分-ready 和独立全量逻辑保持不变。",
     "v3.8.0": "重构自动整理为持续目录观察流水：远端目录按 fileId/name/size/modify_time 快照增量检测，Worker 忙时仍持续发现并写入持久 resource queue；自动全量独立补漏，手动全量从监控根强制重新校验，读取失败保留断点；ready 成员可先行、未完成目录持续复核；空转日志降为 DEBUG，真实变化、队列、执行与错误按 scan_id 可追踪。",
     "v3.7.6": "目录监控升级为显式增量+全量双通道：增量每轮按 pending→known-resource→discovery 推进，持续发现已知资源变化和新目录；全量扫描使用持久游标从监控根完整遍历，单 Worker 忙时暂停并自动续页，直到 cycle_complete 才结束。新增增量扫描、全量扫描、停止全量按钮/API；统一 scan_id 与 1/6~6/6 阶段日志及进度状态。",

@@ -1,15 +1,14 @@
 """v3.6.0+：统一执行边界。
 
-该层显式位于插件 MRO 前部：
-1. 导入阶段先安装 v3.6.9 光鸭路径分页/严格读取基础补丁；
-2. monitor 初始化时安装 v3.6.9 连续发现/状态回收，再安装 v3.7.6 双通道扫描、v3.8.0
-   部分 ready 调度、持续目录观察流水和全量策略，最后安装 v3.8.2 运行存活保护与
-   v3.6.0/v3.6.4 move 安全补丁；
-3. 弱命名 folder envelope 内部逐文件执行时，最终状态统一回到 v3.6 fallback；
-4. 状态 API 最后投影 v3.6 Worker/discovery 事实，屏蔽旧 v3.5.9 cursor/sticky 的展示残留。
+v3.9.0 起，目录监控由最终 MRO 第一层 ``GuangYaFinalMonitorV390Mixin`` 静态实现。
+本层只保留已经验证的底层安全能力：
+1. 导入阶段安装 v3.6.9 光鸭路径分页/严格路径解析基础补丁；
+2. monitor 真正开始运行时再安装 v3.6.9 远端读取硬化与 move 安全补丁；
+3. 不再安装 v3.7.6/v3.8.x monitor monkey-patch 栈，避免 MoviePilot 安装注册阶段产生副作用；
+4. 弱命名 folder envelope 内部逐文件执行时，最终状态统一回到 v3.6 fallback；
+5. 状态 API继续投影 v3.6 Worker/discovery 事实。
 
-普通 MoviePilot 原生目录任务继续走旧安全预览/冲突/season 等 MoviePilot 安全链，不在这里
-重写业务规则。v3.6.9 只修远端路径查询、发现调度和持久状态回收。
+普通 MoviePilot 原生目录任务继续走既有安全预览/冲突/season 等链，不在这里重写业务规则。
 """
 
 from __future__ import annotations
@@ -25,8 +24,7 @@ from .organizer_engine_v360 import GuangYaOrganizerEngineV360Mixin, _PAGE_DIR_LI
 from .organizer_folder_batch_v342 import _FolderBatchEnvelope
 
 
-# 存储路径能力必须在插件实例开始 browse/monitor 之前生效；该 installer 只 patch 当前 V3 API，
-# 并且自身幂等，不需要等待 organizer MRO 全部加载完成。
+# 路径解析是存储基础能力，并非 monitor 调度；保持导入期幂等安装。
 install_path_resolution_v369()
 
 
@@ -35,45 +33,14 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
 
     _v360_storage_patch_ready: bool = False
     _v369_monitor_patch_ready: bool = False
-    _v376_dual_scan_patch_ready: bool = False
-    _v380_partial_scheduler_patch_ready: bool = False
-    _v380_watch_pipeline_patch_ready: bool = False
-    _v380_watch_policy_patch_ready: bool = False
-    _v382_runtime_survival_patch_ready: bool = False
 
     def init_organizer_monitor(self) -> None:
+        """仅在真正运行监控时装配底层读取/移动安全能力。"""
         if not self._v369_monitor_patch_ready:
             from .organizer_hardening_v369 import install_organizer_hardening_v369
 
             install_organizer_hardening_v369()
             self._v369_monitor_patch_ready = True
-        if not self._v376_dual_scan_patch_ready:
-            from .organizer_dual_scan_v376 import install_dual_scan_v376
-
-            install_dual_scan_v376()
-            self._v376_dual_scan_patch_ready = True
-        if not self._v380_partial_scheduler_patch_ready:
-            from .organizer_partial_scheduler_v380 import install_partial_scheduler_v380
-
-            install_partial_scheduler_v380()
-            self._v380_partial_scheduler_patch_ready = True
-        if not self._v380_watch_pipeline_patch_ready:
-            from .organizer_watch_pipeline_v380 import install_watch_pipeline_v380
-
-            install_watch_pipeline_v380()
-            self._v380_watch_pipeline_patch_ready = True
-        if not self._v380_watch_policy_patch_ready:
-            from .organizer_watch_policy_v380 import install_watch_policy_v380
-
-            install_watch_policy_v380()
-            self._v380_watch_policy_patch_ready = True
-        if not self._v382_runtime_survival_patch_ready:
-            # 必须最后包住最终 tick/status：任何远端扫描异常只能伤到本轮监控，不能冒泡到
-            # APScheduler/MoviePilot 插件生命周期；同时为刚安装/热更新提供 180s 自动全量保护期。
-            from .organizer_runtime_survival_v382 import install_runtime_survival_v382
-
-            install_runtime_survival_v382()
-            self._v382_runtime_survival_patch_ready = True
         if not self._v360_storage_patch_ready:
             install_move_confirmation_v360()
             install_move_transaction_guard_v364()
