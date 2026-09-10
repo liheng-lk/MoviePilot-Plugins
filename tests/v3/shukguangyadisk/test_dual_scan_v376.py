@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
 DUAL = PLUGIN / "organizer_dual_scan_v376.py"
 CANDIDATE = PLUGIN / "organizer_candidate_filter.py"
+EXECUTION = PLUGIN / "organizer_execution_v360.py"
 PAGE = PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v376.js"
 REMOTE = PLUGIN / "dist" / "assets" / "remoteEntry.js"
 
@@ -18,6 +19,7 @@ class DualScanV376ContractTest(unittest.TestCase):
     def test_python_sources_parse(self):
         ast.parse(DUAL.read_text(encoding="utf-8"))
         ast.parse(CANDIDATE.read_text(encoding="utf-8"))
+        ast.parse(EXECUTION.read_text(encoding="utf-8"))
 
     def test_release_version_is_consistent(self):
         package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
@@ -30,13 +32,26 @@ class DualScanV376ContractTest(unittest.TestCase):
         self.assertIn('__federation_expose_AssistantPage-v376.js?v=3.7.6', remote)
         self.assertEqual(package["history"]["v3.7.6"], plugin["history"]["v3.7.6"])
 
-    def test_dual_scan_is_installed_after_existing_discovery_patch(self):
-        source = CANDIDATE.read_text(encoding="utf-8")
-        self.assertIn("from .organizer_dual_scan_v376 import install_dual_scan_v376", source)
+    def test_dual_scan_install_is_deferred_until_runtime_mro_is_complete(self):
+        candidate = CANDIDATE.read_text(encoding="utf-8")
+        execution = EXECUTION.read_text(encoding="utf-8")
+        self.assertNotIn("from .organizer_dual_scan_v376 import install_dual_scan_v376", candidate)
+        self.assertNotIn("install_dual_scan_v376()", candidate)
+        init_block = execution.split("def init_organizer_monitor", 1)[1].split("def _execute_isolated_transfer", 1)[0]
+        self.assertIn("from .organizer_dual_scan_v376 import install_dual_scan_v376", init_block)
+        self.assertIn("_v376_dual_scan_patch_ready", execution)
         self.assertLess(
-            source.index("install_paged_scan_handoff_v359(GuangYaCandidateFilterMixin)"),
-            source.index("install_dual_scan_v376()"),
+            init_block.index("install_organizer_hardening_v369()"),
+            init_block.index("install_dual_scan_v376()"),
         )
+        self.assertLess(
+            init_block.index("install_dual_scan_v376()"),
+            init_block.index("install_move_confirmation_v360()"),
+        )
+
+    def test_existing_discovery_patch_still_installs_at_import_boundary(self):
+        source = CANDIDATE.read_text(encoding="utf-8")
+        self.assertIn("install_paged_scan_handoff_v359(GuangYaCandidateFilterMixin)", source)
 
     def test_full_scan_uses_engine_cursor_until_cycle_complete(self):
         source = DUAL.read_text(encoding="utf-8")
