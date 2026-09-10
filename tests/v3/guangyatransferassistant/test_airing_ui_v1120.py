@@ -18,7 +18,7 @@ def test_airing_ui_parses_and_is_below_receipt_without_stealing_scheduler_author
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     mixins = [line.strip().rstrip(",") for line in head.splitlines() if line.strip()]
     assert mixins[:14] == [
-        "GuangYaTransferV2Mixin",
+        "_GuangYaTransferV2Mixin",
         "GuangYaPagePerfV1123Mixin",
         "GuangYaMovieIdentityV1129Mixin",
         "GuangYaResourceGateV1127Mixin",

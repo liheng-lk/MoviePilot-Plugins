@@ -13,12 +13,12 @@ from .gy2_ui import build_config_form, build_data_page
 
 
 class GuangYaTransferV2Mixin:
-    """置于最终插件类 MRO 最前，覆盖表单/页面并增强匹配可观测性。"""
+    """置于最终插件类 MRO 最前，覆盖表单/页面并增强匹配可观测性。
 
-    plugin_version = "2.0.1"
-    build_id = "20260910-r81"
-    plugin_name = "光鸭转存助手"
-    plugin_desc = "2.0：声明式界面 + 可解释匹配 + 统一命名/写盘门禁；兼容 1.x 配置与状态。"
+    注意：不要在此 Mixin 上声明 plugin_name/plugin_version。
+    MoviePilot PluginLoader 按模块 globals 顺序取第一个“像插件”的类；
+    公开暴露带元数据的中间类会导致装错类而安装/加载失败。
+    """
 
     def _gy2_orchestrator(self) -> TransferOrchestrator:
         orch = getattr(self, "_gy2_orch_singleton", None)

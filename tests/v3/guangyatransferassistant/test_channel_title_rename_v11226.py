@@ -19,9 +19,10 @@ PACKAGE = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["Gu
 
 
 def test_v11226_release_metadata_and_mro():
-    assert LOCAL["version"] == PACKAGE["version"] == "2.0.1"
-    assert 'plugin_version = "2.0.1"' in ENTRY
-    assert 'build_id = "20260910-r81"' in ENTRY
+    assert LOCAL["version"] == PACKAGE["version"] == "2.0.2"
+    assert 'plugin_version = "2.0.2"' in ENTRY
+    assert 'build_id = "20260910-r82"' in ENTRY
+    assert "v2.0.2" in PACKAGE["history"]
     assert "v2.0.1" in PACKAGE["history"]
     assert "v2.0.0" in PACKAGE["history"]
     assert "v1.12.26" in PACKAGE["history"]

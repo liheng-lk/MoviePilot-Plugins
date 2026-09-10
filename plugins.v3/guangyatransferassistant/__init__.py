@@ -101,7 +101,7 @@ from .status_hardening_v193 import GuangYaStatusHardeningMixin
 from .viewing_logging_v1113 import GuangYaViewingLoggingV1113Mixin
 from .xunlei_flash_v193 import GuangYaXunleiFlashMixin
 from .xunlei_hardening_v193 import GuangYaXunleiHardeningMixin
-from .gy2_plugin import GuangYaTransferV2Mixin
+from .gy2_plugin import GuangYaTransferV2Mixin as _GuangYaTransferV2Mixin
 
 
 install_episode_filename_compat(_legacy_module)
@@ -110,7 +110,7 @@ install_channel_title_rename_v11226(_legacy_module)
 
 
 class GuangYaTransferAssistant(
-    GuangYaTransferV2Mixin,
+    _GuangYaTransferV2Mixin,
     GuangYaPagePerfV1123Mixin,
     GuangYaMovieIdentityV1129Mixin,
     GuangYaResourceGateV1127Mixin,
@@ -158,8 +158,8 @@ class GuangYaTransferAssistant(
 ):
     """2.0：声明式 UI + 可解释匹配 + 统一命名/门禁；底层仍复用 1.x 协议与调度。"""
 
-    plugin_version = "2.0.1"
-    build_id = "20260910-r81"
+    plugin_version = "2.0.2"
+    build_id = "20260910-r82"
     plugin_desc = "2.0：声明式界面 + 可解释匹配 + 统一命名/写盘门禁；兼容 1.x 配置与状态。来源优先级：观影迅雷秒传 → 光鸭直接转存 → Magnet → ED2K。"
 
     def get_api(self):
@@ -358,4 +358,6 @@ class GuangYaTransferAssistant(
         return pages
 
 
+# MoviePilot PluginLoader 按模块 globals 插入顺序寻找第一个合法插件类。
+# 中间 Mixin / 旧路由类必须以 _ 前缀导入，只暴露最终 GuangYaTransferAssistant。
 __all__ = ["GuangYaTransferAssistant"]
