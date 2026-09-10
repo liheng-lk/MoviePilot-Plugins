@@ -1,8 +1,8 @@
-// Historical contract marker: the v352 base page remains bundled and is wrapped by the v376 control page.
-const legacyPageCompat = './__federation_expose_AssistantPage-v352.js?v=3.7.6';
+// Historical contract marker: the v352 base page remains bundled and is wrapped by the v380 watch control page.
+const legacyPageCompat = './__federation_expose_AssistantPage-v352.js?v=3.8.0';
 
 const moduleMap = {
-  './Page': () => import('./__federation_expose_AssistantPage-v376.js?v=3.7.6').then((mod) => () => mod.default),
+  './Page': () => import('./__federation_expose_AssistantPage-v376.js?v=3.8.0').then((mod) => () => mod.default),
   './Config': () => import('./__federation_expose_AssistantConfig-v300.js?v=3.0.0').then((mod) => () => mod.default),
 };
 
