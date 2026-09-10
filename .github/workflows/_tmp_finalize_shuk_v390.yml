@@ -1,0 +1,47 @@
+name: Finalize Shuk v3.9.0 index
+
+on:
+  push:
+    branches:
+      - release/shukguangya-v390-final
+    paths:
+      - .github/workflows/_tmp_finalize_shuk_v390.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/shukguangya-v390-final
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Update package.v3.json
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('package.v3.json')
+          data = json.loads(p.read_text(encoding='utf-8'))
+          row = data['ShukGuangYaDisk']
+          row['version'] = '3.9.0'
+          history = dict(row.get('history') or {})
+          history = {
+              'v3.9.0': '最终稳定版：重构为静态 FinalMonitor，MoviePilot 安装/注册阶段不再初始化目录监控、不访问远端目录、不执行 monitor monkey-patch；监控仅在 heartbeat 运行期惰性启动。保留持续增量发现、持久 resource queue、Worker 忙时继续发现、部分 ready 先行、独立全量巡检和异常隔离；入口 MRO 使用私有别名降低 PluginLoader 误选风险；前端切换全新 v390 Federation chunk，并清理 v376/v380-policy/v382 重复补丁与历史 wrapper。',
+              **{k: v for k, v in history.items() if k != 'v3.9.0'},
+          }
+          row['history'] = history
+          p.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          if git diff --quiet -- package.v3.json; then
+            exit 0
+          fi
+          git add package.v3.json
+          git commit -m "release(shukguangya): publish v3.9.0 index"
+          git push origin HEAD:release/shukguangya-v390-final
