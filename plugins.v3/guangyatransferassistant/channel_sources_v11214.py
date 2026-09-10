@@ -14,7 +14,7 @@ import hashlib
 import html
 import re
 from typing import Any, Dict, List
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlsplit, unquote
 
 from .channel_sources_v190 import _resource_group_id
 
@@ -24,6 +24,24 @@ _XUNLEI_CODE_RE = re.compile(
     r"(?:提取码|访问码|密码|口令|pass\s*code|passcode|pwd)\s*[:：=]?\s*([A-Za-z0-9]{1,16})",
     re.I,
 )
+_CHANNEL_DECODE_MAX_CHARS_V11214 = 2_000_000
+
+
+def _decode_channel_blob(value: Any) -> str:
+    """occurrence discovery 前规范化；与 v190 同语义，本模块自包含供 AST 契约测试。"""
+    current = html.unescape(str(value or ""))
+    if len(current) > _CHANNEL_DECODE_MAX_CHARS_V11214:
+        current = current[:_CHANNEL_DECODE_MAX_CHARS_V11214]
+    current = current.replace("\\/", "/").replace("\\u002F", "/").replace("\\u002f", "/")
+    for _ in range(3):
+        decoded = unquote(current)
+        if decoded == current:
+            break
+        current = decoded
+        if len(current) > _CHANNEL_DECODE_MAX_CHARS_V11214:
+            current = current[:_CHANNEL_DECODE_MAX_CHARS_V11214]
+            break
+    return current
 
 
 def _clean_xunlei_url_v11214(value: Any) -> str:
@@ -32,7 +50,7 @@ def _clean_xunlei_url_v11214(value: Any) -> str:
 
 def _xunlei_channel_rows_v11214(context_html: str) -> List[Dict[str, str]]:
     """从一个消息上下文提取稳定 Xunlei share_id/passcode，不跨消息借验证码。"""
-    decoded = html.unescape(str(context_html or "")).replace("\\/", "/")
+    decoded = _decode_channel_blob(context_html)
     rows: List[Dict[str, str]] = []
     seen = set()
     for matched in _XUNLEI_CHANNEL_RE.finditer(decoded):
@@ -97,7 +115,8 @@ def install_channel_source_matrix_v11214(legacy_module: Any):
     @functools.wraps(original)
     def patched_extract(page_text: str, source_url: str, source_label: str) -> List[Dict[str, Any]]:
         entries = [dict(row or {}) for row in (original(page_text, source_url, source_label) or [])]
-        decoded = html.unescape(str(page_text or "")).replace("\\/", "/")
+        # URL-encoded 迅雷链接必须在 finditer 之前 decode，否则永远匹配不到
+        decoded = _decode_channel_blob(page_text)
         occurrences = list(_XUNLEI_CHANNEL_RE.finditer(decoded))
         if not occurrences:
             for row in entries:
@@ -107,6 +126,7 @@ def install_channel_source_matrix_v11214(legacy_module: Any):
         groups: Dict[str, Dict[str, Any]] = {}
         for match in occurrences:
             context_html = legacy_module._message_context_html(decoded, match.start())
+            # 上下文同样基于已 decode 文本，pwd query 才能被 urlsplit/parse_qs 识别
             context = legacy_module._html_to_text(context_html)
             xunlei = _xunlei_channel_rows_v11214(context_html)
             if not xunlei:

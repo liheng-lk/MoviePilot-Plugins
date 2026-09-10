@@ -115,6 +115,56 @@ class _GyingBrowserUnavailableV1112(RuntimeError):
     """仅表示浏览器 SDK/运行资源无法启动；此异常允许安全回退 requests。"""
 
 
+class _GyingBrowserChallengeCompatFailureV1112(RuntimeError):
+    """CloakBrowser 可用，但 challenge/PoW 兼容失败；应同节点回退历史 PanSou 链。"""
+
+
+_BROWSER_CHALLENGE_COMPAT_MARKERS_V1112 = (
+    "pow",
+    "挑战",
+    "challenge",
+    "browser_pow",
+    "browser_verified",
+    "验证后原请求仍返回挑战",
+    "仍返回挑战页",
+    "参数无效",
+    "获取 pow",
+    "pow 参数",
+    "pow 提交",
+    "refresh",
+    "重试次数已耗尽",
+    "自动计算验证已关闭",
+    "cloakbrowser 验证",
+    "出口被阻断",
+)
+
+_BROWSER_AUTH_HARD_FAIL_MARKERS_V1112 = (
+    "账号密码",
+    "登录失败",
+    "未登录",
+    "付费",
+    "权限不足",
+    "credential",
+    "unauthorized",
+)
+
+
+def _is_browser_challenge_compat_failure_v1112(err: BaseException) -> bool:
+    """仅识别 challenge/PoW 兼容失败；明确账号授权失败不冒充 fallback。"""
+    if isinstance(err, _GyingBrowserChallengeCompatFailureV1112):
+        return True
+    if isinstance(err, _GyingBrowserUnavailableV1112):
+        return False
+    if not isinstance(err, RuntimeError):
+        return False
+    text = str(err or "").strip().lower()
+    if not text:
+        return False
+    if any(marker in text for marker in _BROWSER_AUTH_HARD_FAIL_MARKERS_V1112):
+        return False
+    return any(marker in text for marker in _BROWSER_CHALLENGE_COMPAT_MARKERS_V1112)
+
+
 def _response_v1112(
     url: str,
     status: int,
@@ -818,7 +868,9 @@ class GuangYaGyingBrowserV1112Mixin(GuangYaGyingPowV1111Mixin):
                 return response
 
             if not retry_challenge or attempt + 1 >= attempts:
-                raise RuntimeError("观影 CloakBrowser 验证后原请求仍返回挑战页")
+                raise _GyingBrowserChallengeCompatFailureV1112(
+                    "观影 CloakBrowser 验证后原请求仍返回挑战页"
+                )
 
             solved_kind = kind
             self._gying_browser_solve_v1112(
@@ -830,7 +882,7 @@ class GuangYaGyingBrowserV1112Mixin(GuangYaGyingPowV1111Mixin):
             )
             self._gying_browser_sync_shadow_v1112(row, session, node)
 
-        raise RuntimeError("观影 CloakBrowser 请求重试次数已耗尽")
+        raise _GyingBrowserChallengeCompatFailureV1112("观影 CloakBrowser 请求重试次数已耗尽")
 
     def _gying_request(
         self,
@@ -883,6 +935,32 @@ class GuangYaGyingBrowserV1112Mixin(GuangYaGyingPowV1111Mixin):
                     "CloakBrowser 当前不可用，GYING 暂时回退 PanSou requests 链：%s",
                     str(err)[:160],
                 )
+            return super()._gying_request(
+                session,
+                canonical,
+                method,
+                url,
+                retry_challenge=retry_challenge,
+                timeout=timeout,
+                **kwargs,
+            )
+        except (_GyingBrowserChallengeCompatFailureV1112, RuntimeError) as err:
+            # Browser 可用但 challenge/PoW 兼容失败 → 同节点进入历史 PanSou PoW，禁止直接换节点
+            if not _is_browser_challenge_compat_failure_v1112(err):
+                raise
+            self._gying_auth_log(
+                "WARNING",
+                "【观影】【Browser】challenge compatibility failed fallback=pansou node=%s err=%s",
+                canonical,
+                str(err)[:160],
+            )
+            # 避免 Browser 临时 challenge Cookie 污染 PanSou Session
+            try:
+                from .gying_fallback_reuse_v1113 import _drop_stale_challenge_cookies_v1113
+
+                _drop_stale_challenge_cookies_v1113(session)
+            except Exception:
+                pass
             return super()._gying_request(
                 session,
                 canonical,

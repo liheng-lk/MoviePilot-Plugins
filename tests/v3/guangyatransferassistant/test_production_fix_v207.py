@@ -21,8 +21,8 @@ ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 
 
 def test_v207_version_markers():
-    assert 'plugin_version = "2.0.7"' in ENTRY
-    assert 'build_id = "20260910-r90"' in ENTRY
+    assert 'plugin_version = "2.0.8"' in ENTRY
+    assert 'build_id = "20260910-r91"' in ENTRY
 
 
 def test_p0_shareid_retry_on_legacy_failure_contract():
@@ -56,19 +56,20 @@ def test_p0_orphan_search_restore_contract():
 
 
 def test_p1_inactive_state_never_blackholes():
+    """P/S 非活跃已接管：阻断原生且不转存（exclusive ownership，禁止回退原生）。"""
     assert "_is_active_transfer_state" in ROUTING
     one = ROUTING.split("    def _guard_one_subscription", 1)[1].split(
         "    def _guard_subscribe_search", 1
     )[0]
-    assert 'handled": False' in one
     assert "非活跃" in one
-    assert "handled\": True, \"message\": \"固定转存订阅当前非活跃" not in ROUTING
+    assert 'handled": True' in one
+    assert "阻断原生" in one
     dispatch = RUNTIME.split("    def _dispatch_subscribe_search", 1)[1].split(
         "    def _try_transfer_subscription", 1
     )[0]
-    assert "【回退原生】" in dispatch
-    assert "仍阻断原生下载" not in dispatch
-
+    assert "原生阻断" in dispatch
+    assert "仍跳过原生搜索" in dispatch
+    assert "【回退原生】" not in dispatch
 
 def test_p1_dispatch_preserves_batch_sids_and_interval():
     block = RUNTIME.split("    def _dispatch_subscribe_search", 1)[1].split(

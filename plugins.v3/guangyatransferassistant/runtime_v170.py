@@ -236,9 +236,24 @@ class GuangYaRuntimeFinalizerMixin:
         scheduled_interval = forward_kwargs.get("scheduled_interval")
 
         selected = set(int(value) for value in self._selected_subscriptions if str(value).isdigit())
+        is_managed = getattr(self, "_is_managed_subscription", None)
+        is_managed_sid = getattr(self, "_is_managed_sid", None)
+
+        def _managed(sub_or_id) -> bool:
+            if callable(is_managed):
+                return bool(is_managed(sub_or_id))
+            if callable(is_managed_sid) and (
+                isinstance(sub_or_id, (int, str)) and str(sub_or_id).isdigit()
+            ):
+                return bool(is_managed_sid(sub_or_id))
+            try:
+                return int(getattr(sub_or_id, "id", sub_or_id) or 0) in selected
+            except (TypeError, ValueError):
+                return False
+
         if sid is not None:
             current_sid = int(sid)
-            if current_sid in selected:
+            if _managed(current_sid):
                 subscribe = self._find_subscription(current_sid)
                 active = bool(
                     subscribe and str(getattr(subscribe, "state", "") or "") in ("N", "R")
@@ -249,17 +264,18 @@ class GuangYaRuntimeFinalizerMixin:
                         "INFO",
                         "【光鸭转存助手】【调度分流】#%s %s 已阻断原生搜索并转入后台光鸭检查",
                         current_sid,
-                        getattr(subscribe, "name", ""),
+                        getattr(subscribe, "name", "") if subscribe else "",
                     )
                     if progress_callback:
                         progress_callback(value=100, text="固定转存订阅已交由光鸭后台检查")
-                    return True
-                self._plugin_log(
-                    "INFO",
-                    "【光鸭转存助手】【回退原生】【调度分流】固定转存 #%s state=%s 非活跃，交还原生搜索",
-                    current_sid,
-                    str(getattr(subscribe, "state", "") or "-") if subscribe else "-",
-                )
+                else:
+                    self._plugin_log(
+                        "INFO",
+                        "【光鸭转存助手】【原生阻断】【调度分流】固定转存 #%s state=%s 非活跃，仍跳过原生搜索",
+                        current_sid,
+                        str(getattr(subscribe, "state", "") or "-") if subscribe else "-",
+                    )
+                return True
             return SubscribeChain().search(**forward_kwargs)
 
         is_targeted = sids is not None
@@ -274,23 +290,36 @@ class GuangYaRuntimeFinalizerMixin:
         if sids is not None:
             subscriptions = [self._find_subscription(int(value)) for value in sids]
             subscriptions = [item for item in subscriptions if item is not None]
+            for raw in sids:
+                try:
+                    mid = int(raw)
+                except (TypeError, ValueError):
+                    continue
+                if mid > 0 and _managed(mid) and all(
+                    int(getattr(item, "id", 0) or 0) != mid for item in subscriptions
+                ):
+                    route_ids.append(mid)
         elif is_scheduled_scan:
             loader = getattr(self, "_load_due_search_subscriptions", None)
             if not callable(loader):
                 self._plugin_log(
                     "ERROR",
-                    "【光鸭转存助手】【调度分流】【due失败】缺少 due 加载器；完整交还原生周期搜索",
+                    "【光鸭转存助手】【调度分流】【due失败】缺少 due 加载器；本轮取消周期搜索，禁止全量兜底",
                 )
-                return self._runtime_call_native_search(**forward_kwargs)
+                if progress_callback:
+                    progress_callback(value=100, text="宿主到期筛选不可用，本轮周期搜索已取消")
+                return True
             subscriptions = loader(
                 probe, state=state or "R", scheduled_interval=scheduled_interval
             )
             if subscriptions is None:
                 self._plugin_log(
                     "ERROR",
-                    "【光鸭转存助手】【调度分流】【due失败】完整交还原生周期搜索，禁止全量枚举",
+                    "【光鸭转存助手】【调度分流】【due失败】本轮取消周期搜索；禁止全量列举或 targeted sids 兜底",
                 )
-                return self._runtime_call_native_search(**forward_kwargs)
+                if progress_callback:
+                    progress_callback(value=100, text="宿主到期筛选失败，本轮周期搜索已取消")
+                return True
             subscriptions = list(subscriptions or [])
             self._plugin_log(
                 "INFO",
@@ -305,22 +334,31 @@ class GuangYaRuntimeFinalizerMixin:
             current_sid = int(getattr(subscribe, "id", 0) or 0)
             if not current_sid:
                 continue
-            if current_sid in selected and str(getattr(subscribe, "state", "") or "") in ("N", "R"):
+            if _managed(subscribe):
                 route_ids.append(current_sid)
             else:
                 native_ids.append(current_sid)
 
         if route_ids:
-            self._queue_async_route_check(route_ids, trigger="宿主批量订阅搜索分流")
+            active_route = []
+            for rid in route_ids:
+                sub = self._find_subscription(rid)
+                if sub and str(getattr(sub, "state", "") or "") in ("N", "R"):
+                    active_route.append(rid)
+            if active_route:
+                self._queue_async_route_check(active_route, trigger="宿主批量订阅搜索分流")
             self._plugin_log(
                 "INFO",
-                "【光鸭转存助手】【调度分流】批量阻断 %s 个固定转存订阅的原生搜索；后台统一检查",
+                "【光鸭转存助手】【调度分流】批量阻断 %s 个固定转存订阅的原生搜索；后台检查活跃=%s",
                 len(route_ids),
+                len(active_route),
             )
 
         if native_ids:
             native_kwargs = dict(forward_kwargs)
             native_kwargs.pop("sid", None)
+            if is_scheduled_scan:
+                native_kwargs.pop("scheduled_interval", None)
             native_kwargs["sids"] = tuple(native_ids)
             return SubscribeChain().search(**native_kwargs)
         if progress_callback:
@@ -328,16 +366,49 @@ class GuangYaRuntimeFinalizerMixin:
         return True
 
     def _runtime_call_native_search(self, **forward_kwargs):
-        """due 失败时尽量调用未包装的原生 search，避免再次进入 guard 死循环。"""
+        """仅在确认 kwargs 不含已接管 sid 时调用原生 search。"""
+        managed_sid = getattr(self, "_is_managed_sid", None)
+        selected = set(int(value) for value in self._selected_subscriptions if str(value).isdigit())
+
+        def _is_managed(value: Any) -> bool:
+            if callable(managed_sid):
+                return bool(managed_sid(value))
+            try:
+                return int(value) in selected
+            except (TypeError, ValueError):
+                return False
+
+        kwargs = dict(forward_kwargs or {})
+        sid = kwargs.get("sid")
+        sids = kwargs.get("sids")
+        if sid is not None and _is_managed(sid):
+            self._plugin_log(
+                "WARNING",
+                "【光鸭转存助手】【原生阻断】拒绝交还已接管 sid=%s 给原生 search",
+                sid,
+            )
+            return True
+        if sids is not None:
+            kept = []
+            for value in sids:
+                if _is_managed(value):
+                    continue
+                kept.append(int(value))
+            if not kept:
+                return True
+            kwargs["sids"] = tuple(kept)
+            kwargs["sid"] = None
+        # 禁止带着 scheduled_interval 把 managed 重新加载回来
+        kwargs.pop("scheduled_interval", None)
+
         current = SubscribeChain.search
         original = getattr(current, "_guangya_original_search", None)
         chain = SubscribeChain()
         if callable(original) and original is not current:
-            return original(chain, **forward_kwargs)
-        # 无 original 可追溯时取消本轮，绝不全量→sids
+            return original(chain, **kwargs)
         self._plugin_log(
             "ERROR",
-            "【光鸭转存助手】【调度分流】【due失败】无法安全交还原生；本轮取消周期搜索",
+            "【光鸭转存助手】【调度分流】无法安全交还原生；本轮取消",
         )
         return True
 

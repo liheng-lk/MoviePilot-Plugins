@@ -28,16 +28,16 @@ def test_scheduler_takeover_is_nonblocking_for_guangya_routes():
     assert "progress_callback=None" in block
     assert "forward_kwargs.get(\"sid\")" in block or 'forward_kwargs.get("sid")' in block
     assert "self._queue_async_route_check([current_sid]" in block
-    assert "self._queue_async_route_check(route_ids" in block
+    assert "self._queue_async_route_check(active_route" in block
     assert "_try_transfer_subscription" not in block
     assert "SubscribeChain().search" in block
     assert "已阻断原生搜索并转入后台光鸭检查" in block
     assert "is_scheduled_scan" in block
     assert "_load_search_subscriptions" in block or "_load_due_search_subscriptions" in block
-    assert "【回退原生】" in block
+    assert "原生阻断" in block
     assert "SubscribeChain().search(*args" not in block
     assert "search(**forward_kwargs)" in block
-
+    assert "【回退原生】" not in block
 
 def test_periodic_processing_only_queues_background_work():
     block = runtime_text.split("    def _process_selected_subscriptions", 1)[1].split("    def _dispatch_subscribe_search", 1)[0]

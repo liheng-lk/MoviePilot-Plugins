@@ -14,9 +14,9 @@ def test_final_v11217_tree_is_publishable_and_temp_tooling_is_removed():
     recall = (PLUGIN / "search_recall_v11217.py").read_text(encoding="utf-8")
     bilingual = (PLUGIN / "movie_bilingual_identity_v11216.py").read_text(encoding="utf-8")
 
-    assert 'plugin_version = "2.0.7"' in entry
-    assert plugin["version"] == "2.0.7"
-    assert package["GuangYaTransferAssistant"]["version"] == "2.0.7"
+    assert 'plugin_version = "2.0.8"' in entry
+    assert plugin["version"] == "2.0.8"
+    assert package["GuangYaTransferAssistant"]["version"] == "2.0.8"
     assert 'class GuangYaSearchRecallV11217Mixin' in recall
     assert 'class GuangYaMovieBilingualIdentityV11216Mixin(GuangYaSearchRecallV11217Mixin):' in bilingual
     assert 'plugin_version = "1.12.16"' in bilingual

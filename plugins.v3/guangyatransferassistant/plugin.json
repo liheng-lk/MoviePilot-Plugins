@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
   "description": "更新日历驱动的固定分流助手。基于 1.12.26 稳定实现：修复频道标题模板噪声；转存命名为剧集名 + 季集号（SxxExx），电影仅用剧名。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
-  "version": "2.0.7",
+  "version": "2.0.8",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,

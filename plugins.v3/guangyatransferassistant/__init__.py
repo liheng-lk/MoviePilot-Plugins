@@ -156,8 +156,8 @@ class GuangYaTransferAssistant(
 ):
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
 
-    plugin_version = "2.0.7"
-    build_id = "20260910-r90"
+    plugin_version = "2.0.8"
+    build_id = "20260910-r91"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
@@ -228,7 +228,10 @@ class GuangYaTransferAssistant(
                 return original(chain_self, torrents, progress_callback=progress_callback)
             try:
                 active = list(plugin._list_subscriptions("R") or [])
-                if active and all(plugin._is_guangya_route(item) for item in active):
+                owned = getattr(plugin, "_is_managed_subscription", None)
+                if not callable(owned):
+                    owned = plugin._is_guangya_route
+                if active and all(owned(item) for item in active):
                     plugin._plugin_log(
                         "INFO",
                         "【光鸭转存助手】【RSS硬分流】当前可匹配订阅全部为光鸭路线，跳过 MoviePilot 本地资源匹配/下载链",
@@ -286,7 +289,10 @@ class GuangYaTransferAssistant(
                     no_exists = args[1]
                     subscribe = args[2]
 
-            if subscribe is not None and plugin._is_guangya_route(subscribe):
+            owned = getattr(plugin, "_is_managed_subscription", None)
+            if not callable(owned):
+                owned = plugin._is_guangya_route
+            if subscribe is not None and owned(subscribe):
                 sid = int(getattr(subscribe, "id", 0) or 0)
                 plugin._plugin_log(
                     "WARNING",

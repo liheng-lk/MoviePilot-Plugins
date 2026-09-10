@@ -34,7 +34,10 @@ def _exec_functions(source: str, names: set[str], namespace: dict) -> dict:
                 targets = [target.id for target in node.targets if isinstance(target, ast.Name)]
             elif isinstance(node.target, ast.Name):
                 targets = [node.target.id]
-            if any(name.startswith("_XUNLEI_") for name in targets):
+            if any(
+                name.startswith("_XUNLEI_") or name.startswith("_CHANNEL_DECODE_")
+                for name in targets
+            ):
                 nodes.append(node)
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names:
             nodes.append(node)
@@ -128,18 +131,21 @@ def test_channel_source_matrix_is_guangya_xunlei_magnet_ed2k():
 
 
 def test_channel_xunlei_parser_keeps_share_and_same_message_passcode():
+    from urllib.parse import unquote
+
     ns = {
         "re": re,
         "html": html,
         "parse_qs": parse_qs,
         "urlsplit": urlsplit,
+        "unquote": unquote,
         "Any": Any,
         "Dict": Dict,
         "List": List,
     }
     _exec_functions(
         CHANNEL,
-        {"_clean_xunlei_url_v11214", "_xunlei_channel_rows_v11214"},
+        {"_decode_channel_blob", "_clean_xunlei_url_v11214", "_xunlei_channel_rows_v11214"},
         ns,
     )
     rows = ns["_xunlei_channel_rows_v11214"](
@@ -348,7 +354,7 @@ def test_every_storage_path_reuses_guangya_target_and_no_moviepilot_downloader()
 
 
 def test_current_public_release_is_v11214_after_full_gate_passes():
-    assert 'plugin_version = "2.0.7"' in ENTRY
+    assert 'plugin_version = "2.0.8"' in ENTRY
     assert 'plugin_version = "1.12.14"' in CORE
     assert 'build_id = "20260905-r60"' in FINAL
 

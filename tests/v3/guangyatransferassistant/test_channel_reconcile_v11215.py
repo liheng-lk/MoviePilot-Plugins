@@ -201,8 +201,8 @@ def test_reconcile_path_remains_passive_channel_event_and_never_adds_gying_calls
 
 
 def test_v11215_public_release_is_promoted_after_candidate_ci_is_green():
-    assert 'plugin_version = "2.0.7"' in ENTRY
-    assert '"version": "2.0.7"' in PLUGIN_JSON
+    assert 'plugin_version = "2.0.8"' in ENTRY
+    assert '"version": "2.0.8"' in PLUGIN_JSON
     assert 'plugin_version = "1.12.15"' in SOURCE
     assert 'build_id = "20260906-r62"' in SOURCE
 

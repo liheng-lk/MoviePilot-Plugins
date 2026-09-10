@@ -258,6 +258,49 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
             return True
         return self._subscription_route_identity(subscribe) in set(self._provisional_routes or set())
 
+    def _is_managed_sid(self, sid: Any) -> bool:
+        """订阅 ID 是否已光鸭接管（配置名单；动态读取，禁止永久缓存）。"""
+        try:
+            value = int(sid)
+        except (TypeError, ValueError):
+            return False
+        return bool(value > 0 and value in set(self._selected_subscriptions or []))
+
+    def _is_managed_subscription(self, subscribe_or_id: Any) -> bool:
+        """唯一接管所有权判断：selected ∪ provisional。"""
+        if subscribe_or_id is None:
+            return False
+        if isinstance(subscribe_or_id, (int, str)) and str(subscribe_or_id).isdigit():
+            sid = int(subscribe_or_id)
+            if self._is_managed_sid(sid):
+                return True
+            subscribe = self._find_subscription(sid) if hasattr(self, "_find_subscription") else None
+            return bool(subscribe and self._is_guangya_route(subscribe))
+        return self._is_guangya_route(subscribe_or_id)
+
+    def _route_trace(
+        self,
+        *,
+        sid: Any = None,
+        state: Any = None,
+        manual: Any = False,
+        scheduled_interval: Any = None,
+        managed: bool = False,
+        decision: str = "",
+        source: str = "",
+    ) -> None:
+        self._plugin_log(
+            "INFO",
+            "【光鸭转存助手】【路由】sid=%s state=%s manual=%s scheduled_interval=%s managed=%s decision=%s source=%s",
+            sid if sid is not None else "-",
+            state if state is not None else "-",
+            bool(manual),
+            scheduled_interval if scheduled_interval is not None else "-",
+            bool(managed),
+            decision or "-",
+            source or "-",
+        )
+
     def _call_original_search(self, original, chain_self, *args, **kwargs):
         """透明转发宿主 search，保留 scheduled_interval 等未知参数。"""
         return original(chain_self, *args, **kwargs)
@@ -360,19 +403,20 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
             last_guarded_id=sid,
             last_guarded_name=str(getattr(subscribe, "name", "") or ""),
         )
-        # P/S 等非活跃：绝不能 handled=True 阻断原生，否则形成订阅黑洞。
+        # 已接管 = exclusive ownership：即使 P/S 非活跃也 handled=True，禁止 fallback native。
         if not self._is_active_transfer_state(subscribe):
             self._plugin_log(
                 "INFO",
-                "【光鸭转存助手】【回退原生】%s #%s state=%s 非活跃，交还原生搜索 handled=False",
+                "【光鸭转存助手】【原生阻断】%s #%s state=%s 已接管但非活跃；阻断原生且本轮不转存",
                 trigger,
                 sid,
                 str(getattr(subscribe, "state", "") or "-"),
             )
             return {
-                "success": False,
-                "handled": False,
-                "message": f"订阅状态 {getattr(subscribe, 'state', None) or '-'} 非活跃，交还原生",
+                "success": True,
+                "handled": True,
+                "retryable": False,
+                "message": f"订阅状态 {getattr(subscribe, 'state', None) or '-'} 非活跃，已阻断原生",
             }
         self._plugin_log(
             "INFO", "【光鸭转存助手】【硬分流】%s拦截原生搜索 #%s %s，改走光鸭转存",
@@ -391,12 +435,17 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
                 last_route_result=str(result.get("message") or "完成")[:500],
                 last_route_result_at=self._now_text(),
             )
+            # 失败也必须 handled=True，禁止因光鸭失败回退原生。
+            if isinstance(result, dict):
+                result = dict(result)
+                result["handled"] = True
+                if not result.get("success"):
+                    result.setdefault("retryable", True)
             return result
         except Exception as err:
             self._plugin_log("EXCEPTION", "【光鸭转存助手】【硬分流】#%s %s 转存检查异常", sid, getattr(subscribe, "name", ""))
             self._record_route_health(last_route_result=f"异常：{err}"[:500], last_route_result_at=self._now_text())
-            # 异常时不得永久阻断原生：交还 handled=False 让宿主有机会继续。
-            return {"success": False, "handled": False, "message": str(err), "retryable": True}
+            return {"success": False, "handled": True, "message": str(err), "retryable": True}
 
     def _guard_subscribe_search(
         self, original, chain_self, args=(), kwargs=None,
@@ -456,18 +505,53 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
 
         if sid is not None:
             subscribe = self._find_subscription(int(sid))
-            if subscribe and self._is_guangya_route(subscribe):
-                result = self._guard_one_subscription(subscribe, "单订阅搜索")
-                if result.get("handled", True):
-                    return None
-                # 非活跃等：交还原生完整调用（含 scheduled_interval）
-                return self._call_original_search(original, chain_self, **forward_kwargs)
+            managed = self._is_managed_sid(sid) or bool(
+                subscribe and self._is_managed_subscription(subscribe)
+            )
+            source = "manual" if manual else ("scheduled" if scheduled_interval is not None else "sid")
+            if managed:
+                self._route_trace(
+                    sid=sid, state=state, manual=manual,
+                    scheduled_interval=scheduled_interval, managed=True,
+                    decision="guangya_only", source=source,
+                )
+                if subscribe:
+                    result = self._guard_one_subscription(subscribe, "单订阅搜索")
+                    # exclusive ownership：无论 handled 标记如何，已接管不得再调 native
+                    return None if result.get("handled", True) else None
+                self._plugin_log(
+                    "WARNING",
+                    "【光鸭转存助手】【原生阻断】#%s 已在接管名单但当前找不到订阅对象；仍跳过 MoviePilot 原生搜索",
+                    sid,
+                )
+                return None
+            self._route_trace(
+                sid=sid, state=state, manual=manual,
+                scheduled_interval=scheduled_interval, managed=False,
+                decision="native", source=source,
+            )
             return self._call_original_search(original, chain_self, **forward_kwargs)
 
         if sids is not None:
             # 定向批量：保持宿主语义，不做 due 过滤
             candidates = [self._find_subscription(int(value)) for value in sids]
+            # 保留找不到对象但仍在接管名单的 sid，避免漏阻断
+            found_ids = {
+                int(getattr(item, "id", 0) or 0)
+                for item in candidates if item is not None
+            }
             candidates = [item for item in candidates if item is not None]
+            for raw in sids:
+                try:
+                    missing = int(raw)
+                except (TypeError, ValueError):
+                    continue
+                if missing > 0 and missing not in found_ids and self._is_managed_sid(missing):
+                    self._plugin_log(
+                        "WARNING",
+                        "【光鸭转存助手】【原生阻断】批量 sids 中 #%s 已接管但找不到对象；跳过原生",
+                        missing,
+                    )
         elif is_scheduled_scan:
             candidates = self._load_due_search_subscriptions(
                 chain_self,
@@ -475,12 +559,15 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
                 scheduled_interval=scheduled_interval,
             )
             if candidates is None:
-                # due 失败：完整交还原生（保留 scheduled_interval，由宿主自行 due），禁止全量→sids
+                # due 失败必须 fail-closed：禁止 _list_subscriptions 全量→sids（会绕过 due）。
+                # 也不再带 scheduled_interval 交还原生（会把 managed 重新加载出来）。
                 self._plugin_log(
                     "ERROR",
-                    "【光鸭转存助手】【调度】【due失败】完整交还原生周期搜索，本轮不自行枚举订阅",
+                    "【光鸭转存助手】【调度】【due失败】本轮取消周期搜索；禁止全量列举或 targeted sids 兜底",
                 )
-                return self._call_original_search(original, chain_self, **forward_kwargs)
+                if progress_callback:
+                    progress_callback(value=100, text="宿主到期筛选失败，本轮周期搜索已取消")
+                return None
             self._plugin_log(
                 "INFO",
                 "【光鸭转存助手】【调度】周期扫描先经宿主 due 筛选：interval=%s state=%s due=%s",
@@ -498,19 +585,37 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
             item_id = int(getattr(item, "id", 0) or 0)
             if not item_id:
                 continue
-            if self._is_guangya_route(item) and self._is_active_transfer_state(item):
+            if self._is_managed_subscription(item):
+                # 已接管：一律光鸭所有权，含 P/S 非活跃（阻断原生、不转存）
                 route_subs.append(item)
             else:
-                # 非光鸭路线，或光鸭路线但 P/S 非活跃 → 必须交还原生
                 native_ids.append(item_id)
 
+        source = "manual" if manual else ("scheduled" if is_scheduled_scan else "sids")
         for subscribe in route_subs:
+            self._route_trace(
+                sid=getattr(subscribe, "id", None),
+                state=getattr(subscribe, "state", None),
+                manual=manual,
+                scheduled_interval=scheduled_interval,
+                managed=True,
+                decision="guangya_only",
+                source=source,
+            )
             self._guard_one_subscription(subscribe, "批量搜索")
 
         if native_ids:
+            for nid in native_ids:
+                self._route_trace(
+                    sid=nid, state=state, manual=manual,
+                    scheduled_interval=None if is_scheduled_scan else scheduled_interval,
+                    managed=False, decision="native", source=source,
+                )
             native_kwargs = dict(forward_kwargs)
             native_kwargs.pop("sid", None)
-            # due 已完成（若是周期扫描）：此时用 sids 定向交还是安全的
+            # 周期扫描：due/拆分已完成，必须用 sids 定向，禁止再带 scheduled_interval
+            if is_scheduled_scan:
+                native_kwargs.pop("scheduled_interval", None)
             try:
                 sig = inspect.signature(original)
                 supports_batch_sids = (

@@ -15,13 +15,20 @@ import hashlib
 import html
 import re
 from typing import Any, Dict, List
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit, unquote
 
 from .source_types_v180 import normalize_source_uri
 
 
 _MAGNET_RE = re.compile(r"(?i)magnet:\?[^\s\"'<>]+")
-_ED2K_RE = re.compile(r"(?i)ed2k://\|file\|[^|\r\n<>]+\|\d+\|[0-9a-f]{32}\|/")
+# 允许 HTML 实体解码后的 |，以及 URL 编码残留经 unquote 后的完整 ed2k
+_ED2K_RE = re.compile(
+    r"(?i)ed2k://\|file\|[^|\r\n<>]+\|\d+\|[0-9a-fA-F]{32}\|/"
+)
+_ATTR_URL_RE = re.compile(
+    r"(?i)\b(?:href|data-href|data-url|data-link|data-button-url|onclick)\s*=\s*([\"'])(.*?)\1",
+    re.S,
+)
 _CHANNEL_CATCHUP_KEY_V11220 = "channel_catchup_v11220"
 _CHANNEL_CATCHUP_MAX_PAGES_V11220 = 256
 _CHANNEL_CATCHUP_ATTEMPTS_V11220 = 3
@@ -366,8 +373,43 @@ def _install_channel_cursor_completeness_v11220(legacy_module: Any) -> None:
     assistant_cls.refresh_channels = patched_refresh
 
 
+def _channel_slug_from_url(source_url: str) -> str:
+    try:
+        path = str(urlsplit(str(source_url or "")).path or "").strip("/")
+    except ValueError:
+        return str(source_url or "")[-40:]
+    return path.split("/")[-1] if path else str(source_url or "")[-40:]
+
+
+_CHANNEL_DECODE_MAX_CHARS = 2_000_000
+
+
+def _decode_channel_blob(value: Any) -> str:
+    """occurrence discovery 前规范化：HTML 实体 → \\/ / \\u002F → 有限次 unquote。"""
+    current = html.unescape(str(value or ""))
+    if len(current) > _CHANNEL_DECODE_MAX_CHARS:
+        current = current[:_CHANNEL_DECODE_MAX_CHARS]
+    current = current.replace("\\/", "/").replace("\\u002F", "/").replace("\\u002f", "/")
+    for _ in range(3):
+        decoded = unquote(current)
+        if decoded == current:
+            break
+        current = decoded
+        if len(current) > _CHANNEL_DECODE_MAX_CHARS:
+            current = current[:_CHANNEL_DECODE_MAX_CHARS]
+            break
+    return current
+
+
 def _external_sources_from_context(context_html: str) -> List[Dict[str, Any]]:
-    decoded = html.unescape(str(context_html or "")).replace("\\/", "/")
+    # 先整段 decode，再 finditer；属性值同样先 decode
+    raw = str(context_html or "")
+    decoded = _decode_channel_blob(raw)
+    attr_bits = []
+    for matched in _ATTR_URL_RE.finditer(raw):
+        attr_bits.append(_decode_channel_blob(matched.group(2)))
+    if attr_bits:
+        decoded = decoded + "\n" + "\n".join(attr_bits)
     rows: List[Dict[str, Any]] = []
     seen = set()
     matches = [(item.start(), item.group(0)) for item in _MAGNET_RE.finditer(decoded)]
@@ -391,6 +433,42 @@ def _external_sources_from_context(context_html: str) -> List[Dict[str, Any]]:
             "size": int(normalized.get("size") or 0),
         })
     return rows
+
+
+def _log_resource_discovery(legacy_module: Any, source_url: str, entry: Dict[str, Any]) -> None:
+    """频道级调试日志；不打印 cookie/token。"""
+    logger = getattr(legacy_module, "logger", None)
+    if logger is None:
+        return
+    channel = _channel_slug_from_url(source_url)
+    message_id = str(entry.get("message_id") or "") or "-"
+    xunlei_n = len(entry.get("xunlei_sources") or [])
+    guangya_n = 1 if str(entry.get("share_url") or "").strip() else 0
+    magnet_n = sum(1 for item in (entry.get("external_sources") or []) if str(item.get("type") or "") == "magnet")
+    ed2k_n = sum(1 for item in (entry.get("external_sources") or []) if str(item.get("type") or "") == "ed2k")
+    try:
+        logger.info(
+            "【光鸭转存助手】【频道】channel=%s message_id=%s",
+            channel,
+            message_id,
+        )
+        logger.info(
+            "【光鸭转存助手】【资源发现】xunlei=%s guangya=%s magnet=%s ed2k=%s",
+            xunlei_n,
+            guangya_n,
+            magnet_n,
+            ed2k_n,
+        )
+        title = str(entry.get("display_title") or entry.get("title") or "")[:120]
+        if title or entry.get("episode_hint"):
+            logger.info(
+                "【光鸭转存助手】【媒体匹配】title=%s season=%s episodes=%s",
+                title or "-",
+                entry.get("season_hint") or entry.get("season") or "-",
+                entry.get("episode_hint") or "-",
+            )
+    except Exception:
+        return
 
 
 def install_channel_multisource_compat(legacy_module: Any):
@@ -445,7 +523,8 @@ def install_channel_multisource_compat(legacy_module: Any):
     @functools.wraps(original_extract)
     def patched_extract(page_text: str, source_url: str, source_label: str) -> List[Dict[str, Any]]:
         base_entries = list(original_extract(page_text, source_url, source_label) or [])
-        decoded = html.unescape(str(page_text or "")).replace("\\/", "/")
+        # 必须在 Magnet/ED2K occurrence discovery 之前完成 URL decode
+        decoded = _decode_channel_blob(page_text)
         occurrence_positions = [item.start() for item in _MAGNET_RE.finditer(decoded)]
         occurrence_positions.extend(item.start() for item in _ED2K_RE.finditer(decoded))
 
@@ -515,6 +594,10 @@ def install_channel_multisource_compat(legacy_module: Any):
                 "candidate_types": [str(item.get("type") or "") for item in group.get("external_sources") or []],
             }
             base_entries.append(pseudo)
+
+        for entry in base_entries:
+            if entry.get("external_sources") or entry.get("share_url") or entry.get("xunlei_sources"):
+                _log_resource_discovery(legacy_module, source_url, entry)
 
         return base_entries
 

@@ -111,7 +111,10 @@ def test_v1112_only_sdk_or_launch_unavailability_falls_back_to_requests_chain():
         "    def api_viewing_auth_start(", 1
     )[0]
     assert "except _GyingBrowserUnavailableV1112 as err:" in request_method
-    assert "except Exception" not in request_method
+    assert "_is_browser_challenge_compat_failure_v1112" in request_method
+    assert "fallback=pansou" in request_method
+    # 禁止裸 except Exception 吞错；仅 Unavailable + challenge compat RuntimeError
+    assert "except Exception" not in request_method.split("_drop_stale_challenge_cookies_v1113", 1)[0]
     assert "return super()._gying_request(" in request_method
 
 

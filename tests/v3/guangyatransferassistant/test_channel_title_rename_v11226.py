@@ -19,9 +19,9 @@ PACKAGE = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["Gu
 
 
 def test_v11226_release_metadata_and_mro():
-    assert LOCAL["version"] == PACKAGE["version"] == "2.0.7"
-    assert 'plugin_version = "2.0.7"' in ENTRY
-    assert "v2.0.7" in PACKAGE["history"]
+    assert LOCAL["version"] == PACKAGE["version"] == "2.0.8"
+    assert 'plugin_version = "2.0.8"' in ENTRY
+    assert "v2.0.8" in PACKAGE["history"]
     assert "install_channel_title_rename_v11226" in ENTRY
     class_head = FAST.split("class GuangYaFastRecallV1126Mixin(", 1)[1].split("):", 1)[0]
     assert class_head.index("GuangYaChannelTitleRenameV11226Mixin") < class_head.index(

@@ -20,7 +20,7 @@ RUNTIME = RUNTIME_PATH.read_text(encoding="utf-8")
 
 
 def test_r89_version_markers():
-    assert 'plugin_version = "2.0.7"' in ENTRY
+    assert 'plugin_version = "2.0.8"' in ENTRY
 
 
 def test_r89_source_contracts():
@@ -112,6 +112,9 @@ def _attach_production_routing(plugin):
             "_load_due_search_subscriptions",
             "_call_original_search",
             "_is_active_transfer_state",
+            "_is_managed_sid",
+            "_is_managed_subscription",
+            "_route_trace",
             "_guard_one_subscription",
             "_guard_subscribe_search",
         ],
@@ -129,6 +132,11 @@ def _attach_production_routing(plugin):
     plugin._load_due_search_subscriptions = types.MethodType(
         methods["_load_due_search_subscriptions"], plugin
     )
+    plugin._is_managed_sid = types.MethodType(methods["_is_managed_sid"], plugin)
+    plugin._is_managed_subscription = types.MethodType(
+        methods["_is_managed_subscription"], plugin
+    )
+    plugin._route_trace = types.MethodType(methods["_route_trace"], plugin)
     plugin._guard_one_subscription = types.MethodType(methods["_guard_one_subscription"], plugin)
     plugin._guard_subscribe_search = types.MethodType(methods["_guard_subscribe_search"], plugin)
     return plugin
@@ -254,8 +262,9 @@ def test_old_moviepilot_abi_without_scheduled_interval():
     assert [int(x.id) for x in rows] == [9]
 
 
-def test_guard_due_failure_forwards_original_not_all_sids():
-    plugin = _attach_production_routing(_ProdPlugin(selected=[]))
+def test_guard_due_failure_cancels_without_full_scan():
+    """due 失败：fail-closed，禁止全量 list→sids。"""
+    plugin = _attach_production_routing(_ProdPlugin(selected=[1]))
     plugin.register(_make_sub(1), _make_sub(2))
     captured = {}
 
@@ -267,14 +276,20 @@ def test_guard_due_failure_forwards_original_not_all_sids():
         def _load_search_subscriptions(self, sid=None, sids=None, state=None, scheduled_interval=None):
             raise RuntimeError("db down")
 
-    plugin._guard_subscribe_search(
+    result = plugin._guard_subscribe_search(
         original=original,
         chain_self=Chain(),
         kwargs={"state": "R", "scheduled_interval": 24},
     )
-    assert "sids" not in (captured.get("kwargs") or {}) or captured["kwargs"].get("sids") is None
-    assert captured["kwargs"].get("scheduled_interval") == 24
+    assert result is None
+    assert captured == {}
+    assert plugin.guarded == []
     assert plugin.list_calls == 0
+
+
+def test_guard_due_failure_forwards_original_not_all_sids():
+    # 兼容旧测试名：语义已升级为 fail-closed 取消本轮
+    test_guard_due_failure_cancels_without_full_scan()
 
 
 def test_runtime_positional_dispatch_no_multiple_values(monkeypatch=None):

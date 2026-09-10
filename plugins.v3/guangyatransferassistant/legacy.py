@@ -36,7 +36,11 @@ from .media_identity_v1111 import explicit_seasons_v1111, strong_title_match_v11
 
 DEFAULT_CHANNEL_URLS = [
     "https://tgm.li668.asia/regengguangya",
-    "https://tgm.li668.asia/yunpanguangya",
+    "https://tgm.li668.asia/guangyapan_episode",
+    "https://tgm.li668.asia/guangya_hdhive",
+    "https://tgm.li668.asia/pan_guangya",
+    "https://tgm.li668.asia/regeng115",
+    "https://tgm.li668.asia/vip115hot",
 ]
 SHARE_PATTERN = re.compile(
     r"(?:(?:https?:)?//)?(?:www\.)?guangyapan\.com/(?:s|share)/[A-Za-z0-9_-]+(?:\?[^\s\"'<>]*)?",
