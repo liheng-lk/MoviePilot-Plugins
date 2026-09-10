@@ -1,0 +1,1 @@
+v3.8.1 runtime hotfix scope: background monitor exceptions are isolated from MoviePilot plugin lifecycle; automatic full scan is suppressed during the first 180 seconds after runtime install; after three failures within ten minutes only the monitor enters a five-minute cooldown. Frontend assets and media organization policy are unchanged.
