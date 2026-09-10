@@ -22,6 +22,8 @@ def _load_patch(monkeypatch):
             self.pending = True
             self.registered_result = None
             self.status = {}
+            self.data = {}
+            self.original_baseline_due = False
 
         def _v366_finish_schedule(self, group_path, files, result):
             if result.get("scheduled"):
@@ -38,6 +40,18 @@ def _load_patch(monkeypatch):
 
         def _save_monitor_status(self, **kwargs):
             self.status.update(kwargs)
+
+        def get_data(self, key):
+            return self.data.get(key)
+
+        def save_data(self, key, value):
+            self.data[key] = value
+
+        def _v366_baseline_due(self):
+            return self.original_baseline_due
+
+        def _v366_mark_baseline_complete(self):
+            self.data["baseline_original_called"] = True
 
     monitor_module.GuangYaOrganizerMonitorV366Mixin = FakeMonitor
     monkeypatch.setitem(
@@ -129,6 +143,25 @@ def test_non_revisitable_phases_do_not_create_permanent_pending(monkeypatch):
         )
         assert monitor.pending is False
         assert monitor.registered_result is None
+
+
+def test_upgrade_forces_one_baseline_then_returns_to_normal_cadence(monkeypatch):
+    module, fake_monitor = _load_patch(monkeypatch)
+    module.install_partial_revisit_v375()
+    monitor = fake_monitor()
+
+    # 即使旧 baseline 认为当前无需全量扫描，v3.7.5 首次升级也必须强制一次，
+    # 用来找回旧版本已经误删 pending 的半整理目录。
+    assert monitor._v366_baseline_due() is True
+
+    monitor._v366_mark_baseline_complete()
+    assert monitor.data["baseline_original_called"] is True
+    assert monitor.data[module._RECOVERY_KEY]["completed_at"] > 0
+
+    # 一次性恢复完成后回到原来的 baseline 节奏，不会每次重启全量扫库。
+    assert monitor._v366_baseline_due() is False
+    monitor.original_baseline_due = True
+    assert monitor._v366_baseline_due() is True
 
 
 def test_partial_revisit_patch_is_installed_in_runtime_graph():
