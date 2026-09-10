@@ -2,8 +2,8 @@
 
 该层显式位于插件 MRO 前部：
 1. 导入阶段先安装 v3.6.9 光鸭路径分页/严格读取基础补丁；
-2. monitor 初始化时安装 v3.6.9 连续发现/状态回收，再安装 v3.7.6 双通道扫描，最后安装
-   v3.6.0 move 终态修复与 v3.6.4 move 失败事务保护；
+2. monitor 初始化时安装 v3.6.9 连续发现/状态回收，再安装 v3.7.6 双通道扫描和 v3.8.0
+   持续目录观察流水，最后安装 v3.6.0 move 终态修复与 v3.6.4 move 失败事务保护；
 3. 弱命名 folder envelope 内部逐文件执行时，最终状态统一回到 v3.6 fallback；
 4. 状态 API 最后投影 v3.6 Worker/discovery 事实，屏蔽旧 v3.5.9 cursor/sticky 的展示残留。
 
@@ -35,6 +35,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
     _v360_storage_patch_ready: bool = False
     _v369_monitor_patch_ready: bool = False
     _v376_dual_scan_patch_ready: bool = False
+    _v380_watch_pipeline_patch_ready: bool = False
 
     def init_organizer_monitor(self) -> None:
         if not self._v369_monitor_patch_ready:
@@ -51,6 +52,13 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
 
             install_dual_scan_v376()
             self._v376_dual_scan_patch_ready = True
+        if not self._v380_watch_pipeline_patch_ready:
+            # v3.8.0 是最终监控调度权：v376 仅保留 API/前端兼容，v380 把“发现”和“执行”
+            # 解耦。必须延迟安装，且位于 v369/v376 之后，避免热更新时提前反向导入 MRO。
+            from .organizer_watch_pipeline_v380 import install_watch_pipeline_v380
+
+            install_watch_pipeline_v380()
+            self._v380_watch_pipeline_patch_ready = True
         if not self._v360_storage_patch_ready:
             # 安装顺序不可交换：v3.6.4 必须包在 v3.6.0 最终 move_item 外层，才能在
             # MoviePilot 收到失败前进行延长确认、回滚和 delete/purge 保护。
