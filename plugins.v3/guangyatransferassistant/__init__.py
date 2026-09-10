@@ -385,4 +385,19 @@ def _emergency_restore_subscribe_chain_patches() -> None:
         pass
 
 
+def _scrub_public_mixin_exports() -> None:
+    """Phase 0 Loader 护栏：模块 globals 只保留最终插件类给 PluginLoader。
+
+    MoviePilot 按插入顺序取第一个同时具备 init_plugin + plugin_name 的公开类。
+    公开 Mixin 名会增加误选风险；类已进入 MRO 后可安全从 globals 移除。
+    不改变业务行为。
+    """
+    for name, obj in list(globals().items()):
+        if name.startswith("_") or name == "GuangYaTransferAssistant":
+            continue
+        if isinstance(obj, type) and name.endswith("Mixin"):
+            globals().pop(name, None)
+
+
 _emergency_restore_subscribe_chain_patches()
+_scrub_public_mixin_exports()
