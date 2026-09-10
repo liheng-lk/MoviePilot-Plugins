@@ -87,8 +87,6 @@ def test_live_template_tmdb_score_is_not_mistaken_for_tmdb_id():
     legacy = (PLUGIN / "legacy.py").read_text(encoding="utf-8")
     matched = re.search(r"TMDB_PATTERN\s*=\s*re\.compile\((.+?)\)\n", legacy, re.S)
     assert matched, "legacy TMDB_PATTERN missing"
-    # Contract-level check: current regex intentionally requires TMDB + optional ID + digits;
-    # the live channel's 'TMDB评分' field therefore falls back to exact title/year matching.
     pattern = re.compile(r"(?i)\bTMDB\s*(?:ID)?\s*[：:#]?\s*(\d{2,9})")
     assert pattern.search("⭐️ TMDB评分：9.5/10") is None
     assert pattern.search("TMDB ID：123456")
@@ -101,29 +99,12 @@ def test_cursor_backlog_never_advances_past_unread_pages_and_auto_catches_up():
 
     class LegacyAssistant:
         def refresh_channels(self, force: bool = False):
-            # Simulate legacy behavior: it always advances to the newest visible ID even when
-            # the configured page depth has not reached the old cursor.
             old = int(((self.store.get("channel_cursors") or {}).get(source_url) or {}).get("last_message_id") or 0)
             enough = int(self._history_pages) >= 16
-            self.store["channel_cursors"] = {
-                source_url: {"last_message_id": 130, "updated": "legacy"}
-            }
+            self.store["channel_cursors"] = {source_url: {"last_message_id": 130, "updated": "legacy"}}
             self.store["channel_index"] = {
-                "items": [{
-                    "message_id": "130",
-                    "source_url": source_url,
-                    "source_label": label,
-                    "stale": False,
-                    "cached_index": False,
-                }],
-                "source_status": {
-                    label: {
-                        "success": True,
-                        "pages": int(self._history_pages),
-                        "cursor": 130,
-                        "reached_cursor": enough,
-                    }
-                },
+                "items": [{"message_id": "130", "source_url": source_url, "source_label": label, "stale": False, "cached_index": False}],
+                "source_status": {label: {"success": True, "pages": int(self._history_pages), "cursor": 130, "reached_cursor": enough}},
             }
             self.calls.append((int(self._history_pages), bool(force), old))
             return list(self.store["channel_index"]["items"])
@@ -140,11 +121,7 @@ def test_cursor_backlog_never_advances_past_unread_pages_and_auto_catches_up():
         _history_pages = 2
 
         def __init__(self):
-            self.store = {
-                "channel_cursors": {
-                    source_url: {"last_message_id": 100, "updated": "old"}
-                }
-            }
+            self.store = {"channel_cursors": {source_url: {"last_message_id": 100, "updated": "old"}}}
             self.logs = []
             self.calls = []
 
@@ -165,8 +142,6 @@ def test_cursor_backlog_never_advances_past_unread_pages_and_auto_catches_up():
             return "2026-09-09 11:30:00"
 
     harness = Harness()
-
-    # First tick is bounded: budgets 2 -> 4 -> 8 still cannot reach cursor=100.
     harness.refresh_channels(force=False)
     assert [row[0] for row in harness.calls] == [2, 4, 8]
     assert harness.store["channel_cursors"][source_url]["last_message_id"] == 100
@@ -180,11 +155,10 @@ def test_cursor_backlog_never_advances_past_unread_pages_and_auto_catches_up():
     assert status["next_page_budget"] == 16
     assert any("不会越过未读取消息" in message for _, message in harness.logs)
 
-    # Next tick starts from the persisted depth=16 and reaches the old cursor in one pass.
     harness.calls.clear()
     harness.refresh_channels(force=False)
     assert harness.calls[0][0] == 16
-    assert harness.calls[0][1] is True  # catchup bypasses ordinary refresh TTL
+    assert harness.calls[0][1] is True
     assert harness.store["channel_cursors"][source_url]["last_message_id"] == 130
     assert source_url not in (harness.store.get("channel_catchup_v11220") or {})
 
@@ -215,21 +189,17 @@ def test_channel_completeness_patch_is_idempotent_and_public_release_is_v11220()
     entry = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
-    assert 'plugin_version = "1.12.23"' in entry
-    assert 'build_id = "20260909-r70"' in entry
-    assert local["version"] == package["version"] == "1.12.23"
+    assert 'plugin_version = "1.12.25"' in entry
+    assert 'build_id = "20260910-r72"' in entry
+    assert local["version"] == package["version"] == "1.12.25"
     assert "v1.12.20" in package.get("history", {})
 
 
 def test_installer_connects_title_and_cursor_patches_before_multisource_early_return():
-    installer = next(
-        node for node in TREE.body
-        if isinstance(node, ast.FunctionDef) and node.name == "install_channel_multisource_compat"
-    )
+    installer = next(node for node in TREE.body if isinstance(node, ast.FunctionDef) and node.name == "install_channel_multisource_compat")
     text = ast.get_source_segment(SOURCE, installer) or ""
     title_pos = text.index("_install_channel_title_compat_v11220")
     cursor_pos = text.index("_install_channel_cursor_completeness_v11220")
     early_return_pos = text.index("if not callable(current_extract) or not callable(current_key)")
     assert title_pos < early_return_pos
     assert cursor_pos < early_return_pos
-
