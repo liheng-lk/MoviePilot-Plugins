@@ -22,11 +22,14 @@ def test_media_match_slice_is_public_v11219_release():
     assert "transfer_episodes" in MATCH
 
 
-def test_v11219_description_keeps_v11218_fail_closed_safety_contract():
+def test_v11219_keeps_v11218_fail_closed_safety_contract():
+    """安全语义应由发布历史/行为合同承载，而不是绑死当前市场简介文案。"""
     local_desc = str(PLUGIN_JSON.get("description") or "")
     package_desc = str(PACKAGE_JSON.get("description") or "")
+    history = str(PACKAGE_JSON.get("history", {}).get("v1.12.18") or "")
     assert local_desc == package_desc
-    assert "fail-closed" in local_desc
-    assert "taskId" in local_desc or "taskid" in local_desc.lower()
+    assert "目录事实未知" in history
+    assert "taskId" in history or "taskid" in history.lower()
+    assert "get_item" in history
     assert "观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K" in local_desc
 
