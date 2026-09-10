@@ -21,6 +21,8 @@ class DualScanV376ContractTest(unittest.TestCase):
         self.assertIn('def run_incremental(self, trigger: str = "monitor")', source)
         self.assertIn("original_run(self, manual=True)", source)
         self.assertIn("pending→known变化→discovery推进1页", source)
+        self.assertIn("pending回访", source)
+        self.assertIn("known检查=", source)
 
     def test_full_scan_is_persistent_until_cycle_complete(self):
         source = DUAL.read_text(encoding="utf-8")
@@ -29,13 +31,18 @@ class DualScanV376ContractTest(unittest.TestCase):
         self.assertIn('session.update({"active": False, "completed_at": time.time(), "remaining_dirs": 0})', source)
         self.assertIn("全量扫描会话已保留；当前任务结束后自动继续", source)
 
+    def test_full_progress_does_not_fake_zero_when_fast_path_has_no_cursor_count(self):
+        source = DUAL.read_text(encoding="utf-8")
+        self.assertIn('if "remaining_dirs" in data:', source)
+        self.assertIn('session["remaining_dirs"] = int(data.get("remaining_dirs") or 0)', source)
+        self.assertIn('"log_filter_hint": "【光鸭云盘助手】【整理】"', source)
+
     def test_manual_stop_suppresses_only_automatic_full_restart(self):
         source = DUAL.read_text(encoding="utf-8")
         self.assertIn('suppressed_until = float(raw.get("suppressed_until") or 0)', source)
         self.assertIn('if suppressed_until > now:', source)
         self.assertIn('"suppressed_until": stopped_at + _FULL_SCAN_INTERVAL', source)
         self.assertIn("30 分钟内不会自动重启全量", source)
-        # 手动 start_full 不检查 suppressed_until，因此用户仍可立即重新启动。
         start_block = source.split('def start_full(self, trigger: str = "manual")', 1)[1].split('def stop_full', 1)[0]
         self.assertNotIn("suppressed_until", start_block)
 
