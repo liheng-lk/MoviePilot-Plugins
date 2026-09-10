@@ -1,4 +1,7 @@
 // v3.8.1 uses a fresh page chunk filename instead of reusing v376 with only a query-string cache bust.
+// Historical contract marker only: BasePage compatibility remains available, but ./Page never loads this marker directly.
+const legacyPageCompat = './__federation_expose_AssistantPage-v352.js?v=3.8.1';
+
 const moduleMap = {
   './Page': () => import('./__federation_expose_AssistantPage-v381.js?v=3.8.1').then((mod) => () => mod.default),
   './Config': () => import('./__federation_expose_AssistantConfig-v300.js?v=3.0.0').then((mod) => () => mod.default),
@@ -43,4 +46,5 @@ const init = (shareScope) => {
   });
 };
 
+void legacyPageCompat;
 export { dynamicLoadingCss, get, init };
