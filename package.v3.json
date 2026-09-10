@@ -92,14 +92,15 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "更新日历驱动的固定分流助手。v1.12.26：修复频道标题模板噪声导致匹配失败；转存落盘命名改为剧集名 + 季集号（SxxExx），电影仅用剧名。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
-    "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,PanSou,CloakBrowser,自动登录,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流,质量过滤,字幕过滤,检索冷却,更新日历,每小时补漏,10分钟追更,快速追更,资源门禁,季发行年份,合法别名,拆包恢复,needs_review,TMDB官方别名,英文原名检索,迅雷防重复,已入库硬栅栏,最终导入过滤,四源统一,缺集硬栅栏,频道补偿,缓存补偿,新增订阅预热,频道历史回溯,自动恢复,分享叶子兼容,识别命名前缀,频道标题清洗,剧集名季集命名",
-    "version": "1.12.26",
+    "description": "2.0：声明式 Setup/Run/Calendar 界面 + 可解释匹配轨迹 + 统一 NamingPolicy/WriteGate。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。兼容 1.x 配置与状态。",
+    "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,PoW,PanSou,CloakBrowser,自动登录,人工验证码,汉字验证码,节点切换,Torznab,tg-search,缺集,拆包,追更,固定分流,硬分流,质量过滤,字幕过滤,检索冷却,更新日历,每小时补漏,10分钟追更,快速追更,资源门禁,季发行年份,合法别名,拆包恢复,needs_review,TMDB官方别名,英文原名检索,迅雷防重复,已入库硬栅栏,最终导入过滤,四源统一,缺集硬栅栏,频道补偿,缓存补偿,新增订阅预热,频道历史回溯,自动恢复,分享叶子兼容,识别命名前缀,频道标题清洗,剧集名季集命名,2.0,声明式UI,决策轨迹,WriteGate,NamingPolicy",
+    "version": "2.0.0",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v2.0.0": "架构重构：声明式配置/运行台 UI（不再依赖 mixin DOM mutation）；MatchEngine + decision_traces 暴露命中未转原因；TransferOrchestrator + WriteGate + NamingPolicy 统一匹配/门禁/命名；ConfigMigratorV2 平滑迁移 1.x 配置与状态；协议与来源优先级保持不变。",
       "v1.12.26": "修复频道 `名称：` / `[剧集·光鸭]` 等标题模板噪声导致匹配失败不转存；转存落盘命名改为剧集名 + 季集号（SxxExx / SxxExx-Eyy），电影仅用剧名；覆盖迅雷秒传、Magnet/ED2K 云添加与光鸭分享落盘后 rename。",
       "v1.12.25": "修复实机频道分享已命中且接口返回叶子、但文件名/扩展名为空导致无法转存：异常分享重读时同时提交 shareId+accessToken，兼容 fileInfo/resourceName/fullPath 等嵌套字段与独立 fileExt，并避免把文件名中的普通点号误当扩展名；协议仍异常时显式报错，不再伪报分享无视频。同步包含 v1.12.24 自动恢复：增长中的旧分享复核、handled 真缺口恢复、非更新日提前资源补漏，以及识别文件夹名前缀命名。",
       "v1.12.24": "修复自动转存恢复与识别命名：真实缺口存在时已处理的可增长频道分享允许有界复核；handled=True 不再等价于真实覆盖，主动 Pull 会继续观影后备链；非严格更新日增加有界提前资源补漏；迅雷、云添加及光鸭直接分享统一使用识别文件夹名作为最终文件名前缀。",

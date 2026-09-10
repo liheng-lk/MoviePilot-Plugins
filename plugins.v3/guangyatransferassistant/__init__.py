@@ -101,6 +101,7 @@ from .status_hardening_v193 import GuangYaStatusHardeningMixin
 from .viewing_logging_v1113 import GuangYaViewingLoggingV1113Mixin
 from .xunlei_flash_v193 import GuangYaXunleiFlashMixin
 from .xunlei_hardening_v193 import GuangYaXunleiHardeningMixin
+from .v2.plugin import GuangYaTransferV2Mixin
 
 
 install_episode_filename_compat(_legacy_module)
@@ -109,6 +110,7 @@ install_channel_title_rename_v11226(_legacy_module)
 
 
 class GuangYaTransferAssistant(
+    GuangYaTransferV2Mixin,
     GuangYaPagePerfV1123Mixin,
     GuangYaMovieIdentityV1129Mixin,
     GuangYaResourceGateV1127Mixin,
@@ -154,10 +156,11 @@ class GuangYaTransferAssistant(
     GuangYaExperienceMixin,
     _RoutingV170Assistant,
 ):
-    """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
+    """2.0：声明式 UI + 可解释匹配 + 统一命名/门禁；底层仍复用 1.x 协议与调度。"""
 
-    plugin_version = "1.12.26"
-    build_id = "20260910-r73"
+    plugin_version = "2.0.0"
+    build_id = "20260910-r80"
+    plugin_desc = "2.0：声明式界面 + 可解释匹配 + 统一命名/写盘门禁；兼容 1.x 配置与状态。来源优先级：观影迅雷秒传 → 光鸭直接转存 → Magnet → ED2K。"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
