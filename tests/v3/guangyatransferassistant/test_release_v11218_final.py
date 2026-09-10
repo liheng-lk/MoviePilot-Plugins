@@ -48,10 +48,12 @@ def test_final_v11218_keeps_source_priority_and_native_cloudcollection():
     assert "transmission" not in lowered
 
 
-def test_final_v11218_description_documents_read_only_verification_and_fail_closed_cleanup():
-    local = json.loads(LOCAL.read_text(encoding="utf-8"))
-    desc = str(local.get("description") or "")
-    assert "fail-closed" in desc
-    assert "taskId" in desc or "taskid" in desc.lower()
+def test_final_v11218_release_history_documents_read_only_and_fail_closed_cleanup():
+    package = json.loads(PACKAGE.read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
+    desc = str(package.get("description") or "")
+    history = str(package.get("history", {}).get("v1.12.18") or "")
+    assert "目录事实未知" in history
+    assert "taskId" in history or "taskid" in history.lower()
+    assert "get_item" in history
     assert "观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K" in desc
 
