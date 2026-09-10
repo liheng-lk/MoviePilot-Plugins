@@ -96,6 +96,7 @@ class GuangYaOrganizerExecutionV360Mixin(GuangYaOrganizerEngineV360Mixin):
                 success, message = super()._execute_isolated_transfer(member)
             except Exception as err:  # noqa: BLE001
                 success, message = False, str(err)
+            # TransferComplete/TransferFailed 若已经先到，成员终态保持幂等；fallback 仅补宿主未回执边界。
             self._fallback_terminal_state(member, success=bool(success), message=str(message or ""))
             all_success = all_success and bool(success)
             if message:
