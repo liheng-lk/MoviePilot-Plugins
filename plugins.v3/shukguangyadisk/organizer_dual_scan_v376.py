@@ -131,6 +131,34 @@ def _full_due(plugin: Any) -> bool:
     return completed_at <= 0 or now - completed_at >= _FULL_SCAN_INTERVAL
 
 
+def _progress_message(data: Dict[str, Any], *, full: bool, session: Dict[str, Any] | None = None) -> str:
+    """把 pending/known/discovery 三种返回统一成用户可读进度，避免 0 目录造成误判。"""
+    if data.get("priority_revisit"):
+        return (
+            f"pending回访 path={data.get('path') or data.get('priority_revisit_path') or '-'} "
+            f"scheduled={int(bool(data.get('scheduled')))}"
+        )
+    if data.get("known_scan"):
+        return (
+            f"known检查={int(data.get('known_checked') or 0)}/{int(data.get('known_total') or 0)} "
+            f"变化={int(data.get('known_changed') or 0)} 移除={int(data.get('known_removed') or 0)} "
+            f"scheduled={int(bool(data.get('scheduled')))}"
+        )
+    dirs_scanned = int(data.get("dirs_scanned") or 0)
+    files_seen = int(data.get("files_seen") or 0)
+    resources = int(data.get("resource_dirs") or 0)
+    remaining = int(data.get("remaining_dirs") or 0)
+    if full and session is not None:
+        return (
+            f"全量页={int(session.get('pages') or 0)} 本页目录={dirs_scanned} 本页文件={files_seen} "
+            f"累计资源={int(session.get('resource_dirs') or 0)} 剩余游标={int(session.get('remaining_dirs') or 0)}"
+        )
+    return (
+        f"discovery目录={dirs_scanned} 文件={files_seen} 资源目录={resources} "
+        f"剩余游标={remaining} scheduled={int(bool(data.get('scheduled')))}"
+    )
+
+
 def install_dual_scan_v376() -> None:
     """在最终 v3.6.6 monitor 边界安装双通道编排；保持现有 MRO 不变。"""
     if bool(getattr(_MonitorMixin, _INSTALL_FLAG, False)):
@@ -194,19 +222,7 @@ def install_dual_scan_v376() -> None:
             _trace(self, 2, "准备", f"目录={root}；顺序=pending→known变化→discovery推进1页")
             result = dict(original_run(self, manual=True) or {})
             data = dict(result.get("data") or {})
-            dirs_scanned = int(data.get("dirs_scanned") or 0)
-            files_seen = int(data.get("files_seen") or 0)
-            resources = int(data.get("resource_dirs") or 0)
-            remaining = int(data.get("remaining_dirs") or 0)
-            _trace(
-                self,
-                3,
-                "发现",
-                (
-                    f"目录={dirs_scanned} 文件={files_seen} 资源目录={resources} "
-                    f"剩余游标={remaining} scheduled={int(bool(data.get('scheduled')))}"
-                ),
-            )
+            _trace(self, 3, "发现", _progress_message(data, full=False))
             elapsed = round(time.time() - started, 3)
             self._save_monitor_status(
                 incremental_last_at=time.time(),
@@ -264,16 +280,10 @@ def install_dual_scan_v376() -> None:
             if bool(data.get("scheduled")):
                 session["scheduled_resources"] = int(session.get("scheduled_resources") or 0) + 1
             session["errors"] = int(session.get("errors") or 0) + len(list(data.get("errors") or []))
-            session["remaining_dirs"] = int(data.get("remaining_dirs") or 0)
-            _trace(
-                self,
-                3,
-                "发现",
-                (
-                    f"全量页={session.get('pages', 0)} 本页目录={page_dirs} 本页文件={page_files} "
-                    f"累计资源={session.get('resource_dirs', 0)} 剩余游标={session.get('remaining_dirs', 0)}"
-                ),
-            )
+            # pending/known 快速返回没有 remaining_dirs，不能把真实 discovery 游标误显示为 0。
+            if "remaining_dirs" in data:
+                session["remaining_dirs"] = int(data.get("remaining_dirs") or 0)
+            _trace(self, 3, "发现", _progress_message(data, full=True, session=session))
 
             if bool(data.get("cycle_complete")):
                 session.update({"active": False, "completed_at": time.time(), "remaining_dirs": 0})
@@ -301,6 +311,7 @@ def install_dual_scan_v376() -> None:
                     full_scan_files=int(session.get("files_seen") or 0),
                     full_scan_resources=int(session.get("resource_dirs") or 0),
                     full_scan_scheduled=int(session.get("scheduled_resources") or 0),
+                    full_scan_remaining_dirs=0,
                 )
                 _trace(
                     self,
@@ -507,6 +518,7 @@ def install_dual_scan_v376() -> None:
                 "full_scan_interval": int(_FULL_SCAN_INTERVAL),
                 "incremental_strategy": "pending->known->discovery-page",
                 "log_stage_schema": "1触发/2准备/3发现/4判定/5入队/6完成",
+                "log_filter_hint": "【光鸭云盘助手】【整理】",
             }
         )
         return response
