@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 import hashlib
 import html
+import json
 import re
 import threading
 import time
@@ -2272,9 +2273,62 @@ class GuangYaTransferAssistant(_PluginBase):
         raw = f"{self._media_fact_prefix(subscribe)}|{entry_key}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
+    def _rule_fingerprint(self, subscribe: Any = None) -> str:
+        """影响资源能否通过过滤的规则指纹；规则变更后 filtered 等结论可重开。"""
+        if subscribe is None:
+            return ""
+        rule_data = {
+            "include": str(getattr(subscribe, "include", "") or "").strip(),
+            "exclude": str(getattr(subscribe, "exclude", "") or "").strip(),
+            "resolution": str(getattr(subscribe, "resolution", "") or "").strip(),
+            "quality": str(getattr(subscribe, "quality", "") or "").strip(),
+            "effect": str(getattr(subscribe, "effect", "") or "").strip(),
+            "filter": str(getattr(subscribe, "filter", "") or "").strip(),
+            "filter_groups": getattr(subscribe, "filter_groups", None),
+            "best_version": bool(getattr(subscribe, "best_version", 0)),
+            "season": getattr(subscribe, "season", None),
+            "media_source": str(getattr(subscribe, "media_source", "") or ""),
+            "media_id": str(getattr(subscribe, "media_id", "") or ""),
+            "tmdbid": str(getattr(subscribe, "tmdbid", "") or getattr(subscribe, "tmdb_id", "") or ""),
+            "doubanid": str(getattr(subscribe, "doubanid", "") or getattr(subscribe, "douban_id", "") or ""),
+            "year": str(getattr(subscribe, "year", "") or ""),
+            "type": str(getattr(subscribe, "type", "") or ""),
+        }
+        raw = json.dumps(rule_data, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _status_reprocess_on_rule_change(status: str) -> bool:
+        return str(status or "").strip().lower() in {
+            "filtered",
+            "no_match",
+            "ignored",
+            "resource_denied",
+            "skipped",
+        }
+
     def _entry_processed(self, entry: Dict[str, Any], subscribe: Any = None) -> bool:
         key = self._processed_entry_key(entry, subscribe)
-        return bool(key and (self.get_data("processed_entries") or {}).get(key))
+        if not key:
+            return False
+        raw = (self.get_data("processed_entries") or {}).get(key)
+        if not raw:
+            return False
+        if subscribe is None or not isinstance(raw, dict):
+            return True
+        status = str(raw.get("status") or "").strip().lower()
+        if self._status_reprocess_on_rule_change(status):
+            current_fp = self._rule_fingerprint(subscribe)
+            stored_fp = str(raw.get("rule_fingerprint") or "")
+            # 无指纹的旧 filtered 记录：规则侧允许重开一次以迁移指纹。
+            if current_fp and (not stored_fp or stored_fp != current_fp):
+                self._plugin_log(
+                    "INFO",
+                    "【光鸭转存助手】【去重】规则指纹变化，重新检查 filtered/skip 记录 status=%s",
+                    status or "-",
+                )
+                return False
+        return True
 
     def _mark_entry_processed(self, entry: Dict[str, Any], status: str, message: str = "", subscribe: Any = None) -> None:
         key = self._processed_entry_key(entry, subscribe)
@@ -2289,6 +2343,7 @@ class GuangYaTransferAssistant(_PluginBase):
             "message_id": str(entry.get("message_id") or ""),
             "source": str(entry.get("source_label") or entry.get("source_url") or ""),
             "media": self._media_fact_prefix(subscribe) if subscribe is not None else "",
+            "rule_fingerprint": self._rule_fingerprint(subscribe) if subscribe is not None else "",
         }
         if len(records) > 10000:
             ordered = sorted(records.items(), key=lambda pair: str((pair[1] or {}).get("time") or ""), reverse=True)[:10000]
@@ -2547,8 +2602,15 @@ class GuangYaTransferAssistant(_PluginBase):
         sid = int(getattr(subscribe, "id", 0) or 0)
         allowed, guard_reason = self._subscription_static_guard(subscribe)
         if not allowed:
-            self._plugin_log("INFO", "【光鸭转存助手】【规则】#%s %s 不接管：%s", sid, getattr(subscribe, "name", ""), guard_reason)
-            return {"success": False, "handled": True, "message": guard_reason}
+            # 插件自身无法处理时绝不能 handled=True 阻断原生，否则形成订阅黑洞。
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【回退原生】#%s %s 不接管：%s；handled=False",
+                sid,
+                getattr(subscribe, "name", ""),
+                guard_reason,
+            )
+            return {"success": False, "handled": False, "message": guard_reason}
         if refresh_channel:
             self.refresh_channels(force=False)
         # 先把旧版库存迁移成媒体语义事实，再同步事实和 MoviePilot 媒体库。
@@ -3252,10 +3314,19 @@ class GuangYaTransferAssistant(_PluginBase):
 
     @staticmethod
     def _is_success(response: Any) -> bool:
+        """光鸭业务成功判断：禁止把 code=None 一律当成成功。"""
         if not isinstance(response, dict):
             return False
         code = response.get("code")
-        return code in (None, 0, "0") and str(response.get("msg") or response.get("message") or "success").lower() not in ("error", "failed", "fail")
+        msg = str(response.get("msg") or response.get("message") or "").strip().lower()
+        if code in (0, "0"):
+            return msg not in ("error", "failed", "fail")
+        if msg == "success":
+            return True
+        if response.get("success") is True and code in (None, ""):
+            # 仅当接口显式 success=true 且无错误码时接受
+            return msg not in ("error", "failed", "fail")
+        return False
 
     def _share_access(self, client: Any, share_url: str) -> Tuple[Optional[str], str]:
         identity = _share_identity(share_url)
@@ -3284,6 +3355,8 @@ class GuangYaTransferAssistant(_PluginBase):
         token, error = self._share_access(client, share_url)
         if not token:
             return {"success": False, "message": error}
+        identity = _share_identity(share_url)
+        share_id = identity.split("|", 1)[0] if identity else ""
         stack: List[Tuple[str, str]] = [("", "")]
         root_ids: List[str] = []
         fingerprint_rows: List[str] = []
@@ -3325,12 +3398,12 @@ class GuangYaTransferAssistant(_PluginBase):
         fingerprint = hashlib.sha256("\n".join(sorted(fingerprint_rows)).encode("utf-8")).hexdigest()
         legacy_fingerprint = hashlib.sha256("\n".join(sorted(legacy_fingerprint_rows)).encode("utf-8")).hexdigest()
         result = {
-            "success": True, "access_token": token,
+            "success": True, "access_token": token, "share_id": share_id,
             "root_ids": [value for value in root_ids if value],
             "fingerprint": fingerprint, "legacy_fingerprint": legacy_fingerprint, "file_count": count,
             "leaf_count": len(files), "files": files,
         }
-        self._inspect_cache[_share_identity(share_url)] = (time.time(), result)
+        self._inspect_cache[identity or _share_identity(share_url)] = (time.time(), result)
         return dict(result)
 
     def _verify_restored_group(
@@ -3433,36 +3506,79 @@ class GuangYaTransferAssistant(_PluginBase):
                 group_paths = [str(item.get("effective_path") or item.get("relative_path") or item.get("name") or "") for item in group]
                 self._set_job_state(job_key, "submitting", group_paths=group_paths, task_ids=task_ids)
                 self._plugin_log("INFO", "【光鸭转存助手】【增量】提交目录 %s：新增文件 %s 个", normalized, len(file_ids))
+                restore_payload = {
+                    "accessToken": probe.get("access_token"),
+                    "fileIds": file_ids,
+                    "parentId": parent_id,
+                }
+                share_id = str(probe.get("share_id") or "").strip()
+                if share_id:
+                    restore_payload["shareId"] = share_id
+                self._plugin_log(
+                    "INFO",
+                    "【光鸭转存助手】【转存提交】share=%s 目录=%s 提交文件=%s",
+                    share_id or "-",
+                    normalized,
+                    len(file_ids),
+                )
                 response = client._request(
                     method="POST",
                     url=f"{client.API_BASE_URL}/nd.bizuserres.s/v1/restore_share",
-                    data={"accessToken": probe.get("access_token"), "fileIds": file_ids, "parentId": parent_id},
+                    data=restore_payload,
                     need_auth=True,
                 )
                 if not self._is_success(response):
                     message = str(response.get("msg") or response.get("error") or "光鸭增量转存失败")
                     self._set_job_state(job_key, "failed", error=message, task_ids=task_ids)
-                    return {"success": False, "message": message, "completed_items": completed, "task_ids": task_ids}
+                    return {
+                        "success": False,
+                        "message": message,
+                        "completed_items": completed,
+                        "task_ids": task_ids,
+                        "retryable": True,
+                        "stage": "restore_share",
+                        "reason": "api_not_success",
+                    }
                 data = response.get("data") or {}
                 task_id = str(data.get("taskId") or data.get("task_id") or "") if isinstance(data, dict) else ""
                 if task_id:
                     task_ids.append(task_id)
                 self._set_job_state(job_key, "submitted", task_ids=task_ids, group_paths=group_paths)
                 if task_id and hasattr(api, "_wait_task_done"):
-                    self._plugin_log("INFO", "【光鸭转存助手】【转存】等待增量任务完成：task_id=%s", task_id)
+                    self._plugin_log("INFO", "【光鸭转存助手】【转存任务】等待增量任务完成：task_id=%s", task_id)
                     done = api._wait_task_done(task_id, max_try=120, interval=1, allow_missing=True)
                     if not done:
                         self._set_job_state(job_key, "failed", error=f"任务 {task_id} 未确认完成", task_ids=task_ids)
-                        return {"success": False, "message": f"增量转存任务 {task_id} 未确认完成", "completed_items": completed, "task_ids": task_ids}
+                        return {
+                            "success": False,
+                            "message": f"增量转存任务 {task_id} 未确认完成",
+                            "completed_items": completed,
+                            "task_ids": task_ids,
+                            "retryable": True,
+                            "stage": "restore_task",
+                            "reason": "task_not_done",
+                        }
+                elif not task_id:
+                    # HTTP/业务成功但无 taskId：不得直接当完成，必须靠远程可见性确认。
+                    self._plugin_log(
+                        "WARNING",
+                        "【光鸭转存助手】【转存任务】restore_share 未返回 taskId；改走远程确认 stage=remote_verify retryable=true",
+                    )
                 self._set_job_state(job_key, "task_confirmed", task_ids=task_ids, group_paths=group_paths)
-                self._plugin_log("INFO", "【光鸭转存助手】【落盘确认】开始校验目录 %s 的 %s 个文件", normalized, len(group))
+                self._plugin_log("INFO", "【光鸭转存助手】【远程确认】开始校验目录 %s 的 %s 个文件", normalized, len(group))
                 verified = self._verify_restored_group(api, parent_id, normalized, group, max_try=30, interval=1.0)
                 if not verified.get("success"):
                     message = f"转存任务已完成但目标文件未全部确认：{verified.get('message') or '-'}"
                     self._set_job_state(job_key, "verifying", error=message, task_ids=task_ids, group_paths=group_paths)
                     return {
-                        "success": False, "pending_verification": True, "message": message,
-                        "completed_items": completed, "task_ids": task_ids,
+                        "success": False,
+                        "pending_verification": True,
+                        "message": message,
+                        "completed_items": completed,
+                        "task_ids": task_ids,
+                        "retryable": True,
+                        "stage": "remote_verify",
+                        "reason": "remote_not_found",
                     }
                 completed.extend(verified.get("verified_items") or group)
                 self._set_job_state(job_key, "verified", task_ids=task_ids, verified_paths=[str(item.get("effective_path") or item.get("relative_path") or item.get("name") or "") for item in completed])

@@ -26,15 +26,19 @@ class GuangYaChannelEd2kV1112Tests(unittest.TestCase):
         self.assertIn('【频道云添加】', method)
         self.assertIn('ED2K 已解析但真实文件无法确认覆盖当前缺集', method)
 
-    def test_release_metadata_is_v1112(self):
+    def test_release_metadata_keeps_ed2k_history_capability(self):
+        """历史回归：验证 ED2K 能力与 history 仍在；不锁死当前插件版本号。"""
         entry = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
         package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
         local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(package["version"], "1.12.25")
-        self.assertEqual(local["version"], "1.12.25")
-        self.assertIn('plugin_version = "1.12.25"', entry)
-        self.assertIn('build_id = "20260910-r72"', entry)
-        self.assertIn('v1.11.2', package.get("history") or {})
+        self.assertTrue(str(package.get("version") or ""))
+        self.assertEqual(str(package.get("version") or ""), str(local.get("version") or ""))
+        self.assertIn("plugin_version = ", entry)
+        self.assertIn("build_id = ", entry)
+        self.assertIn("v1.11.2", package.get("history") or {})
+        self.assertIn("ED2K", package.get("labels") or package.get("description") or "")
+        planner = (PLUGIN / "resource_planner_v190.py").read_text(encoding="utf-8")
+        self.assertIn('source_type == "ed2k"', planner)
 
 
 if __name__ == "__main__":

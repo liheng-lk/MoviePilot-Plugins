@@ -156,8 +156,8 @@ class GuangYaTransferAssistant(
 ):
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
 
-    plugin_version = "2.0.6"
-    build_id = "20260910-r86"
+    plugin_version = "2.0.7"
+    build_id = "20260910-r88"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
@@ -358,29 +358,60 @@ class GuangYaTransferAssistant(
 __all__ = ["GuangYaTransferAssistant"]
 
 
+def _unwrap_orphan_subscribe_chain_attr(
+    target: Any,
+    attr: str,
+    *,
+    guard_flag: str,
+    original_attr: str,
+    max_depth: int = 8,
+) -> bool:
+    """循环剥离无主 GuangYa wrapper，恢复到未安装补丁时的方法。"""
+    restored = False
+    for _ in range(max(1, int(max_depth))):
+        current = getattr(target, attr, None)
+        if current is None or not getattr(current, guard_flag, False):
+            break
+        plugin_ref = getattr(current, "_guangya_plugin_ref", None)
+        owner = plugin_ref() if callable(plugin_ref) else None
+        if owner is not None:
+            break
+        original = getattr(current, original_attr, None)
+        if original is None or original is current:
+            break
+        setattr(target, attr, original)
+        restored = True
+    return restored
+
+
 def _emergency_restore_subscribe_chain_patches() -> None:
-    """清理失败插件加载留下的孤儿 SubscribeChain 补丁。"""
+    """清理失败插件加载留下的孤儿 SubscribeChain 补丁（含嵌套 wrapper）。"""
     try:
-        current = getattr(SubscribeChain, "match", None)
-        if current is not None and getattr(current, "_guangya_match_guard", False):
-            plugin_ref = getattr(current, "_guangya_plugin_ref", None)
-            owner = plugin_ref() if callable(plugin_ref) else None
-            if owner is None:
-                original = getattr(current, "_guangya_original_match", None)
-                if original is not None:
-                    SubscribeChain.match = original
+        _unwrap_orphan_subscribe_chain_attr(
+            SubscribeChain,
+            "search",
+            guard_flag="_guangya_route_guard",
+            original_attr="_guangya_original_search",
+        )
+    except Exception:
+        pass
+    try:
+        _unwrap_orphan_subscribe_chain_attr(
+            SubscribeChain,
+            "match",
+            guard_flag="_guangya_match_guard",
+            original_attr="_guangya_original_match",
+        )
     except Exception:
         pass
     try:
         method_name = "_SubscribeChain__download_best_version_with_full_pack_first"
-        current = getattr(SubscribeChain, method_name, None)
-        if current is not None and getattr(current, "_guangya_download_guard", False):
-            plugin_ref = getattr(current, "_guangya_plugin_ref", None)
-            owner = plugin_ref() if callable(plugin_ref) else None
-            if owner is None:
-                original = getattr(current, "_guangya_original_download", None)
-                if original is not None:
-                    setattr(SubscribeChain, method_name, original)
+        _unwrap_orphan_subscribe_chain_attr(
+            SubscribeChain,
+            method_name,
+            guard_flag="_guangya_download_guard",
+            original_attr="_guangya_original_download",
+        )
     except Exception:
         pass
 

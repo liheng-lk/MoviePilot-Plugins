@@ -70,10 +70,10 @@ exec(compile(routing_mod, str(ROUTING), "exec"), routing_ns)
 def test_versions_and_layered_legacy_contract():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((ROOT / "plugins.v3" / "guangyatransferassistant" / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == "2.0.6"
-    assert local["version"] == "2.0.6"
-    assert 'plugin_version = "2.0.6"' in entry_text
-    assert 'build_id = "20260910-r86"' in entry_text
+    assert package["version"] == "2.0.7"
+    assert local["version"] == "2.0.7"
+    assert 'plugin_version = "2.0.7"' in entry_text
+    assert 'build_id = "20260910-r88"' in entry_text
     assert 'plugin_version = "1.7.0"' in routing_text
     assert 'plugin_version = "1.6.5"' in legacy_text
     assert "from .routing_v170 import GuangYaTransferAssistant as _RoutingV170Assistant" in entry_text
@@ -151,15 +151,21 @@ def test_search_all_entry_hard_routing_contract():
         "_guard_subscribe_search",
         "_guard_one_subscription",
         "_is_guangya_route",
-        "sids: Optional[tuple[int, ...]]",
         "全入口硬分流",
         "不会进入原生下载搜索",
+        "def guarded_search(chain_self, *args, **kwargs)",
+        "scheduled_interval",
+        "is_scheduled_scan",
+        "_load_due_search_subscriptions",
     ):
         assert token in routing_text, token
+    assert "sids" in routing_text
     guard = routing_text.split("    def _guard_subscribe_search(", 1)[1].split("    @staticmethod\n    def _now_text", 1)[0]
     assert "route_subs" in guard and "native_ids" in guard
     assert "_guard_one_subscription" in guard
     assert "_call_original_search" in guard
+    assert "_is_active_transfer_state" in routing_text
+    assert 'handled": False' in routing_text
 
 
 def test_rss_match_guard_and_final_download_circuit_breaker():
@@ -232,7 +238,7 @@ def test_route_guards_and_health_contract_remain_active():
 
 
 def test_no_silent_native_fallback_for_selected_search_route():
-    one = routing_text.split("        if sid:", 1)[1].split("        if sids is not None:", 1)[0]
+    one = routing_text.split("        if sid is not None:", 1)[1].split("        if sids is not None:", 1)[0]
     assert "self._is_guangya_route(subscribe)" in one
     assert "self._guard_one_subscription" in one
     selected_branch = one.split("if subscribe and self._is_guangya_route(subscribe):", 1)[1]

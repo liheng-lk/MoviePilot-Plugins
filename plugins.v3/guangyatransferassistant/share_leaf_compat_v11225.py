@@ -273,6 +273,7 @@ class GuangYaShareLeafCompatV11225Mixin:
             result = {
                 "success": True,
                 "access_token": token,
+                "share_id": full_share_id,
                 "root_ids": [value for value in root_ids if value],
                 "fingerprint": fingerprint,
                 "legacy_fingerprint": legacy_fingerprint,
@@ -298,15 +299,26 @@ class GuangYaShareLeafCompatV11225Mixin:
         return {"success": False, "message": last_error or "补传 shareId 后仍无法读取分享文件"}
 
     def _inspect_share(self, share_url: str) -> Dict[str, Any]:
+        """分享读取：legacy 失败或叶子路径全空时，必须进入 shareId+accessToken 新协议。
+
+        旧逻辑在 ``success=False`` 时直接 return，导致缺 shareId 的新版接口永远无法重试。
+        """
+        identity = _share_identity(share_url)
         result = dict(super()._inspect_share(share_url) or {})
-        if not result.get("success") or not self._probe_has_empty_leaf_paths_v11225(result):
+        legacy_ok = bool(result.get("success"))
+        empty_paths = legacy_ok and self._probe_has_empty_leaf_paths_v11225(result)
+        need_share_id = (not legacy_ok) or empty_paths
+        if not need_share_id:
             return result
 
-        identity = _share_identity(share_url)
+        reason = "legacy_failed" if not legacy_ok else "empty_leaf_paths"
         self._plugin_log(
             "WARNING",
-            "【光鸭转存助手】【分享叶子兼容v1.12.25】share_id=%s legacy 已返回 %s 个叶子但路径全空；补传 shareId 并按新版字段重读",
+            "【光鸭转存助手】【分享读取】stage=list_share_files reason=%s share_id=%s "
+            "legacy_success=%s leaf=%s；补传 shareId+accessToken 重试 retryable=true",
+            reason,
             identity.split("|", 1)[0] if identity else "-",
+            legacy_ok,
             int(result.get("leaf_count") or len(result.get("files") or [])),
         )
         if identity:
@@ -317,8 +329,14 @@ class GuangYaShareLeafCompatV11225Mixin:
         # 不能把协议兼容失败伪装成“无视频”；显式返回读取失败，下一轮仍可重试。
         return {
             "success": False,
-            "message": "分享叶子文件名读取异常：" + str(recovered.get("message") or "未知协议差异")[:360],
+            "message": "分享读取失败：" + str(
+                recovered.get("message") or result.get("message") or "未知协议差异"
+            )[:360],
+            "legacy_success": legacy_ok,
             "legacy_leaf_count": int(result.get("leaf_count") or len(result.get("files") or [])),
+            "retryable": True,
+            "stage": "list_share_files",
+            "reason": reason,
         }
 
 

@@ -170,7 +170,10 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
         self._install_search_guard()
 
     def _install_search_guard(self) -> None:
-        """包装 SubscribeChain.search，使手动/API/消息/调度入口都服从固定分流。"""
+        """包装 SubscribeChain.search，使手动/API/消息/调度入口都服从固定分流。
+
+        ABI 必须透明：宿主可能新增 scheduled_interval 等参数，禁止硬编码完整签名。
+        """
         if not self._enabled:
             return
         with self._search_guard_lock:
@@ -181,38 +184,18 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
                 return
 
             original = current
-            supports_sids = "sids" in inspect.signature(original).parameters
 
             @functools.wraps(original)
-            def guarded_search(
-                chain_self,
-                sid: Optional[int] = None,
-                state: Optional[str] = "N",
-                manual: Optional[bool] = False,
-                progress_callback=None,
-                sids: Optional[tuple[int, ...]] = None,
-            ):
+            def guarded_search(chain_self, *args, **kwargs):
                 plugin_ref = getattr(guarded_search, "_guangya_plugin_ref", None)
                 plugin = plugin_ref() if callable(plugin_ref) else None
                 if not plugin or not plugin._enabled:
-                    kwargs = {
-                        "sid": sid,
-                        "state": state,
-                        "manual": manual,
-                        "progress_callback": progress_callback,
-                    }
-                    if supports_sids:
-                        kwargs["sids"] = sids
-                    return original(chain_self, **kwargs)
+                    return original(chain_self, *args, **kwargs)
                 return plugin._guard_subscribe_search(
                     original=original,
                     chain_self=chain_self,
-                    supports_sids=supports_sids,
-                    sid=sid,
-                    sids=sids,
-                    state=state,
-                    manual=manual,
-                    progress_callback=progress_callback,
+                    args=args,
+                    kwargs=kwargs,
                 )
 
             guarded_search._guangya_route_guard = True
@@ -257,28 +240,80 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
             return True
         return self._subscription_route_identity(subscribe) in set(self._provisional_routes or set())
 
-    def _call_original_search(
-        self, original, chain_self, supports_sids: bool, *, sid=None, sids=None,
-        state="N", manual=False, progress_callback=None,
-    ):
-        kwargs = {
-            "sid": sid,
-            "state": state,
-            "manual": manual,
-            "progress_callback": progress_callback,
+    def _call_original_search(self, original, chain_self, *args, **kwargs):
+        """透明转发宿主 search，保留 scheduled_interval 等未知参数。"""
+        return original(chain_self, *args, **kwargs)
+
+    @staticmethod
+    def _bind_search_args(original, chain_self, args, kwargs) -> Dict[str, Any]:
+        """从 *args/**kwargs 提取已知字段，不丢弃未知 kwargs。
+
+        wrapper 已剥离 self，必须把 chain_self 作为第一位置参数参与 bind，
+        否则 ``search(123, "R")`` 会被误解析成 self=123。
+        """
+        merged = dict(kwargs or {})
+        try:
+            bound = inspect.signature(original).bind_partial(chain_self, *args, **merged)
+            bound.apply_defaults()
+            values = dict(bound.arguments)
+            values.pop("self", None)
+        except TypeError:
+            values = dict(merged)
+        return {
+            "sid": values.get("sid", merged.get("sid")),
+            "sids": values.get("sids", merged.get("sids")),
+            "state": values.get("state", merged.get("state", "N")),
+            "manual": values.get("manual", merged.get("manual", False)),
+            "progress_callback": values.get(
+                "progress_callback", merged.get("progress_callback")
+            ),
+            "scheduled_interval": values.get(
+                "scheduled_interval", merged.get("scheduled_interval")
+            ),
+            "kwargs": merged,
+            "args": args,
         }
-        if supports_sids:
-            kwargs["sids"] = sids
-            return original(chain_self, **kwargs)
-        if sids is not None:
-            result = None
-            for current_sid in sids:
-                result = original(
-                    chain_self, sid=int(current_sid), state=state, manual=manual,
-                    progress_callback=progress_callback,
+
+    def _load_due_search_subscriptions(
+        self,
+        chain_self: Any,
+        *,
+        state: Any = "N",
+        scheduled_interval: Any = None,
+    ) -> List[Any]:
+        """优先调用宿主 due 筛选；禁止自行复制 subscription_search_due。"""
+        loader = getattr(chain_self, "_load_search_subscriptions", None)
+        if callable(loader):
+            try:
+                rows = loader(
+                    sid=None,
+                    sids=None,
+                    state=state,
+                    scheduled_interval=scheduled_interval,
                 )
-            return result
-        return original(chain_self, **kwargs)
+                return [item for item in (rows or []) if item is not None]
+            except TypeError:
+                # 旧宿主签名可能尚无 scheduled_interval
+                try:
+                    rows = loader(sid=None, sids=None, state=state)
+                    return [item for item in (rows or []) if item is not None]
+                except Exception as err:
+                    self._plugin_log(
+                        "WARNING",
+                        "【光鸭转存助手】【调度】宿主 _load_search_subscriptions 兼容调用失败：%s；回退列表",
+                        str(err)[:240],
+                    )
+            except Exception as err:
+                self._plugin_log(
+                    "WARNING",
+                    "【光鸭转存助手】【调度】宿主 due 筛选失败：%s；回退列表",
+                    str(err)[:240],
+                )
+        return [item for item in (self._list_subscriptions(state or "N,R") or []) if item is not None]
+
+    @staticmethod
+    def _is_active_transfer_state(subscribe: Any) -> bool:
+        return str(getattr(subscribe, "state", "") or "") in ("N", "R")
 
     def _guard_one_subscription(self, subscribe: Any, trigger: str) -> Dict[str, Any]:
         sid = int(getattr(subscribe, "id", 0) or 0)
@@ -287,12 +322,24 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
             last_guarded_id=sid,
             last_guarded_name=str(getattr(subscribe, "name", "") or ""),
         )
+        # P/S 等非活跃：绝不能 handled=True 阻断原生，否则形成订阅黑洞。
+        if not self._is_active_transfer_state(subscribe):
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【回退原生】%s #%s state=%s 非活跃，交还原生搜索 handled=False",
+                trigger,
+                sid,
+                str(getattr(subscribe, "state", "") or "-"),
+            )
+            return {
+                "success": False,
+                "handled": False,
+                "message": f"订阅状态 {getattr(subscribe, 'state', None) or '-'} 非活跃，交还原生",
+            }
         self._plugin_log(
             "INFO", "【光鸭转存助手】【硬分流】%s拦截原生搜索 #%s %s，改走光鸭转存",
             trigger, sid, getattr(subscribe, "name", ""),
         )
-        if str(getattr(subscribe, "state", "") or "") not in ("N", "R"):
-            return {"success": True, "handled": True, "message": "固定转存订阅当前非活跃，原生搜索仍已阻断"}
         try:
             if not self._cached_matches_for_subscription(subscribe):
                 self._plugin_log(
@@ -310,42 +357,135 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
         except Exception as err:
             self._plugin_log("EXCEPTION", "【光鸭转存助手】【硬分流】#%s %s 转存检查异常", sid, getattr(subscribe, "name", ""))
             self._record_route_health(last_route_result=f"异常：{err}"[:500], last_route_result_at=self._now_text())
-            return {"success": False, "handled": True, "message": str(err)}
+            # 异常时不得永久阻断原生：交还 handled=False 让宿主有机会继续。
+            return {"success": False, "handled": False, "message": str(err), "retryable": True}
 
     def _guard_subscribe_search(
-        self, original, chain_self, supports_sids: bool, sid=None, sids=None,
-        state="N", manual=False, progress_callback=None,
+        self, original, chain_self, args=(), kwargs=None,
+        # 兼容旧关键字调用（supports_sids / 显式 sid=...）
+        supports_sids: bool = True,
+        sid=None, sids=None, state="N", manual=False, progress_callback=None,
     ):
-        """把一次 MP 原生搜索调用拆成“光鸭路线”和“普通路线”两组。"""
-        if sid:
+        """把一次 MP 原生搜索调用拆成“光鸭路线”和“普通路线”两组。
+
+        关键约定：
+        - sid / sids = 定向搜索，不做 due 过滤；
+        - 仅 state + scheduled_interval 且非 manual = 周期扫描，必须先走宿主 due。
+        禁止把全量 R 订阅直接转成 sids，否则会绕开 subscription_search_due。
+        """
+        del supports_sids  # ABI 由 inspect.signature(original) 决定，不再硬编码
+        kwargs = dict(kwargs or {})
+        legacy_kwargs_only = (
+            not args
+            and not kwargs
+            and (
+                sid is not None
+                or sids is not None
+                or state != "N"
+                or bool(manual)
+                or progress_callback is not None
+            )
+        )
+        scheduled_interval = kwargs.get("scheduled_interval")
+        if args or kwargs:
+            parsed = self._bind_search_args(original, chain_self, args, kwargs)
+            sid = parsed["sid"]
+            sids = parsed["sids"]
+            state = parsed["state"]
+            manual = parsed["manual"]
+            progress_callback = parsed["progress_callback"]
+            scheduled_interval = parsed.get("scheduled_interval", scheduled_interval)
+            forward_kwargs = dict(parsed["kwargs"])
+            forward_args = tuple(parsed["args"])
+        elif legacy_kwargs_only:
+            forward_kwargs = {
+                "sid": sid,
+                "state": state,
+                "manual": manual,
+                "progress_callback": progress_callback,
+            }
+            if sids is not None:
+                forward_kwargs["sids"] = sids
+            forward_args = ()
+        else:
+            forward_kwargs = dict(kwargs)
+            forward_args = tuple(args)
+
+        is_targeted = sid is not None or sids is not None
+        is_scheduled_scan = (
+            (not is_targeted)
+            and scheduled_interval is not None
+            and not bool(manual)
+        )
+
+        if sid is not None:
             subscribe = self._find_subscription(int(sid))
             if subscribe and self._is_guangya_route(subscribe):
-                self._guard_one_subscription(subscribe, "单订阅搜索")
-                return None
-            return self._call_original_search(
-                original, chain_self, supports_sids, sid=sid, state=state,
-                manual=manual, progress_callback=progress_callback,
-            )
+                result = self._guard_one_subscription(subscribe, "单订阅搜索")
+                if result.get("handled", True):
+                    return None
+                # 非活跃等：交还原生完整调用（含 scheduled_interval）
+                return self._call_original_search(original, chain_self, *forward_args, **forward_kwargs)
+            return self._call_original_search(original, chain_self, *forward_args, **forward_kwargs)
 
         if sids is not None:
+            # 定向批量：保持宿主语义，不做 due 过滤
             candidates = [self._find_subscription(int(value)) for value in sids]
+            candidates = [item for item in candidates if item is not None]
+        elif is_scheduled_scan:
+            candidates = self._load_due_search_subscriptions(
+                chain_self,
+                state=state or "N",
+                scheduled_interval=scheduled_interval,
+            )
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【调度】周期扫描先经宿主 due 筛选：interval=%s state=%s due=%s",
+                scheduled_interval,
+                state,
+                len(candidates),
+            )
         else:
-            candidates = self._list_subscriptions(state or "N,R")
-        candidates = [item for item in candidates if item is not None]
-        route_subs = [item for item in candidates if self._is_guangya_route(item)]
-        native_ids = tuple(
-            int(getattr(item, "id", 0) or 0)
-            for item in candidates if not self._is_guangya_route(item) and int(getattr(item, "id", 0) or 0)
-        )
+            # 手动批量 / 无 interval：按 state 列举，与旧行为一致
+            candidates = [item for item in (self._list_subscriptions(state or "N,R") or []) if item is not None]
+
+        route_subs = []
+        native_ids = []
+        for item in candidates:
+            item_id = int(getattr(item, "id", 0) or 0)
+            if not item_id:
+                continue
+            if self._is_guangya_route(item) and self._is_active_transfer_state(item):
+                route_subs.append(item)
+            else:
+                # 非光鸭路线，或光鸭路线但 P/S 非活跃 → 必须交还原生
+                native_ids.append(item_id)
 
         for subscribe in route_subs:
             self._guard_one_subscription(subscribe, "批量搜索")
 
         if native_ids:
-            return self._call_original_search(
-                original, chain_self, supports_sids, sids=native_ids,
-                state=state, manual=manual, progress_callback=progress_callback,
-            )
+            native_kwargs = dict(forward_kwargs)
+            native_kwargs.pop("sid", None)
+            # due 已完成（若是周期扫描）：此时用 sids 定向交还是安全的
+            try:
+                sig = inspect.signature(original)
+                supports_batch_sids = "sids" in sig.parameters
+            except (TypeError, ValueError):
+                supports_batch_sids = True
+            if supports_batch_sids:
+                native_kwargs["sids"] = tuple(native_ids)
+                native_kwargs["sid"] = None
+                return self._call_original_search(original, chain_self, **native_kwargs)
+            result = None
+            for index, current_sid in enumerate(native_ids):
+                one = dict(native_kwargs)
+                one["sid"] = int(current_sid)
+                one.pop("sids", None)
+                if index > 0:
+                    one["progress_callback"] = None
+                result = self._call_original_search(original, chain_self, **one)
+            return result
         if manual and progress_callback:
             progress_callback(value=100, text="光鸭固定分流订阅已处理，未进入原生下载搜索")
         return None

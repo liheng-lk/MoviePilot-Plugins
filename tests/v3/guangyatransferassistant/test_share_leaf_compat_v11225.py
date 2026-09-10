@@ -72,7 +72,8 @@ def test_v11225_retry_request_includes_share_id_and_access_token():
     assert 'full_share_id.split("_", 1)[0]' in method
 
 
-def test_v11225_only_retries_when_legacy_has_leafs_but_all_paths_are_empty():
+def test_v11225_retries_when_legacy_fails_or_leaf_paths_empty():
+    """P0-1：legacy success=False 或空叶子路径时都必须进入 shareId 新协议。"""
     predicate = text.split("    def _probe_has_empty_leaf_paths_v11225(", 1)[1].split(
         "    def _inspect_share_with_share_id_v11225(", 1
     )[0]
@@ -81,7 +82,10 @@ def test_v11225_only_retries_when_legacy_has_leafs_but_all_paths_are_empty():
     inspect_method = text.split("    def _inspect_share(self, share_url", 1)[1]
     assert "super()._inspect_share(share_url)" in inspect_method
     assert "_probe_has_empty_leaf_paths_v11225" in inspect_method
-    assert "分享叶子文件名读取异常" in inspect_method
+    assert "need_share_id = (not legacy_ok) or empty_paths" in inspect_method
+    assert 'reason = "legacy_failed" if not legacy_ok else "empty_leaf_paths"' in inspect_method
+    assert "retryable" in inspect_method
+    assert "stage=list_share_files" in inspect_method
 
 
 def test_v11225_leaf_item_recovers_nested_filename_and_extension_fields():

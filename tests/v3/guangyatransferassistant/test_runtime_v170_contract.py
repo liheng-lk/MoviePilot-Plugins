@@ -24,15 +24,18 @@ def test_runtime_finalizer_is_wired_first_and_syntax_valid():
 
 def test_scheduler_takeover_is_nonblocking_for_guangya_routes():
     block = runtime_text.split("    def _dispatch_subscribe_search", 1)[1].split("    def _try_transfer_subscription", 1)[0]
-    assert "**kwargs" in block
-    assert 'kwargs.get("sid")' in block
-    assert 'kwargs.get("state")' in block
-    assert 'kwargs.get("manual")' in block
+    assert "*args" in block and "**kwargs" in block
+    assert 'forward_kwargs.get("sid")' in block
+    assert 'forward_kwargs.get("state"' in block
+    assert 'forward_kwargs.get("manual"' in block
     assert "self._queue_async_route_check([current_sid]" in block
     assert "self._queue_async_route_check(route_ids" in block
     assert "_try_transfer_subscription" not in block
     assert "SubscribeChain().search" in block
     assert "已阻断原生搜索并转入后台光鸭检查" in block
+    assert "is_scheduled_scan" in block
+    assert "_load_search_subscriptions" in block or "_load_due_search_subscriptions" in block
+    assert "【回退原生】" in block
 
 
 def test_periodic_processing_only_queues_background_work():

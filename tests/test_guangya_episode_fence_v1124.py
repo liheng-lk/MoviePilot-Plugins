@@ -35,7 +35,9 @@ class GuangYaEpisodeFenceV1124Tests(unittest.TestCase):
             self.entry.index("    GuangYaEpisodeFenceFinalV1124Mixin,"),
             self.entry.index("    GuangYaReceiptCompletionV1124Mixin,"),
         )
-        self.assertIn('build_id = "20260910-r72"', self.entry)
+        self.assertIn("GuangYaEpisodeFenceFinalV1124Mixin", self.entry)
+        self.assertIn("build_id = ", self.entry)
+        self.assertIn("plugin_version = ", self.entry)
 
     def test_success_facts_are_hard_missing_episode_fence(self):
         method = self.fence.split("    def _subscription_missing_episodes(", 1)[1].split(

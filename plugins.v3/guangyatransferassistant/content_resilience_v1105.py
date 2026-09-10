@@ -211,6 +211,9 @@ class GuangYaContentResilienceV1105Mixin:
 
     def _entry_processed(self, entry: Dict[str, Any], subscribe: Any = None) -> bool:
         """历史去重记录必须绑定当时的追更目标；目标增长时允许重新检查。"""
+        # 先走 legacy：filtered 等在规则指纹变化后必须重开，避免永久污染。
+        if not bool(super()._entry_processed(entry, subscribe)):
+            return False
         key = self._processed_entry_key(entry, subscribe)
         if not key:
             return False
