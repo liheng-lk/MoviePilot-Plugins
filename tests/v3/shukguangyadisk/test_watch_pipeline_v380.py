@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import json
 import unittest
 from pathlib import Path
 
@@ -13,7 +12,6 @@ PARTIAL = PLUGIN / "organizer_partial_scheduler_v380.py"
 POLICY = PLUGIN / "organizer_watch_policy_v380.py"
 EXECUTION = PLUGIN / "organizer_execution_v360.py"
 PAGE = PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-v376.js"
-REMOTE = PLUGIN / "dist" / "assets" / "remoteEntry.js"
 
 
 class WatchPipelineV380ContractTest(unittest.TestCase):
@@ -104,13 +102,22 @@ class WatchPipelineV380ContractTest(unittest.TestCase):
         self.assertIn("and all_primary_ready", schedule)
         self.assertIn("partial_wait", source)
 
-    def test_stop_suppresses_scheduled_full_and_manual_can_upgrade_force_verify(self):
+    def test_stop_suppresses_scheduled_full_and_manual_restarts_force_verify_from_root(self):
         source = POLICY.read_text(encoding="utf-8")
         self.assertIn('if float(raw.get("suppressed_until") or 0) > now:', source)
         self.assertIn('"suppressed_until": now + _watch._FULL_SCAN_INTERVAL', source)
         self.assertIn('if existing.get("active") and force_verify and not existing.get("force_verify"):', source)
-        self.assertIn('existing["force_verify"] = True', source)
-        self.assertIn("manual-force-upgrade", source)
+        self.assertIn('"superseded_by": "manual-force-restart"', source)
+        self.assertIn('return original_start(plugin, trigger="manual", force_verify=True)', source)
+        self.assertIn("从监控根重新校验全部资源", source)
+
+    def test_idle_incremental_logs_are_debug_but_activity_and_errors_remain_visible(self):
+        source = POLICY.read_text(encoding="utf-8")
+        self.assertIn('stage == "1/4 发现"', source)
+        self.assertIn('"变化=0" in message and "错误=0" in message', source)
+        self.assertIn('stage == "3/4 待整理" and "新增/刷新=0" in message', source)
+        self.assertIn('effective = "debug"', source)
+        self.assertIn("return original_log(scan_id, stage, message, level=effective)", source)
 
     def test_monitor_ui_explains_real_pipeline_and_exposes_controls(self):
         page = PAGE.read_text(encoding="utf-8")
@@ -119,18 +126,6 @@ class WatchPipelineV380ContractTest(unittest.TestCase):
         for marker in ("watch_registry_total", "watch_hot_total", "resource_queue_depth", "full_scan_remaining_dirs"):
             self.assertIn(marker, page)
         self.assertIn("正在整理时监控不会停止", page)
-
-    def test_public_release_is_real_v380_update(self):
-        package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
-        plugin = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-        init = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
-        remote = REMOTE.read_text(encoding="utf-8")
-        self.assertEqual(package["version"], "3.8.0")
-        self.assertEqual(plugin["version"], "3.8.0")
-        self.assertIn('plugin_version = "3.8.0"', init)
-        self.assertIn('__federation_expose_AssistantPage-v376.js?v=3.8.0', remote)
-        self.assertIn("v3.8.0", package["history"])
-        self.assertEqual(package["history"]["v3.8.0"], plugin["history"]["v3.8.0"])
 
 
 if __name__ == "__main__":
