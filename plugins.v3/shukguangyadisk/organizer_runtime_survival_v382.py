@@ -11,6 +11,7 @@ from typing import Any, Dict
 
 from app.sdk.logging import logger
 
+from . import organizer_watch_pipeline_v380 as _watch
 from .organizer_monitor_v366 import GuangYaOrganizerMonitorV366Mixin as _MonitorMixin
 
 
@@ -27,6 +28,7 @@ def install_runtime_survival_v382() -> None:
 
     original_tick = _MonitorMixin.organize_monitor_tick
     original_status = _MonitorMixin.api_organize_monitor_status
+    original_full_due = _watch._full_due
 
     def _state(self: Any) -> Dict[str, Any]:
         state = getattr(self, "_v382_survival_state", None)
@@ -44,22 +46,24 @@ def install_runtime_survival_v382() -> None:
             self._v382_survival_state = state
         return state
 
+    def full_due(self: Any) -> bool:
+        # 新安装/热更新后的头 3 分钟只做轻量增量观察，不自动拉起大规模全量巡检。
+        # 用户手动点击“强制全量”不会经过 full_due，因此仍可立即执行。
+        if bool(getattr(self, "_v382_boot_grace_active", False)):
+            return False
+        return bool(original_full_due(self))
+
     def guarded_tick(self: Any) -> None:
         state = _state(self)
         now = time.time()
 
-        # 插件刚安装/热更新后先给宿主、登录态和存储适配器一个稳定窗口。
-        # 期间允许插件正常加载、页面/API 正常使用，但不自动触发后台全量扫描。
         if now < float(state.get("cooldown_until") or 0):
             return
 
         try:
-            # 启动保护期内仍允许原 tick 的轻量条件判断，但暂时抑制自动 full-due。
-            # v380 full_due 由模块级函数动态解析，因此短暂设置实例标记供策略读取。
             self._v382_boot_grace_active = now - float(state.get("boot_at") or now) < _BOOT_GRACE_SECONDS
             original_tick(self)
             state["last_success_at"] = now
-            # 成功后清除连续失败窗口。
             if int(state.get("failures") or 0) > 0:
                 state["failures"] = 0
                 state["window_started_at"] = now
@@ -88,7 +92,6 @@ def install_runtime_survival_v382() -> None:
                     state["failures"],
                     int(_COOLDOWN_SECONDS),
                 )
-            # 关键：绝不向 APScheduler/MoviePilot 插件管理器重新抛出。
             return
         finally:
             self._v382_boot_grace_active = False
@@ -96,7 +99,7 @@ def install_runtime_survival_v382() -> None:
     def status(self: Any):
         try:
             response = original_status(self)
-        except Exception as err:  # 状态页也不能因为监控状态损坏而拖垮插件页面
+        except Exception as err:
             logger.error("【光鸭云盘助手】【监控存活保护】状态读取异常已隔离: %s", err)
             response = {
                 "success": True,
@@ -122,10 +125,13 @@ def install_runtime_survival_v382() -> None:
         )
         return response
 
+    _watch._full_due = full_due
     _MonitorMixin.organize_monitor_tick = guarded_tick
     _MonitorMixin.api_organize_monitor_status = status
     setattr(_MonitorMixin, _INSTALL_FLAG, True)
-    logger.info("【光鸭云盘助手】【监控存活保护】v3.8.2 已启用：监控异常与插件生命周期隔离")
+    logger.info(
+        "【光鸭云盘助手】【监控存活保护】v3.8.2 已启用：异常与插件生命周期隔离，启动 180s 内不自动全量"
+    )
 
 
 __all__ = ["install_runtime_survival_v382"]
