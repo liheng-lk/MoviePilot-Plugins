@@ -26,10 +26,12 @@ class DualScanV376ContractTest(unittest.TestCase):
         plugin = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
         init = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
         remote = REMOTE.read_text(encoding="utf-8")
-        self.assertEqual(package["version"], "3.7.6")
-        self.assertEqual(plugin["version"], "3.7.6")
-        self.assertIn('plugin_version = "3.7.6"', init)
-        self.assertIn('__federation_expose_AssistantPage-v376.js?v=3.7.6', remote)
+        self.assertEqual(package["version"], "3.8.0")
+        self.assertEqual(plugin["version"], "3.8.0")
+        self.assertIn('plugin_version = "3.8.0"', init)
+        self.assertIn('__federation_expose_AssistantPage-v376.js?v=3.8.0', remote)
+        # v376 作为历史兼容层必须保留，但不再拥有最终监控调度权。
+        self.assertIn("v3.7.6", package["history"])
         self.assertEqual(package["history"]["v3.7.6"], plugin["history"]["v3.7.6"])
 
     def test_dual_scan_install_is_deferred_until_runtime_mro_is_complete(self):
@@ -46,6 +48,10 @@ class DualScanV376ContractTest(unittest.TestCase):
         )
         self.assertLess(
             init_block.index("install_dual_scan_v376()"),
+            init_block.index("install_watch_pipeline_v380()"),
+        )
+        self.assertLess(
+            init_block.index("install_watch_pipeline_v380()"),
             init_block.index("install_move_confirmation_v360()"),
         )
 
@@ -53,7 +59,7 @@ class DualScanV376ContractTest(unittest.TestCase):
         source = CANDIDATE.read_text(encoding="utf-8")
         self.assertIn("install_paged_scan_handoff_v359(GuangYaCandidateFilterMixin)", source)
 
-    def test_full_scan_uses_engine_cursor_until_cycle_complete(self):
+    def test_v376_full_scan_contract_remains_as_compatibility_layer(self):
         source = DUAL.read_text(encoding="utf-8")
         self.assertIn("_EngineMixin.run_organize_monitor_scan(self, manual=True)", source)
         self.assertIn('if data.get("cycle_complete"):', source)
@@ -67,18 +73,12 @@ class DualScanV376ContractTest(unittest.TestCase):
         self.assertIn('if reason == "worker_not_accept":', source)
         self.assertIn('if int(phases.get("inflight") or 0) > 0:', source)
 
-    def test_log_schema_is_ordered_and_traceable(self):
+    def test_v376_log_schema_is_retained_for_compatibility(self):
         source = DUAL.read_text(encoding="utf-8")
         self.assertIn("【光鸭云盘助手】【整理】【%s】【%s/%s %s】%s", source)
         self.assertIn('"log_stage_schema": "1触发/2准备/3发现/4判定/5入队/6完成"', source)
-        log_helper = source.split("def _log_result_stages", 1)[1].split("def install_dual_scan_v376", 1)[0]
-        stage3 = log_helper.index('_trace(plugin, 3, "发现"')
-        stage4 = log_helper.index('_trace(plugin, 4, "判定"')
-        stage5 = log_helper.index('_trace(plugin, 5, "入队"')
-        self.assertLess(stage3, stage4)
-        self.assertLess(stage4, stage5)
 
-    def test_manual_controls_are_exposed_in_backend_and_ui(self):
+    def test_existing_api_paths_are_reused_by_v380_monitor_ui(self):
         backend = DUAL.read_text(encoding="utf-8")
         page = PAGE.read_text(encoding="utf-8")
         endpoints = (
@@ -89,10 +89,10 @@ class DualScanV376ContractTest(unittest.TestCase):
         for endpoint in endpoints:
             self.assertIn(endpoint, backend)
             self.assertIn(endpoint, page)
-        for label in ("增量扫描一次", "开始全量扫描", "停止全量扫描", "刷新进度"):
+        for label in ("增量观察一次", "强制全量巡检", "停止全量巡检", "刷新状态"):
             self.assertIn(label, page)
-        for label in ("扫描 ID", "扫描阶段", "剩余游标"):
-            self.assertIn(label, page)
+        for marker in ("watch_registry_total", "resource_queue_depth", "full_scan_remaining_dirs"):
+            self.assertIn(marker, page)
 
 
 if __name__ == "__main__":
