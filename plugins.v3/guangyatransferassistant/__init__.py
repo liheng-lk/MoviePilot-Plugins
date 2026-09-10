@@ -83,6 +83,7 @@ from .gying_transport_v1108 import GuangYaGyingTransportV1108Mixin
 from .multisource_v180 import GuangYaMultiSourceMixin
 from .media_identity_guard_v1111 import GuangYaMediaIdentityGuardV1111Mixin
 from .page_perf_v1123 import GuangYaPagePerfV1123Mixin
+from .production_safety_v208 import GuangYaProductionSafetyV208Mixin
 from .airing_weekly_v1121 import GuangYaAiringWeeklyV1121Mixin
 from .airing_scheduler_v1120 import GuangYaAiringSchedulerV1120Mixin
 from .airing_ui_v1120 import GuangYaAiringUiV1120Mixin
@@ -109,6 +110,7 @@ install_channel_title_rename_v11226(_legacy_module)
 
 
 class GuangYaTransferAssistant(
+    GuangYaProductionSafetyV208Mixin,
     GuangYaPagePerfV1123Mixin,
     GuangYaMovieIdentityV1129Mixin,
     GuangYaResourceGateV1127Mixin,
@@ -157,7 +159,7 @@ class GuangYaTransferAssistant(
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
 
     plugin_version = "2.0.8"
-    build_id = "20260910-r91"
+    build_id = "20260911-r92"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""

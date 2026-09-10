@@ -101,7 +101,7 @@
     "system_version": ">=3.0.0",
     "release": true,
     "history": {
-      "v2.0.8": "P0：接管订阅 exclusive ownership（managed 永不 fallback 原生）；due loader 异常 fail-closed 本轮取消，禁止全量→sids。P0.5：CloakBrowser challenge/PoW 兼容失败时同节点回退历史 PanSou PoW。P1：频道 occurrence discovery 前 URL decode（迅雷/Magnet/ED2K）；默认 6 路 discovery 频道；无 115 API。含 r90 批量接管 UI。",
+      "v2.0.8": "r92：TMDB 强身份确认（同 ID 放行标题差异，异 ID 硬拒绝）；身份拒绝保留 video stats 并禁止伪报无扩展名；同 share 同轮只执行一次；本地候选耗尽/新订阅频道未覆盖异步入队 GYING；失效分享短期 tombstone；扫描周期识别缓存；失败通知批次汇总。r91：P0 exclusive ownership；due fail-closed；Browser→PanSou；encoded channel discovery。",
       "v2.0.7": "r90：接管订阅管理器支持「全选当前结果 / 取消全选」、已选数量展示；全选仅作用于当前搜索可见项并与已选做并集，筛选变化不丢选择。r89：修复 runtime 位置参数重复传递；due 筛选异常 fail-closed/交还原生禁止全量 sids；inspect.signature 兼容旧 ABI；调度 progress_callback 对 Scheduler 可见；加强 production 直接回归。",
       "v2.0.6": "完整回退到已验证可用的 1.12.26 实现（频道标题清洗 + 剧集名季集命名），移除全部 2.0 V2/gy2 代码。保留 Release 整包安装；导入时清理失败加载残留的 SubscribeChain 孤儿补丁。",
       "v2.0.5": "修复订阅 nodata / 整站订阅异常：失败的 2.0.x 加载可能留下孤儿 SubscribeChain.match 补丁；2.0.5 在导入时自动清理无主补丁，并清除模块内公开 Mixin 暴露面，确保 PluginLoader 只加载最终插件类。运行行为仍回退到 1.12.26 主链（不接入 V2 mixin）。",

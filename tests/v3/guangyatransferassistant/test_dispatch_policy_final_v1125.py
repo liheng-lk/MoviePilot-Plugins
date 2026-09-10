@@ -114,7 +114,7 @@ def test_worker_batch_is_regrouped_by_saved_trigger_instead_of_first_worker_trig
 
 def test_channel_recovery_is_channel_only_and_never_becomes_active_gying_pull():
     dispatch = _method("_run_dispatch_trigger_v1125", "_run_reliability_route_batch")
-    recovery = dispatch.split('if "频道故障自动恢复" in text:', 1)[1].split('if "新订阅资源匹配" in text:', 1)[0]
+    recovery = dispatch.split('if "频道故障自动恢复" in text:', 1)[1].split('if "外部补搜" in text:', 1)[0]
     assert "self.refresh_channels(force=True)" in recovery
     assert '"channel_event"' in recovery
     assert "force=False" in recovery
@@ -122,18 +122,18 @@ def test_channel_recovery_is_channel_only_and_never_becomes_active_gying_pull():
     assert '"airing_pull"' not in recovery
 
 
-def test_new_subscription_is_channel_first_then_date_gated_non_force_pull():
+def test_new_subscription_is_channel_first_then_immediate_external_recall():
     dispatch = _method("_run_dispatch_trigger_v1125", "_run_reliability_route_batch")
     method = dispatch.split('if "新订阅资源匹配" in text:', 1)[1]
     channel = method.index('"新订阅资源匹配·频道阶段"')
-    selector = method.index("_smart_pull_due_ids_v1125()")
-    pull = method.index('"新订阅资源匹配·更新日历主动拉取"')
-    assert channel < selector < pull
+    pull = method.index('"新订阅资源匹配·外部补搜"')
+    assert channel < pull
     assert '"channel_event"' in method
     assert '"airing_pull"' in method
-    assert method.count("force=False") >= 2
-    assert "pull_ids = [sid for sid in ids if sid in allowed]" in method
+    assert "force=True" in method
+    assert "_manual_remaining_ids_v11211" in method
     assert '"subscription_prime"' not in method
+    assert "_smart_pull_due_ids_v1125" not in method
 
 
 def test_calendar_failure_returns_truthy_sentinel_and_enters_short_backoff():

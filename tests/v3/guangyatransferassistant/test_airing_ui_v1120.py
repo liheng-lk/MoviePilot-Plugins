@@ -17,7 +17,8 @@ def test_airing_ui_parses_and_is_below_receipt_without_stealing_scheduler_author
     assert "from .dispatch_policy_final_v1125 import GuangYaDispatchPolicyFinalV1125Mixin" in ENTRY
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     mixins = [line.strip().rstrip(",") for line in head.splitlines() if line.strip()]
-    assert mixins[:13] == [
+    assert mixins[:14] == [
+        "GuangYaProductionSafetyV208Mixin",
         "GuangYaPagePerfV1123Mixin",
         "GuangYaMovieIdentityV1129Mixin",
         "GuangYaResourceGateV1127Mixin",

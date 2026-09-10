@@ -107,18 +107,35 @@ class GuangYaReleaseV1110Mixin:
                 continue
             try:
                 try:
-                    info = chain.recognize_media(
-                        mtype=MediaType.TV,
-                        media_source=MediaSource.TMDB,
-                        media_id=tmdb_id,
-                        cache=not force,
-                    )
+                    recognize = getattr(self, "_recognize_media_cached_v208", None)
+                    if callable(recognize):
+                        info = recognize(
+                            mtype=MediaType.TV,
+                            media_source=MediaSource.TMDB,
+                            media_id=tmdb_id,
+                            cache=not force,
+                        )
+                    else:
+                        info = chain.recognize_media(
+                            mtype=MediaType.TV,
+                            media_source=MediaSource.TMDB,
+                            media_id=tmdb_id,
+                            cache=not force,
+                        )
                 except TypeError:
-                    info = chain.recognize_media(
-                        mtype=MediaType.TV,
-                        media_source=MediaSource.TMDB,
-                        media_id=tmdb_id,
-                    )
+                    recognize = getattr(self, "_recognize_media_cached_v208", None)
+                    if callable(recognize):
+                        info = recognize(
+                            mtype=MediaType.TV,
+                            media_source=MediaSource.TMDB,
+                            media_id=tmdb_id,
+                        )
+                    else:
+                        info = chain.recognize_media(
+                            mtype=MediaType.TV,
+                            media_source=MediaSource.TMDB,
+                            media_id=tmdb_id,
+                        )
             except Exception as err:
                 errors.append(f"#{sid} {getattr(subscribe, 'name', '')}: {str(err)[:160]}")
                 continue

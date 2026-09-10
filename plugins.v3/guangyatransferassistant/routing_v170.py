@@ -774,12 +774,21 @@ class GuangYaTransferAssistant(_LegacyGuangYaTransferAssistant):
         seen = set()
         for candidate_type in types:
             try:
-                info = MediaChain().recognize_media(
-                    mtype=candidate_type,
-                    media_source=MediaSource.TMDB,
-                    media_id=str(tmdb_id),
-                    cache=False,
-                )
+                recognize = getattr(self, "_recognize_media_cached_v208", None)
+                if callable(recognize):
+                    info = recognize(
+                        mtype=candidate_type,
+                        media_source=MediaSource.TMDB,
+                        media_id=str(tmdb_id),
+                        cache=False,
+                    )
+                else:
+                    info = MediaChain().recognize_media(
+                        mtype=candidate_type,
+                        media_source=MediaSource.TMDB,
+                        media_id=str(tmdb_id),
+                        cache=False,
+                    )
             except Exception:
                 info = None
             if not info:

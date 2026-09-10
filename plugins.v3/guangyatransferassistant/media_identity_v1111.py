@@ -300,6 +300,49 @@ def validate_media_evidence_v1111(
     return True, "实际资源标题/年份/季号校验通过"
 
 
+_TMDB_MARKER_RE = re.compile(
+    r"(?ix)"
+    r"(?:\{?\s*tmdb(?:[_-]id)?\s*[=:\-]?\s*(\d{1,12})\s*\}?)"
+    r"|"
+    r"(?:\{?\s*tmdbid\s*[=:\-]?\s*(\d{1,12})\s*\}?)"
+)
+
+
+def extract_share_media_identity_v1111(evidences: Iterable[Any]) -> Dict[str, Any]:
+    """从分享真实路径/顶层名提取 TMDB marker 与标题候选。"""
+    tmdb_ids: List[str] = []
+    title_candidates: List[str] = []
+    top_level_names: List[str] = []
+    seen_tmdb: Set[str] = set()
+    seen_titles: Set[str] = set()
+    for raw in evidences or []:
+        for text in _candidate_strings(raw):
+            for match in _TMDB_MARKER_RE.finditer(text):
+                value = str(match.group(1) or match.group(2) or "").strip()
+                if value and value not in seen_tmdb:
+                    seen_tmdb.add(value)
+                    tmdb_ids.append(value)
+            cleaned = re.sub(r"(?i)\{\s*tmdb(?:[_-]?id)?\s*[=:\-]?\s*\d{1,12}\s*\}", " ", text)
+            cleaned = re.sub(r"(?i)\btmdb(?:[_-]?id)?\s*[=:\-]?\s*\d{1,12}\b", " ", cleaned)
+            for part in _candidate_strings(cleaned):
+                key = part.casefold()
+                if len(part) >= 2 and key not in seen_titles:
+                    seen_titles.add(key)
+                    title_candidates.append(part)
+            try:
+                top = PurePosixPath(text.replace("\\", "/")).parts[0]
+            except Exception:
+                top = text.split("/", 1)[0].strip()
+            if top and top.casefold() not in {row.casefold() for row in top_level_names}:
+                top_level_names.append(top)
+    return {
+        "tmdb_id": tmdb_ids[0] if len(tmdb_ids) == 1 else (tmdb_ids[0] if tmdb_ids else ""),
+        "tmdb_ids": tmdb_ids,
+        "title_candidates": title_candidates,
+        "top_level_names": top_level_names,
+    }
+
+
 __all__ = [
     "explicit_seasons_v1111",
     "explicit_years_v1111",
@@ -310,4 +353,5 @@ __all__ = [
     "has_episode_structure_v1111",
     "assess_media_identity_v1111",
     "validate_media_evidence_v1111",
+    "extract_share_media_identity_v1111",
 ]

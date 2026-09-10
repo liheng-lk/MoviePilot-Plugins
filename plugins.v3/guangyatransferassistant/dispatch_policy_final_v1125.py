@@ -304,7 +304,7 @@ class GuangYaDispatchPolicyFinalV1125Mixin:
         text = str(trigger or "")
         if "频道故障自动恢复" in text or "频道新增资源" in text:
             return 0
-        if "新订阅资源匹配" in text:
+        if "新订阅资源匹配" in text or "外部补搜" in text:
             return 1
         if "观影定时轮询" in text or "更新日历" in text or "airing" in text.lower():
             return 2
@@ -328,6 +328,9 @@ class GuangYaDispatchPolicyFinalV1125Mixin:
                 )
             return self._run_v1115_mode_batch(ids, text, "channel_event", force=False)
 
+        if "外部补搜" in text:
+            return self._run_v1115_mode_batch(ids, text, "airing_pull", force=True)
+
         if "新订阅资源匹配" in text:
             self._run_v1115_mode_batch(
                 ids,
@@ -335,14 +338,18 @@ class GuangYaDispatchPolicyFinalV1125Mixin:
                 "channel_event",
                 force=False,
             )
-            allowed = set(self._smart_pull_due_ids_v1125())
-            pull_ids = [sid for sid in ids if sid in allowed]
-            if pull_ids:
+            remaining: List[int] = []
+            checker = getattr(self, "_manual_remaining_ids_v11211", None)
+            if callable(checker):
+                remaining = list(checker(ids) or [])
+            else:
+                remaining = list(ids)
+            if remaining:
                 self._run_v1115_mode_batch(
-                    pull_ids,
-                    "新订阅资源匹配·更新日历主动拉取",
+                    remaining,
+                    "新订阅资源匹配·外部补搜",
                     "airing_pull",
-                    force=False,
+                    force=True,
                 )
             return None
 

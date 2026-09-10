@@ -31,7 +31,11 @@ from .legacy import (
     _is_video,
     _share_identity,
 )
-from .media_identity_v1111 import assess_media_identity_v1111, title_key_v1111
+from .media_identity_v1111 import (
+    assess_media_identity_v1111,
+    extract_share_media_identity_v1111,
+    title_key_v1111,
+)
 from .xunlei_existing_fence_v11213 import GuangYaXunleiExistingEpisodeFenceV11213Mixin
 
 
@@ -371,7 +375,11 @@ class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixi
         info = None
         error = ""
         try:
-            info = MediaChain().recognize_media(mtype=MediaType.TV, media_source=MediaSource.TMDB, media_id=tmdb_id)
+            recognize = getattr(self, "_recognize_media_cached_v208", None)
+            if callable(recognize):
+                info = recognize(mtype=MediaType.TV, media_source=MediaSource.TMDB, media_id=tmdb_id)
+            else:
+                info = MediaChain().recognize_media(mtype=MediaType.TV, media_source=MediaSource.TMDB, media_id=tmdb_id)
         except Exception as err:
             error = str(err)
         valid = bool(info)
@@ -497,6 +505,23 @@ class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixi
             return []
         return [root]
 
+    def _identity_stats_snapshot_v208(self, probe: Dict[str, Any], video_paths: Sequence[str], *, reason: str = "") -> Dict[str, Any]:
+        files = [row for row in (probe.get("files") or []) if isinstance(row, dict)]
+        subtitle_paths = [
+            str(row.get("relative_path") or row.get("name") or "")
+            for row in files
+            if _is_subtitle(str(row.get("relative_path") or row.get("name") or ""))
+        ]
+        return {
+            "total": len(files),
+            "video": len(video_paths),
+            "subtitle": len(subtitle_paths),
+            "eligible": 0,
+            "episode": 0,
+            "identity_reject_v11214": 1,
+            "identity_reason": str(reason or "")[:320],
+        }
+
     def _plan_incremental_files(self, probe: Dict[str, Any], assets: Dict[str, Any], subscribe: Any = None, target_path: str = "", stats: Optional[Dict[str, Any]] = None):
         if subscribe is None or self._is_movie_subscription(subscribe):
             return super()._plan_incremental_files(probe, assets, subscribe=subscribe, target_path=target_path, stats=stats)
@@ -506,27 +531,74 @@ class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixi
             for row in (probe.get("files") or []) if isinstance(row, dict)
             and _is_video(str(row.get("relative_path") or row.get("name") or ""))
         ]
-        aliases = list(self._identity_aliases_v1111(subscribe) or []) if hasattr(self, "_identity_aliases_v1111") else [str(getattr(subscribe, "name", "") or "")]
-        assessment = assess_media_identity_v1111(
-            aliases=aliases,
-            expected_year=getattr(subscribe, "year", None),
-            expected_season=getattr(subscribe, "season", None),
-            is_movie=False,
-            primary_evidences=self._direct_share_primary_roots_v11214(video_paths, getattr(subscribe, "year", None)),
-            file_evidences=video_paths[:300],
-            discovery_evidences=(),
-            threshold=100,
-        )
-        if assessment.get("hard_conflict"):
-            self._plugin_log(
-                "WARNING",
-                "【光鸭转存助手】【最终身份v1.12.14】#%s %s 光鸭分享真实内容硬冲突，拒绝写盘：%s",
-                getattr(subscribe, "id", 0), getattr(subscribe, "name", ""), str(assessment.get("reason") or "")[:320],
+        primary_roots = self._direct_share_primary_roots_v11214(video_paths, getattr(subscribe, "year", None))
+        share_identity = extract_share_media_identity_v1111(list(primary_roots) + list(video_paths[:300]))
+        subscription_tmdb = str(self._tmdb_id_tv_v11214(subscribe) or "").strip()
+        share_tmdb_ids = [str(value).strip() for value in (share_identity.get("tmdb_ids") or []) if str(value).strip().isdigit()]
+        share_tmdb = str(share_identity.get("tmdb_id") or (share_tmdb_ids[0] if share_tmdb_ids else "")).strip()
+
+        if subscription_tmdb and share_tmdb_ids:
+            unique_share = sorted(set(share_tmdb_ids))
+            if len(unique_share) == 1 and unique_share[0] == subscription_tmdb:
+                self._plugin_log(
+                    "INFO",
+                    "【光鸭转存助手】【最终身份】sid=%s subscription_tmdb=%s share_tmdb=%s alias_match=- decision=confirmed reason=tmdb_match",
+                    getattr(subscribe, "id", 0), subscription_tmdb, unique_share[0],
+                )
+                assessment = {"ok": True, "hard_conflict": False, "reason": "tmdb_match", "decision": "confirmed"}
+            else:
+                reason = f"tmdb_mismatch subscription={subscription_tmdb} share={','.join(unique_share)}"
+                self._plugin_log(
+                    "WARNING",
+                    "【光鸭转存助手】【最终身份】sid=%s subscription_tmdb=%s share_tmdb=%s alias_match=- decision=hard_reject reason=tmdb_mismatch",
+                    getattr(subscribe, "id", 0), subscription_tmdb, ",".join(unique_share),
+                )
+                if stats is not None:
+                    stats.update(self._identity_stats_snapshot_v208(probe, video_paths, reason=reason))
+                return []
+        else:
+            aliases = list(self._identity_aliases_v1111(subscribe) or []) if hasattr(self, "_identity_aliases_v1111") else [str(getattr(subscribe, "name", "") or "")]
+            seen = {str(value or "").strip().casefold() for value in aliases if str(value or "").strip()}
+            for value in self._tv_tmdb_aliases_v11214(subscribe):
+                text = str(value or "").strip()
+                key = text.casefold()
+                if text and key not in seen:
+                    seen.add(key)
+                    aliases.append(text)
+            assessment = assess_media_identity_v1111(
+                aliases=aliases,
+                expected_year=getattr(subscribe, "year", None),
+                expected_season=getattr(subscribe, "season", None),
+                is_movie=False,
+                primary_evidences=primary_roots,
+                file_evidences=video_paths[:300],
+                discovery_evidences=(),
+                threshold=100,
             )
-            if stats is not None:
-                stats.clear()
-                stats.update({"total": len(probe.get("files") or []), "eligible": 0, "episode": len(video_paths), "identity_reject_v11214": 1})
-            return []
+            if assessment.get("hard_conflict"):
+                reason = str(assessment.get("reason") or "title_unconfirmed")
+                self._plugin_log(
+                    "WARNING",
+                    "【光鸭转存助手】【最终身份】sid=%s subscription_tmdb=%s share_tmdb=%s alias_match=%s decision=hard_reject reason=%s",
+                    getattr(subscribe, "id", 0),
+                    subscription_tmdb or "-",
+                    share_tmdb or "-",
+                    "true" if any(a for a in aliases[1:]) else "-",
+                    reason[:240],
+                )
+                if stats is not None:
+                    stats.update(self._identity_stats_snapshot_v208(probe, video_paths, reason=reason))
+                return []
+            if assessment.get("ok"):
+                self._plugin_log(
+                    "INFO",
+                    "【光鸭转存助手】【最终身份】sid=%s subscription_tmdb=%s share_tmdb=%s alias_match=%s decision=confirmed reason=%s",
+                    getattr(subscribe, "id", 0),
+                    subscription_tmdb or "-",
+                    share_tmdb or "-",
+                    "true",
+                    str(assessment.get("reason") or "alias_or_title")[:240],
+                )
 
         allowed = self._authoritative_missing_v11214(subscribe)
         planned = list(super()._plan_incremental_files(probe, assets, subscribe=subscribe, target_path=target_path, stats=stats) or [])

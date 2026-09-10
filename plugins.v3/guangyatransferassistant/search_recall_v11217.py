@@ -315,7 +315,11 @@ class GuangYaSearchRecallV11217Mixin(GuangYaManualCheckV11211Mixin):
             checker = getattr(self, "_is_movie_subscription", None)
             is_movie = bool(checker(subscribe)) if callable(checker) else False
             meta = MetaInfo(title=parsed_title, mtype=MediaType.MOVIE if is_movie else MediaType.TV)
-            candidate = MediaChain().recognize_by_meta(meta, obtain_images=False)
+            recognize_meta = getattr(self, "_recognize_by_meta_cached_v208", None)
+            if callable(recognize_meta):
+                candidate = recognize_meta(meta, obtain_images=False)
+            else:
+                candidate = MediaChain().recognize_by_meta(meta, obtain_images=False)
             if candidate:
                 cand_tmdb = str(getattr(candidate, "tmdb_id", None) or "").strip()
                 cand_imdb = str(getattr(candidate, "imdb_id", None) or "").strip().lower()

@@ -191,14 +191,27 @@ class GuangYaAiringWeeklyV1121Mixin:
         poster = ""
         try:
             try:
-                info = MediaChain().recognize_media(
-                    mtype=MediaType.TV,
-                    media_source=MediaSource.TMDB,
-                    media_id=tmdb_id,
-                    cache=True,
-                )
+                recognize = getattr(self, "_recognize_media_cached_v208", None)
+                if callable(recognize):
+                    info = recognize(
+                        mtype=MediaType.TV,
+                        media_source=MediaSource.TMDB,
+                        media_id=tmdb_id,
+                        cache=True,
+                    )
+                else:
+                    info = MediaChain().recognize_media(
+                        mtype=MediaType.TV,
+                        media_source=MediaSource.TMDB,
+                        media_id=tmdb_id,
+                        cache=True,
+                    )
             except TypeError:
-                info = MediaChain().recognize_media(mtype=MediaType.TV, media_source=MediaSource.TMDB, media_id=tmdb_id)
+                recognize = getattr(self, "_recognize_media_cached_v208", None)
+                if callable(recognize):
+                    info = recognize(mtype=MediaType.TV, media_source=MediaSource.TMDB, media_id=tmdb_id)
+                else:
+                    info = MediaChain().recognize_media(mtype=MediaType.TV, media_source=MediaSource.TMDB, media_id=tmdb_id)
             getter = getattr(info, "get_poster_image", None) if info else None
             if callable(getter):
                 poster = str(getter() or "")

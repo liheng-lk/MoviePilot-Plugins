@@ -150,11 +150,19 @@ class GuangYaMovieIdentityV1129Mixin(
         info = None
         error = ""
         try:
-            info = MediaChain().recognize_media(
-                mtype=MediaType.MOVIE,
-                media_source=MediaSource.TMDB,
-                media_id=tmdb_id,
-            )
+            recognize = getattr(self, "_recognize_media_cached_v208", None)
+            if callable(recognize):
+                info = recognize(
+                    mtype=MediaType.MOVIE,
+                    media_source=MediaSource.TMDB,
+                    media_id=tmdb_id,
+                )
+            else:
+                info = MediaChain().recognize_media(
+                    mtype=MediaType.MOVIE,
+                    media_source=MediaSource.TMDB,
+                    media_id=tmdb_id,
+                )
         except Exception as err:
             error = str(err)
 

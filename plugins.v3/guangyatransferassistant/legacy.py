@@ -2428,14 +2428,25 @@ class GuangYaTransferAssistant(_PluginBase):
         target = set(range(start, total + 1))
         try:
             meta = build_subscribe_meta(subscribe)
-            mediainfo = MediaChain().recognize_media(
-                meta=meta,
-                mtype=meta.type,
-                media_source=getattr(subscribe, "media_source", None),
-                media_id=getattr(subscribe, "media_id", None),
-                episode_group=getattr(subscribe, "episode_group", None),
-                cache=False,
-            )
+            recognize = getattr(self, "_recognize_media_cached_v208", None)
+            if callable(recognize):
+                mediainfo = recognize(
+                    meta=meta,
+                    mtype=meta.type,
+                    media_source=getattr(subscribe, "media_source", None),
+                    media_id=getattr(subscribe, "media_id", None),
+                    episode_group=getattr(subscribe, "episode_group", None),
+                    cache=False,
+                )
+            else:
+                mediainfo = MediaChain().recognize_media(
+                    meta=meta,
+                    mtype=meta.type,
+                    media_source=getattr(subscribe, "media_source", None),
+                    media_id=getattr(subscribe, "media_id", None),
+                    episode_group=getattr(subscribe, "episode_group", None),
+                    cache=False,
+                )
             if not mediainfo:
                 return {"success": False, "existing": [], "missing": sorted(target)}
             complete, no_exists = DownloadChain().get_no_exists_info(
@@ -2686,21 +2697,45 @@ class GuangYaTransferAssistant(_PluginBase):
         pending_verification = False
         match_reasons = set()
         target_path = self._target_path(subscribe)
+        executed_share_keys: set[str] = set()
 
         for entry, match_reason in action_pairs[:20]:
             share_url = entry.get("share_url") or ""
             share_key = _share_identity(share_url)
             if not share_key:
                 continue
+            share_id_only = share_key.split("|", 1)[0]
+            if share_key in executed_share_keys:
+                self._plugin_log(
+                    "INFO",
+                    "【光鸭转存助手】【候选去重】sid=%s source=guangya identity=%s duplicates=1 execute=once",
+                    sid,
+                    share_id_only,
+                )
+                continue
+            executed_share_keys.add(share_key)
+            tombstoned = getattr(self, "_is_share_tombstoned_v208", None)
+            if callable(tombstoned) and tombstoned("guangya", share_id_only):
+                self._plugin_log(
+                    "INFO",
+                    "【光鸭转存助手】【资源失效】share_id=%s reason=tombstone_hit skip=1",
+                    share_id_only,
+                )
+                errors.append(f"share_id={share_id_only} 短期标记为失效，跳过远端访问")
+                continue
             probe = self._inspect_share(share_url)
             if not probe.get("success"):
                 error = str(probe.get("message") or "分享读取失败")
-                self._plugin_log("WARNING", "【光鸭转存助手】【匹配】分享读取失败 share_id=%s：%s", share_key.split("|", 1)[0], error)
+                self._plugin_log("WARNING", "【光鸭转存助手】【匹配】分享读取失败 share_id=%s：%s", share_id_only, error)
                 errors.append(error)
+                marker = getattr(self, "_mark_share_tombstone_v208", None)
+                if callable(marker):
+                    temporary = not any(token in error for token in ("失效", "不存在", "404", "无效", "过期", "expired", "invalid"))
+                    marker("guangya", share_id_only, error, temporary=temporary)
                 continue
             resource_allowed, resource_reason = self._subscription_resource_allowed(subscribe, entry, probe)
             if not resource_allowed:
-                self._plugin_log("INFO", "【光鸭转存助手】【规则】#%s %s share_id=%s 跳过并记为已处理：%s", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], resource_reason)
+                self._plugin_log("INFO", "【光鸭转存助手】【规则】#%s %s share_id=%s 跳过并记为已处理：%s", sid, getattr(subscribe, "name", ""), share_id_only, resource_reason)
                 self._mark_entry_processed(entry, "filtered", resource_reason, subscribe)
                 synchronized_match = True
                 continue
@@ -2715,8 +2750,8 @@ class GuangYaTransferAssistant(_PluginBase):
                 failed_at = self._parse_datetime(old.get("time"))
                 if failed_at and (datetime.datetime.now() - failed_at).total_seconds() < self._retry_minutes * 60:
                     wait = self._retry_minutes - int((datetime.datetime.now() - failed_at).total_seconds() // 60)
-                    errors.append(f"share_id={share_key.split('|', 1)[0]} 失败退避中，约 {max(wait, 1)} 分钟后重试")
-                    self._plugin_log("INFO", "【光鸭转存助手】【重试】#%s %s share_id=%s 仍在失败退避期", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0])
+                    errors.append(f"share_id={share_id_only} 失败退避中，约 {max(wait, 1)} 分钟后重试")
+                    self._plugin_log("INFO", "【光鸭转存助手】【重试】#%s %s share_id=%s 仍在失败退避期", sid, getattr(subscribe, "name", ""), share_id_only)
                     continue
 
             stats: Dict[str, int] = {}
@@ -2725,7 +2760,7 @@ class GuangYaTransferAssistant(_PluginBase):
             self._plugin_log(
                 "INFO",
                 "【光鸭转存助手】【分享解析】#%s %s share_id=%s 节点=%s 叶子=%s 视频=%s 字幕=%s 可用=%s 未识别集号=%s 推断集号=%s",
-                sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], probe.get("file_count") or 0, probe.get("leaf_count") or 0,
+                sid, getattr(subscribe, "name", ""), share_id_only, probe.get("file_count") or 0, probe.get("leaf_count") or 0,
                 stats.get("video", 0), stats.get("subtitle", 0), stats.get("eligible", 0), stats.get("unparsed", 0), stats.get("inferred", 0),
             )
             job_key = self._job_key(subscribe, entry)
@@ -2734,25 +2769,38 @@ class GuangYaTransferAssistant(_PluginBase):
                 pending_verification = True
                 self._plugin_log("INFO", 
                     "【光鸭转存助手】【在途去重】#%s %s share_id=%s 新消息中 %s 个文件/剧集已被其它待落盘任务占用，本轮不重复提交",
-                    sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], len(inflight_held),
+                    sid, getattr(subscribe, "name", ""), share_id_only, len(inflight_held),
                 )
             if stats.get("eligible", 0) <= 0:
+                if stats.get("identity_reject_v11214"):
+                    reason = str(stats.get("identity_reason") or "资源身份未通过最终确认")
+                    message = (
+                        f"资源身份未通过最终确认：叶子={stats.get('total', 0)} "
+                        f"视频={stats.get('video', 0)} 字幕={stats.get('subtitle', 0)}；{reason}"
+                    )
+                    errors.append(message)
+                    self._plugin_log(
+                        "WARNING",
+                        "【光鸭转存助手】【分享解析】#%s %s share_id=%s 叶子=%s identity_reject=1；%s",
+                        sid, getattr(subscribe, "name", ""), share_id_only, stats.get("total", 0), reason[:320],
+                    )
+                    continue
                 if stats.get("unparsed", 0):
                     samples = "、".join(str(value) for value in (stats.get("unparsed_paths") or [])[:8])
                     message = f"分享内有 {stats.get('unparsed', 0)} 个媒体/字幕文件无法解析集号，未标记为已处理；示例：{samples or '-'}"
                     errors.append(message)
-                    self._plugin_log("WARNING", "【光鸭转存助手】【文件识别】#%s %s share_id=%s %s", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], message)
+                    self._plugin_log("WARNING", "【光鸭转存助手】【文件识别】#%s %s share_id=%s %s", sid, getattr(subscribe, "name", ""), share_id_only, message)
                     continue
                 if self._media_only and stats.get("total", 0) > 0 and not stats.get("video", 0) and not stats.get("subtitle", 0):
                     samples = "、".join(str(value) for value in (stats.get("unsupported_paths") or [])[:8])
                     message = f"分享已读取 {stats.get('total', 0)} 个叶子文件，但没有识别到支持的视频/字幕扩展名；示例：{samples or '-'}"
                     errors.append(message)
-                    self._plugin_log("WARNING", "【光鸭转存助手】【文件识别】#%s %s share_id=%s %s", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], message)
+                    self._plugin_log("WARNING", "【光鸭转存助手】【文件识别】#%s %s share_id=%s %s", sid, getattr(subscribe, "name", ""), share_id_only, message)
                     continue
                 message = "分享内没有需要的新剧集；已入库/已完成/范围外内容不再重复测试"
                 self._mark_entry_processed(entry, "no_new_episode", message, subscribe)
                 synchronized_match = True
-                self._plugin_log("INFO", "【光鸭转存助手】【消息去重】#%s %s share_id=%s %s", sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], message)
+                self._plugin_log("INFO", "【光鸭转存助手】【消息去重】#%s %s share_id=%s %s", sid, getattr(subscribe, "name", ""), share_id_only, message)
                 continue
 
             # 兼容 1.0.x / 1.1.0：旧版整份分享已成功且内容未变时，仅补建文件库存。
@@ -2772,13 +2820,13 @@ class GuangYaTransferAssistant(_PluginBase):
                 if inflight_held:
                     self._plugin_log("INFO", 
                         "【光鸭转存助手】【在途去重】#%s %s share_id=%s 本条新消息可转内容全部已在其它任务中，保留消息为待检查，不标记永久处理",
-                        sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0],
+                        sid, getattr(subscribe, "name", ""), share_id_only,
                     )
                     continue
                 self._mark_entry_processed(entry, "synced", "库存或订阅进度已覆盖，无新增文件", subscribe)
                 self._plugin_log("INFO", 
                     "【光鸭转存助手】【去重】#%s %s share_id=%s 无新增文件（库存=%s，已完成剧集/范围过滤=%s），跳过",
-                    sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0], stats.get("inventory", 0), stats.get("episode", 0),
+                    sid, getattr(subscribe, "name", ""), share_id_only, stats.get("inventory", 0), stats.get("episode", 0),
                 )
                 continue
 
@@ -2795,7 +2843,7 @@ class GuangYaTransferAssistant(_PluginBase):
                 synchronized_match = True
                 self._plugin_log("INFO", 
                     "【光鸭转存助手】【人工任务】#%s %s share_id=%s 该旧消息任务已人工忽略，本轮不重复提交；等待新消息/新链接",
-                    sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0],
+                    sid, getattr(subscribe, "name", ""), share_id_only,
                 )
                 continue
             self._plugin_log("INFO", 
@@ -2938,26 +2986,34 @@ class GuangYaTransferAssistant(_PluginBase):
         final_message = "；".join(dict.fromkeys(errors))[:1200] or "匹配分享均不可用"
         self._plugin_log("WARNING", "【光鸭转存助手】【失败】#%s %s 转存未完成：%s；固定转存路线不触发原生下载", sid, getattr(subscribe, "name", ""), final_message)
         if self._notify and matched_pairs:
-            notices = self.get_data("failure_notices") or {}
-            notice_key = f"{sid}:{_failure_notice_fingerprint(final_message)}"
-            last_notice = self._parse_datetime(notices.get(notice_key))
-            now = datetime.datetime.now()
-            if not last_notice or (now - last_notice).total_seconds() >= 6 * 3600:
+            queue_notice = getattr(self, "_queue_failure_notice_v208", None)
+            batched = False
+            if callable(queue_notice):
                 try:
-                    self.post_message(
-                        mtype=NotificationType.Plugin,
-                        title="⚠️ 光鸭转存失败",
-                        text=(
-                            f"媒体：{getattr(subscribe, 'name', '')} ({getattr(subscribe, 'year', '') or '-'})\n"
-                            f"状态：转存未完成\n原因：{final_message}\n"
-                            + "后续：保持转存路线，等待频道刷新或下次重试"
-                        ),
-                    )
-                    notices[notice_key] = now.strftime("%Y-%m-%d %H:%M:%S")
-                    self.save_data("failure_notices", notices)
-                    self._plugin_log("INFO", "【光鸭转存助手】【通知】已发送转存失败通知：#%s %s（相同错误 6 小时内不重复推送）", sid, getattr(subscribe, "name", ""))
-                except Exception as err:
-                    self._plugin_log("WARNING", "【光鸭转存助手】【通知】发送失败通知异常：%s", err)
+                    batched = bool(queue_notice(subscribe, final_message, level="retryable"))
+                except Exception:
+                    batched = False
+            if not batched:
+                notices = self.get_data("failure_notices") or {}
+                notice_key = f"{sid}:{_failure_notice_fingerprint(final_message)}"
+                last_notice = self._parse_datetime(notices.get(notice_key))
+                now = datetime.datetime.now()
+                if not last_notice or (now - last_notice).total_seconds() >= 6 * 3600:
+                    try:
+                        self.post_message(
+                            mtype=NotificationType.Plugin,
+                            title="⚠️ 光鸭转存失败",
+                            text=(
+                                f"媒体：{getattr(subscribe, 'name', '')} ({getattr(subscribe, 'year', '') or '-'})\n"
+                                f"状态：转存未完成\n原因：{final_message}\n"
+                                + "后续：保持转存路线，等待频道刷新或下次重试"
+                            ),
+                        )
+                        notices[notice_key] = now.strftime("%Y-%m-%d %H:%M:%S")
+                        self.save_data("failure_notices", notices)
+                        self._plugin_log("INFO", "【光鸭转存助手】【通知】已发送转存失败通知：#%s %s（相同错误 6 小时内不重复推送）", sid, getattr(subscribe, "name", ""))
+                    except Exception as err:
+                        self._plugin_log("WARNING", "【光鸭转存助手】【通知】发送失败通知异常：%s", err)
         return {"success": False, "handled": True, "message": final_message}
 
     def _target_path(self, subscribe: Any) -> str:
@@ -3199,14 +3255,25 @@ class GuangYaTransferAssistant(_PluginBase):
                 return True
         try:
             meta = build_subscribe_meta(subscribe)
-            mediainfo = MediaChain().recognize_media(
-                meta=meta,
-                mtype=meta.type,
-                media_source=getattr(subscribe, "media_source", None),
-                media_id=getattr(subscribe, "media_id", None),
-                episode_group=getattr(subscribe, "episode_group", None),
-                cache=False,
-            )
+            recognize = getattr(self, "_recognize_media_cached_v208", None)
+            if callable(recognize):
+                mediainfo = recognize(
+                    meta=meta,
+                    mtype=meta.type,
+                    media_source=getattr(subscribe, "media_source", None),
+                    media_id=getattr(subscribe, "media_id", None),
+                    episode_group=getattr(subscribe, "episode_group", None),
+                    cache=False,
+                )
+            else:
+                mediainfo = MediaChain().recognize_media(
+                    meta=meta,
+                    mtype=meta.type,
+                    media_source=getattr(subscribe, "media_source", None),
+                    media_id=getattr(subscribe, "media_id", None),
+                    episode_group=getattr(subscribe, "episode_group", None),
+                    cache=False,
+                )
             if not mediainfo:
                 return False
             exists, _ = DownloadChain().get_no_exists_info(meta=meta, mediainfo=mediainfo)
@@ -3252,14 +3319,25 @@ class GuangYaTransferAssistant(_PluginBase):
             return True
         try:
             meta = build_subscribe_meta(latest)
-            mediainfo = MediaChain().recognize_media(
-                meta=meta,
-                mtype=meta.type,
-                media_source=getattr(latest, "media_source", None),
-                media_id=getattr(latest, "media_id", None),
-                episode_group=getattr(latest, "episode_group", None),
-                cache=False,
-            )
+            recognize = getattr(self, "_recognize_media_cached_v208", None)
+            if callable(recognize):
+                mediainfo = recognize(
+                    meta=meta,
+                    mtype=meta.type,
+                    media_source=getattr(latest, "media_source", None),
+                    media_id=getattr(latest, "media_id", None),
+                    episode_group=getattr(latest, "episode_group", None),
+                    cache=False,
+                )
+            else:
+                mediainfo = MediaChain().recognize_media(
+                    meta=meta,
+                    mtype=meta.type,
+                    media_source=getattr(latest, "media_source", None),
+                    media_id=getattr(latest, "media_id", None),
+                    episode_group=getattr(latest, "episode_group", None),
+                    cache=False,
+                )
             if not mediainfo:
                 progress = "电影已确认转存" if is_movie else f"已完成 {done}/{total}"
                 self._plugin_log("WARNING", "【光鸭转存助手】【完成】#%s %s %s，但媒体识别失败，暂不移除订阅", sid, getattr(latest, "name", ""), progress)

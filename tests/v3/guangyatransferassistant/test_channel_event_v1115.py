@@ -91,7 +91,8 @@ def test_channel_event_does_not_call_generic_provider_search():
     assert '== "channel_event"' in guard
     assert "return None" in guard
     assert "super()._dispatch_provider_candidate(subscribe, uncovered)" in guard
-    assert "等待独立轮询" in guard
+    assert "_enqueue_external_recall_v208" in guard
+    assert "local_candidates_exhausted" in guard
 
 
 def test_viewing_poll_is_independent_and_only_schedules_due_missing_subscriptions():
