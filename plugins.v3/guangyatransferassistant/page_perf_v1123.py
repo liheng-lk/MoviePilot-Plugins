@@ -4,7 +4,7 @@
 - 数据页打开时不再同步逐个调用 MoviePilot 媒体库缺集检查；优先秒开最近快照，过期后后台刷新。
 - 追剧日历不再依赖 PageRender 无法共享的 VTabs/VWindow v-model，改成浏览器原生 details 日期组，点击即展开。
 - 日期明细使用轻量文本卡片，不在 7 个隐藏日期里预加载整套海报墙，保证切换即时且不拖慢首屏。
-- 配置页的大量订阅改成“搜索一个 -> 添加/取消”的固定高度管理器，不再把全部已选订阅渲染进输入框。
+- 配置页的大量订阅改成“搜索筛选 + 批量选择 + 添加/取消接管”的固定高度管理器，支持全选当前结果。
 """
 
 from __future__ import annotations
@@ -12,6 +12,87 @@ from __future__ import annotations
 import datetime
 import threading
 from typing import Any, Dict, List, Optional, Set
+
+
+def normalize_subscription_ids_v1124(values: Any) -> List[int]:
+    """去重后的正整数订阅 ID 列表（保序）。"""
+    result: List[int] = []
+    seen: Set[int] = set()
+    for raw in values or []:
+        try:
+            sid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if sid <= 0 or sid in seen:
+            continue
+        seen.add(sid)
+        result.append(sid)
+    return result
+
+
+def filter_visible_subscription_ids_v1124(
+    catalog: List[Dict[str, Any]],
+    query: Any = "",
+) -> List[int]:
+    """按搜索关键词过滤 catalog，返回可见订阅 ID。
+
+    空关键词 = 全部可见。匹配字段为 title（含剧名/年份/季/类型/状态/#id）。
+    """
+    needle = str(query or "").strip().casefold()
+    visible: List[int] = []
+    for item in catalog or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            sid = int(item.get("value") or 0)
+        except (TypeError, ValueError):
+            continue
+        if sid <= 0:
+            continue
+        title = str(item.get("title") or "")
+        if needle and needle not in title.casefold():
+            continue
+        visible.append(sid)
+    return normalize_subscription_ids_v1124(visible)
+
+
+def union_selected_subscription_ids_v1124(
+    selected_ids: Any,
+    visible_ids: Any,
+) -> List[int]:
+    """全选当前结果：与已有选择做集合并，不覆盖、不去重同名。"""
+    return normalize_subscription_ids_v1124(
+        list(normalize_subscription_ids_v1124(selected_ids))
+        + list(normalize_subscription_ids_v1124(visible_ids))
+    )
+
+
+def clear_selected_subscription_ids_v1124() -> List[int]:
+    """取消全选：清空全部选择。"""
+    return []
+
+
+def all_visible_subscription_ids_selected_v1124(
+    selected_ids: Any,
+    visible_ids: Any,
+) -> bool:
+    selected = set(normalize_subscription_ids_v1124(selected_ids))
+    visible = normalize_subscription_ids_v1124(visible_ids)
+    return bool(visible) and all(sid in selected for sid in visible)
+
+
+def toggle_takeover_subscription_ids_v1124(
+    takeover_ids: Any,
+    selected_ids: Any,
+) -> List[int]:
+    """对选中 ID 逐个切换是否已接管（沿用原单条 toggle 语义）。"""
+    current = normalize_subscription_ids_v1124(takeover_ids)
+    for sid in normalize_subscription_ids_v1124(selected_ids):
+        if sid in current:
+            current = [value for value in current if value != sid]
+        else:
+            current.append(sid)
+    return normalize_subscription_ids_v1124(current)
 
 
 class GuangYaPagePerfV1123Mixin:
@@ -87,12 +168,191 @@ class GuangYaPagePerfV1123Mixin:
         if isinstance(config, dict):
             config = dict(config)
             config.pop("_subscription_pick_v1124", None)
+            config.pop("_subscription_batch_v1124", None)
+            config.pop("_subscription_query_v1124", None)
+            config.pop("_subscription_catalog_v1124", None)
         return super().init_plugin(config)
+
+    @staticmethod
+    def _subscription_picker_card_v1124(items: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """生产接管订阅管理器卡片（供 get_form 与测试共用）。"""
+        # 全选用 mousedown：先于 Autocomplete blur 清空 search，避免“当前结果”被误当成全量。
+        select_all_js = (
+            "function () { "
+            "const catalog = Array.isArray(_subscription_catalog_v1124) ? _subscription_catalog_v1124 : []; "
+            "const q = String(_subscription_query_v1124 || '').trim().toLowerCase(); "
+            "const visible = catalog.filter(item => { "
+            "if (!item) return false; "
+            "const sid = Number(item.value); "
+            "if (!Number.isFinite(sid) || sid <= 0) return false; "
+            "if (!q) return true; "
+            "return String(item.title || '').toLowerCase().includes(q); "
+            "}).map(item => Number(item.value)); "
+            "if (!visible.length) return; "
+            "const source = Array.isArray(_subscription_batch_v1124) ? _subscription_batch_v1124 : []; "
+            "const current = [...new Set(source.map(Number).filter(v => Number.isFinite(v) && v > 0))]; "
+            "if (visible.every(id => current.includes(id))) return; "
+            "_subscription_batch_v1124 = [...new Set([...current, ...visible])]; "
+            "}"
+        )
+        clear_all_js = (
+            "function () { "
+            "if (!(Array.isArray(_subscription_batch_v1124) && _subscription_batch_v1124.length)) return; "
+            "_subscription_batch_v1124 = []; "
+            "}"
+        )
+        apply_js = (
+            "function () { "
+            "const picks = [...new Set((Array.isArray(_subscription_batch_v1124) ? _subscription_batch_v1124 : []).map(Number).filter(v => Number.isFinite(v) && v > 0))]; "
+            "if (!picks.length) return; "
+            "let current = [...new Set((Array.isArray(selected_subscriptions) ? selected_subscriptions : []).map(Number).filter(v => Number.isFinite(v) && v > 0))]; "
+            "for (const id of picks) { "
+            "current = current.includes(id) ? current.filter(v => v !== id) : [...current, id]; "
+            "} "
+            "selected_subscriptions = current; "
+            "}"
+        )
+        # props 内 {{ }} 由 FormRender 求值；config.text 不会求值，按钮文案必须静态。
+        alert_text = (
+            "{{ "
+            "'已选择 ' + (Array.isArray(_subscription_batch_v1124) ? _subscription_batch_v1124.length : 0) + ' 项'"
+            " + ' · 已固定接管 ' + (Array.isArray(selected_subscriptions) ? selected_subscriptions.length : 0) + ' 个'"
+            " + ' · 当前结果 ' + (function(){"
+            "const catalog = Array.isArray(_subscription_catalog_v1124) ? _subscription_catalog_v1124 : [];"
+            "const q = String(_subscription_query_v1124 || '').trim().toLowerCase();"
+            "const visible = catalog.filter(item => {"
+            "if (!item) return false;"
+            "const sid = Number(item.value);"
+            "if (!Number.isFinite(sid) || sid <= 0) return false;"
+            "if (!q) return true;"
+            "return String(item.title || '').toLowerCase().includes(q);"
+            "});"
+            "const selected = [...new Set((Array.isArray(_subscription_batch_v1124) ? _subscription_batch_v1124 : []).map(Number).filter(v => Number.isFinite(v) && v > 0))];"
+            "const allSelected = visible.length > 0 && visible.every(item => selected.includes(Number(item.value)));"
+            "return visible.length + ' 个' + (allSelected ? '（已全选）' : '');"
+            "})()"
+            " + '。搜索只影响可见结果与全选范围，不会清空已选；保存后接管名单生效。'"
+            " }}"
+        )
+        return {
+            "component": "VCard",
+            "props": {"variant": "outlined", "class": "pa-3"},
+            "content": [
+                {
+                    "component": "VRow",
+                    "props": {"dense": True, "class": "align-center"},
+                    "content": [
+                        {
+                            "component": "VCol",
+                            "props": {"cols": 12},
+                            "content": [{
+                                "component": "VAutocomplete",
+                                "props": {
+                                    "model": "_subscription_batch_v1124",
+                                    "model:search": "_subscription_query_v1124",
+                                    "label": "搜索要添加 / 取消接管的订阅",
+                                    "placeholder": "剧名 / 年份 / 季 / 订阅 ID",
+                                    "items": items,
+                                    "item-title": "title",
+                                    "item-value": "value",
+                                    "multiple": True,
+                                    "chips": False,
+                                    "closable-chips": False,
+                                    "clearable": True,
+                                    "density": "compact",
+                                    "hide-details": True,
+                                    "hide-selected": False,
+                                    "prepend-inner-icon": "mdi-magnify",
+                                    "menu-props": {"maxHeight": 360},
+                                    "no-data-text": "没有匹配的活跃订阅",
+                                },
+                            }],
+                        },
+                        {
+                            "component": "VCol",
+                            "props": {"cols": 12, "sm": 4},
+                            "content": [{
+                                "component": "VBtn",
+                                "props": {
+                                    "block": True,
+                                    "variant": "tonal",
+                                    "color": "secondary",
+                                    "prepend-icon": "mdi-checkbox-multiple-marked-outline",
+                                    "disabled": (
+                                        "{{ (function(){ "
+                                        "const catalog = Array.isArray(_subscription_catalog_v1124) ? _subscription_catalog_v1124 : []; "
+                                        "const q = String(_subscription_query_v1124 || '').trim().toLowerCase(); "
+                                        "const visible = catalog.filter(item => { "
+                                        "if (!item) return false; "
+                                        "const sid = Number(item.value); "
+                                        "if (!Number.isFinite(sid) || sid <= 0) return false; "
+                                        "if (!q) return true; "
+                                        "return String(item.title || '').toLowerCase().includes(q); "
+                                        "}); "
+                                        "if (!visible.length) return true; "
+                                        "const selected = [...new Set((Array.isArray(_subscription_batch_v1124) ? _subscription_batch_v1124 : []).map(Number).filter(v => Number.isFinite(v) && v > 0))]; "
+                                        "return visible.every(item => selected.includes(Number(item.value))); "
+                                        "})() }}"
+                                    ),
+                                    "onMousedown": select_all_js,
+                                    "onClick": select_all_js,
+                                },
+                                "text": "全选当前结果",
+                            }],
+                        },
+                        {
+                            "component": "VCol",
+                            "props": {"cols": 12, "sm": 4},
+                            "content": [{
+                                "component": "VBtn",
+                                "props": {
+                                    "block": True,
+                                    "variant": "tonal",
+                                    "color": "secondary",
+                                    "prepend-icon": "mdi-checkbox-blank-outline",
+                                    "disabled": "{{ !(Array.isArray(_subscription_batch_v1124) && _subscription_batch_v1124.length) }}",
+                                    "onClick": clear_all_js,
+                                },
+                                "text": "取消全选",
+                            }],
+                        },
+                        {
+                            "component": "VCol",
+                            "props": {"cols": 12, "sm": 4},
+                            "content": [{
+                                "component": "VBtn",
+                                "props": {
+                                    "block": True,
+                                    "variant": "tonal",
+                                    "color": "primary",
+                                    "prepend-icon": "mdi-swap-horizontal",
+                                    "disabled": "{{ !(Array.isArray(_subscription_batch_v1124) && _subscription_batch_v1124.length) }}",
+                                    "onClick": apply_js,
+                                },
+                                "text": "添加 / 取消接管",
+                            }],
+                        },
+                    ],
+                },
+                {
+                    "component": "VAlert",
+                    "props": {
+                        "type": "info",
+                        "variant": "tonal",
+                        "density": "compact",
+                        "class": "mt-2",
+                        "text": alert_text,
+                    },
+                },
+            ],
+        }
 
     def get_form(self):
         form, defaults = super().get_form()
         defaults = dict(defaults or {})
         defaults["_subscription_pick_v1124"] = None
+        defaults["_subscription_batch_v1124"] = []
+        defaults["_subscription_query_v1124"] = ""
         try:
             selected_node = self._find_model_node_v1124(form, "selected_subscriptions")
             if selected_node is None:
@@ -100,86 +360,16 @@ class GuangYaPagePerfV1123Mixin:
 
             old_props = dict(selected_node.get("props") or {})
             items = list(old_props.get("items") or self._subscription_options())
+            defaults["_subscription_catalog_v1124"] = [
+                {"title": str(item.get("title") or ""), "value": int(item.get("value") or 0)}
+                for item in items
+                if isinstance(item, dict) and int(item.get("value") or 0) > 0
+            ]
 
             # 不再让 multiple VAutocomplete 直接绑定 selected_subscriptions。
-            # Vuetify 会把每个已选值渲染进输入区，订阅几十个后组件高度会持续增长。
-            # 改为单项搜索暂存 + 本地切换 selected_subscriptions，字段高度与订阅数量彻底解耦。
+            # 唯一搜索态：model:search -> _subscription_query_v1124；选择态：_subscription_batch_v1124。
             selected_node.clear()
-            selected_node.update({
-                "component": "VCard",
-                "props": {"variant": "outlined", "class": "pa-3"},
-                "content": [
-                    {
-                        "component": "VRow",
-                        "props": {"dense": True, "class": "align-center"},
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "sm": 8},
-                                "content": [{
-                                    "component": "VAutocomplete",
-                                    "props": {
-                                        "model": "_subscription_pick_v1124",
-                                        "label": "搜索要添加 / 取消接管的订阅",
-                                        "placeholder": "剧名 / 年份 / 季 / 订阅 ID",
-                                        "items": items,
-                                        "item-title": "title",
-                                        "item-value": "value",
-                                        "multiple": False,
-                                        "chips": False,
-                                        "clearable": True,
-                                        "auto-select-first": True,
-                                        "density": "compact",
-                                        "hide-details": True,
-                                        "prepend-inner-icon": "mdi-magnify",
-                                        "menu-props": {"maxHeight": 360},
-                                        "no-data-text": "没有匹配的活跃订阅",
-                                    },
-                                }],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "sm": 4},
-                                "content": [{
-                                    "component": "VBtn",
-                                    "props": {
-                                        "block": True,
-                                        "variant": "tonal",
-                                        "color": "primary",
-                                        "prepend-icon": "mdi-swap-horizontal",
-                                        "onClick": (
-                                            "function () { "
-                                            "const id = Number(_subscription_pick_v1124); "
-                                            "if (!id) return; "
-                                            "const source = Array.isArray(selected_subscriptions) ? selected_subscriptions : []; "
-                                            "const current = [...new Set(source.map(Number).filter(v => Number.isFinite(v) && v > 0))]; "
-                                            "selected_subscriptions = current.includes(id) ? current.filter(v => v !== id) : [...current, id]; "
-                                            "_subscription_pick_v1124 = null; "
-                                            "}"
-                                        ),
-                                    },
-                                    "text": "添加 / 取消接管",
-                                }],
-                            },
-                        ],
-                    },
-                    {
-                        "component": "VAlert",
-                        "props": {
-                            "type": "info",
-                            "variant": "tonal",
-                            "density": "compact",
-                            "class": "mt-2",
-                            "text": (
-                                "{{ !_subscription_pick_v1124 ? "
-                                "('已固定接管 ' + (Array.isArray(selected_subscriptions) ? selected_subscriptions.length : 0) + ' 个订阅。搜索一个订阅后点击“添加 / 取消接管”，保存后生效。') : "
-                                "((Array.isArray(selected_subscriptions) ? selected_subscriptions.map(Number) : []).includes(Number(_subscription_pick_v1124)) ? "
-                                "'当前选择已接管：点击按钮将取消接管。' : '当前选择未接管：点击按钮将加入接管。') }}"
-                            ),
-                        },
-                    },
-                ],
-            })
+            selected_node.update(self._subscription_picker_card_v1124(items))
         except Exception:
             pass
         return form, defaults
@@ -429,4 +619,12 @@ class GuangYaPagePerfV1123Mixin:
         }
 
 
-__all__ = ["GuangYaPagePerfV1123Mixin"]
+__all__ = [
+    "GuangYaPagePerfV1123Mixin",
+    "normalize_subscription_ids_v1124",
+    "filter_visible_subscription_ids_v1124",
+    "union_selected_subscription_ids_v1124",
+    "clear_selected_subscription_ids_v1124",
+    "all_visible_subscription_ids_selected_v1124",
+    "toggle_takeover_subscription_ids_v1124",
+]

@@ -13,7 +13,6 @@ PACKAGE_JSON = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8")
 
 def test_media_match_slice_is_public_v11219_release():
     assert 'plugin_version = "2.0.7"' in ENTRY
-    assert 'build_id = "20260910-r89"' in ENTRY
     assert PLUGIN_JSON["version"] == "2.0.7"
     assert PACKAGE_JSON["version"] == "2.0.7"
     assert "v1.12.19" in PACKAGE_JSON["history"]

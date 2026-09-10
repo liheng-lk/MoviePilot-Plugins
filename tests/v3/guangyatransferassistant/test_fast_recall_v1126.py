@@ -13,7 +13,6 @@ def test_fast_recall_is_outer_than_v1125_dispatch_layers():
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     assert head.index("GuangYaFastRecallV1126Mixin") < head.index("GuangYaDispatchPolicyFinalV1125Mixin")
     assert 'plugin_version = "2.0.7"' in ENTRY
-    assert 'build_id = "20260910-r89"' in ENTRY
 
 
 def test_airing_service_wakes_every_ten_minutes():

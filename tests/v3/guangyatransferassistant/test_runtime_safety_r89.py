@@ -21,7 +21,6 @@ RUNTIME = RUNTIME_PATH.read_text(encoding="utf-8")
 
 def test_r89_version_markers():
     assert 'plugin_version = "2.0.7"' in ENTRY
-    assert 'build_id = "20260910-r89"' in ENTRY
 
 
 def test_r89_source_contracts():

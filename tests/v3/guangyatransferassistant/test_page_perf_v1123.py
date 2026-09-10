@@ -18,7 +18,6 @@ def test_v1124_page_layer_parses_and_is_outermost():
     assert ENTRY.index("GuangYaPagePerfV1123Mixin,", start) < ENTRY.index("GuangYaAiringWeeklyV1121Mixin,", start)
     assert 'build_id = "20260904-r51"' in PATCH
     assert 'plugin_version = "2.0.7"' in ENTRY
-    assert 'build_id = "20260910-r89"' in ENTRY
 
 
 def test_data_page_reads_snapshot_first_and_moves_media_library_sync_to_background():
@@ -89,17 +88,21 @@ def test_large_subscription_manager_replaces_real_form_node_instead_of_mutating_
 
 def test_large_subscription_manager_has_constant_height_single_item_toggle_workflow():
     form = PATCH[PATCH.index("def get_form"):PATCH.index("# ------------------------------------------------------------------\n    # 数据页：快照秒开")]
-    init = PATCH[PATCH.index("def init_plugin"):PATCH.index("def get_form")]
-    assert '"model": "_subscription_pick_v1124"' in form
-    assert '"multiple": False' in form
-    assert '"chips": False' in form
-    assert '"hide-details": True' in form
-    assert '"menu-props": {"maxHeight": 360}' in form
-    assert '"component": "VBtn"' in form
-    assert "添加 / 取消接管" in form
-    assert "selected_subscriptions = current.includes(id)" in form
-    assert "_subscription_pick_v1124 = null" in form
-    assert "已固定接管" in form
-    assert "字段高度与订阅数量彻底解耦" in form
-    assert 'config.pop("_subscription_pick_v1124", None)' in init
+    picker = PATCH[PATCH.index("def _subscription_picker_card_v1124"):PATCH.index("def get_form")]
+    init = PATCH[PATCH.index("def init_plugin"):PATCH.index("def _subscription_picker_card_v1124")]
+    assert '"model": "_subscription_batch_v1124"' in picker
+    assert '"model:search": "_subscription_query_v1124"' in picker
+    assert '"multiple": True' in picker
+    assert '"chips": False' in picker
+    assert '"menu-props": {"maxHeight": 360}' in picker
+    assert "全选当前结果" in picker
+    assert "取消全选" in picker
+    assert '"text": "添加 / 取消接管"' in picker
+    assert "{{" not in '"text": "添加 / 取消接管"'
+    assert "selected_subscriptions = current" in picker
+    assert "onMousedown" in picker
+    assert "VTextField" not in picker
+    assert 'config.pop("_subscription_batch_v1124", None)' in init
+    assert 'config.pop("_subscription_query_v1124", None)' in init
+    assert "self._subscription_picker_card_v1124(items)" in form
 

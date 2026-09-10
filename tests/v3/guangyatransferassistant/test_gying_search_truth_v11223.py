@@ -256,7 +256,6 @@ def test_v11223_release_metadata_and_runtime_order_are_consistent():
     assert plugin["version"] == package["version"] == "2.0.7"
     assert "v2.0.7" in package["history"]
     assert 'plugin_version = "2.0.7"' in entry
-    assert 'build_id = "20260910-r89"' in entry
     assert "from .gying_search_truth_v11223 import GuangYaGyingSearchTruthV11223Mixin" in entry
     start = entry.index("class GuangYaTransferAssistant(")
     assert entry.index("GuangYaGyingObservabilityV1104Mixin,", start) < entry.index(

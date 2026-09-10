@@ -22,7 +22,6 @@ def test_final_v11218_release_truth_and_historical_recall_marker():
     recall = RECALL.read_text(encoding="utf-8")
 
     assert 'plugin_version = "2.0.7"' in entry
-    assert 'build_id = "20260910-r89"' in entry
     assert local["version"] == "2.0.7"
     assert package["version"] == "2.0.7"
     assert "v1.12.18" in package.get("history", {})

@@ -28,7 +28,6 @@ def test_all_v190_files_parse_and_publish_current_version():
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     assert package["version"] == local["version"] == "2.0.7"
     assert 'plugin_version = "2.0.7"' in texts[ENTRY]
-    assert 'build_id = "20260910-r89"' in texts[ENTRY]
 
 
 def test_runtime_mro_puts_planner_safety_and_planner_before_native_offline_layers():
