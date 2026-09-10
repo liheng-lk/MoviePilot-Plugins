@@ -123,8 +123,12 @@ def _full_due(plugin: Any) -> bool:
     root = plugin._v360_norm(getattr(plugin, "_organize_monitor_path", ""))
     if plugin._v360_norm(raw.get("monitor_path")) != root:
         return True
+    now = time.time()
+    suppressed_until = float(raw.get("suppressed_until") or 0)
+    if suppressed_until > now:
+        return False
     completed_at = float(raw.get("completed_at") or 0)
-    return completed_at <= 0 or time.time() - completed_at >= _FULL_SCAN_INTERVAL
+    return completed_at <= 0 or now - completed_at >= _FULL_SCAN_INTERVAL
 
 
 def install_dual_scan_v376() -> None:
@@ -188,8 +192,6 @@ def install_dual_scan_v376() -> None:
         try:
             _trace(self, 1, "触发", f"来源={trigger}，执行一次增量检查")
             _trace(self, 2, "准备", f"目录={root}；顺序=pending→known变化→discovery推进1页")
-            # v3.6.6 的 manual=True 语义恰好是：known 未提交后继续推进一页 discovery。
-            # 因而这里不会再出现“只盯已知目录、全新资源必须等基线”的空窗。
             result = dict(original_run(self, manual=True) or {})
             data = dict(result.get("data") or {})
             dirs_scanned = int(data.get("dirs_scanned") or 0)
@@ -282,9 +284,9 @@ def install_dual_scan_v376() -> None:
                         "monitor_path": self._v360_norm(getattr(self, "_organize_monitor_path", "")),
                         "completed_at": float(session.get("completed_at") or 0),
                         "scan_id": scan_id,
+                        "suppressed_until": 0,
                     },
                 )
-                # 保持旧 baseline/v3.7.5 一次性恢复标记同步。
                 marker = getattr(self, "_v366_mark_baseline_complete", None)
                 if callable(marker):
                     marker()
@@ -398,18 +400,36 @@ def install_dual_scan_v376() -> None:
         session = _load_full(self)
         if not bool(session.get("active")):
             return {"success": True, "message": "当前没有运行中的全量扫描", "data": {"full_scan_active": False}}
-        session.update({"active": False, "stopped_at": time.time(), "stopped_by": trigger})
+        stopped_at = time.time()
+        session.update({"active": False, "stopped_at": stopped_at, "stopped_by": trigger})
         _save_full(self, session)
         scan_id = str(session.get("scan_id") or "")
+        last = self.get_data(_FULL_LAST_KEY) or {}
+        if not isinstance(last, dict):
+            last = {}
+        self.save_data(
+            _FULL_LAST_KEY,
+            {
+                **last,
+                "monitor_path": self._v360_norm(getattr(self, "_organize_monitor_path", "")),
+                "suppressed_until": stopped_at + _FULL_SCAN_INTERVAL,
+                "stopped_at": stopped_at,
+                "stopped_scan_id": scan_id,
+            },
+        )
         previous = _set_context(self, scan_id, "full", str(session.get("trigger") or trigger))
         try:
-            _trace(self, 6, "停止", "停止全量 discovery 续页；不会中断当前 MoviePilot 文件整理")
-            self._save_monitor_status(full_scan_active=False, full_scan_paused=False)
+            _trace(self, 6, "停止", "停止全量 discovery 续页；30 分钟内不自动重启，不中断当前文件整理")
+            self._save_monitor_status(
+                full_scan_active=False,
+                full_scan_paused=False,
+                full_scan_suppressed_until=stopped_at + _FULL_SCAN_INTERVAL,
+            )
         finally:
             _restore_context(self, previous)
         return {
             "success": True,
-            "message": "已停止全量扫描续页；当前正在整理的资源不会被中断",
+            "message": "已停止全量扫描续页；当前整理不中断，30 分钟内不会自动重启全量",
             "data": {"scan_id": scan_id, "full_scan_active": False},
         }
 
@@ -446,7 +466,6 @@ def install_dual_scan_v376() -> None:
         return run_incremental(self, "monitor")
 
     def api_scan_wrapped(self, payload: dict = None) -> Dict[str, Any]:
-        # 旧“立即扫描”API 保持兼容，但语义升级为真正完整全量。
         return start_full(self, "manual")
 
     def api_incremental(self, payload: dict = None) -> Dict[str, Any]:
@@ -466,6 +485,8 @@ def install_dual_scan_v376() -> None:
         status = data.setdefault("status", {})
         session = _load_full(self)
         full_last = self.get_data(_FULL_LAST_KEY) or {}
+        if not isinstance(full_last, dict):
+            full_last = {}
         status.update(
             {
                 "scan_engine": "dual-channel-v3.7.6",
@@ -481,7 +502,8 @@ def install_dual_scan_v376() -> None:
                 "full_scan_resources": int(session.get("resource_dirs") or 0),
                 "full_scan_scheduled": int(session.get("scheduled_resources") or 0),
                 "full_scan_remaining_dirs": int(session.get("remaining_dirs") or 0),
-                "full_scan_last_completed_at": float((full_last or {}).get("completed_at") or 0),
+                "full_scan_last_completed_at": float(full_last.get("completed_at") or 0),
+                "full_scan_suppressed_until": float(full_last.get("suppressed_until") or 0),
                 "full_scan_interval": int(_FULL_SCAN_INTERVAL),
                 "incremental_strategy": "pending->known->discovery-page",
                 "log_stage_schema": "1触发/2准备/3发现/4判定/5入队/6完成",
