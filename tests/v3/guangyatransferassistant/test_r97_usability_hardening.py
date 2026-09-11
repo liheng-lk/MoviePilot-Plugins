@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 ROOT = Path(__file__).resolve().parents[3]
 MULTI = ROOT / "plugins.v3" / "guangyatransferassistant" / "multisource_v180.py"
 SOURCE = MULTI.read_text(encoding="utf-8")
+STATUS = (ROOT / "plugins.v3" / "guangyatransferassistant" / "status_ui_v191.py").read_text(encoding="utf-8")
 
 
 def _mixin_class():
@@ -280,3 +281,14 @@ def test_r97_source_contracts_present():
     assert "REMOTE_VERIFY_TIMEOUT" in SOURCE
     assert "release_claim_for_fallback" in SOURCE
     assert "后台来源执行异常，已进入恢复路径" in SOURCE
+
+
+def test_r97_status_ui_explains_pending_verify_instead_of_fake_100_percent_progress():
+    assert "远端任务已完成，正在核验正片" in STATUS
+    assert 'error.startswith("PENDING_VERIFY:")' in STATUS
+    assert "pending_verify_since" in STATUS
+
+
+def test_r97_status_ui_gives_specific_action_for_verify_timeout():
+    assert '"REMOTE_VERIFY_TIMEOUT" in error' in STATUS
+    assert "先刷新云任务并确认目标目录/媒体库" in STATUS
