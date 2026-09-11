@@ -16,7 +16,7 @@ PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 SAFETY = (PLUGIN / "production_safety_v208.py").read_text(encoding="utf-8")
 LEGACY = (PLUGIN / "legacy.py").read_text(encoding="utf-8")
-GUARD = (PLUGIN / "channel_event_guard_v1115.py").read_text(encoding="utf-8")
+CURSOR = (PLUGIN / "channel_cursor_event_v1115.py").read_text(encoding="utf-8")
 DISPATCH = (PLUGIN / "dispatch_policy_final_v1125.py").read_text(encoding="utf-8")
 CORE = (PLUGIN / "core_pipeline_v11214.py").read_text(encoding="utf-8")
 
@@ -34,7 +34,7 @@ def test_r92_mro_owns_recognition_cache():
         'recognize = getattr(self, "_recognize_media_cached_v208", None)',
         'recognize_meta = getattr(self, "_recognize_by_meta_cached_v208", None)',
     ):
-        assert marker in LEGACY or marker in CORE or marker in GUARD or True
+        assert marker in LEGACY or marker in CORE or marker in CURSOR or True
     assert LEGACY.count('_recognize_media_cached_v208') >= 3
     assert CORE.count('_recognize_media_cached_v208') >= 1
 
@@ -246,8 +246,8 @@ def test_external_recall_channel_guard_to_dispatch_force_once():
     obj = _make_safety(calls)
 
     # Bind production guard method
-    tree = ast.parse(GUARD)
-    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "GuangYaChannelEventGuardV1115Mixin")
+    tree = ast.parse(CURSOR)
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "GuangYaChannelCursorEventV1115Mixin")
     method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "_dispatch_provider_candidate")
     module = ast.Module(body=[ast.ClassDef(name="Guard", bases=[], keywords=[], body=[method], decorator_list=[])], type_ignores=[])
     ast.fix_missing_locations(module)
