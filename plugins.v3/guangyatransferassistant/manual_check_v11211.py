@@ -40,8 +40,16 @@ class GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin):
 
     @staticmethod
     def _manual_full_chain_trigger_v11211(trigger: str) -> bool:
+        """聊天 /gycheck 与状态页“立即检查缺集”必须进入同一人工完整链。"""
         text = str(trigger or "").strip()
-        return "消息立即检查" in text
+        return any(
+            marker in text
+            for marker in (
+                "消息立即检查",
+                "状态页立即检查缺集",
+                "人工立即检查",
+            )
+        )
 
     def _manual_remaining_ids_v11211(self, ids: Iterable[int]) -> List[int]:
         remaining: List[int] = []
@@ -80,7 +88,7 @@ class GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin):
 
         self._plugin_log(
             "INFO",
-            "【光鸭转存助手】【人工完整检查v1.12.11】收到 /gycheck：%s 个订阅先强刷频道，再对剩余缺口立即执行完整来源链",
+            "【光鸭转存助手】【人工检查】收到人工立即检查：%s 个订阅先强刷频道，再对剩余缺口立即执行完整来源链",
             len(batch),
         )
         try:
@@ -88,7 +96,7 @@ class GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin):
         except Exception as err:
             self._plugin_log(
                 "WARNING",
-                "【光鸭转存助手】【人工完整检查v1.12.11】频道强刷失败，继续使用缓存并执行外部完整链：%s",
+                "【光鸭转存助手】【人工检查】频道强刷失败，继续使用缓存并执行外部完整链：%s",
                 str(err)[:260],
             )
 
@@ -103,13 +111,13 @@ class GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin):
         if not remaining:
             self._plugin_log(
                 "INFO",
-                "【光鸭转存助手】【人工完整检查v1.12.11】频道阶段已覆盖目标，本次 /gycheck 不再访问外部资源站",
+                "【光鸭转存助手】【人工检查】频道阶段已覆盖目标，本次人工检查不再访问外部资源站",
             )
             return None
 
         self._plugin_log(
             "INFO",
-            "【光鸭转存助手】【人工完整检查v1.12.11】频道后仍有 %s 个订阅待处理；立即执行 观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K",
+            "【光鸭转存助手】【人工检查】频道后仍有 %s 个订阅待处理；立即执行 观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K",
             len(remaining),
         )
         self._run_v1115_mode_batch(
