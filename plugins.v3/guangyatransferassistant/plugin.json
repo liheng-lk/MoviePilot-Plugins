@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "Controlled Real-World Beta：Episode Runtime Architecture + Final Plugin Direct→GYING→Magnet→ED2K 链。建议小范围实机验证。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
-  "version": "2.0.12",
+  "description": "Controlled Real-World Beta：r97 可用性加固，修复云添加完成待核验卡死、后台 worker 异常恢复与状态页核验语义。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+  "version": "2.0.13",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,

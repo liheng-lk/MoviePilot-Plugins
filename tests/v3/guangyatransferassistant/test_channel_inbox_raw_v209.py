@@ -311,7 +311,7 @@ def test_transfer_diag_model_and_no_vague_only():
 
 def test_version_still_frozen():
     entry = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
-    assert 'plugin_version = "2.0.12"' in entry
-    assert 'build_id = "20260911-r96"' in entry
+    assert 'plugin_version = "2.0.13"' in entry
+    assert 'build_id = "20260911-r97"' in entry
     assert "_ingest_raw_channel_page_v209" in (PLUGIN / "legacy.py").read_text(encoding="utf-8")
     assert "extract_channel_message_blocks_v209" in (PLUGIN / "channel_message_scan_v209.py").read_text(encoding="utf-8")

@@ -1,3 +1,17 @@
+## v2.0.13-r97 — Usability Hardening（Controlled Real-World Beta）
+
+本版本继续作为 **Controlled Real-World Beta** 发布，重点从“功能齐全”转向“真实运行状态可闭环、异常可恢复、用户能看懂”。
+
+### 本版重点
+- cloudcollection 服务端已 completed、但 fileName/正片回执不足时不再永久 waiting
+- 增加 20 分钟远端正片核验窗口；长期无法确认后转 needs_review 并释放 Episode claim
+- Emby 已满足目标时仅解除重复占位，不把媒体库观察伪造成 Magnet/ED2K 成功回执
+- daemon source worker 异常会写回 retry/waiting；已有 taskId 时禁止重复 create/retry
+- 未验证完成不再写入 completed 健康指标
+- 状态页明确显示“远端任务已完成，正在核验正片”及等待时长
+- final-plugin E2E 保持零额外依赖，修复 CI 对 pytest 的隐式依赖
+- 发布前完整 CI：GuangYa contract tests 1058 run / 0 failed
+
 ## v2.0.12-r96 — Episode Runtime Hotfix（Controlled Real-World Beta）
 
 本版本为 **Controlled Real-World Beta**，不是 Stable / 正式稳定版 / 生产稳定版。

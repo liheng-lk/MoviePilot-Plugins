@@ -284,8 +284,8 @@ def test_partial_in_legacy():
 
 
 def test_version_frozen():
-    assert 'plugin_version = "2.0.12"' in ENTRY
-    assert 'build_id = "20260911-r96"' in ENTRY
+    assert 'plugin_version = "2.0.13"' in ENTRY
+    assert 'build_id = "20260911-r97"' in ENTRY
 
 
 # ---------------------------------------------------------------------------

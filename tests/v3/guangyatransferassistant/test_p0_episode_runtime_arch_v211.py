@@ -82,8 +82,8 @@ def test_mro_runtime_before_target():
     entry = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
     head = entry.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     assert head.index("GuangYaEpisodeRuntimeV211Mixin") < head.index("GuangYaEpisodeTargetV210Mixin")
-    assert 'plugin_version = "2.0.12"' in entry
-    assert 'build_id = "20260911-r96"' in entry
+    assert 'plugin_version = "2.0.13"' in entry
+    assert 'build_id = "20260911-r97"' in entry
 
 
 def test_pure_resolver_emby_gap_override_and_future_safety():
@@ -240,8 +240,8 @@ def test_migration_removes_library_origin_only():
         def _plugin_log(self, *a, **k):
             pass
 
-        plugin_version = "2.0.12"
-        build_id = "20260911-r96"
+        plugin_version = "2.0.13"
+        build_id = "20260911-r97"
 
     class Host(mod.GuangYaEpisodeRuntimeV211Mixin, Base):
         pass

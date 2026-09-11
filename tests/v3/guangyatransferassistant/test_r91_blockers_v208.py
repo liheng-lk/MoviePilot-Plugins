@@ -567,5 +567,5 @@ def test_proof3_managed_gying_total_fail_native_zero():
 
 
 def test_version_stays_208_r91():
-    assert 'plugin_version = "2.0.12"' in ENTRY
-    assert 'build_id = "20260911-r96"' in ENTRY
+    assert 'plugin_version = "2.0.13"' in ENTRY
+    assert 'build_id = "20260911-r97"' in ENTRY

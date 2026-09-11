@@ -99,8 +99,8 @@ class FakeWorld:
                 self._airing_due_owner_v211 = ""
                 self._airing_due_cycle_v211 = 0
                 self._host_airing_heartbeat_v211 = 0.0
-                self.plugin_version = "2.0.12"
-                self.build_id = "20260911-r96"
+                self.plugin_version = "2.0.13"
+                self.build_id = "20260911-r97"
 
             def _is_movie_subscription(self, s):
                 return False
