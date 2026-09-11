@@ -887,8 +887,31 @@ class GuangYaTransferAssistant(_PluginBase):
     def get_state(self) -> bool:
         return self._enabled
 
+    @staticmethod
+    def _flow_stage_from_log(rendered: str, level_name: str = "INFO") -> str:
+        """把大量内部日志收敛成用户可读的单线阶段；详细原文仍保存在 debug 日志。"""
+        text = str(rendered or "")
+        level = str(level_name or "INFO").upper()
+        if level in {"WARNING", "ERROR", "EXCEPTION", "CRITICAL"}:
+            return "异常"
+        stage_markers = (
+            ("任务", ("【来源调度】", "【主动检索派发】", "【立即检查】", "【新订阅】")),
+            ("缺口", ("【EpisodeTarget", "【缺集", "【覆盖修正】", "remaining_actual_gap", "due gap")),
+            ("频道", ("【频道事件】", "【频道补偿", "【频道命中】", "【缓存命中】", "【缓存未命中】")),
+            ("观影", ("【观影执行】", "【观影搜索】", "【GYING", "CloakBrowser", "PanSou")),
+            ("候选", ("【候选", "identity_reject", "【媒体身份", "【资源决策")),
+            ("转存", ("【迅雷秒传】", "【原生云添加】", "【转存】", "【云添加终态】", "【移动终态】")),
+            ("核验", ("PENDING_VERIFY", "【落盘确认】", "【远端完成待核验】", "REMOTE_VERIFY")),
+            ("命名", ("【命名】", "【重命名", "rename")),
+            ("完成", ("【订阅完成", "【完成】", "remaining=无", "remaining_actual_gap=[]")),
+        )
+        for stage, markers in stage_markers:
+            if any(marker in text for marker in markers):
+                return stage
+        return ""
+
     def _plugin_log(self, level: str, message: Any, *args: Any) -> None:
-        """同时写 MoviePilot 日志和插件自己的持久日志，页面只展示本插件记录。"""
+        """系统日志保留全部细节；插件页只保留关键流程节点与异常。"""
         level_name = str(level or "INFO").upper()
         try:
             rendered = str(message) % args if args else str(message)
@@ -900,14 +923,43 @@ class GuangYaTransferAssistant(_PluginBase):
             log_method(message, *args)
         except Exception:
             pass
+
         try:
             now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            stage = self._flow_stage_from_log(rendered, level_name)
             with self._state_lock:
-                rows = list(self.get_data("plugin_logs") or [])
-                rows.append({"time": now, "level": level_name, "message": rendered})
-                if len(rows) > 1000:
-                    rows = rows[-1000:]
-                self.save_data("plugin_logs", rows)
+                # 完整插件细节独立保存；排障 API 可按 detail=true 读取。
+                debug_rows = list(self.get_data("plugin_debug_logs") or [])
+                debug_rows.append({
+                    "time": now,
+                    "level": level_name,
+                    "stage": stage or "细节",
+                    "message": rendered,
+                })
+                if len(debug_rows) > 1000:
+                    debug_rows = debug_rows[-1000:]
+                self.save_data("plugin_debug_logs", debug_rows)
+
+                # 用户主日志只保留业务流程与异常，避免 cache/线程/PoW/poll 细节把同一任务打散。
+                if stage:
+                    rows = list(self.get_data("plugin_logs") or [])
+                    row = {
+                        "time": now,
+                        "level": level_name,
+                        "stage": stage,
+                        "message": rendered,
+                    }
+                    if rows and str(rows[-1].get("stage") or "") == stage and str(rows[-1].get("message") or "") == rendered:
+                        rows[-1] = {
+                            **rows[-1],
+                            "time": now,
+                            "repeat": int(rows[-1].get("repeat") or 1) + 1,
+                        }
+                    else:
+                        rows.append(row)
+                    if len(rows) > 400:
+                        rows = rows[-400:]
+                    self.save_data("plugin_logs", rows)
         except Exception:
             # 日志持久化失败不能影响转存主流程。
             pass
@@ -1397,11 +1449,11 @@ class GuangYaTransferAssistant(_PluginBase):
 
         plugin_log_rows = list(self.get_data("plugin_logs") or [])
         plugin_log_items = []
-        for row in reversed(plugin_log_rows[-1000:]):
+        for row in reversed(plugin_log_rows[-400:]):
             plugin_log_items.append({
                 "component": "VListItem",
                 "props": {
-                    "title": f"{row.get('time') or '-'} · {row.get('level') or 'INFO'}",
+                    "title": f"{row.get('time') or '-'} · {row.get('stage') or '流程'} · {row.get('level') or 'INFO'}" + (f" · ×{int(row.get('repeat') or 1)}" if int(row.get('repeat') or 1) > 1 else ""),
                     "subtitle": str(row.get("message") or ""),
                 },
             })
@@ -1409,8 +1461,8 @@ class GuangYaTransferAssistant(_PluginBase):
             "component": "VCard",
             "props": {"variant": "outlined", "class": "mt-4"},
             "content": [
-                {"component": "VCardTitle", "text": f"光鸭转存助手插件日志（{len(plugin_log_rows[-1000:])} 条）"},
-                {"component": "VCardText", "text": "这里只显示光鸭转存助手自己的完整日志，不再混入 MoviePilot 全局日志。重点查看【匹配】【分享解析】【文件识别】【增量】【转存】【落盘确认】阶段。"},
+                {"component": "VCardTitle", "text": f"光鸭转存流程（最近 {len(plugin_log_rows[-400:])} 条）"},
+                {"component": "VCardText", "text": "默认只显示：任务 → 缺口 → 频道 → 观影 → 候选 → 转存 → 核验 → 命名 → 完成，以及异常。完整技术细节仍写 MoviePilot 日志，并可通过 /plugin_logs?detail=true 获取。"},
                 {"component": "VCardActions", "content": [{
                     "component": "VBtn",
                     "props": {"size": "small", "variant": "text", "color": "warning", "prepend-icon": "mdi-delete-sweep-outline"},
@@ -1518,21 +1570,29 @@ class GuangYaTransferAssistant(_PluginBase):
             {"path": "/reset_state", "endpoint": self.api_reset_state, "methods": ["POST"], "summary": "安全重置指定订阅的频道检查状态，保留媒体事实/库存/进度"},
             {"path": "/cancel_pending", "endpoint": self.api_cancel_pending, "methods": ["POST"], "summary": "人工忽略指定订阅待落盘任务，旧消息不自动重放"},
             {"path": "/daily_summary", "endpoint": self.api_daily_summary, "methods": ["POST"], "summary": "立即发送一次光鸭转存摘要"},
-            {"path": "/plugin_logs", "endpoint": self.api_plugin_logs, "methods": ["GET"], "summary": "读取光鸭转存助手完整插件日志"},
+            {"path": "/plugin_logs", "endpoint": self.api_plugin_logs, "methods": ["GET"], "summary": "读取光鸭转存助手流程日志；detail=true 返回完整调试日志"},
             {"path": "/clear_plugin_logs", "endpoint": self.api_clear_plugin_logs, "methods": ["POST"], "summary": "清空光鸭转存助手插件日志"},
         ]
 
-    def api_plugin_logs(self, limit: int = 1000) -> Dict[str, Any]:
+    def api_plugin_logs(self, limit: int = 400, detail: bool = False) -> Dict[str, Any]:
         try:
-            limit = max(1, min(int(limit or 1000), 1000))
+            max_limit = 1000 if bool(detail) else 400
+            limit = max(1, min(int(limit or max_limit), max_limit))
         except (TypeError, ValueError):
-            limit = 1000
-        rows = list(self.get_data("plugin_logs") or [])[-limit:]
-        return {"success": True, "count": len(rows), "items": rows}
+            limit = 1000 if bool(detail) else 400
+        key = "plugin_debug_logs" if bool(detail) else "plugin_logs"
+        rows = list(self.get_data(key) or [])[-limit:]
+        return {
+            "success": True,
+            "count": len(rows),
+            "detail": bool(detail),
+            "items": rows,
+        }
 
     def api_clear_plugin_logs(self) -> Dict[str, Any]:
         self.save_data("plugin_logs", [])
-        return {"success": True, "message": "光鸭转存助手插件日志已清空"}
+        self.save_data("plugin_debug_logs", [])
+        return {"success": True, "message": "光鸭转存助手流程日志与详细调试日志已清空"}
 
     def api_refresh(self) -> Dict[str, Any]:
         self._inspect_cache.clear()
