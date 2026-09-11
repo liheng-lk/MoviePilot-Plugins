@@ -276,3 +276,21 @@ def test_focused_flow_log_keeps_user_initiated_actions_visible():
     for marker in ("【人工检查】", "【页面操作】", "【控制台】"):
         assert marker in stage
     assert "【服务】" not in stage
+
+
+def test_focused_flow_page_groups_concurrent_runs_instead_of_flat_reverse_stream():
+    assert "flow_groups: Dict[str, Dict[str, Any]] = {}" in legacy_text
+    assert 'group_key = f"run:{run_id}"' in legacy_text
+    assert 'group_key = f"sid:{sid}:{stage}"' in legacy_text
+    assert '"component": "VListSubheader"' in legacy_text
+    assert "ordered_flow_groups" in legacy_text
+    assert "组内按 任务 → 缺口 → 频道 → 观影 → 候选 → 转存 → 核验 → 命名 → 完成" in legacy_text
+    assert "subscribe_id/run_id 精确筛选" in legacy_text
+
+
+def test_focused_flow_display_strips_version_suffix_only_from_user_log_copy():
+    assert "def _flow_log_display_message" in legacy_text
+    assert '"message": rendered' in legacy_text  # debug detail keeps raw text
+    assert '"message": flow_message' in legacy_text  # focused UI gets cleaned text
+    helper = legacy_text.split("def _flow_log_display_message", 1)[1].split("def _plugin_log", 1)[0]
+    assert "[vV]" in helper
