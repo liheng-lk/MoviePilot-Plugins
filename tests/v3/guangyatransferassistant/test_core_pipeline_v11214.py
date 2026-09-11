@@ -184,18 +184,26 @@ def test_channel_xunlei_never_turns_passive_push_into_gying_poll():
 
 
 def test_gying_guangya_share_enters_direct_share_chain_without_persisting_channel_index():
-    hydrate = CORE.split("    def _hydrate_viewing_guangya_shares_v11214(", 1)[1].split("    # ------------------------------------------------------------------", 1)[0]
+    base = CORE.split("    def _hydrate_viewing_guangya_shares_base_v11214(", 1)[1].split(
+        "    # ------------------------------------------------------------------",
+        1,
+    )[0]
+    wrapper = CORE.split("    def _hydrate_viewing_guangya_shares_v11214(", 1)[1].split(
+        "    def _tmdb_id_tv_v11214",
+        1,
+    )[0]
     getter = CORE.split("    def get_data(", 1)[1].split("    def _route_mode_v11214", 1)[0]
-    assert "_gying_raw_results" in hydrate
-    assert "_provider_candidate_matches" in hydrate
-    assert "_canonical_share_url" in hydrate
-    assert '"provider://viewing"' in hydrate
-    assert '"观影光鸭分享"' in hydrate
-    assert "provider_share_entries" in hydrate
-    assert "save_data(\"channel_index\"" not in hydrate
+    assert "_gying_raw_results" in base
+    assert "_provider_candidate_matches" in base
+    assert "_canonical_share_url" in base
+    assert '"provider://viewing"' in base
+    assert '"观影光鸭分享"' in base
+    assert "provider_share_entries" in base
+    assert "save_data(\"channel_index\"" not in base
     assert 'str(key or "") != "channel_index"' in getter
     assert "provider_share_entries" in getter
-    assert "_gying_alias_scope_v11212" in CORE
+    assert "_gying_alias_scope_v11212" in wrapper
+    assert "_hydrate_viewing_guangya_shares_base_v11214" in wrapper
 
 
 def test_tv_exact_tmdb_aliases_are_season_aware_and_not_fuzzy():
