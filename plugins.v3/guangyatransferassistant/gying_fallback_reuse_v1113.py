@@ -20,7 +20,7 @@ from typing import Any
 
 import requests
 
-from .gying_browser_profile_v1112 import GuangYaGyingBrowserProfileV1112Mixin
+from .gying_browser_v1112 import GuangYaGyingBrowserV1112Mixin
 
 
 _FALLBACK_NODE_COOKIES_V1113 = frozenset(
@@ -66,7 +66,7 @@ def _persistent_cookie_header_v1113(session: requests.Session) -> str:
     return "; ".join(pairs)
 
 
-class GuangYaGyingFallbackReuseV1113Mixin(GuangYaGyingBrowserProfileV1112Mixin):
+class GuangYaGyingFallbackReuseV1113Mixin(GuangYaGyingBrowserV1112Mixin):
     """兼容历史类名；实际行为是隔离持久化挑战态，避免 stale PoW 回归。"""
 
     build_id = "20260902-r27"
