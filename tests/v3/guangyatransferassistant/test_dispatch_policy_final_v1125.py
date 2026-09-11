@@ -204,3 +204,14 @@ def test_pending_recheck_dispatch_is_verify_only_and_never_falls_into_resource_c
     ):
         assert forbidden not in branch
     assert "return None" in branch
+
+
+
+def test_final_dispatch_explicitly_routes_page_chat_and_console_manual_actions_to_one_runner():
+    dispatch = _method("_run_dispatch_trigger_v1125", "_run_reliability_route_batch")
+    manual_pos = dispatch.index('manual_check = getattr(self, "_manual_full_chain_trigger_v11211", None)')
+    recovery_pos = dispatch.index('if "频道故障自动恢复" in text:')
+    assert manual_pos < recovery_pos
+    assert 'manual_runner = getattr(self, "_run_manual_full_chain_v11211", None)' in dispatch
+    assert "manual_check(text)" in dispatch
+    assert "return manual_runner(ids, text)" in dispatch
