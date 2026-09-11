@@ -258,3 +258,14 @@ def test_no_silent_native_fallback_for_selected_search_route():
     assert "guangya_only" in one
     assert "return None" in one
     assert "_call_original_search" not in one.split("if managed:", 1)[1].split("self._route_trace(", 1)[0]
+
+
+def test_plugin_logs_use_focused_flow_timeline_with_debug_detail_escape_hatch():
+    for stage in ("任务", "缺口", "频道", "观影", "候选", "转存", "核验", "命名", "完成", "异常"):
+        assert f'"{stage}"' in legacy_text
+    assert "def _flow_stage_from_log" in legacy_text
+    assert '"plugin_debug_logs"' in legacy_text
+    assert "detail: bool = False" in legacy_text
+    assert 'key = "plugin_debug_logs" if bool(detail) else "plugin_logs"' in legacy_text
+    assert "任务 → 缺口 → 频道 → 观影 → 候选 → 转存 → 核验 → 命名 → 完成" in legacy_text
+    assert "repeat" in legacy_text
