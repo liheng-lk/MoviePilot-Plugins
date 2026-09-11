@@ -158,3 +158,14 @@ def test_final_entry_docstring_is_runtime_contract_not_version_history():
         "CHANGELOG.md",
     ):
         assert token in doc
+
+
+
+def test_local_validator_covers_root_units_contracts_and_version_consistency():
+    validator = (ROOT / "scripts" / "validate_guangya.py").read_text(encoding="utf-8")
+    assert '"test_guangya*.py"' in validator
+    assert "run_contract_tests.py" in validator
+    assert "package.v3.json" in validator
+    assert "plugin.json" in validator
+    assert "plugin_version" in validator
+    assert "--full" in validator
