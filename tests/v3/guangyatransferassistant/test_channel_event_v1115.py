@@ -19,11 +19,11 @@ def _method(name: str, next_name: str) -> str:
     return patch.split(f"    def {name}(", 1)[1].split(f"    def {next_name}(", 1)[0]
 
 
-def test_v1115_layer_parses_and_is_wired_above_xunlei_final():
+def test_v1115_layer_parses_and_is_wired_above_governance():
     ast.parse(patch, filename=str(PATCH))
     ast.parse(cursor, filename=str(CURSOR))
     ast.parse(ui, filename=str(UI))
-    assert "class GuangYaChannelEventV1115Mixin(GuangYaXunleiFinalV1114Mixin):" in patch
+    assert "class GuangYaChannelEventV1115Mixin(GuangYaGovernanceV1114Mixin):" in patch
     assert "class GuangYaChannelCursorEventV1115Mixin(GuangYaChannelEventV1115Mixin):" in cursor
     assert "from .console_control_v1116 import GuangYaConsoleControlV1116Mixin" in ui
     assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlV1116Mixin):" in ui
