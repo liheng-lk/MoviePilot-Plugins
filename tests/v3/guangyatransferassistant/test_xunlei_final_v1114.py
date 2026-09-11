@@ -16,8 +16,8 @@ def test_final_xunlei_layer_parses_and_precedes_governance():
     ast.parse(TEXT, filename=str(FINAL))
     ast.parse(UI_TEXT, filename=str(UI))
     assert "class GuangYaXunleiFinalV1114Mixin(GuangYaGovernanceV1114Mixin):" in TEXT
-    assert "from .console_control_cursor_v1116 import GuangYaConsoleControlCursorV1116Mixin" in UI_TEXT
-    assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlCursorV1116Mixin):" in UI_TEXT
+    assert "from .console_control_v1116 import GuangYaConsoleControlV1116Mixin" in UI_TEXT
+    assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlV1116Mixin):" in UI_TEXT
 
 
 def test_real_configured_captcha_device_pair_does_not_force_client_version():
