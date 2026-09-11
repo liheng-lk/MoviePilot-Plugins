@@ -53,6 +53,22 @@ def _show_name_v11226(subscribe: Any) -> str:
     return _safe_name_v11226(raw)
 
 
+def _strip_media_folder_suffix_v11226(value: Any) -> str:
+    """从 MoviePilot 目标作品目录提取纯作品名，不把 Season / TMDB 标记带进文件名。"""
+    text = str(value or "").strip()
+    text = re.sub(r"\s*[{[]\s*(?:tmdb|tvdb|imdb)?id?\s*=\s*[^}\]]+[}\]]\s*$", "", text, flags=re.I)
+    text = re.sub(r"\s*[（(]\s*(?:19\d{2}|20\d{2})\s*[）)]\s*$", "", text).strip()
+    return _safe_name_v11226(text)
+
+
+def _is_season_folder_v11226(value: Any) -> bool:
+    text = str(value or "").strip()
+    return bool(re.fullmatch(
+        r"(?i)(?:season\s*\d{1,3}|s\d{1,3}|第\s*\d{1,3}\s*季|specials?)",
+        text,
+    ))
+
+
 def _split_name_ext_v11226(name: Any) -> Tuple[str, str]:
     text = str(name or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
     if not text:
@@ -64,8 +80,12 @@ def _split_name_ext_v11226(name: Any) -> Tuple[str, str]:
     return text, ""
 
 
-def _episode_tag_v11226(subscribe: Any, path: Any) -> str:
-    """生成 SxxExx / SxxExx-Eyy；无法解析集号时仅返回季号或空串。"""
+def _episode_tag_v11226(
+    subscribe: Any,
+    path: Any,
+    explicit_episodes: Optional[Iterable[Any]] = None,
+) -> str:
+    """生成 SxxExx / SxxExx-Eyy；优先文件真实集号，弱命名时使用 planner 已解析集号。"""
     season, episodes = _episode_numbers(path)
     sub_season = getattr(subscribe, "season", None)
     if season is None and sub_season not in (None, ""):
@@ -73,6 +93,16 @@ def _episode_tag_v11226(subscribe: Any, path: Any) -> str:
             season = int(sub_season)
         except (TypeError, ValueError):
             season = None
+    if not episodes and explicit_episodes:
+        parsed: List[int] = []
+        for raw in explicit_episodes:
+            try:
+                value = int(raw)
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                parsed.append(value)
+        episodes = sorted(set(parsed))
     if not episodes:
         if season is None:
             return ""
@@ -87,25 +117,88 @@ def _episode_tag_v11226(subscribe: Any, path: Any) -> str:
     return f"S{int(season):02d}E{values[0]:02d}-E{values[-1]:02d}"
 
 
+def _release_tail_v11226(
+    original: Any,
+    *,
+    explicit_episodes: Optional[Iterable[Any]] = None,
+    year: Any = None,
+    is_movie: bool = False,
+) -> str:
+    """保留原资源季集号之后的清晰度/来源/编码/音轨/发布组，不保留旧作品名和旧集号。"""
+    stem, _ext = _split_name_ext_v11226(original)
+    text = str(stem or "").strip()
+    if not text:
+        return ""
+
+    if is_movie:
+        year_text = str(year or "").strip()
+        if year_text and re.fullmatch(r"(?:19|20)\d{2}", year_text):
+            matched = re.search(rf"(?<!\d){re.escape(year_text)}(?!\d)", text)
+            if matched:
+                text = text[matched.end():]
+        # 没有年份锚点时宁可不剪标题，避免把错误标题当发布信息。
+        elif not re.search(r"(?i)(?:2160p|1080p|720p|WEB[- .]?DL|WEBRip|BluRay|REMUX|HDR|DV|HEVC|H[ .]?26[45]|x26[45])", text):
+            return ""
+    else:
+        matched = re.search(
+            r"(?i)S\d{1,3}[ ._-]*E\d{1,4}(?:[ ._-]*(?:-|~|to)[ ._-]*E?\d{1,4})?",
+            text,
+        )
+        if matched:
+            text = text[matched.end():]
+        else:
+            # 03.2160p / E03.WEB-DL 等弱命名，只有 planner 已确认唯一集号时才移除开头集号。
+            explicit = []
+            for raw in explicit_episodes or []:
+                try:
+                    value = int(raw)
+                except (TypeError, ValueError):
+                    continue
+                if value > 0:
+                    explicit.append(value)
+            explicit = sorted(set(explicit))
+            if len(explicit) == 1:
+                ep = explicit[0]
+                weak = re.match(rf"(?i)^\s*(?:EP?|第)?0*{ep}(?:集|话)?(?=$|[ ._\-]+)", text)
+                if weak:
+                    text = text[weak.end():]
+
+    text = re.sub(r"^[\s._\-–—]+", "", text)
+    text = re.sub(r"[\s._\-–—]+$", "", text)
+    text = _FORBIDDEN_NAME_V11226.sub(" ", text)
+    text = re.sub(r"\s+", " ", text).strip(" .-_")
+    return text[:180].strip()
+
+
 def _canonical_transfer_name_v11226(
     subscribe: Any,
     original: Any,
     *,
     is_movie: bool = False,
+    show_name: str = "",
+    explicit_episodes: Optional[Iterable[Any]] = None,
 ) -> str:
-    """剧集名 + 季集号 + 原扩展名；无法解析集号时仅用剧集名。"""
-    show = _show_name_v11226(subscribe)
+    """MP 识别作品名 + 季集号 + 原资源发布信息 + 原扩展名。"""
+    show = _safe_name_v11226(show_name) or _show_name_v11226(subscribe)
     _, ext = _split_name_ext_v11226(original)
     if not show:
         base = str(original or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
         return _safe_name_v11226(base, 240)
-    if is_movie:
-        return f"{show}{ext}"
-    tag = _episode_tag_v11226(subscribe, original)
-    if tag:
-        return f"{show} {tag}{ext}"
-    return f"{show}{ext}"
 
+    tail = _release_tail_v11226(
+        original,
+        explicit_episodes=explicit_episodes,
+        year=getattr(subscribe, "year", None),
+        is_movie=is_movie,
+    )
+    if is_movie:
+        core = show
+    else:
+        tag = _episode_tag_v11226(subscribe, original, explicit_episodes=explicit_episodes)
+        core = f"{show} - {tag}" if tag else show
+    if tail:
+        core = f"{core} - {tail}"
+    return f"{_safe_name_v11226(core, 230)}{ext}"
 
 def _clean_channel_title_v11226(value: Any) -> str:
     """剥离频道模板噪声，只保留可强匹配的作品标题。"""
@@ -185,11 +278,35 @@ class GuangYaChannelTitleRenameV11226Mixin:
         media_type = str(getattr(subscribe, "type", "") or getattr(subscribe, "media_type", "") or "").lower()
         return media_type in {"movie", "movies", "电影"}
 
-    def _canonical_transfer_name_v11226(self, subscribe: Any, original: Any) -> str:
+    def _mp_recognized_show_name_v11226(self, subscribe: Any) -> str:
+        """优先使用 MoviePilot 已计算的目标作品目录，避免转存助手自行猜作品名。"""
+        try:
+            target = str(self._target_path(subscribe) or "").replace("\\", "/").rstrip("/")
+        except Exception:
+            target = ""
+        if target:
+            parts = [part.strip() for part in target.split("/") if part.strip()]
+            for part in reversed(parts):
+                if _is_season_folder_v11226(part):
+                    continue
+                candidate = _strip_media_folder_suffix_v11226(part)
+                if candidate:
+                    return candidate
+        return _show_name_v11226(subscribe)
+
+    def _canonical_transfer_name_v11226(
+        self,
+        subscribe: Any,
+        original: Any,
+        *,
+        explicit_episodes: Optional[Iterable[Any]] = None,
+    ) -> str:
         return _canonical_transfer_name_v11226(
             subscribe,
             original,
             is_movie=self._is_movie_for_naming_v11226(subscribe),
+            show_name=self._mp_recognized_show_name_v11226(subscribe),
+            explicit_episodes=explicit_episodes,
         )
 
     def _resolve_offline_source(self, source: Dict[str, Any], subscribe: Any) -> Dict[str, Any]:
@@ -202,17 +319,17 @@ class GuangYaChannelTitleRenameV11226Mixin:
             or source.get("label")
             or ""
         ).strip()
-        hint = " ".join(
-            str(part or "")
-            for part in (
-                original,
-                source.get("episode_hint"),
-                source.get("label"),
-                ",".join(str(v) for v in (source.get("resolved_episodes") or [])),
-                ",".join(str(v) for v in (source.get("transfer_episodes") or [])),
-            )
+        explicit_episodes = (
+            source.get("transfer_episodes")
+            or source.get("resolved_episodes")
+            or source.get("target_episodes")
+            or []
         )
-        desired = self._canonical_transfer_name_v11226(subscribe, hint or original)
+        desired = self._canonical_transfer_name_v11226(
+            subscribe,
+            original,
+            explicit_episodes=explicit_episodes,
+        )
         if desired and desired != str(source.get("label") or ""):
             source["label"] = desired
             source_id = str(source.get("id") or "")
@@ -221,11 +338,11 @@ class GuangYaChannelTitleRenameV11226Mixin:
                     source_id,
                     requested_name=desired,
                     original_resolved_name=original[:300],
-                    naming_style_v11226="show_season_episode",
+                    naming_style_v11226="mp_title_episode_release",
                 )
             self._plugin_log(
                 "INFO",
-                "【光鸭转存助手】【命名v1.12.26】云添加名称：原名=%s 新名=%s",
+                "【光鸭转存助手】【命名】云添加名称：原名=%s 新名=%s",
                 original[:180] or "-",
                 desired[:220],
             )
@@ -235,7 +352,17 @@ class GuangYaChannelTitleRenameV11226Mixin:
         prepared = dict(row or {})
         old_name = str(prepared.get("name") or str(prepared.get("path") or "").rsplit("/", 1)[-1] or "file").strip()
         path_hint = str(prepared.get("path") or old_name)
-        desired = self._canonical_transfer_name_v11226(subscribe, path_hint)
+        explicit_episodes = (
+            prepared.get("transfer_episodes")
+            or prepared.get("resolved_episodes")
+            or prepared.get("episodes")
+            or []
+        )
+        desired = self._canonical_transfer_name_v11226(
+            subscribe,
+            path_hint,
+            explicit_episodes=explicit_episodes,
+        )
         if desired and desired != old_name:
             prepared["name"] = desired
             raw_path = str(prepared.get("path") or old_name).replace("\\", "/")
@@ -243,7 +370,7 @@ class GuangYaChannelTitleRenameV11226Mixin:
             prepared["path"] = f"{parent}/{desired}" if parent else desired
             self._plugin_log(
                 "INFO",
-                "【光鸭转存助手】【命名v1.12.26】迅雷秒传名称：%s -> %s",
+                "【光鸭转存助手】【命名】迅雷秒传名称：%s -> %s",
                 old_name[:180],
                 desired[:220],
             )
@@ -285,7 +412,7 @@ class GuangYaChannelTitleRenameV11226Mixin:
             except Exception as err:
                 self._plugin_log(
                     "WARNING",
-                    "【光鸭转存助手】【命名v1.12.26】读取已转存目录失败：%s (%s)",
+                    "【光鸭转存助手】【命名】读取已转存目录失败：%s (%s)",
                     folder_path,
                     str(err)[:180],
                 )
@@ -295,7 +422,17 @@ class GuangYaChannelTitleRenameV11226Mixin:
             for item in group:
                 path = str(item.get("effective_path") or item.get("relative_path") or item.get("name") or "").replace("\\", "/")
                 old_name = path.rsplit("/", 1)[-1]
-                desired = self._canonical_transfer_name_v11226(subscribe, path)
+                explicit_episodes = (
+                    item.get("transfer_episodes")
+                    or item.get("resolved_episodes")
+                    or item.get("episodes")
+                    or []
+                )
+                desired = self._canonical_transfer_name_v11226(
+                    subscribe,
+                    path,
+                    explicit_episodes=explicit_episodes,
+                )
                 if not desired or desired == old_name:
                     continue
                 if desired in used_names and desired != old_name:
@@ -319,21 +456,21 @@ class GuangYaChannelTitleRenameV11226Mixin:
                         used_names.add(desired)
                         self._plugin_log(
                             "INFO",
-                            "【光鸭转存助手】【命名v1.12.26】分享落盘后重命名：%s -> %s",
+                            "【光鸭转存助手】【命名】分享落盘后重命名：%s -> %s",
                             old_name[:180],
                             desired[:220],
                         )
                     else:
                         self._plugin_log(
                             "WARNING",
-                            "【光鸭转存助手】【命名v1.12.26】分享已成功但重命名未确认：%s -> %s",
+                            "【光鸭转存助手】【命名】分享已成功但重命名未确认：%s -> %s",
                             old_name[:160],
                             desired[:200],
                         )
                 except Exception as err:
                     self._plugin_log(
                         "WARNING",
-                        "【光鸭转存助手】【命名v1.12.26】分享已成功但重命名异常：%s",
+                        "【光鸭转存助手】【命名】分享已成功但重命名异常：%s",
                         str(err)[:220],
                     )
         return renamed
