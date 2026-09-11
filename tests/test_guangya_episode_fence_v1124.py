@@ -84,7 +84,7 @@ class GuangYaEpisodeFenceV1124Tests(unittest.TestCase):
         self.assertIn("旧任务无法安全裁剪，已停止以避免重复", prepare)
 
     def test_success_receipt_immediately_cancels_or_resizes_other_offline_tasks(self):
-        method = self.fence.split("    def _supersede_offline_sources_v1124(", 1)[1].split(
+        method = self.fence.rsplit("    def _supersede_offline_sources_v1124(", 1)[1].split(
             "    def _submit_offline_source(", 1
         )[0]
         self.assertIn("overlap = targets.intersection(acquired)", method)
@@ -110,7 +110,7 @@ class GuangYaEpisodeFenceV1124Tests(unittest.TestCase):
         self.assertIn("with lock:", main)
         self.assertIn("lock = self._episode_fence_lock_v1124(subscribe)", offline)
         self.assertIn("with lock:", offline)
-        final_submit = self.fence.split("    def _submit_offline_source(", 1)[1].split(
+        final_submit = self.fence.rsplit("    def _submit_offline_source(", 1)[1].split(
             "    def _poll_offline_source(", 1
         )[0]
         self.assertIn("context.source_id = str(source_id or \"\")", final_submit)
@@ -129,7 +129,7 @@ class GuangYaEpisodeFenceV1124Tests(unittest.TestCase):
         self.assertIn("self._remember_episode_facts(subscribe, episodes", remember_media)
 
     def test_movie_inflight_source_blocks_second_xunlei_movie(self):
-        method = self.fence.split("    def _dispatch_xunlei_flash(", 1)[1]
+        method = self.fence.rsplit("    def _dispatch_xunlei_flash(", 1)[1]
         self.assertIn("pending = dict(self._pending_reservations(subscribe) or {})", method)
         self.assertIn('if bool(pending.get("movie")):', method)
         self.assertIn("电影已有成功/在途获取任务，跳过重复迅雷秒传", method)
