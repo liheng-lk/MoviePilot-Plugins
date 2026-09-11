@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -94,3 +95,49 @@ def test_architecture_declares_authority_first_and_no_new_patch_file_policy():
         "Final Plugin E2E",
     ):
         assert token in architecture
+
+
+
+def _runtime_import_graph():
+    modules = {
+        path.stem: path
+        for path in PLUGIN.glob("*.py")
+    }
+    graph = {stem: set() for stem in modules}
+    for stem, path in modules.items():
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom) or node.level != 1:
+                continue
+            # from .foo import Bar
+            if node.module:
+                target = node.module.split(".", 1)[0]
+                if target in modules:
+                    graph[stem].add(target)
+                continue
+            # from . import legacy
+            for alias in node.names:
+                target = str(alias.name or "").split(".", 1)[0]
+                if target in modules:
+                    graph[stem].add(target)
+    return modules, graph
+
+
+def test_every_runtime_module_is_reachable_from_final_plugin_entry():
+    """没有运行时 import 路径的 .py 会误导 Fork 开发者，应删除或显式接入 Authority。"""
+    modules, graph = _runtime_import_graph()
+    reachable = {"__init__"}
+    queue = ["__init__"]
+    while queue:
+        current = queue.pop(0)
+        for target in graph.get(current, set()):
+            if target not in reachable:
+                reachable.add(target)
+                queue.append(target)
+
+    unreachable = sorted(set(modules) - reachable)
+    assert not unreachable, (
+        "runtime-unreachable modules: "
+        + ", ".join(f"{name}.py" for name in unreachable)
+        + "; delete dead code or connect it through an explicit Authority import"
+    )
