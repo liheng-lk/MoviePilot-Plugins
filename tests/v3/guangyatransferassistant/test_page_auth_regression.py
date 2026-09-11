@@ -57,6 +57,7 @@ class _FakePlugin:
         self.queued = []
         self.logs = []
         self.original_checks = 0
+        self.console_actions = []
 
     def _find_subscription(self, sid):
         if int(sid or 0) != 7:
@@ -74,6 +75,9 @@ class _FakePlugin:
 
     def _record_route_health(self, **kwargs):
         self.health = kwargs
+
+    def _record_console_action_v1116(self, path, result):
+        self.console_actions.append((path, dict(result or {})))
 
     @staticmethod
     def _now_text():
@@ -115,6 +119,14 @@ def test_check_missing_returns_immediately_and_queues_existing_reliable_worker()
     }
     assert plugin.original_checks == 0
     assert plugin.queued == [([7], "状态页立即检查缺集")]
+    assert plugin.console_actions
+    path, receipt = plugin.console_actions[-1]
+    assert path == "/check_missing"
+    assert receipt["success"] is True
+    assert receipt["queued"] is True
+    assert receipt["subscribe_id"] == 7
+    assert "人工完整检查队列" in receipt["message"]
+    assert "观影/迅雷/光鸭/Magnet/ED2K" in result["message"]
 
 
 def test_fast_status_action_is_normalized_to_strict_v3_envelope():
@@ -141,3 +153,20 @@ def test_reset_state_endpoint_does_not_reload_plugin_or_rewrite_config():
     assert "update_config" not in api
     assert "_save_config" not in api
     assert "PluginManager" not in api
+
+
+def test_recheck_pending_receipt_explains_no_forced_resubmit():
+    plugin = _FakePlugin()
+    routes = auth.force_bear_auth([
+        {
+            "path": "/recheck_pending",
+            "endpoint": plugin.legacy_check_missing,
+            "methods": ["POST"],
+        }
+    ])
+    result = routes[0]["endpoint"](subscribe_id=7)
+    assert result["success"] is True
+    assert plugin.queued == [([7], "状态页复查待落盘")]
+    assert "不会强制重复提交" in result["message"]
+    assert plugin.console_actions[-1][0] == "/recheck_pending"
+    assert "待落盘复查队列" in plugin.console_actions[-1][1]["message"]
