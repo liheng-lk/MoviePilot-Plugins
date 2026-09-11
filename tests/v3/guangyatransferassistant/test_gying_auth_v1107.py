@@ -8,19 +8,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 AUTH = PLUGIN / "gying_auth_v1107.py"
-AUTH_VERIFIED = PLUGIN / "gying_auth_verified_v1107.py"
 STABILITY = PLUGIN / "stability_v1106.py"
 ENTRY = PLUGIN / "__init__.py"
 
 
 auth_text = AUTH.read_text(encoding="utf-8")
-verified_text = AUTH_VERIFIED.read_text(encoding="utf-8")
 stability_text = STABILITY.read_text(encoding="utf-8")
 entry_text = ENTRY.read_text(encoding="utf-8")
 
 
 def test_v1107_files_parse_and_release_metadata_are_aligned():
-    for path, text in ((AUTH, auth_text), (AUTH_VERIFIED, verified_text), (STABILITY, stability_text), (ENTRY, entry_text)):
+    for path, text in ((AUTH, auth_text), (STABILITY, stability_text), (ENTRY, entry_text)):
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
@@ -30,10 +28,10 @@ def test_v1107_files_parse_and_release_metadata_are_aligned():
         assert version in package.get("history", {})
 
 
-def test_v1107_auth_layer_is_outermost_through_stability_gate():
-    assert "from .gying_auth_verified_v1107 import GuangYaGyingAuthVerifiedV1107Mixin" in stability_text
-    assert "class GuangYaStabilityV1106Mixin(GuangYaGyingAuthVerifiedV1107Mixin):" in stability_text
-    assert "class GuangYaGyingAuthVerifiedV1107Mixin(GuangYaGyingAuthV1107Mixin):" in verified_text
+def test_v1107_auth_layer_is_consolidated_through_stability_gate():
+    assert "from .gying_auth_v1107 import GuangYaGyingAuthV1107Mixin" in stability_text
+    assert "class GuangYaStabilityV1106Mixin(GuangYaGyingAuthV1107Mixin):" in stability_text
+    assert "gying_auth_verified_v1107" not in stability_text
     start = entry_text.index("class GuangYaTransferAssistant")
     assert entry_text.index("GuangYaStabilityV1106Mixin,", start) < entry_text.index("GuangYaGyingProtocolV1106Mixin,", start)
     assert entry_text.index("GuangYaGyingProtocolV1106Mixin,", start) < entry_text.index("GuangYaGyingRuntimeMixin,", start)
@@ -64,11 +62,11 @@ def test_same_session_flows_through_captcha_check_login_and_probe():
 
 
 def test_cookie_is_never_trusted_only_because_it_exists():
-    assert "has_cookie and self._gying_authenticated_probe(session, node)" in verified_text
-    assert "观影 Cookie 已通过受限搜索验真并复用" in verified_text
-    assert 'row["authenticated"] = False' in verified_text
-    assert "return self._gying_login_password(session, node)" in verified_text
-    assert '"mode": "configured_cookie"' not in verified_text
+    assert "has_cookie and self._gying_authenticated_probe(session, node)" in auth_text
+    assert "观影 Cookie 已通过受限搜索验真并复用" in auth_text
+    assert 'row["authenticated"] = False' in auth_text
+    assert "return self._gying_login_password(session, node)" in auth_text
+    assert '"mode": "configured_cookie"' not in auth_text
 
 
 def test_pow_retries_three_times_and_only_then_logs_verified():
