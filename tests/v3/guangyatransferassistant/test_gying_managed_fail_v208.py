@@ -14,7 +14,7 @@ ROUTING = (PLUGIN / "routing_v170.py").read_text(encoding="utf-8")
 
 
 def test_gying_pow_stack_still_present_on_208():
-    assert 'plugin_version = "2.0.8"' in ENTRY
+    assert 'plugin_version = "2.0.9"' in ENTRY
     assert "class GuangYaGyingPowV1111Mixin" in POW
     assert "_gying_solve_challenge_v1110" in POW
     assert "_solve_pow_hex" in POW

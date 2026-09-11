@@ -60,8 +60,8 @@ def test_v193_files_parse_and_publish_current_version():
         ast.parse(text, filename=str(path))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-    assert package["version"] == local["version"] == "2.0.8"
-    assert 'plugin_version = "2.0.8"' in entry_text
+    assert package["version"] == local["version"] == "2.0.9"
+    assert 'plugin_version = "2.0.9"' in entry_text
     assert "v1.12.5" in package["history"]
     assert "v1.9.3" in package["history"]
 
@@ -324,15 +324,19 @@ def test_verified_movie_receipt_records_fact_and_finishes_subscription():
 
 
 def test_handled_result_hard_stops_viewing_magnet_fallback():
+    """r93: handled 只表示 ownership；covered=True 才停止；uncovered 时继续 Magnet/ED2K。"""
     viewing = (PLUGIN / "viewing_logging_v1113.py").read_text(encoding="utf-8")
     method = viewing.split("    def _try_transfer_subscription_inner(", 1)[1].split(
         "\n\n__all__", 1
     )[0]
-    handled = method.index('if bool(result.get("handled")):')
     gap = method.index("gap = self._viewing_gap_v1113(subscribe)")
+    covered = method.index('if bool(gap.get("covered")):')
+    handled = method.index('if bool(result.get("handled")):')
     dispatch = method.index("_dispatch_viewing_external_v1113(subscribe)")
-    assert handled < gap < dispatch
-    assert "前序结果 handled=True，硬阻断观影 Magnet/ED2K" in method
+    assert gap < covered < handled < dispatch
+    assert "硬阻断观影 Magnet/ED2K" not in method
+    assert "仅表示托管所有权" in method
+    assert "covered=False" in method
 
 
 def test_any_verified_non_auxiliary_movie_video_completes_xunlei():

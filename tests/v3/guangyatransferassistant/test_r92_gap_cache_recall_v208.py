@@ -24,7 +24,8 @@ CORE = (PLUGIN / "core_pipeline_v11214.py").read_text(encoding="utf-8")
 def test_r92_mro_owns_recognition_cache():
     assert "GuangYaProductionSafetyV208Mixin" in ENTRY
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
-    assert head.strip().splitlines()[0].strip().rstrip(",") == "GuangYaProductionSafetyV208Mixin"
+    assert head.strip().splitlines()[0].strip().rstrip(",") == "GuangYaCalendarDrivenV209Mixin"
+    assert "GuangYaProductionSafetyV208Mixin" in head
     assert "_recognize_media_cached_v208" in SAFETY
     assert "_recognize_by_meta_cached_v208" in SAFETY
     # 关键重复入口必须走 wrapper

@@ -84,23 +84,39 @@ class GuangYaViewingLoggingV1113Mixin(
         return result
 
     def _viewing_gap_v1113(self, subscribe: Any) -> Dict[str, Any]:
+        """covered = 目标已被 completed/pending/reservation/claim 真实覆盖；与 handled 无关。"""
         if self._is_movie_subscription(subscribe):
+            sid = int(getattr(subscribe, "id", 0) or 0)
             reservations = dict(self._pending_reservations(subscribe) or {})
             active_movie = any(
                 isinstance(row, dict)
-                and int(row.get("subscribe_id") or 0) == int(getattr(subscribe, "id", 0) or 0)
+                and int(row.get("subscribe_id") or 0) == sid
                 and str(row.get("state") or "") in {"new", "retry", "dispatching", "submitted", "queued", "waiting", "completed"}
                 for row in (self._source_store().get("items") or {}).values()
             )
+            library_exists = False
+            try:
+                checker = getattr(self, "_movie_needs_pull_v1125", None)
+                if callable(checker):
+                    library_exists = not bool(checker(subscribe))
+            except Exception:
+                library_exists = False
+            covered = bool(reservations.get("movie")) or active_movie or library_exists
             return {
-                "covered": bool(reservations.get("movie")) or active_movie,
-                "missing": [],
-                "reserved": [],
-                "claimed": [],
-                "uncovered": [],
+                "covered": covered,
+                "missing": [] if covered else ["movie"],
+                "reserved": ["movie"] if reservations.get("movie") else [],
+                "claimed": ["movie"] if active_movie else [],
+                "uncovered": [] if covered else ["movie"],
             }
 
-        missing = set(int(v) for v in (self._subscription_missing_episodes(subscribe) or []) if int(v or 0) > 0)
+        # 退出 due-scope：covered 必须相对真实缺集，不能被当日 due 裁剪伪造成“已齐”。
+        without_scope = getattr(self, "_without_due_scope_v1120", None)
+        if callable(without_scope):
+            with without_scope():
+                missing = set(int(v) for v in (self._subscription_missing_episodes(subscribe) or []) if int(v or 0) > 0)
+        else:
+            missing = set(int(v) for v in (self._subscription_missing_episodes(subscribe) or []) if int(v or 0) > 0)
         reservations = dict(self._pending_reservations(subscribe) or {})
         reserved = set(int(v) for v in (reservations.get("episodes") or set()) if int(v or 0) > 0)
         claimed = set(int(v) for v in (self._active_source_claims(int(getattr(subscribe, "id", 0) or 0)) or set()) if int(v or 0) > 0)
@@ -129,16 +145,8 @@ class GuangYaViewingLoggingV1113Mixin(
         if existing_viewing:
             return result
 
-        # handled 是前序链的最终覆盖合同。电影没有 episode 集合，不能再用
-        # uncovered=movie 覆盖掉这个强确认，否则会在迅雷成功后错误创建 Magnet。
-        if bool(result.get("handled")):
-            sid = int(getattr(subscribe, "id", 0) or 0)
-            self._plugin_log(
-                "INFO",
-                "【光鸭转存助手】【观影执行】#%s 前序结果 handled=True，硬阻断观影 Magnet/ED2K；信息=%s",
-                sid,
-                str(result.get("message") or "前序来源已完整覆盖")[:260],
-            )
+        # completed / pending 已表示真实覆盖合同；handled 只表示 ownership，不能单独阻断内部来源链。
+        if bool(result.get("completed")) or bool(result.get("pending")):
             return result
 
         gap = self._viewing_gap_v1113(subscribe)
@@ -146,13 +154,23 @@ class GuangYaViewingLoggingV1113Mixin(
         if bool(gap.get("covered")):
             self._plugin_log(
                 "INFO",
-                "【光鸭转存助手】【观影执行】#%s 前序来源已覆盖当前目标，停止继续建云添加任务；missing=%s reserved=%s claimed=%s",
+                "【光鸭转存助手】【观影执行】#%s 当前目标已真实覆盖(covered=True)，停止 Magnet/ED2K；handled=%s missing=%s reserved=%s claimed=%s",
                 sid,
+                bool(result.get("handled")),
                 ",".join(str(v) for v in (gap.get("missing") or [])) or "-",
                 ",".join(str(v) for v in (gap.get("reserved") or [])) or "-",
                 ",".join(str(v) for v in (gap.get("claimed") or [])) or "-",
             )
             return result
+
+        if bool(result.get("handled")):
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【观影执行】#%s handled=True 仅表示托管所有权，covered=False remaining=%s；继续内部 Magnet/ED2K（仍禁止 native）；信息=%s",
+                sid,
+                ",".join(str(v) for v in (gap.get("uncovered") or [])) or "movie",
+                str(result.get("message") or "-")[:260],
+            )
 
         self._plugin_log(
             "INFO",

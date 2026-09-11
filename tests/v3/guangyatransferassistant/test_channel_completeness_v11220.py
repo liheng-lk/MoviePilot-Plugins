@@ -189,8 +189,8 @@ def test_channel_completeness_patch_is_idempotent_and_public_release_is_v11220()
     entry = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
-    assert 'plugin_version = "2.0.8"' in entry
-    assert local["version"] == package["version"] == "2.0.8"
+    assert 'plugin_version = "2.0.9"' in entry
+    assert local["version"] == package["version"] == "2.0.9"
     assert "v1.12.20" in package.get("history", {})
 
 

@@ -21,5 +21,5 @@ def test_v195_keeps_runtime_fallback_without_internal_import():
 
 
 def test_v195_release_marker():
-    assert 'plugin_version = "2.0.8"' in ENTRY
+    assert 'plugin_version = "2.0.9"' in ENTRY
 

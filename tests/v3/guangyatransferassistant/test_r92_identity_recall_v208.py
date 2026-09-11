@@ -25,8 +25,8 @@ IDENTITY = (PLUGIN / "media_identity_v1111.py").read_text(encoding="utf-8")
 
 
 def test_r92_version_markers():
-    assert 'plugin_version = "2.0.8"' in ENTRY
-    assert 'build_id = "20260911-r92"' in ENTRY
+    assert 'plugin_version = "2.0.9"' in ENTRY
+    assert 'build_id = "20260911-r93"' in ENTRY
     assert "GuangYaProductionSafetyV208Mixin" in ENTRY
     assert "extract_share_media_identity_v1111" in CORE
     assert "identity_reject_v11214" in LEGACY

@@ -16,7 +16,7 @@ ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 
 
 def test_r88_version_markers():
-    assert 'plugin_version = "2.0.8"' in ENTRY
+    assert 'plugin_version = "2.0.9"' in ENTRY
 
 
 def test_r88_due_filter_contract_in_routing_and_runtime():

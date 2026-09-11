@@ -20,7 +20,9 @@ class GuangYaReleaseV1110Tests(unittest.TestCase):
         self.assertIn("from .dispatch_policy_final_v1125 import GuangYaDispatchPolicyFinalV1125Mixin", ENTRY)
         head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
         mixins = [line.strip().rstrip(",") for line in head.splitlines() if line.strip()]
-        self.assertEqual(mixins[:13], [
+        self.assertEqual(mixins[:15], [
+            "GuangYaCalendarDrivenV209Mixin",
+            "GuangYaPowSingleflightV209Mixin",
             "GuangYaProductionSafetyV208Mixin",
             "GuangYaPagePerfV1123Mixin",
             "GuangYaMovieIdentityV1129Mixin",
@@ -38,6 +40,9 @@ class GuangYaReleaseV1110Tests(unittest.TestCase):
         self.assertIn("GuangYaReleaseV1110Mixin", ENTRY)
         self.assertIn("plugin_version = ", ENTRY)
         self.assertIn("build_id = ", ENTRY)
+        cal = (PLUGIN / "calendar_driven_v209.py").read_text(encoding="utf-8")
+        self.assertIn("GuangYaTransferAssistantDailyReconcile", cal)
+        self.assertIn("0 21 * * *", cal)
 
     def test_daily_full_catchup_is_independent_of_new_channel_messages(self):
         self.assertIn('"id": "GuangYaTransferAssistantDailyCatchup"', RELEASE)
