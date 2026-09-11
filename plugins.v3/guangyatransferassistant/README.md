@@ -131,7 +131,7 @@ Magnet/ED2K 始终交给光鸭原生 cloudcollection，不经过 MoviePilot 下�
 | 频道事件 / 缓存 | `channel_event_v1115.py` + `channel_reconcile_v11215.py` |
 | 观影 / GYING | `gying_*.py`，具体边界见 ARCHITECTURE |
 | 迅雷秒传 | `xunlei_flash_v193.py` + 完整性/可靠性门禁 |
-| Magnet / ED2K | `multisource_v180.py` + `offline_safety_v180.py` |
+| Magnet / ED2K | `multisource_v180.py` |
 | 状态页 | `status_ui_v191.py` |
 | 控制台 | `console_control_v1116.py` / `console_ui_v1100.py` |
 | 诊断 | `diagnostics_v1100.py` / `transfer_diag_v209.py` |
