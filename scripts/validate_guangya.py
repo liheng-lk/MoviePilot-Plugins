@@ -68,17 +68,32 @@ def main() -> int:
             "Python syntax",
             [sys.executable, "-m", "compileall", "-q", str(PLUGIN)],
         )
-        _run(
-            "GuangYa contract / final-plugin E2E",
-            [sys.executable, str(CONTRACT)],
-        )
-        _json_contract()
-
         if args.full:
             _run(
                 "Repository unit tests",
                 [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"],
             )
+        else:
+            _run(
+                "GuangYa root unit tests",
+                [
+                    sys.executable,
+                    "-m",
+                    "unittest",
+                    "discover",
+                    "-s",
+                    "tests",
+                    "-p",
+                    "test_guangya*.py",
+                    "-v",
+                ],
+            )
+
+        _run(
+            "GuangYa contract / final-plugin E2E",
+            [sys.executable, str(CONTRACT)],
+        )
+        _json_contract()
 
         print("\nPASS: GuangYaTransferAssistant validation complete")
         return 0
