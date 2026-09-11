@@ -37,7 +37,7 @@ class GuangYaReleaseV1110Tests(unittest.TestCase):
             "GuangYaAiringSchedulerV1120Mixin",
             "GuangYaMediaIdentityGuardV1111Mixin",
             "GuangYaReleaseV1110Mixin",
-            "GuangYaEpisodeFenceFinalV1124Mixin",
+            "GuangYaReceiptCompletionV1124Mixin",
         ])
         self.assertIn("GuangYaReleaseV1110Mixin", ENTRY)
         self.assertIn("plugin_version = ", ENTRY)
