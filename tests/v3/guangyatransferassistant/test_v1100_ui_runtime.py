@@ -24,7 +24,8 @@ def test_v1100_mro_installs_final_layers_before_old_layers():
     for token in ("GuangYaConfigUiV1100Mixin,", "GuangYaConsoleUiV1100Mixin,", "GuangYaDiagnosticsV1100Mixin,", "GuangYaProviderReliabilityV1100Mixin,", "GuangYaXunleiReliabilityV1100Mixin,"):
         assert token in ENTRY[start:]
     assert ENTRY.index("GuangYaConfigUiV1100Mixin,", start) < ENTRY.index("GuangYaConfigUiMixin,", start)
-    assert ENTRY.index("GuangYaConsoleUiV1100Mixin,", start) < ENTRY.index("GuangYaStatusHardeningMixin,", start)
+    assert ENTRY.index("GuangYaConsoleUiV1100Mixin,", start) < ENTRY.index("GuangYaPlannerSafetyMixin,", start)
+    assert "GuangYaStatusHardeningMixin" not in ENTRY
     assert ENTRY.index("GuangYaProviderReliabilityV1100Mixin,", start) < ENTRY.index("GuangYaProviderSourcesMixin,", start)
     assert ENTRY.index("GuangYaXunleiReliabilityV1100Mixin,", start) < ENTRY.index("GuangYaXunleiFlashMixin,", start)
 
