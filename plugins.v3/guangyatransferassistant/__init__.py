@@ -91,7 +91,6 @@ from .pow_singleflight_v209 import GuangYaPowSingleflightV209Mixin
 from .airing_weekly_v1121 import GuangYaAiringWeeklyV1121Mixin
 from .airing_scheduler_v1120 import GuangYaAiringSchedulerV1120Mixin
 from .airing_ui_v1120 import GuangYaAiringUiV1120Mixin
-from .offline_safety_v180 import GuangYaOfflineSafetyMixin
 from .page_auth_v172 import force_bear_auth, strip_page_api_secrets
 from .planner_safety_v190 import GuangYaPlannerSafetyMixin
 from .provider_sources_v192 import GuangYaProviderSourcesMixin
@@ -155,7 +154,6 @@ class GuangYaTransferAssistant(
     GuangYaProviderSourcesMixin,
     GuangYaPlannerSafetyMixin,
     GuangYaResourcePlannerMixin,
-    GuangYaOfflineSafetyMixin,
     GuangYaMultiSourceMixin,
     GuangYaRuntimeFinalizerMixin,
     GuangYaReliabilityMixin,
