@@ -315,6 +315,11 @@ class GuangYaDispatchPolicyFinalV1125Mixin:
         if not ids:
             return None
 
+        manual_check = getattr(self, "_manual_full_chain_trigger_v11211", None)
+        manual_runner = getattr(self, "_run_manual_full_chain_v11211", None)
+        if callable(manual_check) and callable(manual_runner) and manual_check(text):
+            return manual_runner(ids, text)
+
         if "频道故障自动恢复" in text:
             # 这是频道 transport 的恢复任务，不是主动资源站调度器。恢复成功后只消费频道缓存；
             # 常规 GYING 仍等 AiringDue/日历 selector。
