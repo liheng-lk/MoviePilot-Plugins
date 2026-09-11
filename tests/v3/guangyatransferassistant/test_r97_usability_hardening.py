@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parents[3]
 MULTI = ROOT / "plugins.v3" / "guangyatransferassistant" / "multisource_v180.py"
+LEGACY = ROOT / "plugins.v3" / "guangyatransferassistant" / "legacy.py"
 SOURCE = MULTI.read_text(encoding="utf-8")
 STATUS = (ROOT / "plugins.v3" / "guangyatransferassistant" / "status_ui_v191.py").read_text(encoding="utf-8")
 
@@ -292,3 +293,165 @@ def test_r97_status_ui_explains_pending_verify_instead_of_fake_100_percent_progr
 def test_r97_status_ui_gives_specific_action_for_verify_timeout():
     assert '"REMOTE_VERIFY_TIMEOUT" in error' in STATUS
     assert "先刷新云任务并确认目标目录/媒体库" in STATUS
+
+
+
+def _pending_verify_mixin():
+    source = LEGACY.read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=str(LEGACY))
+    cls = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "GuangYaTransferAssistant"
+    )
+    wanted = {"_pending_job_verify_items", "_recheck_pending_only"}
+    methods = [
+        node for node in cls.body
+        if isinstance(node, ast.FunctionDef) and node.name in wanted
+    ]
+    module = ast.Module(
+        body=[ast.ClassDef(
+            name="PendingVerifyProbe",
+            bases=[],
+            keywords=[],
+            body=methods,
+            decorator_list=[],
+        )],
+        type_ignores=[],
+    )
+    ast.fix_missing_locations(module)
+    ns: Dict[str, Any] = {
+        "Any": Any,
+        "Dict": Dict,
+        "List": List,
+        "Path": Path,
+        "_safe_relative_path": lambda value: str(value or "").replace("\\", "/").strip("/"),
+    }
+    exec(compile(module, str(LEGACY), "exec"), ns)
+    return ns["PendingVerifyProbe"]
+
+
+def _pending_verify_harness(*, verify_success: bool, with_pending: bool = True):
+    mixin = _pending_verify_mixin()
+
+    class Sub:
+        id = 88
+        name = "测试剧"
+        season = 1
+        type = "TV"
+
+    class Harness(mixin):
+        def __init__(self):
+            self.jobs = {
+                "job-1": {
+                    "subscribe_id": 88,
+                    "media": "tv:88",
+                    "status": "verifying",
+                    "target": "/media/测试剧 (2026)",
+                    "paths": ["Season 1/测试剧.S01E05.2160p.WEB-DL.mkv"],
+                }
+            } if with_pending else {}
+            self.verify_success = verify_success
+            self.verify_calls = 0
+            self.job_updates = []
+            self.fact_calls = 0
+            self.progress_calls = 0
+            self.library_calls = 0
+            self.finish_calls = 0
+            self.logs = []
+            self.search_calls = 0
+            self.restore_calls = 0
+
+        def _pending_jobs_for_subscription(self, _subscribe):
+            return [(key, dict(value)) for key, value in self.jobs.items()]
+
+        def _target_path(self, _subscribe):
+            return "/media/测试剧 (2026)"
+
+        def _verify_restored_items(self, target, items, max_try=1):
+            self.verify_calls += 1
+            assert target == "/media/测试剧 (2026)"
+            assert max_try == 1
+            if self.verify_success:
+                return {"success": True, "verified_items": list(items)}
+            return {"success": False, "message": "目标文件尚未出现", "verified_items": []}
+
+        def _set_job_state(self, key, status, **fields):
+            self.job_updates.append((key, status, dict(fields)))
+            if key in self.jobs:
+                self.jobs[key].update(fields)
+                self.jobs[key]["status"] = status
+
+        def _remember_media_facts(self, _subscribe, items, origin="transfer"):
+            self.fact_calls += 1
+            assert origin == "pending_recheck"
+            return len(items)
+
+        def _sync_progress(self, _subscribe, _items):
+            self.progress_calls += 1
+
+        def _sync_media_library_progress(self, _subscribe):
+            self.library_calls += 1
+            return {"success": True, "existing": [5], "missing": []}
+
+        def _finish_subscription_if_complete(self, _subscribe):
+            self.finish_calls += 1
+            return True
+
+        def _plugin_log(self, level, message, *args):
+            self.logs.append((level, message, args))
+
+        # 这些调用若出现，就说明 verify-only 泄漏进资源获取链。
+        def refresh_channels(self, *args, **kwargs):
+            self.search_calls += 1
+            raise AssertionError("verify-only must not refresh channel")
+
+        def _dispatch_viewing_external_v1113(self, *args, **kwargs):
+            self.search_calls += 1
+            raise AssertionError("verify-only must not search GYING")
+
+        def _restore_items(self, *args, **kwargs):
+            self.restore_calls += 1
+            raise AssertionError("verify-only must not create transfer")
+
+    return Harness(), Sub()
+
+
+def test_pending_recheck_without_pending_job_is_true_noop():
+    h, sub = _pending_verify_harness(verify_success=False, with_pending=False)
+    out = h._recheck_pending_only(sub)
+    assert out["success"] is True
+    assert out["verify_only"] is True
+    assert out["pending"] == 0
+    assert h.verify_calls == 0
+    assert h.search_calls == 0
+    assert h.restore_calls == 0
+
+
+def test_pending_recheck_missing_file_keeps_verifying_without_new_search_or_transfer():
+    h, sub = _pending_verify_harness(verify_success=False)
+    out = h._recheck_pending_only(sub)
+    assert out["success"] is False
+    assert out["verify_only"] is True
+    assert out["verified"] == 0
+    assert out["pending"] == 1
+    assert h.job_updates[-1][1] == "verifying"
+    assert h.fact_calls == 0
+    assert h.progress_calls == 0
+    assert h.search_calls == 0
+    assert h.restore_calls == 0
+
+
+def test_pending_recheck_visible_file_only_syncs_facts_and_completion():
+    h, sub = _pending_verify_harness(verify_success=True)
+    out = h._recheck_pending_only(sub)
+    assert out["success"] is True
+    assert out["verify_only"] is True
+    assert out["verified"] == 1
+    assert out["pending"] == 0
+    assert h.job_updates[-1][1] == "verified"
+    assert h.fact_calls == 1
+    assert h.progress_calls == 1
+    assert h.library_calls == 1
+    assert h.finish_calls == 1
+    assert h.search_calls == 0
+    assert h.restore_calls == 0
