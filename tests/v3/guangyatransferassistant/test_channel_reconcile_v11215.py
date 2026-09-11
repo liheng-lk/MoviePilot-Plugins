@@ -189,15 +189,20 @@ def test_movie_cache_reconciles_only_while_movie_still_needs_pull():
     assert probe._subscriptions_for_new_channel_entries_v1115() == [1101]
 
 
-def test_reconcile_path_remains_passive_channel_event_and_never_adds_gying_calls():
+def test_reconcile_path_stays_passive_but_does_not_block_independent_post_channel_viewing_poll():
+    # Reconcile/频道本身仍绝不能主动调用 GYING。
     assert "_gying_" not in SOURCE
     assert "_search_viewing" not in SOURCE
-    dispatch = DISPATCH.split("    def _run_reliability_route_batch(", 1)[1].split("    # ------------------------------------------------------------------", 1)[0]
-    assert 'if "频道新增资源" in text:' in dispatch
-    assert '"channel_event", force=False' in dispatch
     xunlei = CORE.split("    def _search_viewing_xunlei(", 1)[1].split("    # ------------------------------------------------------------------", 1)[0]
     assert '== "channel_event"' in xunlei
     assert "不主动访问 GYING" in xunlei
+
+    # DispatchPolicy 不再吞掉频道事件；必须交给下层 AiringWeekly：
+    # 先跑 channel_event，再启动独立 viewing_poll，二者不是同一个来源阶段。
+    dispatch = DISPATCH.split("    def _run_reliability_route_batch(", 1)[1].split("    # ------------------------------------------------------------------", 1)[0]
+    channel = dispatch.split('if "频道新增资源" in text:', 1)[1].split('if "观影定时轮询" in text:', 1)[0]
+    assert "super()._run_reliability_route_batch(batch, trigger)" in channel
+    assert '"airing_pull"' not in channel
 
 
 def test_v11215_public_release_is_promoted_after_candidate_ci_is_green():
