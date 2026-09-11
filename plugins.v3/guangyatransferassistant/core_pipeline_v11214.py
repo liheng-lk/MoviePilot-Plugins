@@ -328,10 +328,8 @@ class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixi
         return len(entries)
 
     # ------------------------------------------------------------------
-    # Exact TMDB official aliases for TV/anime GYING recall.
+    # Final GYING GuangYa share wrapper: keep alias scope around the base hydrate.
     # ------------------------------------------------------------------
-    @staticmethod
-
     def _hydrate_viewing_guangya_shares_v11214(self, subscribe: Any) -> int:
         """GYING 光鸭分享在订阅 TMDB alias scope 内进入统一直接转存候选。"""
         scope = getattr(self, "_gying_alias_scope_v11212", None)
@@ -340,6 +338,7 @@ class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixi
         with scope(subscribe):
             return int(self._hydrate_viewing_guangya_shares_base_v11214(subscribe) or 0)
 
+    @staticmethod
     def _tmdb_id_tv_v11214(subscribe: Any) -> str:
         raw_type = str(getattr(subscribe, "type", "") or "").lower()
         if "movie" in raw_type or "电影" in str(getattr(subscribe, "type", "") or ""):
@@ -500,6 +499,8 @@ class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixi
         except Exception:
             logical_missing = _positive_episode_set_v11214(self._subscription_missing_episodes(subscribe) or [])
 
+        # stale-complete note 不能把真实 library gap 擦成空；logical 非空时只排除
+        # “library 还缺、但 note/receipt 已确认”的 pending-ingest 集。
         allowed = set(library_missing)
         if library_missing and logical_missing:
             allowed -= library_missing - _positive_episode_set_v11214(logical_missing)
