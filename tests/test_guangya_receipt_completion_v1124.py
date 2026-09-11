@@ -14,7 +14,7 @@ class GuangYaReceiptCompletionV1124Tests(unittest.TestCase):
         ast.parse(ENTRY)
         ast.parse(RECEIPT)
         self.assertIn("from .receipt_completion_v1124 import GuangYaReceiptCompletionV1124Mixin", ENTRY)
-        self.assertIn("from .episode_fence_final_v1124 import GuangYaEpisodeFenceFinalV1124Mixin", ENTRY)
+        self.assertNotIn("episode_fence_final_v1124", ENTRY)
         self.assertIn("from .dispatch_policy_v1125 import GuangYaDispatchPolicyV1125Mixin", ENTRY)
         self.assertIn("from .dispatch_policy_final_v1125 import GuangYaDispatchPolicyFinalV1125Mixin", ENTRY)
         class_head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
@@ -36,11 +36,11 @@ class GuangYaReceiptCompletionV1124Tests(unittest.TestCase):
             "GuangYaAiringSchedulerV1120Mixin",
             "GuangYaMediaIdentityGuardV1111Mixin",
             "GuangYaReleaseV1110Mixin",
-            "GuangYaEpisodeFenceFinalV1124Mixin",
+            "GuangYaReceiptCompletionV1124Mixin",
         ])
         self.assertEqual(
             mixins.index("GuangYaReceiptCompletionV1124Mixin"),
-            mixins.index("GuangYaEpisodeFenceFinalV1124Mixin") + 1,
+            mixins.index("GuangYaReleaseV1110Mixin") + 1,
         )
 
     def test_tv_success_receipt_is_persisted_before_next_search(self):
