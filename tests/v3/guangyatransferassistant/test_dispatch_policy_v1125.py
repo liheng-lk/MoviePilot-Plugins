@@ -258,20 +258,25 @@ def test_five_minute_tick_is_channel_only_without_disabling_other_threads_select
     assert harness._viewing_due_subscription_ids_v1115() == [1, 3, 4]
 
 
-def test_channel_worker_never_appends_post_channel_viewing_pull():
+def test_channel_trigger_delegates_so_lower_weekly_layer_can_run_post_channel_viewing():
     harness = _Harness()
     harness._run_reliability_route_batch([1, 2], "频道新增资源")
-    assert harness.mode_batches == [([1, 2], "频道新增资源", "channel_event", False)]
-    assert harness.base_batches == []
+    # DispatchPolicy 不再提前截断；真实最终 MRO 中由 AiringWeekly 完成：
+    # channel_event -> 独立 viewing_poll，避免高频频道事件长期饿死 GYING。
+    assert harness.mode_batches == []
+    assert harness.base_batches == [([1, 2], "频道新增资源")]
 
 
-def test_legacy_viewing_trigger_is_revalidated_by_smart_selector():
+def test_routine_viewing_poll_is_not_reblocked_by_calendar_due_gate():
     harness = _Harness()
-    harness._run_reliability_route_batch([1, 2, 3, 4, 5], "观影定时轮询")
-    assert harness.mode_batches == [([1, 3, 4], "更新日历主动拉取", "airing_pull", False)]
+    # 实际调用方 _viewing_due_subscription_ids_v1115 已按真实缺集 + 冷却筛出 1/3/4。
+    harness._run_reliability_route_batch([1, 3, 4], "观影定时轮询")
+    assert harness.mode_batches == [([1, 3, 4], "观影定时轮询", "viewing_poll", False)]
+    # 常规 viewing_poll 不应再访问日历；AiringDue 自己仍使用 smart selector。
+    assert harness.gate_calls == 0
 
 
-def test_hourly_airing_service_is_the_only_routine_pull_and_never_force_bypasses_cooldown():
+def test_airing_due_remains_calendar_accelerated_pull_without_replacing_routine_viewing_poll():
     method = _method("_calendar_due_check_v1110", "_repair_signature_v1125")
     assert "_smart_pull_due_ids_v1125()" in method
     assert '"airing_pull"' in method
@@ -280,6 +285,9 @@ def test_hourly_airing_service_is_the_only_routine_pull_and_never_force_bypasses
     tick = _method("_tick", "_external_cooldown_due_v1125")
     assert "channel_only = True" in tick
     assert "super()._tick(host_service=host_service)" in tick
+    route = _method("_run_reliability_route_batch", "_calendar_due_check_v1110")
+    assert '"viewing_poll"' in route
+    assert "_smart_pull_due_ids_v1125()" not in route.split('if "观影定时轮询" in text:', 1)[1].split("return super()", 1)[0]
 
 
 def test_daily_repair_is_strictly_channel_first_then_remaining_gying():
