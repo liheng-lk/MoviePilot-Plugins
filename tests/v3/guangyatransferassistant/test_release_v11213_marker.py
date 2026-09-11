@@ -14,8 +14,8 @@ PACKAGE = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["Gu
 
 
 def test_v11214_public_release_is_single_truth_while_v11213_fence_stays_historical():
-    assert LOCAL["version"] == PACKAGE["version"] == "2.0.12"
-    assert 'plugin_version = "2.0.12"' in ENTRY
+    assert LOCAL["version"] == PACKAGE["version"] == "2.0.13"
+    assert 'plugin_version = "2.0.13"' in ENTRY
     assert "v1.12.13" in PACKAGE["history"]
 
 
