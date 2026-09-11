@@ -27,8 +27,14 @@ def test_required_onboarding_docs_exist():
         assert (PLUGIN / name).is_file(), name
     root_contributing = ROOT / "CONTRIBUTING.md"
     pr_template = ROOT / ".github" / "pull_request_template.md"
+    codeowners = ROOT / ".github" / "CODEOWNERS"
+    bug_template = ROOT / ".github" / "ISSUE_TEMPLATE" / "guangya_transfer_bug.yml"
+    local_validator = ROOT / "scripts" / "validate_guangya.py"
     assert root_contributing.is_file()
     assert pr_template.is_file()
+    assert codeowners.is_file()
+    assert bug_template.is_file()
+    assert local_validator.is_file()
 
 
 def test_readme_is_entrypoint_not_release_log_wall():
