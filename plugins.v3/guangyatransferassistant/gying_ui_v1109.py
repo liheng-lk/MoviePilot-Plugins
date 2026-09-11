@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .console_control_cursor_v1116 import GuangYaConsoleControlCursorV1116Mixin
+from .console_control_v1116 import GuangYaConsoleControlV1116Mixin
 
 
 _REPLACEMENTS_V1109 = {
@@ -50,7 +50,7 @@ def _rewrite_text_v1109(value: Any) -> Any:
     return value
 
 
-class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlCursorV1116Mixin):
+class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlV1116Mixin):
     """自动登录优先 UI，并启用最终迅雷/检索/质量/频道游标事件/真实控制台/完成治理链。"""
 
     build_id = "20260902-r27"
