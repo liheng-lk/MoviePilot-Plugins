@@ -1,0 +1,91 @@
+name: 光鸭转存助手 Bug
+description: 报告 GuangYaTransferAssistant 的转存、观影、迅雷、Magnet/ED2K、缺集、命名或状态问题
+title: "[GuangYaTransfer] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请只提供脱敏信息。不要提交 Cookie、Token、密码、Device ID、完整私有分享链接或其它账号凭据。
+        优先复制插件页面“光鸭转存流程”的相关 run；需要详细排障时可说明 detail 日志现象，但仍请脱敏。
+  - type: input
+    id: version
+    attributes:
+      label: 插件版本 / Build
+      placeholder: "例如 2.0.13 / 20260911-r97"
+    validations:
+      required: true
+  - type: dropdown
+    id: trigger
+    attributes:
+      label: 触发入口
+      options:
+        - 自动频道事件
+        - 自动观影轮询
+        - AiringDue / 更新日历
+        - 状态页立即检查缺集
+        - /gycheck
+        - 控制台立即处理
+        - 复查待落盘
+        - 新订阅首次匹配
+        - 其它
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: 出问题的主要来源阶段
+      options:
+        - 频道
+        - GYING / 观影
+        - 迅雷秒传
+        - 光鸭直接转存
+        - Magnet
+        - ED2K
+        - 落盘核验
+        - 重命名
+        - MoviePilot / Emby 同步
+        - 不确定
+    validations:
+      required: true
+  - type: textarea
+    id: media
+    attributes:
+      label: 媒体与缺集事实
+      description: 请写媒体名、Season、实际已入库集、期望缺集；不要贴账号信息。
+      placeholder: |
+        媒体：示例剧 (2026)
+        Season：1
+        已入库：E01-E04
+        当前应补：E05
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: flow
+    attributes:
+      label: 脱敏流程日志
+      description: 尽量提供同一个 subscribe_id / run_id 下，从“任务”到出错阶段的连续日志。
+      render: text
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: 安全确认
+      options:
+        - label: 我已移除 Cookie、Token、密码、Device ID 和私有分享凭据
+          required: true
+        - label: 我已说明问题是否可以稳定复现
+          required: true
