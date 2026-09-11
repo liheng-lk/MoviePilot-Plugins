@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, List
 
 from .source_types_v180 import SOURCE_INFLIGHT_STATES, SOURCE_PENDING_STATES
@@ -208,7 +209,10 @@ class GuangYaStatusUiMixin:
         return trace
 
     @staticmethod
-    def _source_action_hint(state: str) -> str:
+    def _source_action_hint(state: str, row: Dict[str, Any] | None = None) -> str:
+        error = str((row or {}).get("last_error") or "")
+        if state == "needs_review" and "REMOTE_VERIFY_TIMEOUT" in error:
+            return "建议：先刷新云任务并确认目标目录/媒体库；若仍缺失，可让后续候选继续或手动重试该来源。"
         if state == "needs_review":
             return "建议：核对集号后再执行来源重试。"
         if state == "failed":
@@ -234,7 +238,7 @@ class GuangYaStatusUiMixin:
             state = str(row.get("state") or "")
             error = str(row.get("last_error") or "")
             detail = error or ("集号置信度不足，已停止自动拆包" if state == "needs_review" else "云添加任务失败")
-            hint = self._source_action_hint(state)
+            hint = self._source_action_hint(state, row)
             text = f"{_SOURCE_STATE_TEXT.get(state, state)} · {detail}\n（{self._source_trace(row)}）"
             if hint:
                 text += f"\n{hint}"
@@ -290,7 +294,20 @@ class GuangYaStatusUiMixin:
             progress = max(0, min(100, self._safe_int(row.get("progress"))))
             episodes = row.get("resolved_episodes") or row.get("target_episodes") or []
             episode_text = ", ".join(f"E{self._safe_int(value):02d}" for value in episodes[:12])
-            detail = f"{_SOURCE_STATE_TEXT.get(state, state)} · {progress}%"
+            error = str(row.get("last_error") or "")
+            if state == "waiting" and error.startswith("PENDING_VERIFY:"):
+                try:
+                    since = float(row.get("pending_verify_since") or 0)
+                except (TypeError, ValueError):
+                    since = 0.0
+                waited = max(0, int(time.time() - since)) if since > 0 else 0
+                if waited >= 60:
+                    wait_text = f" · 已等待 {waited // 60} 分钟"
+                else:
+                    wait_text = " · 刚进入核验"
+                detail = f"远端任务已完成，正在核验正片{wait_text}"
+            else:
+                detail = f"{_SOURCE_STATE_TEXT.get(state, state)} · {progress}%"
             if episode_text:
                 detail += f" · {episode_text}"
             detail += f"\n（{self._source_trace(row)}）"
