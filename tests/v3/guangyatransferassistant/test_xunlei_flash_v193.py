@@ -310,7 +310,7 @@ def test_verified_movie_receipt_records_fact_and_finishes_subscription():
     poll = governance.split("    def _poll_offline_source(", 1)[1].split(
         "    # ------------------------------------------------------------------\n    # 质量门禁", 1
     )[0]
-    dispatch = governance.split("    def _dispatch_xunlei_flash(", 1)[1].split(
+    dispatch = governance.split("    def _dispatch_xunlei_flash_governed_v1114(", 1)[1].split(
         "    def _dispatch_viewing_external_v1113", 1
     )[0]
     assert "_remember_media_facts" in helper
