@@ -910,6 +910,37 @@ class GuangYaTransferAssistant(_PluginBase):
                 return stage
         return ""
 
+    def _flow_log_context(self, rendered: str) -> Dict[str, Any]:
+        """从当前 subscription TLS / 日志文本提取关联信息，便于并发任务按轮次追踪。"""
+        run_id = ""
+        subscribe_id = 0
+        try:
+            tls = getattr(self, "_transfer_diag_ctx_v209", None)
+            if tls is not None:
+                run_id = str(getattr(tls, "run_id", "") or "")
+                subscribe_id = int(getattr(tls, "sid", 0) or 0)
+        except Exception:
+            run_id = ""
+            subscribe_id = 0
+
+        text = str(rendered or "")
+        if not subscribe_id:
+            matched = re.search(r"(?:#|\bsid\s*[=:]\s*)(\d{1,10})\b", text, re.I)
+            if matched:
+                try:
+                    subscribe_id = int(matched.group(1))
+                except (TypeError, ValueError):
+                    subscribe_id = 0
+        if not run_id:
+            matched = re.search(r"\brun\s*[=:]\s*([A-Za-z0-9_.:\-]+)", text)
+            if matched:
+                run_id = str(matched.group(1) or "")
+        return {
+            "subscribe_id": subscribe_id,
+            "run_id": run_id[:96],
+        }
+
+
     def _plugin_log(self, level: str, message: Any, *args: Any) -> None:
         """系统日志保留全部细节；插件页只保留关键流程节点与异常。"""
         level_name = str(level or "INFO").upper()
@@ -927,6 +958,7 @@ class GuangYaTransferAssistant(_PluginBase):
         try:
             now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             stage = self._flow_stage_from_log(rendered, level_name)
+            context = self._flow_log_context(rendered)
             with self._state_lock:
                 # 完整插件细节独立保存；排障 API 可按 detail=true 读取。
                 debug_rows = list(self.get_data("plugin_debug_logs") or [])
@@ -934,6 +966,8 @@ class GuangYaTransferAssistant(_PluginBase):
                     "time": now,
                     "level": level_name,
                     "stage": stage or "细节",
+                    "subscribe_id": int(context.get("subscribe_id") or 0),
+                    "run_id": str(context.get("run_id") or ""),
                     "message": rendered,
                 })
                 if len(debug_rows) > 1000:
@@ -947,9 +981,17 @@ class GuangYaTransferAssistant(_PluginBase):
                         "time": now,
                         "level": level_name,
                         "stage": stage,
+                        "subscribe_id": int(context.get("subscribe_id") or 0),
+                        "run_id": str(context.get("run_id") or ""),
                         "message": rendered,
                     }
-                    if rows and str(rows[-1].get("stage") or "") == stage and str(rows[-1].get("message") or "") == rendered:
+                    if (
+                        rows
+                        and str(rows[-1].get("stage") or "") == stage
+                        and str(rows[-1].get("message") or "") == rendered
+                        and int(rows[-1].get("subscribe_id") or 0) == int(context.get("subscribe_id") or 0)
+                        and str(rows[-1].get("run_id") or "") == str(context.get("run_id") or "")
+                    ):
                         rows[-1] = {
                             **rows[-1],
                             "time": now,
@@ -1453,7 +1495,13 @@ class GuangYaTransferAssistant(_PluginBase):
             plugin_log_items.append({
                 "component": "VListItem",
                 "props": {
-                    "title": f"{row.get('time') or '-'} · {row.get('stage') or '流程'} · {row.get('level') or 'INFO'}" + (f" · ×{int(row.get('repeat') or 1)}" if int(row.get('repeat') or 1) > 1 else ""),
+                    "title": (
+                                f"{row.get('time') or '-'} · {row.get('stage') or '流程'}"
+                                + (f" · #{int(row.get('subscribe_id') or 0)}" if int(row.get('subscribe_id') or 0) > 0 else "")
+                                + (f" · {str(row.get('run_id') or '')[-18:]}" if str(row.get('run_id') or '') else "")
+                                + f" · {row.get('level') or 'INFO'}"
+                                + (f" · ×{int(row.get('repeat') or 1)}" if int(row.get('repeat') or 1) > 1 else "")
+                            ),
                     "subtitle": str(row.get("message") or ""),
                 },
             })
@@ -1574,18 +1622,30 @@ class GuangYaTransferAssistant(_PluginBase):
             {"path": "/clear_plugin_logs", "endpoint": self.api_clear_plugin_logs, "methods": ["POST"], "summary": "清空光鸭转存助手插件日志"},
         ]
 
-    def api_plugin_logs(self, limit: int = 400, detail: bool = False) -> Dict[str, Any]:
+    def api_plugin_logs(self, limit: int = 400, detail: bool = False, subscribe_id: int = 0, run_id: str = "") -> Dict[str, Any]:
         try:
             max_limit = 1000 if bool(detail) else 400
             limit = max(1, min(int(limit or max_limit), max_limit))
         except (TypeError, ValueError):
             limit = 1000 if bool(detail) else 400
         key = "plugin_debug_logs" if bool(detail) else "plugin_logs"
-        rows = list(self.get_data(key) or [])[-limit:]
+        rows = list(self.get_data(key) or [])
+        try:
+            sid_filter = int(subscribe_id or 0)
+        except (TypeError, ValueError):
+            sid_filter = 0
+        run_filter = str(run_id or "").strip()
+        if sid_filter > 0:
+            rows = [row for row in rows if int((row or {}).get("subscribe_id") or 0) == sid_filter]
+        if run_filter:
+            rows = [row for row in rows if str((row or {}).get("run_id") or "") == run_filter]
+        rows = rows[-limit:]
         return {
             "success": True,
             "count": len(rows),
             "detail": bool(detail),
+            "subscribe_id": sid_filter,
+            "run_id": run_filter,
             "items": rows,
         }
 
