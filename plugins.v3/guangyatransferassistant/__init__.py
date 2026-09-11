@@ -64,7 +64,6 @@ from .dispatch_policy_v1125 import GuangYaDispatchPolicyV1125Mixin
 from .dispatch_policy_final_v1125 import GuangYaDispatchPolicyFinalV1125Mixin
 from .episode_target_v210 import GuangYaEpisodeTargetV210Mixin
 from .episode_runtime_v211 import GuangYaEpisodeRuntimeV211Mixin
-from .episode_fence_final_v1124 import GuangYaEpisodeFenceFinalV1124Mixin
 from .fast_recall_v1126 import GuangYaFastRecallV1126Mixin
 from .movie_identity_v1129 import GuangYaMovieIdentityV1129Mixin
 from .resource_gate_v1127 import GuangYaResourceGateV1127Mixin
@@ -130,7 +129,6 @@ class GuangYaTransferAssistant(
     GuangYaAiringSchedulerV1120Mixin,
     GuangYaMediaIdentityGuardV1111Mixin,
     GuangYaReleaseV1110Mixin,
-    GuangYaEpisodeFenceFinalV1124Mixin,
     GuangYaReceiptCompletionV1124Mixin,
     GuangYaAiringUiV1120Mixin,
     GuangYaGyingAutoLoginV1109Mixin,
