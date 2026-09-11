@@ -10,7 +10,6 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 SOURCE = (PLUGIN / "channel_reconcile_v11215.py").read_text(encoding="utf-8")
 MANUAL = (PLUGIN / "manual_check_v11211.py").read_text(encoding="utf-8")
-CORE_FINAL = (PLUGIN / "core_pipeline_final_v11214.py").read_text(encoding="utf-8")
 CORE = (PLUGIN / "core_pipeline_v11214.py").read_text(encoding="utf-8")
 DISPATCH = (PLUGIN / "dispatch_policy_v1125.py").read_text(encoding="utf-8")
 ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
@@ -79,7 +78,7 @@ def _load_mixin():
         "List": List,
         "Set": Set,
         "Tuple": Tuple,
-        "GuangYaCorePipelineFinalV11214Mixin": _CoreBase,
+        "GuangYaCorePipelineV11214Mixin": _CoreBase,
         "_entry_key_v1115": _entry_key,
     }
     exec(compile(module, str(PLUGIN / "channel_reconcile_v11215.py"), "exec"), namespace)
@@ -100,8 +99,8 @@ def test_candidate_parses_and_is_inserted_without_moving_top_level_mro():
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     assert "GuangYaChannelReconcileV11215Mixin" not in head
     assert "class GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin):" in MANUAL
-    assert "class GuangYaChannelReconcileV11215Mixin(GuangYaCorePipelineFinalV11214Mixin):" in SOURCE
-    assert "class GuangYaCorePipelineFinalV11214Mixin(GuangYaCorePipelineV11214Mixin):" in CORE_FINAL
+    assert "class GuangYaChannelReconcileV11215Mixin(GuangYaCorePipelineV11214Mixin):" in SOURCE
+    assert "core_pipeline_final_v11214" not in SOURCE
     assert "class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixin):" in CORE
 
 
