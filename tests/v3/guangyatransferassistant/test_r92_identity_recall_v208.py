@@ -18,7 +18,7 @@ PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 CORE = (PLUGIN / "core_pipeline_v11214.py").read_text(encoding="utf-8")
 LEGACY = (PLUGIN / "legacy.py").read_text(encoding="utf-8")
-GUARD = (PLUGIN / "channel_event_guard_v1115.py").read_text(encoding="utf-8")
+CURSOR = (PLUGIN / "channel_cursor_event_v1115.py").read_text(encoding="utf-8")
 SAFETY = (PLUGIN / "production_safety_v208.py").read_text(encoding="utf-8")
 DISPATCH = (PLUGIN / "dispatch_policy_final_v1125.py").read_text(encoding="utf-8")
 IDENTITY = (PLUGIN / "media_identity_v1111.py").read_text(encoding="utf-8")
@@ -32,7 +32,7 @@ def test_r92_version_markers():
     assert "identity_reject_v11214" in LEGACY
     assert "没有识别到支持的视频/字幕扩展名" in LEGACY
     assert LEGACY.index("identity_reject_v11214") < LEGACY.index("没有识别到支持的视频/字幕扩展名")
-    assert "_enqueue_external_recall_v208" in GUARD
+    assert "_enqueue_external_recall_v208" in CURSOR
     assert "外部补搜" in DISPATCH
     assert "force=True" in DISPATCH.split('if "外部补搜" in text:', 1)[1][:400]
 
@@ -516,6 +516,6 @@ def test_tombstone_and_recognition_cache_production():
 
 
 def test_channel_guard_enqueues_not_sync_provider():
-    assert "_enqueue_external_recall_v208" in GUARD
-    assert "return None" in GUARD
-    assert "super()._dispatch_provider_candidate" in GUARD
+    assert "_enqueue_external_recall_v208" in CURSOR
+    assert "return None" in CURSOR
+    assert "super()._dispatch_provider_candidate" in CURSOR
