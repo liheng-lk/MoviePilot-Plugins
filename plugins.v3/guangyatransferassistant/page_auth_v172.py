@@ -126,6 +126,19 @@ def _queue_status_action(path: str, endpoint: Any, *args, **kwargs) -> Dict[str,
                 last_page_action_id=sid,
                 last_page_action_at=plugin._now_text(),
             )
+        record_action = getattr(plugin, "_record_console_action_v1116", None)
+        if callable(record_action):
+            queued_message = (
+                "已进入人工完整检查队列：频道优先，仍缺资源时继续观影完整链"
+                if path == "/check_missing"
+                else "已进入待落盘复查队列：只按现有任务状态继续核验"
+            )
+            record_action(path, {
+                "success": True,
+                "message": queued_message,
+                "queued": True,
+                "subscribe_id": sid,
+            })
         plugin._plugin_log(
             "INFO",
             "【光鸭转存助手】【页面操作】%s #%s %s 已进入后台队列，HTTP 请求立即返回",
@@ -147,9 +160,14 @@ def _queue_status_action(path: str, endpoint: Any, *args, **kwargs) -> Dict[str,
             "data": {"subscribe_id": sid},
         }
 
+    message = (
+        "已进入人工完整检查队列：先查频道，仍有缺口会继续观影/迅雷/光鸭/Magnet/ED2K"
+        if path == "/check_missing"
+        else "已进入待落盘复查队列：不会强制重复提交已有任务"
+    )
     return {
         "success": True,
-        "message": "已进入后台检查队列，请稍后查看状态卡片或插件日志",
+        "message": message,
         "data": {
             "subscribe_id": sid,
             "queued": True,
