@@ -331,6 +331,23 @@ class GuangYaDispatchPolicyFinalV1125Mixin:
         if "外部补搜" in text:
             return self._run_v1115_mode_batch(ids, text, "airing_pull", force=True)
 
+        if "状态页复查待落盘" in text:
+            # Verify-only 用户动作：严禁落回普通资源链，否则“复查”可能意外创建新任务。
+            for sid in ids:
+                subscribe = self._find_subscription(int(sid))
+                if not subscribe:
+                    continue
+                try:
+                    self._recheck_pending_only(subscribe)
+                except Exception as err:
+                    self._plugin_log(
+                        "EXCEPTION",
+                        "【光鸭转存助手】【核验】#%s verify-only 待落盘复查异常：%s",
+                        sid,
+                        err,
+                    )
+            return None
+
         if "新订阅资源匹配" in text:
             self._run_v1115_mode_batch(
                 ids,
