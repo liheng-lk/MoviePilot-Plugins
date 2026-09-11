@@ -59,8 +59,11 @@ def _load_helpers():
     wanted = {
         "_safe_name_v11226",
         "_show_name_v11226",
+        "_strip_media_folder_suffix_v11226",
+        "_is_season_folder_v11226",
         "_split_name_ext_v11226",
         "_episode_tag_v11226",
+        "_release_tail_v11226",
         "_canonical_transfer_name_v11226",
         "_clean_channel_title_v11226",
         "_extract_channel_title_v11226",
@@ -116,11 +119,52 @@ def test_v11226_channel_titles_strip_template_noise():
     assert extract("[剧集·光鸭] 灵境行者 (2026)\nTMDB: 297923", lambda _: "") == "灵境行者"
 
 
-def test_v11226_transfer_name_is_show_plus_season_episode():
+def test_v11226_transfer_name_is_mp_title_episode_plus_original_release_metadata():
     helpers = _load_helpers()
     name = helpers["_canonical_transfer_name_v11226"]
     tv = SimpleNamespace(name="幸运女神", season=1, year=2026)
     movie = SimpleNamespace(name="沙丘 (2021)", season=None, year=2021)
-    assert name(tv, "Show.S01E07.2160p.mkv", is_movie=False) == "幸运女神 S01E07.mkv"
-    assert name(tv, "Show.S01E01-E07.mkv", is_movie=False) == "幸运女神 S01E01-E07.mkv"
-    assert name(movie, "Dune.2021.2160p.mkv", is_movie=True) == "沙丘.mkv"
+
+    assert name(
+        tv,
+        "Show.S01E07.2160p.WEB-DL.H265.DDP5.1-GROUP.mkv",
+        is_movie=False,
+        show_name="幸运女神",
+    ) == "幸运女神 - S01E07 - 2160p.WEB-DL.H265.DDP5.1-GROUP.mkv"
+
+    assert name(
+        tv,
+        "Show.S01E01-E07.1080p.WEB-DL.x264-GROUP.mkv",
+        is_movie=False,
+        show_name="幸运女神",
+    ) == "幸运女神 - S01E01-E07 - 1080p.WEB-DL.x264-GROUP.mkv"
+
+    assert name(
+        movie,
+        "Dune.2021.2160p.BluRay.REMUX.DV.TrueHD.Atmos.mkv",
+        is_movie=True,
+        show_name="沙丘",
+    ) == "沙丘 - 2160p.BluRay.REMUX.DV.TrueHD.Atmos.mkv"
+
+
+def test_v11226_weak_episode_filename_uses_planner_episode_and_keeps_release_tail():
+    helpers = _load_helpers()
+    name = helpers["_canonical_transfer_name_v11226"]
+    tv = SimpleNamespace(name="生逢其时", season=1, year=2026)
+    assert name(
+        tv,
+        "03.4K.WEB-DL.HEVC.DDP5.1.mkv",
+        is_movie=False,
+        show_name="生逢其时",
+        explicit_episodes=[3],
+    ) == "生逢其时 - S01E03 - 4K.WEB-DL.HEVC.DDP5.1.mkv"
+
+
+def test_v11226_mp_target_folder_title_skips_season_directory():
+    helpers = _load_helpers()
+    strip = helpers["_strip_media_folder_suffix_v11226"]
+    is_season = helpers["_is_season_folder_v11226"]
+    assert is_season("Season 1") is True
+    assert is_season("S01") is True
+    assert strip("生逢其时 (2026)") == "生逢其时"
+    assert strip("生逢其时 (2026) {tmdbid=12345}") == "生逢其时"
