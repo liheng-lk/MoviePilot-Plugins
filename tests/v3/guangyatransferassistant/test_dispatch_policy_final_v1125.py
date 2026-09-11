@@ -182,3 +182,25 @@ def test_final_dispatch_does_not_reimplement_download_or_transfer_business_chain
         "cloudcollection",
     ):
         assert forbidden not in lowered
+
+
+
+def test_pending_recheck_dispatch_is_verify_only_and_never_falls_into_resource_chain():
+    dispatch = _method("_run_dispatch_trigger_v1125", "_run_reliability_route_batch")
+    branch = dispatch.split('if "状态页复查待落盘" in text:', 1)[1].split(
+        'if "新订阅资源匹配" in text:',
+        1,
+    )[0]
+    assert "_recheck_pending_only(subscribe)" in branch
+    assert "_find_subscription" in branch
+    for forbidden in (
+        "_run_v1115_mode_batch",
+        "refresh_channels",
+        "airing_pull",
+        "viewing_poll",
+        "_dispatch_viewing_external",
+        "restore_share",
+        "cloudcollection",
+    ):
+        assert forbidden not in branch
+    assert "return None" in branch
