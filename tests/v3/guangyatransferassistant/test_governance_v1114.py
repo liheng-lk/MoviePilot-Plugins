@@ -7,10 +7,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 GOV = PLUGIN / "governance_v1114.py"
-FINAL = PLUGIN / "xunlei_final_v1114.py"
 UI = PLUGIN / "gying_ui_v1109.py"
 TEXT = GOV.read_text(encoding="utf-8")
-FINAL_TEXT = FINAL.read_text(encoding="utf-8")
 UI_TEXT = UI.read_text(encoding="utf-8")
 
 
@@ -20,10 +18,9 @@ def _method(name: str, next_name: str) -> str:
 
 def test_governance_layer_parses_and_is_retained_beneath_final_xunlei_layer():
     ast.parse(TEXT, filename=str(GOV))
-    ast.parse(FINAL_TEXT, filename=str(FINAL))
     ast.parse(UI_TEXT, filename=str(UI))
     assert "class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin):" in TEXT
-    assert "class GuangYaXunleiFinalV1114Mixin(GuangYaGovernanceV1114Mixin):" in FINAL_TEXT
+    assert "Consolidated final Xunlei boundary" in TEXT
     assert "from .console_control_v1116 import GuangYaConsoleControlV1116Mixin" in UI_TEXT
     assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlV1116Mixin):" in UI_TEXT
     assert 'build_id = "20260902-r27"' in UI_TEXT
@@ -43,13 +40,13 @@ def test_external_search_has_persistent_per_subscription_cooldown_and_force_esca
     assert "if force:" in block
     assert "cooldown_minutes" in block
     assert 'self.save_data("external_search_guard", state)' in block
-    dispatch = _method("_dispatch_xunlei_flash", "_dispatch_viewing_external_v1113")
+    dispatch = _method("_dispatch_xunlei_flash_governed_v1114", "_dispatch_viewing_external_v1113")
     assert "订阅已无缺集，跳过迅雷外部检索" in dispatch
     assert "迅雷外部检索处于冷却期" in dispatch
 
 
 def test_cloud_and_xunlei_completion_paths_call_official_completion_gate():
-    xunlei = _method("_dispatch_xunlei_flash", "_dispatch_viewing_external_v1113")
+    xunlei = _method("_dispatch_xunlei_flash_governed_v1114", "_dispatch_viewing_external_v1113")
     poll = _method("_poll_offline_source", "_custom_reject_terms_v1114")
     assert "self._finish_subscription_if_complete(subscribe)" in xunlei
     assert "self._finish_subscription_if_complete(subscribe)" in poll
