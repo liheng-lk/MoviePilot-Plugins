@@ -14,8 +14,7 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, Iterable, List
 
-from .channel_event_guard_v1115 import GuangYaChannelEventGuardV1115Mixin
-from .channel_event_v1115 import _entry_key_v1115
+from .channel_event_v1115 import GuangYaChannelEventV1115Mixin, _entry_key_v1115
 
 
 _CHANNEL_EVENT_SEEN_KEY_V1115 = "channel_event_seen_v1115"
@@ -24,10 +23,29 @@ _CHANNEL_EVENT_SEEN_CLEANUP_V1115 = 7 * 24 * 60 * 60
 _CHANNEL_EVENT_SEEN_MAX_V1115 = 20000
 
 
-class GuangYaChannelCursorEventV1115Mixin(GuangYaChannelEventGuardV1115Mixin):
+class GuangYaChannelCursorEventV1115Mixin(GuangYaChannelEventV1115Mixin):
     """最终频道新资源判定：游标是事件真相，缓存只是资源仓库。"""
 
     build_id = "20260902-r26"
+
+    def _dispatch_provider_candidate(
+        self,
+        subscribe: Any,
+        uncovered: set[int],
+    ):
+        """频道事件只消费频道资源；本地耗尽时异步入队独立 GYING，不在频道线程同步搜索。"""
+        if self._route_source_mode_value_v1115() == "channel_event":
+            enqueue = getattr(self, "_enqueue_external_recall_v208", None)
+            if callable(enqueue):
+                enqueue(subscribe, reason="local_candidates_exhausted")
+            else:
+                self._plugin_log(
+                    "INFO",
+                    "【光鸭转存助手】【频道事件】频道资源未完全覆盖当前缺集；本轮不主动调用观影/Provider，等待独立轮询",
+                )
+            return None
+        return super()._dispatch_provider_candidate(subscribe, uncovered)
+
 
     @staticmethod
     def _cursor_snapshot_v1115(raw: Any) -> Dict[str, int]:
