@@ -33,8 +33,10 @@ git checkout -b fix/short-topic
 ## 3. 最小开发循环
 
 ```bash
-python -m compileall -q plugins.v3/guangyatransferassistant
-python tests/v3/guangyatransferassistant/run_contract_tests.py
+python scripts/validate_guangya.py
+
+# 需要连同仓库 unittest 一起跑：
+python scripts/validate_guangya.py --full
 ```
 
 需要完整仓库验证时执行与 `.github/workflows/validate.yml` 等价的步骤。
