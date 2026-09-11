@@ -48,6 +48,7 @@ class GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin):
                 "消息立即检查",
                 "状态页立即检查缺集",
                 "人工立即检查",
+                "控制台处理缺集",
             )
         )
 
@@ -74,9 +75,8 @@ class GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin):
                 remaining.append(sid)
         return sorted(set(remaining))
 
-    def _run_dispatch_trigger_v1125(self, ids: List[int], trigger: str) -> None:
-        if not self._manual_full_chain_trigger_v11211(trigger):
-            return super()._run_dispatch_trigger_v1125(ids, trigger)
+    def _run_manual_full_chain_v11211(self, ids: List[int], trigger: str = "") -> None:
+        """最终 authority 可直接调用的人工完整链，避免依赖 MRO 恰好落到本层。"""
 
         normalizer = getattr(self, "_positive_ids_v1125", None)
         if callable(normalizer):
@@ -134,6 +134,11 @@ class GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin):
         except Exception:
             pass
         return None
+
+    def _run_dispatch_trigger_v1125(self, ids: List[int], trigger: str) -> None:
+        if self._manual_full_chain_trigger_v11211(trigger):
+            return self._run_manual_full_chain_v11211(ids, trigger)
+        return super()._run_dispatch_trigger_v1125(ids, trigger)
 
     def _handle_check_existing_command(self, event_data: Dict[str, Any]) -> None:
         subscribe = self._command_subscription_or_reply(event_data, selected_only=True)
