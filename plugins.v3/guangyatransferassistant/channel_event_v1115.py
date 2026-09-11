@@ -22,7 +22,7 @@ from typing import Any, Dict, Iterable, List, Tuple
 
 from .episode_resolver_v190 import reliable_episode_set, resolve_episode
 from .legacy import _entry_match_reason
-from .xunlei_final_v1114 import GuangYaXunleiFinalV1114Mixin
+from .governance_v1114 import GuangYaGovernanceV1114Mixin
 
 
 _CHANNEL_CACHE_KEY_V1115 = "channel_resource_cache_v1115"
@@ -57,7 +57,7 @@ def _entry_key_v1115(entry: Dict[str, Any]) -> str:
     return hashlib.sha256(f"{source}|{marker}".encode("utf-8")).hexdigest()
 
 
-class GuangYaChannelEventV1115Mixin(GuangYaXunleiFinalV1114Mixin):
+class GuangYaChannelEventV1115Mixin(GuangYaGovernanceV1114Mixin):
     """把频道发现与观影轮询拆成两套触发模型。"""
 
     build_id = "20260902-r26"
