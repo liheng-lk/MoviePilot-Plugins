@@ -605,8 +605,8 @@ def test_title_candidates_exact_no_fuzzy():
 
 def test_version_frozen():
     text = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
-    assert 'plugin_version = "2.0.10"' in text
-    assert 'build_id = "20260911-r94"' in text
+    assert 'plugin_version = "2.0.11"' in text
+    assert 'build_id = "20260911-r95"' in text
 
 
 def test_share_inspect_network_not_expired():

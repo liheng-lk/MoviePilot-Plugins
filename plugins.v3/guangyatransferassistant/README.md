@@ -1,3 +1,38 @@
+## v2.0.11-r95 — Episode Integrity Beta（Controlled Real-World Beta）
+
+本版本为 **Controlled Real-World Beta（剧集完整性实机验证版）**，不是 Stable / 正式稳定版 / 生产稳定版。
+
+### 本版重点
+- 电视剧补集改为结合 Emby 实际媒体库状态
+- 修复历史缺集可能因 MoviePilot note / missing 状态被永久跳过
+- 新增统一 Episode Target Resolver
+- 已播但 Emby 实际缺失的剧集重新进入补集目标
+- 未来未播集继续保护，不提前下载
+- 刚完成转存但 Emby 尚未扫描时增加 pending library confirmation，避免重复任务
+- TV 订阅完成前增加 fresh Emby 实际完整性确认
+- 修复 Auto GYING 主动检索选择链
+- 修复 Magnet/ED2K real fileIndex 与纯字幕任务保护
+- 增强资源选择、剧集目标、远端完成、Emby 入库的诊断日志
+
+### 仍需实机验证
+- Episode Target Resolver 在大批真实订阅下的长期稳定性
+- Emby 扫描延迟 / pending library confirmation
+- PanSou verified session 并发稳定性
+- Magnet/ED2K 远端实际落盘结果
+- 少量 diagnostics trace 完整性
+
+### 发布后优先观察
+1. Emby 历史缺集是否真正进入 final_target
+2. 未来未播集是否仍不提前下载
+3. remote success 到 Emby 入库之间是否避免重复任务
+4. Emby 真正完整后才完成订阅
+5. Auto GYING：selected=True → 【观影】搜索开始
+6. Magnet：selected_video>=1 → 实际有视频落盘
+7. 第一声啼哭类多资源是否不重复提交同一 episode
+
+### 实机红线（出现任一停止扩大 Beta）
+错误媒体/错季转存；managed 回落 native；同 episode 批量重复；subtitle-only 被判媒体成功；Emby 明显缺历史集但 final_target 为空；未来集提前批量转存；TV Emby 不完整却完成订阅。
+
 ## v2.0.10 Beta - Controlled Real-World Beta（20260911-r94）
 
 本版本为实机验证测试版（非 Stable Release），冻结已审 `2.0.9-r93` 业务基线。

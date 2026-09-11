@@ -255,8 +255,8 @@ def test_production_flush_no_old_wording():
 
 def test_version_frozen():
     entry = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
-    assert 'plugin_version = "2.0.10"' in entry
-    assert 'build_id = "20260911-r94"' in entry
+    assert 'plugin_version = "2.0.11"' in entry
+    assert 'build_id = "20260911-r95"' in entry
     legacy = (PLUGIN / "legacy.py").read_text(encoding="utf-8")
     assert "ingest_result" in legacy
     assert "message_ids" in legacy

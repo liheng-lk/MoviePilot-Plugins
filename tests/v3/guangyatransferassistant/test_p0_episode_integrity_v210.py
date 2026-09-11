@@ -354,8 +354,8 @@ def test_o_mro_wires_episode_target():
 
 def test_p_version_freeze_r94():
     entry = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
-    assert 'plugin_version = "2.0.10"' in entry
-    assert 'build_id = "20260911-r94"' in entry
+    assert 'plugin_version = "2.0.11"' in entry
+    assert 'build_id = "20260911-r95"' in entry
 
 
 def test_q_remember_marks_pending_library():

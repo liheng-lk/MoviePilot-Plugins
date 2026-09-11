@@ -20,8 +20,8 @@ LEGACY = (PLUGIN / "legacy.py").read_text(encoding="utf-8")
 
 
 def test_v208_version_and_ownership_contracts():
-    assert 'plugin_version = "2.0.10"' in ENTRY
-    assert 'build_id = "20260911-r94"' in ENTRY
+    assert 'plugin_version = "2.0.11"' in ENTRY
+    assert 'build_id = "20260911-r95"' in ENTRY
     assert "def _is_managed_subscription(" in ROUTING
     assert "def _is_managed_sid(" in ROUTING
     assert "【路由】" in ROUTING
