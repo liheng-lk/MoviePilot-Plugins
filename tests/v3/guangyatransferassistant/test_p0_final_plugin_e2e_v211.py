@@ -13,7 +13,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Set
 
-import pytest
 
 _HERE = Path(__file__).resolve().parent
 
@@ -620,14 +619,18 @@ def test_final_ed2k_video_submit_subtitle_blocked():
         "enabled": True,
         "state": "new",
     }
-    with pytest.raises(RuntimeError) as err:
+    caught = None
+    try:
         plugin._assert_selected_video_present_v210(
             resolve_data={"btResInfo": {"fileName": "光鸭测试剧.S01E09.zh-CN.ass"}},
             selected_indexes=[],
             source=sub_source,
             subscribe=_tv(),
         )
-    assert "SELECTED_VIDEO_MISSING" in str(err.value)
+    except RuntimeError as err:
+        caught = err
+    assert caught is not None, "subtitle-only source must be rejected"
+    assert "SELECTED_VIDEO_MISSING" in str(caught)
 
 
 def test_final_pending_blocks_duplicate_and_ingest_clears():
