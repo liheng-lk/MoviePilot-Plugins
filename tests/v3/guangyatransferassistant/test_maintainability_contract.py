@@ -13,6 +13,8 @@ MAX_RUNTIME_PY_FILES = 91
 MAX_LEGACY_LINES = 4578
 MAX_TOP_LEVEL_MRO_BASES = 47
 
+# 仅允许 ARCHITECTURE.md 6.1 明确记录职责与退出条件的历史特殊层。
+# 这个 allowlist 只能减少；新增项必须同步架构文档与 PR 说明。
 ALLOWED_LAYERED_MODULES = {
     "dispatch_policy_final_v1125.py",
     "runtime_fix_v1113.py",
@@ -169,3 +171,13 @@ def test_local_validator_covers_root_units_contracts_and_version_consistency():
     assert "plugin.json" in validator
     assert "plugin_version" in validator
     assert "--full" in validator
+
+
+
+def test_layered_module_allowlist_has_documented_exit_criteria():
+    architecture = _text("ARCHITECTURE.md")
+    assert "## 6.1 当前仅保留的两个历史特殊层" in architecture
+    for filename in sorted(ALLOWED_LAYERED_MODULES):
+        assert f"`{filename}`" in architecture
+    assert "退出条件" in architecture
+    assert "allowlist 只能减少" in architecture
