@@ -4,6 +4,7 @@ import ast
 import json
 import re
 import sys
+import typing
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -89,12 +90,12 @@ def _load_helpers():
     ]
     module = ast.Module(body=const_nodes + [n for n in nodes if isinstance(n, ast.FunctionDef)], type_ignores=[])
     namespace = {
-        "Any": object,
-        "Dict": dict,
-        "Iterable": object,
-        "List": list,
-        "Optional": object,
-        "Tuple": tuple,
+        "Any": typing.Any,
+        "Dict": typing.Dict,
+        "Iterable": typing.Iterable,
+        "List": typing.List,
+        "Optional": typing.Optional,
+        "Tuple": typing.Tuple,
         "Path": Path,
         "html": __import__("html"),
         "re": re,
