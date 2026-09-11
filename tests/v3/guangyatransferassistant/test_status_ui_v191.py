@@ -11,7 +11,6 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 STATUS = PLUGIN / "status_ui_v191.py"
-STATUS_HARDENING = PLUGIN / "status_hardening_v193.py"
 PLANNER_SAFETY = PLUGIN / "planner_safety_v190.py"
 ENTRY = PLUGIN / "__init__.py"
 
@@ -167,20 +166,18 @@ def test_status_ui_primary_actions_are_only_three_clear_operations():
     assert "刷新云任务只轮询已有 taskId，不会重复创建云任务" in text
 
 
-def test_status_ui_exposes_overview_api_and_r7_keeps_single_display_owner():
+def test_status_ui_exposes_overview_api_and_has_single_display_owner():
     status = STATUS.read_text(encoding="utf-8")
-    hardening = STATUS_HARDENING.read_text(encoding="utf-8")
     safety = PLANNER_SAFETY.read_text(encoding="utf-8")
     entry = ENTRY.read_text(encoding="utf-8")
     assert '"/status/overview"' in status
     assert "class GuangYaPlannerSafetyMixin(GuangYaStatusUiMixin)" in safety
     assert "return GuangYaStatusUiMixin.get_page(self)" in safety
-    assert "GuangYaStatusHardeningMixin" in hardening
-    start = entry.index("class GuangYaTransferAssistant")
-    assert entry.index("GuangYaStatusHardeningMixin,", start) < entry.index("GuangYaPlannerSafetyMixin,", start)
-    assert "资源策略：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K" in hardening
-    assert "viewing_session_state" in hardening
-    assert "xunlei_flash_state" in hardening
+    assert "GuangYaStatusHardeningMixin" not in entry
+    assert "status_hardening_v193" not in entry
+    assert "资源策略：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K" in status
+    assert "viewing_session_state" in status
+    assert "xunlei_flash_state" in status
 
 
 def test_status_ui_v191_is_retained_by_current_release():
@@ -194,3 +191,43 @@ def test_status_ui_v191_is_retained_by_current_release():
     assert "v1.9.1" in package.get("history", {})
     assert "紧凑" in package["history"]["v1.9.1"]
 
+
+
+def test_status_ui_directly_surfaces_viewing_and_xunlei_summary_without_tree_patch_layer():
+    probe = FakeStatus()
+    probe._viewing_enabled = True
+    probe._xunlei_flash_enabled = True
+    original = probe.get_data
+
+    def data(key):
+        if key == "viewing_session_state":
+            return {
+                "active_node": "https://gying.example",
+                "nodes": {
+                    "https://gying.example": {
+                        "status": "ok",
+                        "verified": True,
+                        "login_mode": "cookie_reuse",
+                    }
+                },
+            }
+        if key == "xunlei_flash_state":
+            return {
+                "items": {
+                    "a": {"state": "completed"},
+                    "b": {"state": "completed"},
+                    "c": {"state": "failed"},
+                }
+            }
+        return original(key)
+
+    probe.get_data = data
+    overview = probe._status_overview_v191()
+    assert overview["viewing"]["status"] == "ok"
+    assert overview["viewing"]["verified"] is True
+    assert overview["xunlei_flash"]["completed"] == 2
+    assert overview["xunlei_flash"]["failed"] == 1
+    text = _page_text(probe.get_page())
+    assert "观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K" in text
+    assert "观影：ok" in text
+    assert "迅雷秒传：完成 2 / 失败 1" in text
