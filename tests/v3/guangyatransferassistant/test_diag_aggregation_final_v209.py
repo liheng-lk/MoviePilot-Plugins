@@ -300,13 +300,11 @@ def _load_cursor_mixin():
     body = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.ClassDef, ast.Assign))]
     mod = ast.Module(body=body, type_ignores=[])
     ast.fix_missing_locations(mod)
-    # Load guard dependency lightly
-    guard_text = (PLUGIN / "channel_event_guard_v1115.py").read_text(encoding="utf-8") if (PLUGIN / "channel_event_guard_v1115.py").exists() else ""
     ns: Dict[str, Any] = {
         "Any": Any, "Dict": Dict, "List": List, "Optional": Optional,
         "time": __import__("time"),
         "datetime": __import__("datetime"),
-        "GuangYaChannelEventGuardV1115Mixin": object,
+        "GuangYaChannelEventV1115Mixin": object,
     }
     # Provide _entry_key_v1115 if defined in cursor file via exec of imports skipped
     if "_entry_key_v1115" not in text:
@@ -370,7 +368,7 @@ def test_final_mro_same_cycle_hidden_inbox():
         return f"{row.get('source_url')}|{row.get('message_id')}|{row.get('share_url') or row.get('uri') or ''}"
 
     ns["_entry_key_v1115"] = _entry_key_v1115
-    ns["GuangYaChannelEventGuardV1115Mixin"] = object
+    ns["GuangYaChannelEventV1115Mixin"] = object
     exec(compile(mod, "<cursor_mro>", "exec"), ns)
     Cursor = ns[cls_node.name]
 
@@ -498,7 +496,7 @@ def test_final_mro_bootstrap_no_storm():
         return f"{row.get('source_url')}|{row.get('message_id')}|{row.get('share_url') or row.get('uri') or ''}"
 
     ns["_entry_key_v1115"] = _entry_key_v1115
-    ns["GuangYaChannelEventGuardV1115Mixin"] = object
+    ns["GuangYaChannelEventV1115Mixin"] = object
     exec(compile(mod, "<cursor_boot>", "exec"), ns)
     Cursor = ns[cls_node.name]
 
