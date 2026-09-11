@@ -115,3 +115,9 @@ def test_cached_resources_are_hydrated_only_for_matching_subscription():
     assert "_entry_match_reason(row, subscribe)" in hydrate
     assert 'restored["cached_index"] = True' in hydrate
     assert "self.save_data(\"channel_index\", index)" in hydrate
+
+
+def test_channel_hit_log_matches_same_cycle_post_channel_viewing_behavior():
+    tick = _method("_tick", "_startup_check")
+    assert "频道批次结束后继续检查其它到期观影订阅" in tick
+    assert "观影轮询顺延到下一 tick" not in tick
