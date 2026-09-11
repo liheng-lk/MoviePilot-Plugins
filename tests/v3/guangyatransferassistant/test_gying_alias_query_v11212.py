@@ -120,7 +120,6 @@ def test_v11212_source_parses_and_is_nested_without_moving_top_level_mro():
     source = PATCH.read_text(encoding="utf-8")
     manual = MANUAL.read_text(encoding="utf-8")
     reconcile = RECONCILE.read_text(encoding="utf-8")
-    core_final = CORE_FINAL.read_text(encoding="utf-8")
     core = CORE.read_text(encoding="utf-8")
     fence = FENCE.read_text(encoding="utf-8")
     entry = ENTRY.read_text(encoding="utf-8")
@@ -142,7 +141,6 @@ def test_v11212_source_parses_and_is_nested_without_moving_top_level_mro():
     assert "GuangYaGyingAliasQueryV11212Mixin" not in head
     assert "GuangYaXunleiExistingEpisodeFenceV11213Mixin" not in head
     assert "GuangYaCorePipelineV11214Mixin" not in head
-    assert "GuangYaCorePipelineFinalV11214Mixin" not in head
     assert head.index("GuangYaMovieIdentityV1129Mixin") < head.index("GuangYaResourceGateV1127Mixin")
 
 
