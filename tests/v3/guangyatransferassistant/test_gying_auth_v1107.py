@@ -62,11 +62,15 @@ def test_same_session_flows_through_captcha_check_login_and_probe():
 
 
 def test_cookie_is_never_trusted_only_because_it_exists():
-    assert "has_cookie and self._gying_authenticated_probe(session, node)" in auth_text
-    assert "观影 Cookie 已通过受限搜索验真并复用" in auth_text
-    assert 'row["authenticated"] = False' in auth_text
-    assert "return self._gying_login_password(session, node)" in auth_text
-    assert '"mode": "configured_cookie"' not in auth_text
+    login = auth_text.split("    def _gying_login(", 1)[1].split(
+        "    # ------------------------------------------------------------------\n    # 验证码 / 人工登录",
+        1,
+    )[0]
+    assert "has_cookie and self._gying_authenticated_probe(session, node)" in login
+    assert "观影 Cookie 已通过受限搜索验真并复用" in login
+    assert 'row["authenticated"] = False' in login
+    assert "self._gying_login_password(session, node)" in login
+    assert '"mode": "configured_cookie"' not in login
 
 
 def test_pow_retries_three_times_and_only_then_logs_verified():
