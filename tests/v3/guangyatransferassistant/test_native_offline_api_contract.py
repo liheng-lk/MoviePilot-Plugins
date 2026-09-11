@@ -17,7 +17,9 @@ def test_create_task_persists_guangya_task_id():
 def test_native_status_mapping_is_explicit():
     block = MULTI.split("    def _poll_offline_source(", 1)[1].split("    # ------------------------------------------------------------------\n    # 调度与 API", 1)[0]
     assert "if status == 2:" in block
-    assert 'state="completed"' in block
+    # Verified remote video may set completed; unverified stays waiting/PENDING_VERIFY.
+    assert 'completed_state = "completed" if verified else "waiting"' in block or 'state="completed"' in block
+    assert "remote_video_confirmed" in block
     assert "if status == 5:" in block
     assert 'state="retry"' in block
     assert 'state="failed"' in block

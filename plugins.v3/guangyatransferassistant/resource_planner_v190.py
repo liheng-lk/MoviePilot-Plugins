@@ -135,6 +135,192 @@ class GuangYaResourcePlannerMixin:
     # Magnet resolve 后的文件级缺集选择
     # ------------------------------------------------------------------
     @staticmethod
+    def _subfiles_by_file_index_v210(resolve_data: Dict[str, Any]) -> Dict[int, Dict[str, Any]]:
+        """Map real API fileIndex → subfile row. Never treat list position as fileIndex."""
+        bt_info = resolve_data.get("btResInfo") or {}
+        if not isinstance(bt_info, dict):
+            return {}
+        subfiles = bt_info.get("subfiles") or []
+        if not isinstance(subfiles, list):
+            return {}
+        by_file_index: Dict[int, Dict[str, Any]] = {}
+        for fallback_index, row in enumerate(subfiles):
+            if not isinstance(row, dict):
+                continue
+            raw_index = row.get("fileIndex")
+            try:
+                index = int(raw_index) if raw_index is not None else int(fallback_index)
+            except (TypeError, ValueError):
+                index = int(fallback_index)
+            by_file_index[index] = row
+        return by_file_index
+
+    @classmethod
+    def _selected_manifest_v210(
+        cls,
+        resolve_data: Dict[str, Any],
+        selected_indexes: List[int],
+    ) -> List[Dict[str, Any]]:
+        by_file_index = cls._subfiles_by_file_index_v210(resolve_data)
+        manifest: List[Dict[str, Any]] = []
+        for raw in selected_indexes or []:
+            try:
+                index = int(raw)
+            except (TypeError, ValueError):
+                continue
+            row = by_file_index.get(index)
+            if not row:
+                continue
+            name = str(row.get("fileName") or row.get("name") or "").replace("\\", "/").strip()
+            try:
+                size = int(row.get("fileSize") or row.get("size") or 0)
+            except (TypeError, ValueError):
+                size = 0
+            if _is_video(name):
+                kind = "video"
+            elif _is_subtitle(name):
+                kind = "subtitle"
+            else:
+                kind = "other"
+            manifest.append({
+                "file_index": index,
+                "name": name,
+                "size": size,
+                "type": kind,
+            })
+        return manifest
+
+    def _log_cloud_file_selection_v210(
+        self,
+        *,
+        media: str,
+        source_type: str,
+        resolve_data: Dict[str, Any],
+        selected_indexes: List[int],
+        decision: str,
+    ) -> List[Dict[str, Any]]:
+        by_file_index = self._subfiles_by_file_index_v210(resolve_data)
+        total = len(by_file_index)
+        videos = sum(
+            1 for row in by_file_index.values()
+            if _is_video(str(row.get("fileName") or row.get("name") or ""))
+        )
+        subtitles = sum(
+            1 for row in by_file_index.values()
+            if _is_subtitle(str(row.get("fileName") or row.get("name") or ""))
+        )
+        manifest = self._selected_manifest_v210(resolve_data, selected_indexes)
+        selected_video = sum(1 for row in manifest if row.get("type") == "video")
+        selected_subtitle = sum(1 for row in manifest if row.get("type") == "subtitle")
+        sample = []
+        for row in manifest[:12]:
+            base = str(row.get("name") or "").rsplit("/", 1)[-1]
+            sample.append(f"{row.get('file_index')}:{row.get('type')}:{row.get('size')}:{base[:80]}")
+        self._plugin_log(
+            "INFO",
+            "【云添加文件选择】media=%s source=%s total=%s videos=%s subtitles=%s "
+            "selected_total=%s selected_video=%s selected_subtitle=%s decision=%s files=%s",
+            str(media or "-")[:120],
+            str(source_type or "-").upper(),
+            total,
+            videos,
+            subtitles,
+            len(manifest),
+            selected_video,
+            selected_subtitle,
+            decision,
+            ";".join(sample) or "-",
+        )
+        return manifest
+
+    def _assert_selected_video_present_v210(
+        self,
+        *,
+        resolve_data: Dict[str, Any],
+        selected_indexes: List[int],
+        source: Dict[str, Any],
+        subscribe: Any,
+    ) -> List[Dict[str, Any]]:
+        """Hard gate: never create_task for subtitle-only selections."""
+        source_type = str(source.get("type") or "").upper()
+        media = str(getattr(subscribe, "name", "") or source.get("name") or source.get("label") or "")
+        # ED2K single-file without subfiles: treat resolved name as the only candidate.
+        by_file_index = self._subfiles_by_file_index_v210(resolve_data)
+        if not by_file_index and not selected_indexes:
+            # ED2K / whole-package path with no enumerable indexes: still require video name.
+            source_type_l = str(source.get("type") or "").strip().lower()
+            if source_type_l == "ed2k":
+                probe = str(
+                    (resolve_data.get("btResInfo") or {}).get("fileName")
+                    if isinstance(resolve_data.get("btResInfo"), dict)
+                    else ""
+                ) or str(source.get("name") or source.get("label") or source.get("resolved_name") or "")
+                # Prefer resolved_name from caller via source fields when present.
+                if not _is_video(probe):
+                    self._log_cloud_file_selection_v210(
+                        media=media,
+                        source_type=source_type,
+                        resolve_data=resolve_data,
+                        selected_indexes=[],
+                        decision="reject",
+                    )
+                    raise RuntimeError(
+                        f"{_AMBIGUOUS_PREFIX}SELECTED_VIDEO_MISSING: "
+                        f"ED2K 无 subfiles 且文件名不是正片：{probe[:180] or '-'}"
+                    )
+            self._log_cloud_file_selection_v210(
+                media=media,
+                source_type=source_type,
+                resolve_data=resolve_data,
+                selected_indexes=[],
+                decision="submit_whole_or_ed2k",
+            )
+            return []
+
+        if not by_file_index and selected_indexes:
+            # No enumerable subfiles — allow submit only when selection is empty fileIndexes
+            # (whole package) or ED2K path already validated episodes. Still log.
+            self._log_cloud_file_selection_v210(
+                media=media,
+                source_type=source_type,
+                resolve_data=resolve_data,
+                selected_indexes=[],
+                decision="submit_whole_or_ed2k",
+            )
+            return []
+
+        if selected_indexes and by_file_index:
+            manifest = self._log_cloud_file_selection_v210(
+                media=media,
+                source_type=source_type,
+                resolve_data=resolve_data,
+                selected_indexes=selected_indexes,
+                decision="precheck",
+            )
+            video_count = sum(1 for row in manifest if row.get("type") == "video")
+            if video_count < 1:
+                self._log_cloud_file_selection_v210(
+                    media=media,
+                    source_type=source_type,
+                    resolve_data=resolve_data,
+                    selected_indexes=selected_indexes,
+                    decision="reject",
+                )
+                raise RuntimeError(
+                    f"{_AMBIGUOUS_PREFIX}SELECTED_VIDEO_MISSING: "
+                    "最终选中文件仅有字幕/非视频，禁止创建光鸭云添加任务"
+                )
+            self._log_cloud_file_selection_v210(
+                media=media,
+                source_type=source_type,
+                resolve_data=resolve_data,
+                selected_indexes=selected_indexes,
+                decision="submit",
+            )
+            return manifest
+        return []
+
+    @staticmethod
     def _media_rows(resolve_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         bt_info = resolve_data.get("btResInfo") or {}
         if not isinstance(bt_info, dict):
@@ -308,6 +494,15 @@ class GuangYaResourcePlannerMixin:
         # + 频道 episode_hint 做最后一次高置信集号确认，并把实际命中的缺集回填。
         source_type = str(source.get("type") or "").strip().lower()
         no_subfiles = not (isinstance(subfiles, list) and subfiles)
+        # ED2K no-subfiles: require resolved filename to be a real video before submit.
+        if source_type == "ed2k" and no_subfiles:
+            probe_name = resolved_name or str(source.get("name") or source.get("label") or "")
+            if not _is_video(probe_name):
+                raise RuntimeError(
+                    f"{_AMBIGUOUS_PREFIX}SELECTED_VIDEO_MISSING: "
+                    f"ED2K 单文件不是正片视频：{str(probe_name or '-')[:180]}"
+                )
+
         if source_type == "ed2k" and not self._is_movie_subscription(subscribe) and no_subfiles:
             season_hint = getattr(subscribe, "season", None)
             episode_hint = str(source.get("episode_hint") or "").strip()
@@ -359,6 +554,13 @@ class GuangYaResourcePlannerMixin:
         if bool(getattr(self, "_media_only", True)) and isinstance(subfiles, list) and subfiles and not indexes:
             raise RuntimeError(f"{_AMBIGUOUS_PREFIX}光鸭已解析来源，但没有高置信匹配当前缺集的视频文件")
 
+        manifest = self._assert_selected_video_present_v210(
+            resolve_data=data,
+            selected_indexes=indexes,
+            source=source,
+            subscribe=subscribe,
+        )
+
         source_id = str(source.get("id") or "")
         if source_id:
             self._update_source(
@@ -366,11 +568,13 @@ class GuangYaResourcePlannerMixin:
                 resolved_episodes=list(selection.get("episodes") or []),
                 selection_diagnostics=list(selection.get("diagnostics") or [])[:80],
                 selection_confidence=float(self._episode_auto_confidence or AUTO_SELECT_CONFIDENCE),
+                selected_manifest=manifest[:80],
             )
         return {
             "resolved_name": resolved_name[:300],
             "resolved_url": resolved_url,
             "selected_indexes": indexes,
+            "selected_manifest": manifest,
             "resolve_data": data,
         }
 
@@ -563,6 +767,71 @@ class GuangYaResourcePlannerMixin:
                         cand_trace = make_candidate_trace_id("ed2k", identity or uri)
                 except Exception:
                     cand_trace = f"{source_type}:{identity or uri[:40]}"
+                # Run-level episode claim before cloudcollection task creation.
+                claim_fn = getattr(self, "_claim_run_episodes_v209", None)
+                release_fn = getattr(self, "_release_run_episodes_v209", None)
+                mark_fn = getattr(self, "_mark_run_episodes_state_v209", None)
+                note_fn = getattr(self, "_note_candidate_diag_v209", None) or getattr(self, "_append_candidate_diag_v209", None)
+                try:
+                    season = int(getattr(subscribe, "season", 0) or 0)
+                except (TypeError, ValueError):
+                    season = 0
+                if callable(claim_fn):
+                    if is_movie:
+                        claimed, blocked = claim_fn(
+                            season=0,
+                            episodes=[0],
+                            candidate_trace_id=cand_trace,
+                            sid=sid,
+                            movie=True,
+                        )
+                        if blocked and not claimed:
+                            if callable(note_fn):
+                                try:
+                                    from .transfer_diag_v209 import make_diag
+                                    note_fn(make_diag(
+                                        state="PENDING",
+                                        reason_code="TRANSFER_ALREADY_RESERVED",
+                                        stage="SOURCE_SELECTION",
+                                        source=source_type,
+                                        message="同轮电影主任务已被其它候选占用",
+                                        resource_trace_id=resource_trace,
+                                        candidate_trace_id=cand_trace,
+                                        sid=sid,
+                                    ))
+                                except Exception:
+                                    pass
+                            skipped.append({"type": source_type, "reason": "TRANSFER_ALREADY_RESERVED"})
+                            continue
+                    else:
+                        claimed, blocked = claim_fn(
+                            season=season,
+                            episodes=sorted(int(v) for v in target),
+                            candidate_trace_id=cand_trace,
+                            sid=sid,
+                            movie=False,
+                        )
+                        if blocked:
+                            if callable(note_fn):
+                                try:
+                                    from .transfer_diag_v209 import make_diag
+                                    note_fn(make_diag(
+                                        state="PENDING" if claimed else "SKIPPED",
+                                        reason_code="TRANSFER_ALREADY_RESERVED",
+                                        stage="SOURCE_SELECTION",
+                                        source=source_type,
+                                        message=f"同轮 episode 已被其它候选占用：{sorted(set(blocked))}",
+                                        resource_trace_id=resource_trace,
+                                        candidate_trace_id=cand_trace,
+                                        evidence={"blocked_episodes": sorted(set(blocked)), "claimed_episodes": sorted(set(claimed))},
+                                        sid=sid,
+                                    ))
+                                except Exception:
+                                    pass
+                        if not claimed:
+                            skipped.append({"type": source_type, "reason": "TRANSFER_ALREADY_RESERVED"})
+                            continue
+                        target = set(claimed)
                 run_id = ""
                 getter = getattr(self, "_current_subscription_run_id", None)
                 if callable(getter):
@@ -611,11 +880,32 @@ class GuangYaResourcePlannerMixin:
                 }
                 dispatch = self._spawn_source_dispatch(str(row.get("id") or "")) or {}
                 if not dispatch.get("success"):
+                    if callable(release_fn) and target:
+                        try:
+                            release_fn(
+                                season=0 if is_movie else season,
+                                episodes=[0] if is_movie else sorted(target),
+                                candidate_trace_id=cand_trace,
+                                movie=is_movie,
+                            )
+                        except Exception:
+                            pass
                     skipped.append({"type": source_type, "reason": str(dispatch.get("message") or "来源未入队")})
                     if dispatch.get("reason") == "already_running":
                         dispatch_busy = True
                         break
                     continue
+                if callable(mark_fn) and target:
+                    try:
+                        mark_fn(
+                            season=0 if is_movie else season,
+                            episodes=[0] if is_movie else sorted(target),
+                            candidate_trace_id=cand_trace,
+                            state="pending",
+                            movie=is_movie,
+                        )
+                    except Exception:
+                        pass
                 actions.append(action)
                 if source_type == "magnet":
                     magnet_selected = True

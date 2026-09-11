@@ -128,7 +128,7 @@ def test_v1122_same_day_miss_retries_after_external_cooldown_until_day_gate_clos
 
     dispatch = SCHEDULER[SCHEDULER.index("def _run_airing_subscription_v1120("):SCHEDULER.index("def _try_transfer_subscription(")]
     assert "gate = self._airing_gate_v1120(subscribe)" in dispatch
-    assert 'due = list(gate.get("due_uncovered") or [])' in dispatch
+    assert 'gate.get("due_uncovered")' in dispatch
     assert "if not due:" in dispatch
 
     claim = GOVERNANCE[GOVERNANCE.index("def _claim_external_search_round_v1114"):GOVERNANCE.index("def _try_transfer_subscription(")]

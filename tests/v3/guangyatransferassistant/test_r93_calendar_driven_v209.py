@@ -29,8 +29,10 @@ def test_r93_version_and_mro():
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     lines = [ln.strip().rstrip(",") for ln in head.strip().splitlines() if ln.strip()]
     assert lines[0] == "GuangYaFoundationOpsV209Mixin"
-    assert lines[1] == "GuangYaCalendarDrivenV209Mixin"
-    assert lines[2] == "GuangYaPowSingleflightV209Mixin"
+    assert lines[1] == "GuangYaEpisodeTargetV210Mixin"
+    assert lines[2] == "GuangYaCalendarDrivenV209Mixin"
+    assert lines[3] == "GuangYaPowSingleflightV209Mixin"
+    assert "GuangYaEpisodeTargetV210Mixin" in ENTRY
     assert '"version": "2.0.10"' in PACKAGE
     assert "v2.0.9" in PACKAGE
     assert "0 21 * * *" in CAL
@@ -149,6 +151,7 @@ def test_target_episodes_calendar_intersect_missing():
 
 
 def test_skip_complete_when_mp_missing_empty():
+    """Only used_complete (positive coverage) may skip_complete on empty missing."""
     Mixin = _load_mixin(PLUGIN / "calendar_driven_v209.py", "GuangYaCalendarDrivenV209Mixin")
 
     class Base:
@@ -158,9 +161,6 @@ def test_skip_complete_when_mp_missing_empty():
         def _is_movie_subscription(self, subscribe):
             return False
 
-        def _mp_authoritative_missing_episodes_v209(self, subscribe):
-            return "used", set()
-
         def _plugin_log(self, *a, **k):
             self.logs.append(a)
 
@@ -168,17 +168,71 @@ def test_skip_complete_when_mp_missing_empty():
             pass
 
     class Obj(Mixin, Base):
-        def _mp_authoritative_missing_episodes_v209(self, subscribe):
-            return "used", set()
-
         def __init__(self):
             self.logs = []
+
+        def _mp_authoritative_missing_episodes_v209(self, subscribe):
+            return "used_complete", set()
+
+        def _sync_media_library_progress(self, subscribe):
+            return {"existing": [1, 2, 3], "missing": []}
+
+        def _library_existing_episodes_v209(self, subscribe):
+            return {1, 2, 3}
 
     obj = Obj()
     gate = obj._airing_gate_v1120(SimpleNamespace(id=170, name="尼古喵喵", season=1))
     assert gate["decision"] == "skip_complete"
+    assert gate["preflight_state"] == "SATISFIED"
     assert gate["target_episodes"] == []
     assert gate["covered"] is True
+
+
+def test_used_empty_without_calendar_is_continue_match():
+    Mixin = _load_mixin(PLUGIN / "calendar_driven_v209.py", "GuangYaCalendarDrivenV209Mixin")
+
+    class Base:
+        def _airing_gate_v1120(self, subscribe, payload=None):
+            return {"calendar_available": False}
+
+        def _is_movie_subscription(self, subscribe):
+            return False
+
+        def _plugin_log(self, *a, **k):
+            pass
+
+        def _bump_metric_v209(self, *a, **k):
+            pass
+
+    class Obj(Mixin, Base):
+        def _mp_authoritative_missing_episodes_v209(self, subscribe):
+            return "used_empty", set()
+
+        def _refresh_airing_calendar_v1120(self, force=False):
+            return {"subscriptions": []}
+
+        def _calendar_item_for_v1120(self, subscribe, calendar):
+            return {}
+
+        def _pending_reservations(self, subscribe):
+            return {}
+
+        def _active_source_claims(self, sid):
+            return set()
+
+        def _sync_media_library_progress(self, subscribe):
+            return {"existing": [], "missing": []}
+
+        def _library_existing_episodes_v209(self, subscribe):
+            return set()
+
+    gate = Obj()._airing_gate_v1120(
+        SimpleNamespace(id=171, name="未知剧", season=1, total_episode=18, start_episode=1),
+        payload={"subscriptions": []},
+    )
+    assert gate["decision"] == "continue_match"
+    assert gate["preflight_state"] == "UNKNOWN"
+    assert gate["covered"] is False
 
 
 def test_reservation_blocks_gying_target():
@@ -262,8 +316,11 @@ def test_smart_pull_calendar_failure_no_tv_external():
         def _active_selected_subscriptions_v1125(self):
             return [SimpleNamespace(id=1, name="tv"), SimpleNamespace(id=2, name="movie")]
 
-        def _external_cooldown_due_v1125(self, subscribe):
+        def _external_cooldown_due_v1125(self, sid, state, now):
             return True
+
+        def _external_search_state_v1114(self):
+            return {}
 
         def _is_movie_subscription(self, subscribe):
             return int(subscribe.id) == 2
@@ -277,8 +334,18 @@ def test_smart_pull_calendar_failure_no_tv_external():
         def _positive_ids_v1125(self, values):
             return [int(v) for v in values]
 
+        def _plugin_log(self, *a, **k):
+            pass
+
     class Obj(Mixin, Base):
-        pass
+        def _external_cooldown_due_v1125(self, sid, state, now):
+            return True
+
+        def _external_search_state_v1114(self):
+            return {}
+
+        def _plugin_log(self, *a, **k):
+            pass
 
     due = Obj()._smart_pull_due_ids_v1125()
     assert due == [2]  # movie may still pull; TV must not open all-missing GYING

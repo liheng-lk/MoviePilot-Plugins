@@ -312,6 +312,15 @@ class GuangYaChannelEventV1115Mixin(GuangYaXunleiFinalV1114Mixin):
                 subscribe = self._find_subscription(int(sid or 0))
                 if not subscribe or not self._is_guangya_route(subscribe):
                     continue
+                if str(mode or "") == "airing_pull":
+                    self._plugin_log(
+                        "INFO",
+                        "【主动检索派发】sid=%s media=%s mode=airing_pull trigger=%s force=%s",
+                        int(sid or 0),
+                        str(getattr(subscribe, "name", "") or "")[:120] or "-",
+                        str(trigger or "-")[:80],
+                        bool(force),
+                    )
                 self._hydrate_channel_index_for_subscription_v1115(subscribe)
                 try:
                     result = self._try_transfer_subscription(

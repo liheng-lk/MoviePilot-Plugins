@@ -387,6 +387,18 @@ class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin):
         original_indexes = [int(value) for value in (result.get("indexes") or [])]
         if not original_indexes:
             return result
+
+        by_file_index: Dict[int, Dict[str, Any]] = {}
+        for fallback_index, raw in enumerate(subfiles):
+            if not isinstance(raw, dict):
+                continue
+            raw_index = raw.get("fileIndex")
+            try:
+                index = int(raw_index) if raw_index is not None else int(fallback_index)
+            except (TypeError, ValueError):
+                index = int(fallback_index)
+            by_file_index[index] = raw
+
         kept_videos: List[int] = []
         kept_subtitles: List[int] = []
         rejected: List[str] = []
@@ -394,9 +406,9 @@ class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin):
         threshold = float(getattr(self, "_episode_auto_confidence", AUTO_SELECT_CONFIDENCE) or AUTO_SELECT_CONFIDENCE)
 
         for index in original_indexes:
-            if index < 0 or index >= len(subfiles) or not isinstance(subfiles[index], dict):
+            row = by_file_index.get(index)
+            if not isinstance(row, dict):
                 continue
-            row = subfiles[index]
             name = self._subfile_name_v1114(row)
             if _is_video(name):
                 reason = self._quality_reject_reason_v1114(name, self._subfile_size_v1114(row))
@@ -408,9 +420,8 @@ class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin):
                 kept_subtitles.append(index)
 
         if not kept_videos and any(
-            0 <= index < len(subfiles)
-            and isinstance(subfiles[index], dict)
-            and _is_video(self._subfile_name_v1114(subfiles[index]))
+            isinstance(by_file_index.get(index), dict)
+            and _is_video(self._subfile_name_v1114(by_file_index[index]))
             for index in original_indexes
         ):
             return {
@@ -425,7 +436,7 @@ class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin):
         covered: set[int] = set()
         video_eps: Dict[int, set[int]] = {}
         for index in kept_videos:
-            name = self._subfile_name_v1114(subfiles[index])
+            name = self._subfile_name_v1114(by_file_index[index])
             eps = reliable_episode_set(
                 resolve_episode(name, season_hint=season_hint),
                 threshold,
@@ -438,14 +449,14 @@ class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin):
             subtitle_eps: set[int] = set()
             subtitle_parents = set()
             for index in kept_subtitles:
-                name = self._subfile_name_v1114(subfiles[index])
+                name = self._subfile_name_v1114(by_file_index[index])
                 subtitle_parents.add(str(Path(name).parent).lower())
                 subtitle_eps.update(
                     reliable_episode_set(resolve_episode(name, season_hint=season_hint), threshold)
                 )
             subtitle_safe_videos: List[int] = []
             for index in kept_videos:
-                name = self._subfile_name_v1114(subfiles[index])
+                name = self._subfile_name_v1114(by_file_index[index])
                 eps = video_eps.get(index) or set()
                 has_signal = bool(_SUBTITLE_SIGNAL_RE_V1114.search(name))
                 same_parent = str(Path(name).parent).lower() in subtitle_parents
@@ -470,11 +481,11 @@ class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin):
         # 只保留与最终视频同目录/同集的字幕，避免过滤视频后留下孤儿字幕。
         final_subtitles: List[int] = []
         video_parents = {
-            str(Path(self._subfile_name_v1114(subfiles[index])).parent).lower()
+            str(Path(self._subfile_name_v1114(by_file_index[index])).parent).lower()
             for index in kept_videos
         }
         for index in kept_subtitles:
-            name = self._subfile_name_v1114(subfiles[index])
+            name = self._subfile_name_v1114(by_file_index[index])
             eps = reliable_episode_set(resolve_episode(name, season_hint=season_hint), threshold)
             if eps.intersection(covered) or str(Path(name).parent).lower() in video_parents:
                 final_subtitles.append(index)

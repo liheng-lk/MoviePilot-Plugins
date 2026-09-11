@@ -277,6 +277,22 @@ class GuangYaProductionSafetyV208Mixin:
                 self._failure_batch_v208 = []
             if not isinstance(getattr(self, "_diag_batch_v209", None), list):
                 self._diag_batch_v209 = []
+        try:
+            instance = ""
+            getter = getattr(self, "_instance_id_marker_v209", None)
+            if callable(getter):
+                instance = str(getter() or "")
+            else:
+                instance = str(getattr(self, "_instance_id_v209", "") or "")
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【批次开始】version=%s build=%s instance=%s",
+                str(getattr(self, "plugin_version", "") or ""),
+                str(getattr(self, "build_id", "") or ""),
+                instance or "-",
+            )
+        except Exception:
+            pass
 
     def _record_transfer_diag_v209(self, subscribe: Any, diag: Dict[str, Any], *, final: bool = True) -> None:
         """Accumulate structured diags for end-of-batch summary (upsert by subscription_run_id)."""
@@ -332,6 +348,12 @@ class GuangYaProductionSafetyV208Mixin:
             try:
                 from .transfer_diag_v209 import aggregate_subscription_diag
                 diag = aggregate_subscription_diag(current)
+                agg_state = str((diag or {}).get("final_state") or (diag or {}).get("state") or "")
+                # Candidate soft-fail while SUCCESS/PENDING/SKIPPED remains: never escalate.
+                if agg_state in {"SUCCESS", "PENDING"} or str(agg_state).startswith("SKIPPED"):
+                    return True
+                if agg_state and not str(agg_state).startswith("FAILED"):
+                    return True
             except Exception:
                 diag = None
         if not diag:
@@ -344,8 +366,19 @@ class GuangYaProductionSafetyV208Mixin:
             "NO_NEW_ACTION", "REMOTE_TASK_PENDING", "TRANSFER_ALREADY_RESERVED",
             "SUPERSEDED_BY_HIGHER_PRIORITY_SOURCE", "FUTURE_EPISODE_NOT_DUE",
             "SUBSCRIPTION_COMPLETED", "LIBRARY_ALREADY_SATISFIED",
+            "PARTIAL_TRANSFER_PENDING", "COMPLETION_SYNC_PENDING",
+            "TMDB_MATCH", "OFFICIAL_ALIAS_MATCH", "TITLE_MATCH",
         }:
             return True
+        # Candidate identity rejects: suppress immediate unless this is already the aggregated FAILED final.
+        if code in {"MEDIA_IDENTITY_UNCONFIRMED", "TMDB_ID_MISMATCH", "SELECTED_VIDEO_MISSING", "REMOTE_VIDEO_MISSING"}:
+            agg_state = str((diag or {}).get("final_state") or (diag or {}).get("state") or "")
+            if not agg_state.startswith("FAILED"):
+                return True
+            if isinstance(current, list) and len(current) > 1:
+                # Multi-candidate run: only final FAILED aggregation may notify once later.
+                if int(getattr(self, "_failure_batch_active_v208", 0) or 0) > 0:
+                    return True
         lock = getattr(self, "_failure_batch_lock_v208", None) or threading.RLock()
         self._failure_batch_lock_v208 = lock
         with lock:
@@ -427,7 +460,11 @@ class GuangYaProductionSafetyV208Mixin:
             self._plugin_log("INFO", "【转存诊断】批次仅本地暂无资源 checked=%s，跳过通知", buckets.get("checked", 0))
             return
         text = format_batch_summary(buckets, highlights)
-        # Hard guard: never emit the old misleading counter wording.
+        # Hard guard: never emit the old misleading counter wording / titles.
+        banned_snippets = ("失败/待补搜", "光鸭转存检查完成", "本轮处理：")
+        if any(token in text for token in banned_snippets):
+            self._plugin_log("WARNING", "【通知护栏】结构化汇总含旧格式片段，已拦截发送")
+            return
         if "失败/待补搜" in text:
             text = text.replace("失败/待补搜", "真正失败")
         try:
@@ -436,7 +473,11 @@ class GuangYaProductionSafetyV208Mixin:
                 mtype = NotificationType.Plugin
             except Exception:
                 mtype = "Plugin"
-            self.post_message(mtype=mtype, title="⚠️ 光鸭转存检查汇总", text=text[:1800])
+            title = "⚠️ 光鸭转存检查汇总"
+            if title == "⚠️ 光鸭转存检查完成" or "检查完成" in title:
+                self._plugin_log("WARNING", "【通知护栏】拦截旧批次标题")
+                return
+            self.post_message(mtype=mtype, title=title, text=text[:1800])
         except Exception as err:
             self._plugin_log("WARNING", "【光鸭转存助手】【通知】批次汇总发送失败：%s", err)
 

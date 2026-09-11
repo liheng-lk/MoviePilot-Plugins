@@ -304,11 +304,22 @@ class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin):
         elif subscribe and not self._is_movie_subscription(subscribe):
             lines.append("仍缺集数：无；已阻断后续 Magnet/ED2K")
         if resolved_name:
-            lines.append(f"文件：{resolved_name[:180]}")
+            if bool(current.get("remote_video_confirmed")):
+                lines.append(f"正片：{resolved_name[:180]}")
+                sub_count = sum(
+                    1 for row in (current.get("selected_manifest") or [])
+                    if str(row.get("type") or "") == "subtitle"
+                )
+                if sub_count:
+                    lines.append(f"字幕：{sub_count} 个")
+            else:
+                lines.append(f"任务文件名：{resolved_name[:180]}")
+                lines.append("正片确认：待媒体库同步核验（未伪造远端清单确认）")
         if task_id:
             lines.append(f"任务：{task_id[:90]}")
 
-        if self._notify_acquisition_v1113("☁️ 光鸭云添加完成", lines):
+        title = "☁️ 光鸭云添加完成" if bool(current.get("remote_video_confirmed")) else "☁️ 光鸭云添加任务完成"
+        if self._notify_acquisition_v1113(title, lines):
             self._update_source(source_id, completion_notified_at=self._now_text())
             self._plugin_log(
                 "INFO",

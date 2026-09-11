@@ -208,7 +208,15 @@ class GuangYaCalendarDrivenV209Mixin:
     # Authoritative missing via SubscribeChain.resolve_subscribe_missing
     # ------------------------------------------------------------------
     def _mp_authoritative_missing_episodes_v209(self, subscribe: Any) -> Tuple[str, Set[int]]:
-        """Return (source, missing_episodes). source is used|fallback."""
+        """Return (source, missing_episodes).
+
+        source meanings:
+        - used_complete: MP positively reports coverage / exist_flag
+        - used_missing: MP returned an explicit non-empty missing list
+        - used_empty: MP returned NotExistMediaInfo-style empty episodes (NOT satisfied)
+        - fallback: library/logical intersection fallback
+        - movie: movie subscription
+        """
         if self._is_movie_subscription(subscribe):
             return "movie", set()
         # Prefer MP resolve_subscribe_missing when available.
@@ -248,9 +256,11 @@ class GuangYaCalendarDrivenV209Mixin:
                         call_kwargs["best_version_accept_downloaded"] = False
                     exist_flag, no_exists = method(**call_kwargs)
                     if exist_flag:
-                        return "used", set()
+                        return "used_complete", set()
                     season = int(getattr(subscribe, "season", 0) or 0)
                     missing: Set[int] = set()
+                    saw_season_detail = False
+                    total_episode_hint = 0
                     for season_map in (no_exists or {}).values():
                         if not isinstance(season_map, dict):
                             continue
@@ -259,9 +269,18 @@ class GuangYaCalendarDrivenV209Mixin:
                             detail = season_map.get(str(season))
                         if detail is None:
                             continue
+                        saw_season_detail = True
                         episodes = getattr(detail, "episodes", None)
                         if episodes is None and isinstance(detail, dict):
                             episodes = detail.get("episodes")
+                        try:
+                            total_episode_hint = int(
+                                getattr(detail, "total_episode", None)
+                                or (detail.get("total_episode") if isinstance(detail, dict) else 0)
+                                or 0
+                            )
+                        except (TypeError, ValueError):
+                            total_episode_hint = 0
                         for value in episodes or []:
                             try:
                                 episode = int(value)
@@ -269,7 +288,18 @@ class GuangYaCalendarDrivenV209Mixin:
                                 continue
                             if episode > 0:
                                 missing.add(episode)
-                    return "used", missing
+                    if missing:
+                        return "used_missing", missing
+                    # Empty episode list with a season detail / total hint is UNKNOWN, not complete.
+                    if saw_season_detail:
+                        try:
+                            sub_total = int(getattr(subscribe, "total_episode", 0) or 0)
+                        except (TypeError, ValueError):
+                            sub_total = 0
+                        if total_episode_hint > 0 or sub_total > 0 or season > 0:
+                            return "used_empty", set()
+                    # No usable season detail → treat as empty/unknown rather than complete.
+                    return "used_empty", set()
             except Exception as err:
                 self._plugin_log(
                     "WARNING",
@@ -277,21 +307,27 @@ class GuangYaCalendarDrivenV209Mixin:
                     str(err)[:220],
                 )
 
-        # Fallback: existing library sync + logical missing intersection.
+        # Fallback: prefer Emby/library missing. Logical/note missing is auxiliary only —
+        # never hard-cap Emby gaps away via intersection.
         try:
             sync = dict(self._sync_media_library_progress(subscribe) or {})
-            library_missing = {
-                int(v) for v in (sync.get("missing") or []) if int(v or 0) > 0
-            }
+            if not bool(sync.get("success")):
+                library_missing = set()
+            else:
+                library_missing = {
+                    int(v) for v in (sync.get("missing") or []) if int(v or 0) > 0
+                }
         except Exception:
             library_missing = set()
         try:
             logical = set(self._raw_subscription_missing_v1120(subscribe) or [])
         except Exception:
             logical = set()
-        if library_missing and logical:
-            return "fallback", set(library_missing).intersection(logical)
-        return "fallback", set(library_missing or logical)
+        if library_missing:
+            return "fallback", set(library_missing)
+        if logical:
+            return "fallback", set(logical)
+        return "fallback", set()
 
     # ------------------------------------------------------------------
     # MP Native calendar provider (same identity + episode_group as cache_calendar)
@@ -556,6 +592,89 @@ class GuangYaCalendarDrivenV209Mixin:
             return True
         return now.hour >= active_hour
 
+    def _subscription_episode_bounds_v209(self, subscribe: Any) -> Tuple[int, int]:
+        try:
+            start = max(1, int(getattr(subscribe, "start_episode", 0) or 1))
+        except (TypeError, ValueError):
+            start = 1
+        try:
+            total = max(0, int(getattr(subscribe, "total_episode", 0) or 0))
+        except (TypeError, ValueError):
+            total = 0
+        return start, total
+
+    def _library_existing_episodes_v209(self, subscribe: Any) -> Set[int]:
+        """Emby/library success (including empty) wins; note only when library query failed."""
+        try:
+            sync = dict(self._sync_media_library_progress(subscribe) or {})
+            if bool(sync.get("success")):
+                return {int(v) for v in (sync.get("existing") or []) if int(v or 0) > 0}
+        except Exception:
+            pass
+        # Fail-soft UI only: never treat note as Emby truth for transfer targeting.
+        try:
+            notes = getattr(subscribe, "note", None) or []
+            return {int(v) for v in notes if int(v or 0) > 0}
+        except Exception:
+            return set()
+
+    def _split_calendar_due_future_v209(
+        self,
+        item: Dict[str, Any],
+        subscribe: Any,
+        now: datetime.datetime,
+        *,
+        candidate_episodes: Optional[Set[int]] = None,
+    ) -> Dict[str, Any]:
+        """Unify air_time <= now → due/aired; air_time > now → future; next from future only."""
+        start, total = self._subscription_episode_bounds_v209(subscribe)
+        due: Set[int] = set()
+        future: Set[int] = set()
+        air_dates: Dict[int, str] = {}
+        future_air: Dict[int, datetime.datetime] = {}
+        dated = 0
+        for row in (item or {}).get("episodes") or []:
+            if not isinstance(row, dict):
+                continue
+            try:
+                episode = int(row.get("episode") or row.get("episode_number") or 0)
+            except (TypeError, ValueError):
+                continue
+            if episode <= 0:
+                continue
+            if episode < start:
+                continue
+            if total and episode > total:
+                continue
+            if candidate_episodes is not None and episode not in candidate_episodes:
+                continue
+            air_at = self._episode_air_at_v1120(row)
+            if air_at is None:
+                continue
+            dated += 1
+            air_dates[episode] = str(row.get("air_date") or "")[:10] or air_at.strftime("%Y-%m-%d")
+            # Past/present air times are always due candidates; future only when strictly later.
+            if air_at <= now or self._episode_is_actively_due_v209(row, now):
+                due.add(episode)
+            else:
+                future.add(episode)
+                future_air[episode] = air_at
+        next_episode = 0
+        next_air_at = ""
+        if future_air:
+            episode, air_at = min(future_air.items(), key=lambda pair: (pair[1], pair[0]))
+            next_episode = int(episode)
+            next_air_at = air_at.isoformat(timespec="minutes")
+        return {
+            "due": due,
+            "future": future,
+            "air_dates": air_dates,
+            "next_episode": next_episode,
+            "next_air_at": next_air_at,
+            "dated_count": dated,
+            "calendar_available": dated > 0,
+        }
+
     # ------------------------------------------------------------------
     # Gate: calendar due ∩ MP missing − reserved − claimed
     # ------------------------------------------------------------------
@@ -573,46 +692,41 @@ class GuangYaCalendarDrivenV209Mixin:
         result["missing_mp"] = sorted(missing_mp)
         result["missing_source"] = missing_source
 
-        if not missing_mp:
-            result["due_missing"] = []
-            result["due_uncovered"] = []
-            result["target_episodes"] = []
-            result["decision"] = "skip_complete"
-            result["covered"] = True
-            self._bump_metric_v209("skipped_covered")
-            self._plugin_log(
-                "INFO",
-                "【MP订阅日历】#%s %s S%02d 今日应播=%s MP真实缺失=- reserved=- claimed=- 最终目标=- decision=skip_complete provider=%s",
-                sid,
-                name,
-                season,
-                ",".join(f"E{int(v):02d}" for v in (result.get("due_missing") or [])) or "-",
-                str(result.get("calendar_provider") or missing_source or "-"),
-            )
-            return result
+        # True MP complete coverage only — decide before calendar I/O.
+        # Emby actual gap still wins: stale MP complete / note must not skip forever.
+        if missing_source == "used_complete" and not missing_mp:
+            existing = self._library_existing_episodes_v209(subscribe)
+            start, total = self._subscription_episode_bounds_v209(subscribe)
+            bounds = set(range(start, total + 1)) if total >= start else set()
+            emby_gap = bounds - existing if bounds else set()
+            # Only trust MP complete when Emby also shows no gap with real coverage.
+            library_ok_empty_gap = bool(bounds) and not emby_gap and bool(existing)
+            if library_ok_empty_gap or (not bounds):
+                result["due_missing"] = []
+                result["due_uncovered"] = []
+                result["target_episodes"] = []
+                result["decision"] = "skip_complete"
+                result["preflight_state"] = "SATISFIED"
+                result["covered"] = True
+                result["next_episode"] = 0
+                result["next_air_at"] = ""
+                self._bump_metric_v209("skipped_covered")
+                self._plugin_log(
+                    "INFO",
+                    "【MP订阅日历】#%s %s S%02d existing=%s mp_missing=- calendar_due=- calendar_future=- "
+                    "reserved=- claimed=- final_target=- state=SATISFIED decision=skip_complete provider=%s",
+                    sid,
+                    name,
+                    season,
+                    ",".join(f"E{int(v):02d}" for v in sorted(existing)) or "-",
+                    str(result.get("calendar_provider") or missing_source or "-"),
+                )
+                return result
+            # Fall through: MP says complete but Emby still has gaps / empty library.
 
-        # Recompute due with precision rules, then intersect MP missing.
         calendar = payload or self._refresh_airing_calendar_v1120(force=False)
         item = self._calendar_item_for_v1120(subscribe, calendar) or {}
         now = datetime.datetime.now()
-        due_calendar: Set[int] = set()
-        future_map: Dict[int, str] = {}
-        air_dates: Dict[int, str] = {}
-        for row in item.get("episodes") or []:
-            if not isinstance(row, dict):
-                continue
-            try:
-                episode = int(row.get("episode") or row.get("episode_number") or 0)
-            except (TypeError, ValueError):
-                continue
-            if episode <= 0 or episode not in missing_mp:
-                continue
-            air_dates[episode] = str(row.get("air_date") or "")[:10]
-            if self._episode_is_actively_due_v209(row, now):
-                due_calendar.add(episode)
-            else:
-                air_at = self._episode_air_at_v1120(row)
-                future_map[episode] = air_at.strftime("%m-%d") if air_at else "?"
 
         try:
             reservations = dict(self._pending_reservations(subscribe) or {})
@@ -623,9 +737,44 @@ class GuangYaCalendarDrivenV209Mixin:
             claimed = {int(v) for v in (self._active_source_claims(sid) or []) if int(v or 0) > 0}
         except Exception:
             claimed = set()
+        existing = self._library_existing_episodes_v209(subscribe)
 
-        target = set(due_calendar).intersection(missing_mp) - reserved - claimed
-        # Episode backoff: drop not-ready episodes from active external targets.
+        # Candidate universe: explicit MP missing, else subscription bounds / calendar.
+        if missing_mp:
+            candidates: Optional[Set[int]] = set(missing_mp)
+        elif missing_source == "used_empty":
+            candidates = None  # all in-bound calendar episodes
+        else:
+            candidates = set(missing_mp) if missing_mp else None
+
+        split = self._split_calendar_due_future_v209(
+            item, subscribe, now, candidate_episodes=candidates if missing_mp else None,
+        )
+        # When MP missing is empty/unknown, still evaluate full calendar due/future.
+        if not missing_mp:
+            split = self._split_calendar_due_future_v209(item, subscribe, now, candidate_episodes=None)
+
+        due_calendar: Set[int] = set(split["due"])
+        future_set: Set[int] = set(split["future"])
+        air_dates: Dict[int, str] = dict(split["air_dates"])
+        calendar_available = bool(split["calendar_available"]) or bool(item.get("episodes"))
+
+        # Effective missing for targeting: Emby gap ∩ calendar due.
+        # MP missing is auxiliary and must NOT hard-delete Emby+due gaps.
+        start, total = self._subscription_episode_bounds_v209(subscribe)
+        emby_gap = set(range(start, total + 1)) - existing if total >= start else set()
+        if calendar_available and emby_gap:
+            effective_missing = set(due_calendar).intersection(emby_gap)
+        elif calendar_available and missing_mp:
+            effective_missing = set(due_calendar).intersection(missing_mp)
+        elif calendar_available:
+            effective_missing = set(due_calendar) - existing
+        else:
+            effective_missing = set()
+
+        target = set(effective_missing) - reserved - claimed
+        # Never re-narrow with missing_mp intersection when Emby gap is known.
+
         ready_target: Set[int] = set()
         for episode in sorted(target):
             if self._episode_ready_for_external_v209(sid, season, episode, air_dates.get(episode, "")):
@@ -634,58 +783,144 @@ class GuangYaCalendarDrivenV209Mixin:
                 self._bump_metric_v209("skipped_covered")
 
         result["due_calendar"] = sorted(due_calendar)
-        result["due_missing"] = sorted(due_calendar.intersection(missing_mp))
+        result["due_missing"] = sorted(due_calendar.intersection(effective_missing or due_calendar))
         result["due_uncovered"] = sorted(ready_target)
         result["target_episodes"] = sorted(ready_target)
-        result["reserved"] = sorted(reserved.intersection(missing_mp))
-        result["claimed"] = sorted(claimed.intersection(missing_mp))
-        result["future_missing"] = sorted(set(future_map) | set(result.get("future_missing") or []))
-        result["calendar_available"] = bool(item.get("episodes")) or bool(result.get("calendar_available"))
+        result["reserved"] = sorted(reserved)
+        result["claimed"] = sorted(claimed)
+        result["future_missing"] = sorted(future_set)
+        result["calendar_available"] = calendar_available or bool(result.get("calendar_available"))
         result["calendar_provider"] = str(item.get("provider") or result.get("calendar_provider") or "")
         result["episode_group"] = getattr(subscribe, "episode_group", None)
+        result["library_existing"] = sorted(existing)
+        result["next_episode"] = int(split.get("next_episode") or 0)
+        result["next_air_at"] = str(split.get("next_air_at") or "")
         result["covered"] = not ready_target
 
-        if not ready_target and future_map:
-            result["decision"] = "skip_future"
-            self._bump_metric_v209("skipped_future")
+        # UNKNOWN: empty MP list, no trustworthy calendar dates, no positive coverage.
+        if not missing_mp and missing_source != "used_complete" and not calendar_available:
+            result["decision"] = "continue_match"
+            result["preflight_state"] = "UNKNOWN"
+            result["covered"] = False
             self._plugin_log(
                 "INFO",
-                "【MP订阅日历】#%s %s 当前缺失=%s 今日应播=- 未来=%s decision=skip_future",
+                "【MP订阅日历】#%s %s S%02d existing=%s mp_missing=- calendar_due=- calendar_future=- "
+                "reserved=%s claimed=%s final_target=- state=UNKNOWN "
+                "reason=mp_missing_empty_without_coverage_evidence decision=continue_match provider=%s",
                 sid,
                 name,
-                ",".join(f"E{int(v):02d}" for v in sorted(missing_mp)) or "-",
-                ",".join(f"E{ep:02d}@{future_map[ep]}" for ep in sorted(future_map)) or "-",
-            )
-        elif not ready_target:
-            result["decision"] = "skip_complete"
-            self._plugin_log(
-                "INFO",
-                "【MP订阅日历】#%s %s 今日应播=%s MP真实缺失=%s reserved=%s claimed=%s 最终目标=- decision=skip_complete provider=%s",
-                sid,
-                name,
-                ",".join(f"E{int(v):02d}" for v in sorted(due_calendar)) or "-",
-                ",".join(f"E{int(v):02d}" for v in sorted(missing_mp)) or "-",
-                ",".join(f"E{int(v):02d}" for v in sorted(reserved.intersection(missing_mp))) or "-",
-                ",".join(f"E{int(v):02d}" for v in sorted(claimed.intersection(missing_mp))) or "-",
+                season,
+                ",".join(f"E{int(v):02d}" for v in sorted(existing)) or "-",
+                ",".join(f"E{int(v):02d}" for v in sorted(reserved)) or "-",
+                ",".join(f"E{int(v):02d}" for v in sorted(claimed)) or "-",
                 str(result.get("calendar_provider") or missing_source or "-"),
             )
-        else:
-            result["decision"] = "search"
+            return result
+
+        if ready_target:
+            result["decision"] = "search_due"
+            result["preflight_state"] = "MISSING"
+            result["covered"] = False
             self._bump_metric_v209("due_subscriptions")
             self._bump_metric_v209("due_episodes", len(ready_target))
             self._plugin_log(
                 "INFO",
-                "【MP订阅日历】#%s %s S%02d 今日应播=%s MP真实缺失=%s reserved=%s claimed=%s 最终目标=%s provider=%s",
+                "【MP订阅日历】#%s %s S%02d existing=%s mp_missing=%s calendar_due=%s calendar_future=%s "
+                "reserved=%s claimed=%s final_target=%s state=MISSING decision=%s provider=%s",
                 sid,
                 name,
                 season,
-                ",".join(f"E{int(v):02d}" for v in sorted(due_calendar)) or "-",
+                ",".join(f"E{int(v):02d}" for v in sorted(existing)) or "-",
                 ",".join(f"E{int(v):02d}" for v in sorted(missing_mp)) or "-",
-                ",".join(f"E{int(v):02d}" for v in sorted(reserved.intersection(missing_mp))) or "-",
-                ",".join(f"E{int(v):02d}" for v in sorted(claimed.intersection(missing_mp))) or "-",
+                ",".join(f"E{int(v):02d}" for v in sorted(due_calendar)) or "-",
+                ",".join(f"E{int(v):02d}" for v in sorted(future_set)) or "-",
+                ",".join(f"E{int(v):02d}" for v in sorted(reserved)) or "-",
+                ",".join(f"E{int(v):02d}" for v in sorted(claimed)) or "-",
                 ",".join(f"E{int(v):02d}" for v in sorted(ready_target)) or "-",
+                result["decision"],
                 str(result.get("calendar_provider") or "moviepilot_native"),
             )
+            return result
+
+        # No ready targets: either caught up with future remaining, or truly complete.
+        if future_set:
+            result["decision"] = "skip_future"
+            result["preflight_state"] = "SATISFIED"
+            self._bump_metric_v209("skipped_future")
+            self._plugin_log(
+                "INFO",
+                "【MP订阅日历】#%s %s existing=%s mp_missing=%s calendar_due=%s calendar_future=%s "
+                "final_target=- state=SATISFIED decision=skip_future next_future=E%s @ %s",
+                sid,
+                name,
+                ",".join(f"E{int(v):02d}" for v in sorted(existing)) or "-",
+                ",".join(f"E{int(v):02d}" for v in sorted(missing_mp)) or "-",
+                ",".join(f"E{int(v):02d}" for v in sorted(due_calendar)) or "-",
+                ",".join(f"E{int(v):02d}" for v in sorted(future_set)) or "-",
+                f"{int(result.get('next_episode') or 0):02d}" if result.get("next_episode") else "--",
+                str(result.get("next_air_at") or "未知"),
+            )
+            return result
+
+        if missing_mp and not due_calendar and not future_set:
+            # Explicit missing remains but calendar couldn't classify — continue matching.
+            result["decision"] = "continue_match"
+            result["preflight_state"] = "UNKNOWN"
+            result["covered"] = False
+            result["target_episodes"] = sorted(set(missing_mp) - reserved - claimed)
+            result["due_uncovered"] = list(result["target_episodes"])
+            self._plugin_log(
+                "INFO",
+                "【MP订阅日历】#%s %s mp_missing=%s calendar unavailable/undated state=UNKNOWN decision=continue_match",
+                sid,
+                name,
+                ",".join(f"E{int(v):02d}" for v in sorted(missing_mp)) or "-",
+            )
+            return result
+
+        # Due aired but not yet ready / not covered — never claim complete on used_empty.
+        pending_due = set(due_calendar) - existing - reserved - claimed
+        if missing_source in {"used_empty", "fallback"} and pending_due:
+            result["decision"] = "continue_match"
+            result["preflight_state"] = "MISSING"
+            result["covered"] = False
+            result["target_episodes"] = sorted(pending_due)
+            result["due_uncovered"] = sorted(pending_due)
+            self._plugin_log(
+                "INFO",
+                "【MP订阅日历】#%s %s S%02d existing=%s mp_missing=- calendar_due=%s calendar_future=%s "
+                "reserved=%s claimed=%s final_target=%s state=MISSING "
+                "reason=due_pending_without_ready decision=continue_match provider=%s",
+                sid,
+                name,
+                season,
+                ",".join(f"E{int(v):02d}" for v in sorted(existing)) or "-",
+                ",".join(f"E{int(v):02d}" for v in sorted(due_calendar)) or "-",
+                ",".join(f"E{int(v):02d}" for v in sorted(future_set)) or "-",
+                ",".join(f"E{int(v):02d}" for v in sorted(reserved)) or "-",
+                ",".join(f"E{int(v):02d}" for v in sorted(claimed)) or "-",
+                ",".join(f"E{int(v):02d}" for v in sorted(pending_due)) or "-",
+                str(result.get("calendar_provider") or missing_source or "-"),
+            )
+            return result
+
+        # Covered current due with no future: only then skip_complete.
+        result["decision"] = "skip_complete"
+        result["preflight_state"] = "SATISFIED"
+        self._plugin_log(
+            "INFO",
+            "【MP订阅日历】#%s %s S%02d existing=%s mp_missing=%s calendar_due=%s reserved=%s claimed=%s "
+            "final_target=- state=SATISFIED decision=skip_complete provider=%s",
+            sid,
+            name,
+            season,
+            ",".join(f"E{int(v):02d}" for v in sorted(existing)) or "-",
+            ",".join(f"E{int(v):02d}" for v in sorted(missing_mp)) or "-",
+            ",".join(f"E{int(v):02d}" for v in sorted(due_calendar)) or "-",
+            ",".join(f"E{int(v):02d}" for v in sorted(reserved)) or "-",
+            ",".join(f"E{int(v):02d}" for v in sorted(claimed)) or "-",
+            str(result.get("calendar_provider") or missing_source or "-"),
+        )
         return result
 
     # ------------------------------------------------------------------
@@ -693,14 +928,36 @@ class GuangYaCalendarDrivenV209Mixin:
     # ------------------------------------------------------------------
     def _smart_pull_due_ids_v1125(self) -> List[int]:
         rows = self._active_selected_subscriptions_v1125()
+        try:
+            state = dict(self._external_search_state_v1114() or {})
+        except Exception:
+            state = {}
+        now = time.time()
+
         cooldown_rows = []
         for subscribe in rows:
+            sid = int(getattr(subscribe, "id", 0) or 0)
+            if sid <= 0:
+                continue
             checker = getattr(self, "_external_cooldown_due_v1125", None)
             try:
-                if callable(checker) and not checker(subscribe):
+                if callable(checker) and not checker(sid, state, now):
+                    self._plugin_log(
+                        "INFO",
+                        "【主动检索选择】sid=%s state=- decision=- cooldown_due=False selected=False",
+                        sid,
+                    )
                     continue
-            except Exception:
-                pass
+            except Exception as err:
+                self._plugin_log(
+                    "WARNING",
+                    "【检索治理异常】sid=%s checker=_external_cooldown_due_v1125 exception_type=%s detail=%s",
+                    sid,
+                    type(err).__name__,
+                    str(err)[:220],
+                )
+                # Fail closed: skip this sid for this tick rather than bypass cooldown.
+                continue
             cooldown_rows.append(subscribe)
         if not cooldown_rows:
             return []
@@ -719,18 +976,71 @@ class GuangYaCalendarDrivenV209Mixin:
             sid = int(getattr(subscribe, "id", 0) or 0)
             if sid <= 0:
                 continue
+            media = str(getattr(subscribe, "name", "") or "")[:120]
             if self._is_movie_subscription(subscribe):
-                if self._movie_needs_pull_v1125(subscribe):
+                selected = bool(self._movie_needs_pull_v1125(subscribe))
+                self._plugin_log(
+                    "INFO",
+                    "【主动检索选择】sid=%s media=%s state=MOVIE decision=movie_needs_pull "
+                    "target_episodes=- due_uncovered=- cooldown_due=True selected=%s",
+                    sid,
+                    media or "-",
+                    selected,
+                )
+                if selected:
                     due.append(sid)
                 continue
             if calendar_failed or calendar is None:
                 # Fail-safe daytime: no active external search; channel push still runs elsewhere.
+                self._plugin_log(
+                    "INFO",
+                    "【主动检索选择】sid=%s media=%s state=UNKNOWN decision=calendar_unavailable "
+                    "target_episodes=- due_uncovered=- cooldown_due=True selected=False",
+                    sid,
+                    media or "-",
+                )
                 continue
             try:
                 gate = dict(self._airing_gate_v1120(subscribe, payload=calendar) or {})
-            except Exception:
+            except Exception as err:
+                self._plugin_log(
+                    "WARNING",
+                    "【检索治理异常】sid=%s checker=_airing_gate_v1120 exception_type=%s detail=%s",
+                    sid,
+                    type(err).__name__,
+                    str(err)[:220],
+                )
                 continue
-            if self._positive_ids_v1125(gate.get("due_uncovered") or gate.get("target_episodes") or []):
+
+            decision = str(gate.get("decision") or "")
+            preflight = str(gate.get("preflight_state") or "")
+            targets = self._positive_ids_v1125(gate.get("target_episodes") or [])
+            due_eps = self._positive_ids_v1125(gate.get("due_uncovered") or [])
+            has_targets = bool(due_eps or targets)
+            # MISSING with targets, or UNKNOWN/continue_match (even with empty targets).
+            selected = False
+            if decision in {"search", "search_due"} or (preflight == "MISSING" and has_targets):
+                selected = True
+            elif decision == "continue_match" or preflight == "UNKNOWN":
+                selected = True
+            elif decision in {"skip_future", "skip_complete"} or preflight == "SATISFIED":
+                selected = False
+            elif has_targets:
+                selected = True
+
+            self._plugin_log(
+                "INFO",
+                "【主动检索选择】sid=%s media=%s state=%s decision=%s target_episodes=%s "
+                "due_uncovered=%s cooldown_due=True selected=%s",
+                sid,
+                media or "-",
+                preflight or "-",
+                decision or "-",
+                ",".join(str(v) for v in targets) or "-",
+                ",".join(str(v) for v in due_eps) or "-",
+                selected,
+            )
+            if selected:
                 due.append(sid)
         return sorted(set(due))
 
@@ -743,6 +1053,11 @@ class GuangYaCalendarDrivenV209Mixin:
 
         missing_source, missing_mp = self._mp_authoritative_missing_episodes_v209(subscribe)
         if not missing_mp:
+            # Empty list is not complete unless MP explicitly reported coverage.
+            if missing_source == "used_complete":
+                return False
+            if missing_source in {"used_empty", "fallback"}:
+                return True
             return False
         try:
             reservations = dict(self._pending_reservations(subscribe) or {})

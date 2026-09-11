@@ -85,7 +85,15 @@ class GuangYaCorePipelineFinalV11214Mixin(GuangYaCorePipelineV11214Mixin):
             logical_missing = set(self._base_missing_without_due_scope_v11213(subscribe) or set())
         except Exception:
             logical_missing = _positive_episode_set_v11214(self._subscription_missing_episodes(subscribe) or [])
-        allowed = library_missing.intersection(_positive_episode_set_v11214(logical_missing))
+        # Emby/library missing is the base truth.
+        # When logical/note missing is non-empty, exclude pending-ingest episodes
+        # (Emby gap but note/receipt already claims done). When logical is empty
+        # (stale-complete note), keep the full Emby gap — never hard-cap to empty.
+        allowed = set(library_missing)
+        if library_missing and logical_missing:
+            allowed -= library_missing - _positive_episode_set_v11214(logical_missing)
+        elif not library_missing and logical_missing:
+            allowed = _positive_episode_set_v11214(logical_missing)
 
         try:
             reservations = dict(self._pending_reservations(subscribe) or {})

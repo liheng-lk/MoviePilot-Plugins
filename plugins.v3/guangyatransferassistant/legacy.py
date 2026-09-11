@@ -2578,18 +2578,24 @@ class GuangYaTransferAssistant(_PluginBase):
                     current.add(int(value))
                 except (TypeError, ValueError):
                     continue
-            merged = current | library_existing
-            lack = len(target.difference(merged))
+            # Emby/library actual is the only truth for missing/lack.
+            # note may retain receipt hints, but must never shrink the Emby gap.
+            lack = len(target.difference(library_existing))
+            note_keep = sorted((current | library_existing).intersection(target))
             current_lack = int(getattr(subscribe, "lack_episode", lack) or 0)
-            if merged != current or current_lack != lack:
-                SubscribeOper().update(sid, {"note": sorted(merged), "lack_episode": lack})
-                setattr(subscribe, "note", sorted(merged))
+            if note_keep != sorted(current.intersection(target)) or current_lack != lack:
+                SubscribeOper().update(sid, {"note": note_keep, "lack_episode": lack})
+                setattr(subscribe, "note", note_keep)
                 setattr(subscribe, "lack_episode", lack)
                 self._plugin_log("INFO", 
                     "【光鸭转存助手】【媒体库同步】#%s %s 已从媒体库确认 %s 集；订阅进度 %s/%s，剩余 %s",
-                    sid, getattr(subscribe, "name", ""), len(library_existing), len(target.intersection(merged)), len(target), lack,
+                    sid, getattr(subscribe, "name", ""), len(library_existing), len(library_existing), len(target), lack,
                 )
-            return {"success": True, "existing": sorted(library_existing), "missing": sorted(target.difference(merged))}
+            return {
+                "success": True,
+                "existing": sorted(library_existing),
+                "missing": sorted(target.difference(library_existing)),
+            }
         except Exception as err:
             self._plugin_log("WARNING", "【光鸭转存助手】【媒体库同步】#%s %s 同步失败：%s", sid, getattr(subscribe, "name", ""), err)
             return {"success": False, "existing": [], "missing": sorted(target)}
@@ -3161,6 +3167,34 @@ class GuangYaTransferAssistant(_PluginBase):
             if deferred_for_entry:
                 remaining_due_to_cap += deferred_for_entry
                 planned = planned[:self._max_files_per_run]
+            # Run-level episode claim BEFORE submit/restore (same subscription_run only).
+            claim_filter = getattr(self, "_filter_planned_by_run_claim_v209", None)
+            claimed_eps: List[int] = []
+            if callable(claim_filter) and planned:
+                planned, claimed_eps, blocked_eps = claim_filter(
+                    subscribe, planned, candidate_trace_id=cand_trace,
+                )
+                if blocked_eps:
+                    self._note_candidate_diag_v209(
+                        make_diag(
+                            state="PENDING" if planned else "SKIPPED",
+                            reason_code="TRANSFER_ALREADY_RESERVED",
+                            stage="SOURCE_SELECTION",
+                            source="guangya",
+                            message=f"同轮 episode 已被其它候选占用：{sorted(set(int(v) for v in blocked_eps))}",
+                            resource_trace_id=resource_trace,
+                            candidate_trace_id=cand_trace,
+                            evidence={
+                                "blocked_episodes": sorted(set(int(v) for v in blocked_eps)),
+                                "claimed_episodes": sorted(set(int(v) for v in claimed_eps)),
+                            },
+                            sid=sid,
+                        ),
+                        candidate_diags,
+                    )
+                if not planned:
+                    synchronized_match = True
+                    continue
             job_paths = [str(item.get("effective_path") or item.get("relative_path") or item.get("name") or "") for item in planned]
             pending_job = self._get_job_state(job_key)
             restored = None
@@ -3227,6 +3261,18 @@ class GuangYaTransferAssistant(_PluginBase):
             self._trim_history(history)
             self.save_data("transfer_history", history)
             if restored.get("success"):
+                mark_claim = getattr(self, "_mark_run_episodes_state_v209", None)
+                if callable(mark_claim) and claimed_eps:
+                    try:
+                        mark_claim(
+                            season=getattr(subscribe, "season", 0) or 0,
+                            episodes=claimed_eps,
+                            candidate_trace_id=cand_trace,
+                            state="confirmed",
+                            movie=self._is_movie_subscription(subscribe),
+                        )
+                    except Exception:
+                        pass
                 self._note_candidate_diag_v209(
                     make_diag(
                         state="SUCCESS",
@@ -3250,6 +3296,18 @@ class GuangYaTransferAssistant(_PluginBase):
             else:
                 if restored.get("pending_verification"):
                     pending_verification = True
+                    mark_claim = getattr(self, "_mark_run_episodes_state_v209", None)
+                    if callable(mark_claim) and claimed_eps:
+                        try:
+                            mark_claim(
+                                season=getattr(subscribe, "season", 0) or 0,
+                                episodes=claimed_eps,
+                                candidate_trace_id=cand_trace,
+                                state="pending",
+                                movie=self._is_movie_subscription(subscribe),
+                            )
+                        except Exception:
+                            pass
                     self._set_job_state(job_key, "verifying", verification_message=str(restored.get("message") or "等待落盘确认"))
                     self._note_candidate_diag_v209(
                         make_diag(
@@ -3270,6 +3328,18 @@ class GuangYaTransferAssistant(_PluginBase):
                         sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0],
                     )
                 else:
+                    # Submit failed before usable task: release run claim so later candidates can take over.
+                    release_claim = getattr(self, "_release_run_episodes_v209", None)
+                    if callable(release_claim) and claimed_eps:
+                        try:
+                            release_claim(
+                                season=getattr(subscribe, "season", 0) or 0,
+                                episodes=claimed_eps,
+                                candidate_trace_id=cand_trace,
+                                movie=self._is_movie_subscription(subscribe),
+                            )
+                        except Exception:
+                            pass
                     self._set_job_state(job_key, "failed", error=str(restored.get("message") or "增量转存失败"))
                     errors.append(str(restored.get("message") or "增量转存失败"))
                     stage = str(restored.get("stage") or "")
@@ -3303,7 +3373,19 @@ class GuangYaTransferAssistant(_PluginBase):
                 unique_paths.append(rel)
         if unique_paths:
             completed_subscription = self._finish_subscription_if_complete(subscribe, channel_state=channel_state)
-            partial = (bool(errors) or remaining_due_to_cap > 0 or pending_verification) and not completed_subscription
+            agg = aggregate_subscription_diag(candidate_diags) if candidate_diags else {}
+            agg_state = str(agg.get("final_state") or agg.get("state") or "")
+            # Candidate-level soft rejects must not force "partial" when transfer actually succeeded.
+            soft_only_errors = bool(errors) and agg_state in {"SUCCESS", "PENDING"} and not remaining_due_to_cap
+            partial = (
+                (bool(errors) and not soft_only_errors)
+                or remaining_due_to_cap > 0
+                or pending_verification
+                or agg_state == "PENDING"
+                or str(agg.get("final_reason") or "") == "PARTIAL_TRANSFER_PENDING"
+            ) and not completed_subscription
+            if agg_state == "SUCCESS" and not remaining_due_to_cap and not pending_verification:
+                partial = False
             self._plugin_log("INFO", "【光鸭转存助手】【转存】#%s %s %s：新增 %s 个文件，累计去重 %s 个，剩余待下轮 %s，目标=%s", sid, getattr(subscribe, "name", ""), "订阅完成" if completed_subscription else ("部分完成" if partial else "增量完成"), len(unique_paths), len(assets), remaining_due_to_cap, target_path)
             if self._notify:
                 season = getattr(subscribe, "season", None)
@@ -3319,7 +3401,7 @@ class GuangYaTransferAssistant(_PluginBase):
                     f"匹配：{'、'.join(sorted(match_reasons)) or '-'}",
                     f"本次新增：{len(unique_paths)} 个文件",
                     f"累计去重：{len(assets)} 个文件",
-                    (lambda p: f"订阅进度：{p[0]}/{p[1]}，剩余 {p[2]} 集" if p[1] else "订阅进度：非剧集订阅")(self._subscription_episode_progress(subscribe)),
+                    (lambda p: f"订阅总进度：{p[0]}/{p[1]}，剩余 {p[2]} 集" if p[1] else "订阅进度：非剧集订阅")(self._subscription_episode_progress(subscribe)),
                     f"来源：{'、'.join(sorted(sources))}",
                     f"目标：{target_path}",
                     f"新增内容：{preview or '-'}",
@@ -3327,7 +3409,7 @@ class GuangYaTransferAssistant(_PluginBase):
                 missing_now = self._subscription_missing_episodes(subscribe)
                 if missing_now:
                     shown_missing = ",".join(f"E{value:02d}" for value in missing_now[:30])
-                    lines.append(f"缺失：{shown_missing}" + (f" 等{len(missing_now)}集" if len(missing_now) > 30 else ""))
+                    lines.append(f"当前待补：{shown_missing}" + (f" 等{len(missing_now)}集" if len(missing_now) > 30 else ""))
                 if channel_state.get("ongoing") and not channel_state.get("complete") and not channel_state.get("explicit_total"):
                     lines.append("追更状态：频道仍标记更新中，即使当前集数齐全也受连载保护，不会提前完成订阅")
                 if remaining_due_to_cap:
@@ -3373,7 +3455,8 @@ class GuangYaTransferAssistant(_PluginBase):
                 "success": True, "handled": True, "already": True, "message": msg,
             }, candidate_diags=candidate_diags, entry=last_entry)
 
-        if pending_verification and not errors:
+        if pending_verification:
+            # Other candidates may have soft-failed (identity/share); pending still wins.
             self._plugin_log("INFO", 
                 "【光鸭转存助手】【落盘确认】#%s %s 已有转存任务等待目标文件确认；本轮不重复提交、不触发失败通知",
                 sid, getattr(subscribe, "name", ""),
@@ -3390,19 +3473,59 @@ class GuangYaTransferAssistant(_PluginBase):
                 ),
             }, candidate_diags=candidate_diags, entry=last_entry)
 
+        # If candidate aggregation already says PENDING/SUCCESS, never fall through to failure notify.
+        if candidate_diags:
+            early_agg = aggregate_subscription_diag(candidate_diags)
+            early_state = str(early_agg.get("final_state") or early_agg.get("state") or "")
+            if early_state in {"SUCCESS", "PENDING"} or early_state.startswith("SKIPPED"):
+                if early_state == "PENDING":
+                    return self._pack_transfer_result_v209({
+                        "success": True, "handled": True, "pending": True,
+                        "message": str(early_agg.get("message") or "等待云任务/后续资源"),
+                        "diag": dict(early_agg),
+                    }, candidate_diags=candidate_diags, entry=last_entry)
+                if early_state == "SUCCESS" or early_state.startswith("SKIPPED"):
+                    return self._pack_transfer_result_v209({
+                        "success": True, "handled": True, "already": early_state.startswith("SKIPPED"),
+                        "message": str(early_agg.get("message") or "已处理"),
+                        "diag": dict(early_agg),
+                    }, candidate_diags=candidate_diags, entry=last_entry)
+
         final_message = "；".join(dict.fromkeys(errors))[:1200] or "匹配分享均不可用"
-        self._plugin_log("WARNING", "【光鸭转存助手】【失败】#%s %s 转存未完成：%s；固定转存路线不触发原生下载", sid, getattr(subscribe, "name", ""), final_message)
-        if self._notify and matched_pairs:
+        final_diag = aggregate_subscription_diag(candidate_diags) if candidate_diags else make_diag(
+            state="FAILED_RETRYABLE",
+            reason_code="TRANSFER_FAILED",
+            stage="SUBMIT",
+            message=final_message,
+            sid=sid,
+            subscription_level=True,
+        )
+        final_state = str(final_diag.get("final_state") or final_diag.get("state") or "")
+        final_reason = str(final_diag.get("final_reason") or final_diag.get("reason_code") or "")
+        # Candidate-level failures never escalate to subscription failure while SUCCESS/PENDING remains.
+        allow_failure_notice = final_state.startswith("FAILED")
+        self._plugin_log(
+            "WARNING" if allow_failure_notice else "INFO",
+            "【光鸭转存助手】【失败汇总】#%s %s state=%s reason=%s allow_notice=%s msg=%s；固定转存路线不触发原生下载",
+            sid,
+            getattr(subscribe, "name", ""),
+            final_state,
+            final_reason,
+            int(allow_failure_notice),
+            (final_diag.get("message") or final_message)[:240],
+        )
+        if allow_failure_notice and self._notify and matched_pairs:
+            notice_text = str(final_diag.get("message") or final_message)
             queue_notice = getattr(self, "_queue_failure_notice_v208", None)
             batched = False
             if callable(queue_notice):
                 try:
-                    batched = bool(queue_notice(subscribe, final_message, level="retryable"))
+                    batched = bool(queue_notice(subscribe, notice_text, level="retryable"))
                 except Exception:
                     batched = False
             if not batched:
                 notices = self.get_data("failure_notices") or {}
-                notice_key = f"{sid}:{_failure_notice_fingerprint(final_message)}"
+                notice_key = f"{sid}:{_failure_notice_fingerprint(notice_text)}"
                 last_notice = self._parse_datetime(notices.get(notice_key))
                 now = datetime.datetime.now()
                 if not last_notice or (now - last_notice).total_seconds() >= 6 * 3600:
@@ -3412,7 +3535,7 @@ class GuangYaTransferAssistant(_PluginBase):
                             title="⚠️ 光鸭转存失败",
                             text=(
                                 f"媒体：{getattr(subscribe, 'name', '')} ({getattr(subscribe, 'year', '') or '-'})\n"
-                                f"状态：转存未完成\n原因：{final_message}\n"
+                                f"状态：转存未完成\n原因：{final_reason or '-'} | {notice_text}\n"
                                 + "后续：保持转存路线，等待频道刷新或下次重试"
                             ),
                         )
@@ -3422,7 +3545,8 @@ class GuangYaTransferAssistant(_PluginBase):
                     except Exception as err:
                         self._plugin_log("WARNING", "【光鸭转存助手】【通知】发送失败通知异常：%s", err)
         return self._pack_transfer_result_v209({
-            "success": False, "handled": True, "message": final_message,
+            "success": False, "handled": True, "message": str(final_diag.get("message") or final_message),
+            "diag": dict(final_diag),
         }, candidate_diags=candidate_diags, entry=last_entry)
 
     def _target_path(self, subscribe: Any) -> str:

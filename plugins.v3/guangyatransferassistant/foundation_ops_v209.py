@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import threading
 import time
+import uuid
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 
@@ -51,7 +52,30 @@ class GuangYaFoundationOpsV209Mixin:
         self._transfer_diag_ctx_v209 = threading.local()
         self._subscription_run_seq_lock_v209 = threading.RLock()
         self._subscription_run_seq_v209 = 0
-        return super().init_plugin(config)
+        # Diagnostic-only instance marker (not persisted; not used for business dedup).
+        self._instance_id_v209 = uuid.uuid4().hex[:8]
+        result = super().init_plugin(config)
+        try:
+            version = str(getattr(self, "plugin_version", "") or "")
+            build = str(getattr(self, "build_id", "") or "")
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【启动】version=%s build=%s instance=%s",
+                version,
+                build,
+                self._instance_id_v209,
+            )
+        except Exception:
+            pass
+        return result
+
+    def _instance_id_marker_v209(self) -> str:
+        marker = str(getattr(self, "_instance_id_v209", "") or "").strip()
+        if marker:
+            return marker
+        marker = uuid.uuid4().hex[:8]
+        self._instance_id_v209 = marker
+        return marker
 
     def _diag_tls_v209(self):
         tls = getattr(self, "_transfer_diag_ctx_v209", None)
@@ -82,11 +106,13 @@ class GuangYaFoundationOpsV209Mixin:
             "run_id": getattr(tls, "run_id", ""),
             "sid": getattr(tls, "sid", 0),
             "candidate_diags": list(getattr(tls, "candidate_diags", []) or []),
+            "episode_claims": dict(getattr(tls, "episode_claims", {}) or {}),
         })
         tls.stack = previous
         tls.run_id = run_id
         tls.sid = sid
         tls.candidate_diags = []
+        tls.episode_claims = {}
         # Backward-compatible mirrors for legacy readers (same-thread only).
         self._current_subscription_run_id_v209 = run_id
         self._current_subscription_candidate_diags_v209 = tls.candidate_diags
@@ -101,12 +127,235 @@ class GuangYaFoundationOpsV209Mixin:
             tls.run_id = prev.get("run_id") or ""
             tls.sid = prev.get("sid") or 0
             tls.candidate_diags = list(prev.get("candidate_diags") or [])
+            tls.episode_claims = dict(prev.get("episode_claims") or {})
         else:
             tls.run_id = ""
             tls.sid = 0
             tls.candidate_diags = []
+            tls.episode_claims = {}
         self._current_subscription_run_id_v209 = str(getattr(tls, "run_id", "") or "")
         self._current_subscription_candidate_diags_v209 = list(getattr(tls, "candidate_diags", []) or [])
+
+    def _run_episode_claims_map_v209(self) -> Dict[Tuple[Any, ...], Dict[str, Any]]:
+        tls = self._diag_tls_v209()
+        claims = getattr(tls, "episode_claims", None)
+        if not isinstance(claims, dict):
+            claims = {}
+            tls.episode_claims = claims
+        return claims
+
+    @staticmethod
+    def _run_episode_claim_key_v209(season: Any, episode: Any, *, movie: bool = False) -> Tuple[Any, ...]:
+        if movie:
+            return ("movie-main",)
+        try:
+            season_i = int(season or 0)
+        except (TypeError, ValueError):
+            season_i = 0
+        try:
+            episode_i = int(episode or 0)
+        except (TypeError, ValueError):
+            episode_i = 0
+        return (season_i, episode_i)
+
+    def _claim_run_episodes_v209(
+        self,
+        *,
+        season: Any,
+        episodes: Iterable[int],
+        candidate_trace_id: str,
+        sid: Any = None,
+        movie: bool = False,
+    ) -> Tuple[List[int], List[int]]:
+        """Atomically claim episodes for this subscription_run before submit.
+
+        Returns (claimed_episodes, blocked_episodes).
+        """
+        claims = self._run_episode_claims_map_v209()
+        cand = str(candidate_trace_id or "")
+        claimed: List[int] = []
+        blocked: List[int] = []
+        run_id = self._current_subscription_run_id()
+        for raw in episodes or []:
+            try:
+                ep = int(raw or 0)
+            except (TypeError, ValueError):
+                continue
+            if not movie and ep <= 0:
+                continue
+            key = self._run_episode_claim_key_v209(season, ep if not movie else 0, movie=movie)
+            owner = dict(claims.get(key) or {})
+            owner_state = str(owner.get("state") or "")
+            owner_cand = str(owner.get("candidate_trace_id") or "")
+            if owner_state in {"reserved", "pending", "confirmed"} and owner_cand and owner_cand != cand:
+                blocked.append(ep if not movie else 0)
+                self._plugin_log(
+                    "INFO",
+                    "【Episode Claim】sid=%s run=%s episode=%s candidate=%s owner=%s decision=skip_reserved",
+                    sid if sid is not None else getattr(self._diag_tls_v209(), "sid", 0),
+                    str(run_id or "-")[:40],
+                    ("movie-main" if movie else f"S{int(season or 0):02d}E{ep:02d}"),
+                    cand[:80],
+                    owner_cand[:80],
+                )
+                continue
+            claims[key] = {
+                "candidate_trace_id": cand,
+                "state": "reserved",
+                "sid": int(sid or getattr(self._diag_tls_v209(), "sid", 0) or 0),
+                "season": int(season or 0) if not movie else 0,
+                "episode": ep if not movie else 0,
+                "movie": bool(movie),
+            }
+            claimed.append(ep if not movie else 0)
+        return claimed, blocked
+
+    def _release_run_episodes_v209(
+        self,
+        *,
+        season: Any,
+        episodes: Iterable[int],
+        candidate_trace_id: str,
+        movie: bool = False,
+    ) -> int:
+        """Release claims after submit failed before task creation."""
+        claims = self._run_episode_claims_map_v209()
+        cand = str(candidate_trace_id or "")
+        released = 0
+        for raw in episodes or []:
+            try:
+                ep = int(raw or 0)
+            except (TypeError, ValueError):
+                continue
+            key = self._run_episode_claim_key_v209(season, ep if not movie else 0, movie=movie)
+            owner = dict(claims.get(key) or {})
+            if str(owner.get("candidate_trace_id") or "") != cand:
+                continue
+            if str(owner.get("state") or "") in {"pending", "confirmed"}:
+                # Task already created — do not free for same-run dual workers.
+                continue
+            claims.pop(key, None)
+            released += 1
+        return released
+
+    def _mark_run_episodes_state_v209(
+        self,
+        *,
+        season: Any,
+        episodes: Iterable[int],
+        candidate_trace_id: str,
+        state: str,
+        movie: bool = False,
+    ) -> None:
+        claims = self._run_episode_claims_map_v209()
+        cand = str(candidate_trace_id or "")
+        wanted = str(state or "pending")
+        for raw in episodes or []:
+            try:
+                ep = int(raw or 0)
+            except (TypeError, ValueError):
+                continue
+            key = self._run_episode_claim_key_v209(season, ep if not movie else 0, movie=movie)
+            owner = dict(claims.get(key) or {})
+            if str(owner.get("candidate_trace_id") or "") != cand:
+                continue
+            owner["state"] = wanted
+            claims[key] = owner
+
+    def _filter_planned_by_run_claim_v209(
+        self,
+        subscribe: Any,
+        planned: List[Dict[str, Any]],
+        *,
+        candidate_trace_id: str,
+    ) -> Tuple[List[Dict[str, Any]], List[int], List[int]]:
+        """Claim episodes for planned files before submit. Returns (kept, claimed_eps, blocked_eps)."""
+        try:
+            from .legacy import _episode_numbers as episode_numbers
+        except Exception:
+            import re
+
+            def episode_numbers(path: Any) -> Tuple[Optional[int], List[int]]:
+                value = str(path or "")
+                season = None
+                episodes: Set[int] = set()
+                block = re.search(
+                    r"(?i)S(?:eason)?[\s._-]*0*(\d{1,2})[\s._-]*E(?:p(?:isode)?)?[\s._-]*0*(\d{1,3})"
+                    r"(?:[\s._-]*(?:-|~|至|到)?[\s._-]*E?(?:p(?:isode)?)?[\s._-]*0*(\d{1,3}))?",
+                    value,
+                )
+                if block:
+                    season = int(block.group(1))
+                    start = int(block.group(2))
+                    end = int(block.group(3)) if block.group(3) else start
+                    if end >= start:
+                        episodes.update(range(start, end + 1))
+                return season, sorted(episodes)
+
+        is_movie = False
+        try:
+            is_movie = bool(self._is_movie_subscription(subscribe))
+        except Exception:
+            media_type = str(getattr(subscribe, "type", "") or "").lower()
+            is_movie = "movie" in media_type or "电影" in media_type
+        try:
+            season = int(getattr(subscribe, "season", 0) or 0)
+        except (TypeError, ValueError):
+            season = 0
+        sid = int(getattr(subscribe, "id", 0) or 0)
+        kept: List[Dict[str, Any]] = []
+        claimed_all: List[int] = []
+        blocked_all: List[int] = []
+        if is_movie:
+            if not planned:
+                return [], [], []
+            claimed, blocked = self._claim_run_episodes_v209(
+                season=0,
+                episodes=[0],
+                candidate_trace_id=candidate_trace_id,
+                sid=sid,
+                movie=True,
+            )
+            if blocked and not claimed:
+                return [], [], [0]
+            return list(planned), claimed, blocked
+
+        for item in list(planned or []):
+            path = str(item.get("effective_path") or item.get("relative_path") or item.get("name") or "")
+            file_season, episodes = episode_numbers(path)
+            eps = [int(v) for v in (episodes or []) if int(v or 0) > 0]
+            use_season = file_season if file_season is not None else season
+            if not eps:
+                # Unparsed episode numbers: do not claim; keep for existing fence handling.
+                kept.append(item)
+                continue
+            # Indivisible multi-episode file: require claiming every episode, else skip whole file.
+            claimed, blocked = self._claim_run_episodes_v209(
+                season=use_season,
+                episodes=eps,
+                candidate_trace_id=candidate_trace_id,
+                sid=sid,
+                movie=False,
+            )
+            if blocked and set(blocked) == set(eps):
+                blocked_all.extend(blocked)
+                continue
+            if blocked:
+                # Partial overlap on indivisible package — release any partial claim and skip file.
+                self._release_run_episodes_v209(
+                    season=use_season,
+                    episodes=claimed,
+                    candidate_trace_id=candidate_trace_id,
+                    movie=False,
+                )
+                blocked_all.extend(blocked)
+                continue
+            if claimed:
+                claimed_all.extend(claimed)
+                kept.append(item)
+            else:
+                blocked_all.extend(eps)
+        return kept, sorted(set(claimed_all)), sorted(set(blocked_all))
 
     def _current_subscription_run_id(self) -> str:
         tls = self._diag_tls_v209()
@@ -380,8 +629,20 @@ class GuangYaFoundationOpsV209Mixin:
                     missing = set()
                     known = False
             snapshot["authoritative_missing"] = sorted(missing)
-            # 未知事实时 fail-open 继续匹配，避免误跳过真实缺集。
-            snapshot["current_target_satisfied"] = bool(known and not missing)
+            # episodes=[] is NOT satisfied unless MP explicitly reported complete coverage.
+            if missing:
+                snapshot["current_target_satisfied"] = False
+                snapshot["preflight_state"] = "MISSING"
+            elif source in {"used_complete"}:
+                snapshot["current_target_satisfied"] = True
+                snapshot["preflight_state"] = "SATISFIED"
+            elif source in {"used_empty", "fallback", "", None} or not known:
+                snapshot["current_target_satisfied"] = False
+                snapshot["preflight_state"] = "UNKNOWN"
+            else:
+                # Legacy/unknown source labels with empty missing: fail-open continue match.
+                snapshot["current_target_satisfied"] = False
+                snapshot["preflight_state"] = "UNKNOWN"
             snapshot["source"] = source if known else "fallback"
 
         with lock:
@@ -417,12 +678,6 @@ class GuangYaFoundationOpsV209Mixin:
                 ",".join(str(v) for v in (preflight.get("library_existing") or []))
                 or ("movie" if preflight.get("movie_exists") else "-"),
                 str(preflight.get("source") or "-"),
-            )
-            self._resource_trace_v209(
-                entry={"title": getattr(subscribe, "name", ""), "message_id": "-"},
-                state="SKIP_LIBRARY_COMPLETE",
-                reason="preflight_before_channel_match",
-                matched_sid=sid,
             )
         candidate_sids = list(super()._subscriptions_for_new_channel_entries_v1115() or [])
         if not skip_match_sids:
@@ -526,12 +781,6 @@ class GuangYaFoundationOpsV209Mixin:
                 "【完成同步】#%s 目标已经满足，但 MoviePilot 活动订阅仍存在；本轮停止资源匹配，等待下一次 completion retry",
                 sid,
             )
-            self._resource_trace_v209(
-                entry={"title": getattr(subscribe, "name", ""), "message_id": "-"},
-                state="SKIP_LIBRARY_COMPLETE",
-                reason="current_target_satisfied",
-                matched_sid=sid,
-            )
             result = {
                 "success": True,
                 "handled": True,
@@ -586,7 +835,7 @@ class GuangYaFoundationOpsV209Mixin:
         if not hits:
             diag = make_diag(
                 state="NO_RESULT",
-                reason_code="NO_SUBSCRIPTION_MATCH",
+                reason_code="NO_LOCAL_RESOURCE",
                 stage="MATCH",
                 message="当前 managed 订阅中没有满足标题/年份/身份条件的 Inbox 资源",
                 evidence={
@@ -595,6 +844,9 @@ class GuangYaFoundationOpsV209Mixin:
                     "subscribe_tmdb": getattr(subscribe, "tmdbid", None) or getattr(subscribe, "media_id", ""),
                     "inbox_count": int((store or {}).get("count") or len((store or {}).get("items") or {})),
                 },
+                subscription_run_id=str(self._current_subscription_run_id() or ""),
+                sid=int(getattr(subscribe, "id", 0) or 0),
+                subscription_level=True,
                 trace_id=stable_trace_id("inbox-miss", getattr(subscribe, "id", 0)),
             )
             self._plugin_log("INFO", "%s", format_diag_log(diag, media=str(getattr(subscribe, "name", ""))))

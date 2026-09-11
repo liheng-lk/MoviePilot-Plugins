@@ -62,6 +62,7 @@ from .content_resilience_v1105 import GuangYaContentResilienceV1105Mixin
 from .diagnostics_v1100 import GuangYaDiagnosticsV1100Mixin
 from .dispatch_policy_v1125 import GuangYaDispatchPolicyV1125Mixin
 from .dispatch_policy_final_v1125 import GuangYaDispatchPolicyFinalV1125Mixin
+from .episode_target_v210 import GuangYaEpisodeTargetV210Mixin
 from .episode_fence_final_v1124 import GuangYaEpisodeFenceFinalV1124Mixin
 from .fast_recall_v1126 import GuangYaFastRecallV1126Mixin
 from .movie_identity_v1129 import GuangYaMovieIdentityV1129Mixin
@@ -114,6 +115,7 @@ install_channel_title_rename_v11226(_legacy_module)
 
 class GuangYaTransferAssistant(
     GuangYaFoundationOpsV209Mixin,
+    GuangYaEpisodeTargetV210Mixin,
     GuangYaCalendarDrivenV209Mixin,
     GuangYaPowSingleflightV209Mixin,
     GuangYaProductionSafetyV208Mixin,
@@ -176,7 +178,27 @@ class GuangYaTransferAssistant(
         strip_page_api_secrets(node)
 
     def post_message(self, *args, **kwargs):
-        if str(kwargs.get("title") or "") == "⚠️ 光鸭转存失败" and kwargs.get("text"):
+        title = str(kwargs.get("title") or "")
+        text = str(kwargs.get("text") or "")
+        # Hard ban old misleading batch formats (may still appear from stale mixins/helpers).
+        if (
+            "失败/待补搜" in text
+            or "光鸭转存检查完成" in title
+            or title.strip() == "⚠️ 光鸭转存检查完成"
+            or ("本轮处理：" in text and "失败" in text and "待补搜" in text)
+        ):
+            try:
+                self._plugin_log(
+                    "WARNING",
+                    "【通知护栏】拦截旧格式通知 title=%s text=%s instance=%s",
+                    title[:80],
+                    text[:120],
+                    getattr(self, "_instance_id_v209", "-"),
+                )
+            except Exception:
+                pass
+            return None
+        if title == "⚠️ 光鸭转存失败" and kwargs.get("text"):
             kwargs["text"] = collapse_unparsed_failure_notice(kwargs.get("text"))
         return super().post_message(*args, **kwargs)
 

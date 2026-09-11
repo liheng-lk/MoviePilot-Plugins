@@ -114,7 +114,15 @@ class GuangYaXunleiExistingEpisodeFenceV11213Mixin(GuangYaGyingAliasQueryV11212M
 
         library_missing = self._positive_set_v11213(sync.get("missing") or [])
         logical_missing = self._base_missing_without_due_scope_v11213(subscribe)
-        allowed = library_missing.intersection(logical_missing)
+        # Emby/library missing is the base truth.
+        # Non-empty logical/note missing only subtracts pending-ingest (Emby gap but
+        # note/receipt already claims done). Empty logical (stale-complete note) must
+        # NOT wipe Emby gaps via intersection.
+        allowed = set(library_missing)
+        if library_missing and logical_missing:
+            allowed -= library_missing - self._positive_set_v11213(logical_missing)
+        elif not library_missing and logical_missing:
+            allowed = set(logical_missing)
 
         try:
             reservations = dict(self._pending_reservations(subscribe) or {})

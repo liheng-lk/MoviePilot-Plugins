@@ -275,6 +275,30 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
         try:
             target_path, parent_id = self._offline_target_parent(subscribe)
             resolved = self._resolve_offline_source(source, subscribe)
+            # Final submit gate: selected indexes must contain at least one video when enumerated.
+            gate = getattr(self, "_assert_selected_video_present_v210", None)
+            if callable(gate) and resolved.get("selected_indexes"):
+                try:
+                    manifest = gate(
+                        resolve_data=resolved.get("resolve_data") or {},
+                        selected_indexes=list(resolved.get("selected_indexes") or []),
+                        source=source,
+                        subscribe=subscribe,
+                    )
+                    if manifest:
+                        resolved["selected_manifest"] = manifest
+                except RuntimeError as err:
+                    if "SELECTED_VIDEO_MISSING" in str(err):
+                        failed = self._mark_offline_failure(source, err)
+                        self._writeback_offline_candidate_diag_v209(
+                            failed or source,
+                            state="FAILED_RETRYABLE",
+                            reason_code="SELECTED_VIDEO_MISSING",
+                            stage="SUBMIT_PRECHECK",
+                            message=str(err)[:360],
+                        )
+                        return {"success": False, "message": str(err), "data": failed}
+                    raise
             payload: Dict[str, Any] = {
                 "url": resolved["resolved_url"] or str(source.get("uri") or ""),
                 "parentId": parent_id,
@@ -284,6 +308,26 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
             # newName 只作为显式标签；默认让光鸭保留解析出的资源名，避免与媒体目录重复嵌套。
             if str(source.get("label") or "").strip():
                 payload["newName"] = str(source.get("label") or "").strip()[:200]
+
+            manifest = list(resolved.get("selected_manifest") or [])
+            video_indexes = [
+                int(row.get("file_index"))
+                for row in manifest
+                if str(row.get("type") or "") == "video" and str(row.get("file_index") or "").lstrip("-").isdigit()
+            ]
+            subtitle_indexes = [
+                int(row.get("file_index"))
+                for row in manifest
+                if str(row.get("type") or "") == "subtitle" and str(row.get("file_index") or "").lstrip("-").isdigit()
+            ]
+            self._plugin_log(
+                "INFO",
+                "【云添加提交摘要】source=%s fileIndexes=%s selected_video_indexes=%s selected_subtitle_indexes=%s",
+                str(source.get("type") or "").upper(),
+                list(resolved.get("selected_indexes") or [])[:40],
+                video_indexes[:40],
+                subtitle_indexes[:40],
+            )
 
             response = self._offline_request("/cloudcollection/v1/create_task", payload)
             if not self._offline_api_success(response):
@@ -304,6 +348,7 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                 resolved_name=resolved["resolved_name"],
                 resolved_url=resolved["resolved_url"],
                 selected_indexes=resolved["selected_indexes"],
+                selected_manifest=list(resolved.get("selected_manifest") or [])[:80],
                 target_path=target_path,
                 last_error="",
                 next_retry_at=0,
@@ -410,17 +455,121 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
             file_name = str(task.get("fileName") or source.get("resolved_name") or "").strip()
 
             if status == 2:
+                # Task completed: do not treat "plan had video" or "empty manifest" as remote video confirmed.
+                manifest = list(source.get("selected_manifest") or [])
+                planned_video = [
+                    str(row.get("name") or "")
+                    for row in manifest
+                    if str(row.get("type") or "") == "video" or _is_video(str(row.get("name") or ""))
+                ]
+                planned_subtitle = [
+                    str(row.get("name") or "")
+                    for row in manifest
+                    if str(row.get("type") or "") == "subtitle" or _is_subtitle(str(row.get("name") or ""))
+                ]
+                file_name = str(task.get("fileName") or source.get("resolved_name") or "").strip()
+                base_name = file_name.rsplit("/", 1)[-1] if file_name else ""
+
+                if manifest and not planned_video:
+                    updated = self._update_source(
+                        str(source.get("id") or ""),
+                        state="failed",
+                        task_status=status,
+                        progress=100,
+                        file_id=file_id,
+                        resolved_name=file_name[:300],
+                        last_error="REMOTE_VIDEO_MISSING: 任务完成但选中清单无正片视频",
+                        next_retry_at=0,
+                        remote_video_confirmed=False,
+                        remote_verify_source="selected_manifest",
+                    ) or source
+                    self._writeback_offline_candidate_diag_v209(
+                        updated,
+                        state="FAILED_RETRYABLE",
+                        reason_code="REMOTE_VIDEO_MISSING",
+                        stage="REMOTE_VERIFY",
+                        message="云添加任务完成但未确认正片视频",
+                    )
+                    self._plugin_log(
+                        "WARNING",
+                        "【云添加终态】task_id=%s status=completed manifest_present=True "
+                        "planned_video=0 planned_subtitle=%s remote_result_name=%s "
+                        "remote_video_verified=False verify_source=selected_manifest",
+                        task_id,
+                        len(planned_subtitle),
+                        base_name[:180] or "-",
+                    )
+                    return {"success": False, "message": updated.get("last_error"), "data": updated}
+
+                if file_name and _is_subtitle(file_name) and not planned_video and not _is_video(file_name):
+                    updated = self._update_source(
+                        str(source.get("id") or ""),
+                        state="failed",
+                        task_status=status,
+                        progress=100,
+                        file_id=file_id,
+                        resolved_name=file_name[:300],
+                        last_error="REMOTE_VIDEO_MISSING: 任务完成文件名为字幕",
+                        next_retry_at=0,
+                        remote_video_confirmed=False,
+                        remote_verify_source="task_result_filename",
+                    ) or source
+                    self._writeback_offline_candidate_diag_v209(
+                        updated,
+                        state="FAILED_RETRYABLE",
+                        reason_code="REMOTE_VIDEO_MISSING",
+                        stage="REMOTE_VERIFY",
+                        message="云添加任务完成但文件名仅为字幕",
+                    )
+                    self._plugin_log(
+                        "WARNING",
+                        "【云添加终态】task_id=%s status=completed manifest_present=%s "
+                        "planned_video=%s planned_subtitle=%s remote_result_name=%s "
+                        "remote_video_verified=False verify_source=task_result_filename",
+                        task_id,
+                        bool(manifest),
+                        len(planned_video),
+                        len(planned_subtitle),
+                        base_name[:180] or "-",
+                    )
+                    return {"success": False, "message": updated.get("last_error"), "data": updated}
+
+                # Confirmation policy:
+                # - task_result filename is a real video extension → confirmed via task_result_filename
+                # - otherwise planned_manifest only proves selection intent, not remote landing
+                # - empty/missing manifest without video filename → UNKNOWN (no auto-confirm)
+                if file_name and _is_video(file_name):
+                    verified = True
+                    verify_source = "task_result_filename"
+                elif planned_video:
+                    verified = False
+                    verify_source = "planned_manifest"
+                else:
+                    verified = False
+                    verify_source = "legacy_compat" if not manifest else "selected_manifest"
+
+                completed_state = "completed" if verified else "waiting"
+                reason_code = "REMOTE_VERIFY_CONFIRMED" if verified else "REMOTE_TASK_PENDING"
+                diag_state = "SUCCESS" if verified else "PENDING"
+                diag_message = (
+                    "光鸭原生云添加已确认正片"
+                    if verified
+                    else "云添加任务完成，正片远端核验待确认"
+                )
+
                 updated = self._update_source(
                     str(source.get("id") or ""),
-                    state="completed",
+                    state=completed_state,
                     task_status=status,
                     progress=100,
                     file_id=file_id,
                     resolved_name=file_name[:300],
-                    completed_at=self._now_text(),
-                    completed_ts=time.time(),
-                    last_error="",
+                    completed_at=self._now_text() if verified else str(source.get("completed_at") or ""),
+                    completed_ts=time.time() if verified else float(source.get("completed_ts") or 0),
+                    last_error="" if verified else "PENDING_VERIFY: 任务完成但远端正片未确认",
                     next_retry_at=0,
+                    remote_video_confirmed=bool(verified),
+                    remote_verify_source=verify_source,
                 ) or source
                 self._record_route_health(
                     last_offline_completed_at=self._now_text(),
@@ -428,26 +577,36 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                     last_offline_task_id=task_id,
                 )
                 subscribe = self._find_subscription(int(source.get("subscribe_id") or 0))
-                if subscribe:
+                if subscribe and verified:
                     try:
                         self._sync_media_library_progress(subscribe)
                     except Exception as err:
                         self._plugin_log("DEBUG", "【光鸭转存助手】【原生云添加】完成后媒体库进度同步暂未命中：%s", err)
                 self._plugin_log(
                     "INFO",
-                    "【光鸭转存助手】【原生云添加】任务完成 task=%s fileId=%s name=%s",
+                    "【云添加终态】task_id=%s status=completed manifest_present=%s "
+                    "planned_video=%s planned_subtitle=%s remote_result_name=%s "
+                    "remote_video_verified=%s verify_source=%s",
                     task_id,
-                    file_id or "-",
-                    file_name or "-",
+                    bool(manifest),
+                    len(planned_video),
+                    len(planned_subtitle),
+                    base_name[:180] or "-",
+                    bool(verified),
+                    verify_source,
                 )
                 self._writeback_offline_candidate_diag_v209(
                     updated or source,
-                    state="SUCCESS",
-                    reason_code="REMOTE_VERIFY_CONFIRMED",
+                    state=diag_state,
+                    reason_code=reason_code,
                     stage="REMOTE_VERIFY",
-                    message="光鸭原生云添加已完成",
+                    message=diag_message,
                 )
-                return {"success": True, "message": "光鸭原生云添加已完成", "data": updated}
+                return {
+                    "success": bool(verified),
+                    "message": diag_message,
+                    "data": updated,
+                }
 
             if status == 5:
                 attempts = int(source.get("attempts") or 0)

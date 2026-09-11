@@ -21,7 +21,8 @@ def test_foundation_mro_and_version_frozen():
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     lines = [ln.strip().rstrip(",") for ln in head.strip().splitlines() if ln.strip()]
     assert lines[0] == "GuangYaFoundationOpsV209Mixin"
-    assert lines[1] == "GuangYaCalendarDrivenV209Mixin"
+    assert lines[1] == "GuangYaEpisodeTargetV210Mixin"
+    assert lines[2] == "GuangYaCalendarDrivenV209Mixin"
     assert "【原生审计】【RSS】" in ENTRY
     assert "channel_resource_cache_v1115" not in (PLUGIN / "foundation_ops_v209.py").read_text(encoding="utf-8")
 
@@ -161,7 +162,7 @@ def test_library_preflight_skips_when_missing_empty():
             return False
 
         def _mp_authoritative_missing_episodes_v209(self, subscribe):
-            return "moviepilot", set()
+            return "used_complete", set()
 
         def _finish_subscription_if_complete(self, subscribe):
             return False
@@ -173,6 +174,15 @@ def test_library_preflight_skips_when_missing_empty():
         def _try_transfer_subscription_inner(self, subscribe, force=False, refresh_channel=True):
             raise AssertionError("must not reach channel match when satisfied")
 
+        def _begin_subscription_run_v209(self, subscribe):
+            return "run-1"
+
+        def _end_subscription_run_v209(self):
+            pass
+
+        def _trace_transfer_result_v209(self, subscribe, result):
+            pass
+
     class Obj(Mixin, Base):
         pass
 
@@ -183,6 +193,65 @@ def test_library_preflight_skips_when_missing_empty():
     result = Obj._try_transfer_subscription_inner(obj, sub, force=False, refresh_channel=False)
     assert result.get("completion_pending") or result.get("already")
     assert "满足" in str(result.get("message") or "") or "satisfied" in str(result.get("message") or "")
+
+
+def test_library_preflight_used_empty_continues_match():
+    Mixin, _ = _load_foundation_mixin()
+    reached = []
+
+    class Base:
+        def _plugin_log(self, *a, **k):
+            pass
+
+        def _is_movie_subscription(self, subscribe):
+            return False
+
+        def _mp_authoritative_missing_episodes_v209(self, subscribe):
+            return "used_empty", set()
+
+        def _finish_subscription_if_complete(self, subscribe):
+            raise AssertionError("must not finish on used_empty")
+
+        def _resource_trace_v209(self, **kwargs):
+            pass
+
+        def _try_transfer_subscription_inner(self, subscribe, force=False, refresh_channel=True):
+            reached.append(True)
+            return {"success": True, "handled": True, "message": "continued"}
+
+        def _begin_subscription_run_v209(self, subscribe):
+            return "run-2"
+
+        def _end_subscription_run_v209(self):
+            pass
+
+        def _trace_transfer_result_v209(self, subscribe, result):
+            pass
+
+        def _snapshot_candidate_diags_v209(self):
+            return []
+
+        def _shadow_inbox_compare_v209(self, subscribe, result):
+            pass
+
+        def _try_match_inbox_for_subscribe_v209(self, subscribe):
+            return None
+
+    class Obj(Mixin, Base):
+        pass
+
+    obj = Obj()
+    obj._library_snapshot_lock_v209 = __import__("threading").RLock()
+    obj._library_snapshot_v209 = {}
+    snap = obj._library_preflight_v209(SimpleNamespace(id=10, name="冬城", media_id="290863", season=1, tmdbid=290863))
+    assert snap["current_target_satisfied"] is False
+    assert snap["preflight_state"] == "UNKNOWN"
+    result = Obj._try_transfer_subscription_inner(
+        obj, SimpleNamespace(id=10, name="冬城", media_id="290863", season=1, tmdbid=290863),
+        force=False, refresh_channel=False,
+    )
+    assert reached == [True]
+    assert result.get("message") == "continued"
 
 
 def test_extractor_hidden_clipboard_and_wrapped_redirect():

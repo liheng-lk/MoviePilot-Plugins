@@ -206,8 +206,8 @@ def test_library_preflight_does_not_mutate_selected_subscriptions():
         def _mp_authoritative_missing_episodes_v209(self, subscribe):
             sid = int(getattr(subscribe, "id", 0) or 0)
             if sid == 90:
-                return "moviepilot", set()
-            return "moviepilot", {10}
+                return "used_complete", set()
+            return "used_missing", {10}
 
         def get_data(self, key):
             return {}
@@ -261,7 +261,7 @@ def test_library_preflight_managed_sid_remains_managed():
             return False
 
         def _mp_authoritative_missing_episodes_v209(self, subscribe):
-            return "moviepilot", set()
+            return "used_complete", set()
 
         def get_data(self, key):
             return {}

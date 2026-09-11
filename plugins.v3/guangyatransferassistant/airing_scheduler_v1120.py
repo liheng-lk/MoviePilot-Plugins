@@ -429,13 +429,15 @@ class GuangYaAiringSchedulerV1120Mixin:
         next_episode = 0
         next_air_at = ""
         next_precision = ""
-        candidates = [
+        # next future must come from future only (air_at > now), never from past due episodes.
+        future_candidates = [
             (episode, self._episode_air_at_v1120(row), str(row.get("precision") or "date"))
             for episode, row in scheduled.items()
+            if episode in future
         ]
-        candidates = [row for row in candidates if row[1] is not None]
-        if candidates:
-            episode, air_at, precision = min(candidates, key=lambda row: (row[1], row[0]))
+        future_candidates = [row for row in future_candidates if row[1] is not None and row[1] > now]
+        if future_candidates:
+            episode, air_at, precision = min(future_candidates, key=lambda row: (row[1], row[0]))
             next_episode = int(episode)
             next_air_at = air_at.isoformat(timespec="minutes") if air_at else ""
             next_precision = precision
@@ -619,7 +621,9 @@ class GuangYaAiringSchedulerV1120Mixin:
             ) or {})
 
         gate = self._airing_gate_v1120(subscribe)
-        if not bool(gate.get("calendar_available")):
+        if not bool(gate.get("calendar_available")) and str(gate.get("decision") or "") not in {
+            "continue_match", "search", "search_due",
+        }:
             # 上游日历完全不可用时保持既有可靠性，不因第三方数据故障冻结追更。
             result = dict(super()._try_transfer_subscription(
                 subscribe,
@@ -630,7 +634,29 @@ class GuangYaAiringSchedulerV1120Mixin:
             result["calendar_fallback_legacy"] = True
             return result
 
-        due = list(gate.get("due_uncovered") or [])
+        decision = str(gate.get("decision") or "")
+        # UNKNOWN / continue_match must not short-circuit into "已追平".
+        if decision == "continue_match" or str(gate.get("preflight_state") or "") == "UNKNOWN":
+            due = list(gate.get("due_uncovered") or gate.get("target_episodes") or [])
+            if due:
+                with self._due_scope_v1120(subscribe, due):
+                    result = dict(super()._try_transfer_subscription(
+                        subscribe,
+                        force=force,
+                        refresh_channel=refresh_channel,
+                    ) or {})
+                result["due_scope"] = due
+            else:
+                result = dict(super()._try_transfer_subscription(
+                    subscribe,
+                    force=force,
+                    refresh_channel=refresh_channel,
+                ) or {})
+            result["calendar_gate"] = gate
+            result["calendar_continue_match"] = True
+            return result
+
+        due = list(gate.get("due_uncovered") or gate.get("target_episodes") or [])
         if not due:
             return {
                 "success": True,
@@ -640,7 +666,7 @@ class GuangYaAiringSchedulerV1120Mixin:
                 "message": (
                     "已追平当前播出进度；"
                     f"未来集={','.join('E%02d' % int(v) for v in (gate.get('future_missing') or [])) or '无'}；"
-                    f"下一集=E{int(gate.get('next_episode') or 0):02d} @ {gate.get('next_air_at') or '未知'}"
+                    f"下一未来集=E{int(gate.get('next_episode') or 0):02d} @ {gate.get('next_air_at') or '未知'}"
                 ),
             }
 

@@ -229,7 +229,10 @@ def test_authoritative_gap_is_library_intersection_logical_minus_reservations_an
     method = FINAL.split("    def _authoritative_missing_v11214(", 1)[1]
     assert "_sync_media_library_progress" in method
     assert "_base_missing_without_due_scope_v11213" in method
-    assert "library_missing.intersection" in method
+    # Emby/library base + pending-ingest subtract; stale-complete note must not wipe gaps.
+    assert "library_missing and logical_missing" in method
+    assert "stale-complete" in method
+    assert "library_missing.intersection" not in method
     assert "reservations" in method
     assert "_other_source_claims_v11214" in method
     assert "current_source_id=current_source_id" in method
@@ -265,8 +268,27 @@ def test_authoritative_gap_executes_as_library_and_logical_intersection_and_excl
 
     subscribe = SimpleNamespace(id=501, type="TV")
     probe = Probe()
+    # library_missing={11,12}; logical={10,11,12} → pending-ingest empty among library gaps;
+    # reserve 12 + other-claim 10 → {11}
     assert probe._authoritative_missing_v11214(subscribe, current_source_id="magnet-current") == {11}
     assert probe.claim_calls == [(501, "magnet-current")]
+
+    # Stale-complete logical (empty) must keep Emby gaps.
+    class StaleNote(Probe):
+        @staticmethod
+        def _base_missing_without_due_scope_v11213(subscribe):
+            return set()
+
+        @staticmethod
+        def _pending_reservations(subscribe):
+            return {"episodes": set()}
+
+        def _other_source_claims_v11214(self, sid, current_source_id=""):
+            self.claim_calls.append((sid, current_source_id))
+            return set()
+
+    stale = StaleNote()
+    assert stale._authoritative_missing_v11214(subscribe, current_source_id="magnet-current") == {11, 12}
 
 
 def test_authoritative_gap_fails_closed_when_moviepilot_library_truth_is_unavailable():
