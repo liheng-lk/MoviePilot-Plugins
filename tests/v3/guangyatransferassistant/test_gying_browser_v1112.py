@@ -13,7 +13,7 @@ GOV = PLUGIN / "governance_v1114.py"
 FINAL = PLUGIN / "xunlei_final_v1114.py"
 CHANNEL = PLUGIN / "channel_event_v1115.py"
 CURSOR = PLUGIN / "channel_cursor_event_v1115.py"
-CONTROL = PLUGIN / "console_control_cursor_v1116.py"
+CONTROL = PLUGIN / "console_control_v1116.py"
 UI = PLUGIN / "gying_ui_v1109.py"
 
 
@@ -118,9 +118,9 @@ def test_v1112_browser_verified_wins_over_stale_challenge_dom():
 
 
 def test_ui_chain_retains_current_channel_console_and_gying_layers():
-    assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlCursorV1116Mixin):" in ui_text
+    assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlV1116Mixin):" in ui_text
     assert "GuangYaChannelCursorEventV1115Mixin" in control_text
-    assert "class GuangYaChannelCursorEventV1115Mixin(GuangYaChannelEventGuardV1115Mixin):" in cursor_text
+    assert "class GuangYaChannelCursorEventV1115Mixin(GuangYaChannelEventV1115Mixin):" in cursor_text
     assert "class GuangYaChannelEventV1115Mixin(GuangYaXunleiFinalV1114Mixin):" in channel_text
     assert "class GuangYaXunleiFinalV1114Mixin(GuangYaGovernanceV1114Mixin):" in final_text
     assert "class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin):" in gov_text
