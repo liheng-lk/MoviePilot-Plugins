@@ -11,7 +11,6 @@ from urllib.parse import parse_qs, urlsplit
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 CORE = (PLUGIN / "core_pipeline_v11214.py").read_text(encoding="utf-8")
-FINAL = (PLUGIN / "core_pipeline_final_v11214.py").read_text(encoding="utf-8")
 CHANNEL = (PLUGIN / "channel_sources_v11214.py").read_text(encoding="utf-8")
 CHANNEL_OLD = (PLUGIN / "channel_sources_v190.py").read_text(encoding="utf-8")
 MANUAL = (PLUGIN / "manual_check_v11211.py").read_text(encoding="utf-8")
@@ -47,15 +46,11 @@ def _exec_functions(source: str, names: set[str], namespace: dict) -> dict:
     return namespace
 
 
-class _FinalCoreBase:
-    @staticmethod
-    def _direct_share_primary_roots_v11214(paths: Sequence[str], expected_year: Any = None) -> List[str]:
-        return []
-
-
 def _exec_final_mixin():
-    tree = ast.parse(FINAL, filename=str(PLUGIN / "core_pipeline_final_v11214.py"))
-    nodes = []
+    """从已合并的 core authority 中抽取最终缺集/实际标题方法做轻量执行测试。"""
+    tree = ast.parse(CORE, filename=str(PLUGIN / "core_pipeline_v11214.py"))
+    constants = []
+    methods = []
     for node in tree.body:
         if isinstance(node, (ast.Assign, ast.AnnAssign)):
             targets = []
@@ -63,11 +58,31 @@ def _exec_final_mixin():
                 targets = [target.id for target in node.targets if isinstance(target, ast.Name)]
             elif isinstance(node.target, ast.Name):
                 targets = [node.target.id]
-            if any(name.startswith("_ACTUAL_") or name.startswith("_GENERIC_ACTUAL_") for name in targets):
-                nodes.append(node)
-        elif isinstance(node, ast.ClassDef) and node.name == "GuangYaCorePipelineFinalV11214Mixin":
-            nodes.append(node)
-    module = ast.Module(body=nodes, type_ignores=[])
+            if any(
+                name.startswith("_ACTUAL_")
+                or name.startswith("_GENERIC_ACTUAL_")
+                or name == "_GENERIC_SHARE_ROOTS_V11214"
+                for name in targets
+            ):
+                constants.append(node)
+        elif isinstance(node, ast.ClassDef) and node.name == "GuangYaCorePipelineV11214Mixin":
+            methods = [
+                item for item in node.body
+                if isinstance(item, ast.FunctionDef)
+                and item.name in {
+                    "_direct_share_primary_roots_v11214",
+                    "_authoritative_missing_v11214",
+                }
+            ]
+
+    cls = ast.ClassDef(
+        name="GuangYaCorePipelineAuthorityProbe",
+        bases=[],
+        keywords=[],
+        body=methods,
+        decorator_list=[],
+    )
+    module = ast.Module(body=constants + [cls], type_ignores=[])
     ast.fix_missing_locations(module)
 
     def positive(values):
@@ -94,18 +109,16 @@ def _exec_final_mixin():
         "List": List,
         "Sequence": Sequence,
         "Set": Set,
-        "GuangYaCorePipelineV11214Mixin": _FinalCoreBase,
         "_positive_episode_set_v11214": positive,
         "title_key_v1111": title_key,
     }
-    exec(compile(module, str(PLUGIN / "core_pipeline_final_v11214.py"), "exec"), ns)
-    return ns["GuangYaCorePipelineFinalV11214Mixin"]
+    exec(compile(module, str(PLUGIN / "core_pipeline_v11214.py"), "exec"), ns)
+    return ns["GuangYaCorePipelineAuthorityProbe"]
 
 
 def test_v11214_sources_parse_and_nesting_does_not_move_top_level_mro():
     for path in (
         PLUGIN / "core_pipeline_v11214.py",
-        PLUGIN / "core_pipeline_final_v11214.py",
         PLUGIN / "channel_sources_v11214.py",
         PLUGIN / "manual_check_v11211.py",
         PLUGIN / "channel_reconcile_v11215.py",
@@ -113,10 +126,9 @@ def test_v11214_sources_parse_and_nesting_does_not_move_top_level_mro():
         ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     assert "GuangYaCorePipelineV11214Mixin" not in head
-    assert "GuangYaCorePipelineFinalV11214Mixin" not in head
     assert "GuangYaManualCheckV11211Mixin(GuangYaChannelReconcileV11215Mixin)" in MANUAL
-    assert "GuangYaChannelReconcileV11215Mixin(GuangYaCorePipelineFinalV11214Mixin)" in RECONCILE
-    assert "GuangYaCorePipelineFinalV11214Mixin(GuangYaCorePipelineV11214Mixin)" in FINAL
+    assert "GuangYaChannelReconcileV11215Mixin(GuangYaCorePipelineV11214Mixin)" in RECONCILE
+    assert "core_pipeline_final_v11214" not in RECONCILE
     assert "GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixin)" in CORE
 
 
@@ -183,7 +195,7 @@ def test_gying_guangya_share_enters_direct_share_chain_without_persisting_channe
     assert "save_data(\"channel_index\"" not in hydrate
     assert 'str(key or "") != "channel_index"' in getter
     assert "provider_share_entries" in getter
-    assert "_gying_alias_scope_v11212" in FINAL
+    assert "_gying_alias_scope_v11212" in CORE
 
 
 def test_tv_exact_tmdb_aliases_are_season_aware_and_not_fuzzy():
@@ -226,7 +238,7 @@ def test_mixed_sources_only_allow_indivisible_files_fully_inside_e11_gap():
 
 
 def test_authoritative_gap_is_library_intersection_logical_minus_reservations_and_other_claims():
-    method = FINAL.split("    def _authoritative_missing_v11214(", 1)[1]
+    method = CORE.split("    def _authoritative_missing_v11214(", 1)[1].split("    # ------------------------------------------------------------------", 1)[0]
     assert "_sync_media_library_progress" in method
     assert "_base_missing_without_due_scope_v11213" in method
     # Emby/library base + pending-ingest subtract; stale-complete note must not wipe gaps.
@@ -328,7 +340,7 @@ def test_direct_share_actual_content_and_physical_missing_are_final_gates():
     assert "_physical_episode_subset_v11214" in method
     assert "光鸭分享拒绝不可分割文件" in method
     assert "safe_videos" in method
-    assert "_ACTUAL_EP_MARKER_V11214" in FINAL
+    assert "_ACTUAL_EP_MARKER_V11214" in CORE
 
 
 def test_magnet_and_ed2k_share_same_physical_final_fence():
@@ -370,7 +382,7 @@ def test_source_priority_and_short_circuit_contract_remain_unchanged():
 def test_every_storage_path_reuses_guangya_target_and_no_moviepilot_downloader():
     assert "target_path = self._target_path(subscribe)" in LEGACY
     assert "_offline_target_parent" in MULTI and "_target_path(subscribe)" in MULTI
-    corpus = CORE + FINAL + CHANNEL
+    corpus = CORE + CHANNEL
     for forbidden in ("DownloaderHelper", "download_transfer", "DownloadChain().download"):
         assert forbidden not in corpus
 
@@ -378,5 +390,5 @@ def test_every_storage_path_reuses_guangya_target_and_no_moviepilot_downloader()
 def test_current_public_release_is_v11214_after_full_gate_passes():
     assert 'plugin_version = "2.0.13"' in ENTRY
     assert 'plugin_version = "1.12.14"' in CORE
-    assert 'build_id = "20260905-r60"' in FINAL
+    assert 'build_id = "20260905-r60"' in CORE
 
