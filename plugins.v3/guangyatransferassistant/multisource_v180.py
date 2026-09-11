@@ -29,6 +29,10 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
 
     build_id = "20260901-r1"
     _offline_batch_limit = 20
+    # 服务端任务已经 completed、但 list_task 未返回可验证视频文件名时，
+    # 最多保留一段“远端完成待核验”窗口。窗口结束后必须解除 episode claim，
+    # 否则一个信息不完整的回执会永久阻塞后续候选。
+    _offline_remote_verify_grace_seconds = 20 * 60
 
     def init_plugin(self, config: dict = None) -> None:
         self._offline_lock = threading.RLock()
@@ -548,6 +552,147 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                     verified = False
                     verify_source = "legacy_compat" if not manifest else "selected_manifest"
 
+                now_ts = time.time()
+                try:
+                    pending_verify_since = float(source.get("pending_verify_since") or 0)
+                except (TypeError, ValueError):
+                    pending_verify_since = 0.0
+                if not verified and pending_verify_since <= 0:
+                    pending_verify_since = now_ts
+
+                subscribe = self._find_subscription(int(source.get("subscribe_id") or 0))
+
+                # “媒体库观察”只能用来结束重复占位，绝不能伪造成这个来源的成功回执。
+                # 如果远端 task 已完成但回执缺少视频文件名，而 Emby 已经看到本 source
+                # 的全部目标集，则停止该 source 的 claim，并明确标成 unattributed。
+                if not verified and subscribe and not self._is_movie_subscription(subscribe):
+                    target_eps = set()
+                    for raw in source.get("resolved_episodes") or source.get("target_episodes") or []:
+                        try:
+                            value = int(raw)
+                        except (TypeError, ValueError):
+                            continue
+                        if value > 0:
+                            target_eps.add(value)
+                    if target_eps:
+                        try:
+                            sync = dict(self._sync_media_library_progress(subscribe) or {})
+                        except Exception as err:
+                            sync = {}
+                            self._plugin_log(
+                                "DEBUG",
+                                "【光鸭转存助手】【远端完成待核验】媒体库核验暂不可用：source=%s error=%s",
+                                str(source.get("id") or "")[:60],
+                                str(err)[:260],
+                            )
+                        existing = set()
+                        if bool(sync.get("success")):
+                            for raw in sync.get("existing") or []:
+                                try:
+                                    value = int(raw)
+                                except (TypeError, ValueError):
+                                    continue
+                                if value > 0:
+                                    existing.add(value)
+                        if target_eps and target_eps.issubset(existing):
+                            updated = self._update_source(
+                                str(source.get("id") or ""),
+                                state="disabled",
+                                enabled=False,
+                                auto_dispatch=False,
+                                task_status=status,
+                                progress=100,
+                                file_id=file_id,
+                                resolved_name=file_name[:300],
+                                last_error=(
+                                    "REMOTE_RECEIPT_UNVERIFIED: 服务端任务已完成，媒体库已满足目标；"
+                                    "已停止占位，但不把媒体库观察归因成该来源成功"
+                                ),
+                                next_retry_at=0,
+                                remote_video_confirmed=False,
+                                remote_verify_source="library_satisfied_unattributed",
+                                pending_verify_since=pending_verify_since,
+                                library_observed_episodes=sorted(target_eps),
+                            ) or source
+                            self._writeback_offline_candidate_diag_v209(
+                                updated,
+                                state="SKIPPED",
+                                reason_code="LIBRARY_ALREADY_SATISFIED",
+                                stage="REMOTE_VERIFY",
+                                message="媒体库已满足目标；远端来源回执不足，停止占位但不记来源成功",
+                            )
+                            self._plugin_log(
+                                "INFO",
+                                "【云添加终态】task_id=%s status=completed source=%s "
+                                "remote_video_verified=False verify_source=library_satisfied_unattributed "
+                                "episodes=%s action=release_claim_without_receipt",
+                                task_id,
+                                str(source.get("id") or "")[:60],
+                                ",".join(str(v) for v in sorted(target_eps)) or "-",
+                            )
+                            return {
+                                "success": True,
+                                "handled": True,
+                                "skipped": True,
+                                "verified": False,
+                                "reason": "library_satisfied_unattributed",
+                                "message": "媒体库已满足目标，已停止该来源占位；未把媒体库观察记为来源成功",
+                                "data": updated,
+                            }
+
+                # 远端 completed 但无法验证正片时不能永久 waiting。
+                # 超过 grace window 后转为 needs_review，释放 episode claim，让下一候选可继续。
+                if not verified:
+                    grace = max(
+                        300,
+                        int(getattr(
+                            self,
+                            "_offline_remote_verify_grace_seconds",
+                            20 * 60,
+                        ) or 20 * 60),
+                    )
+                    if (now_ts - pending_verify_since) >= grace:
+                        updated = self._update_source(
+                            str(source.get("id") or ""),
+                            state="needs_review",
+                            task_status=status,
+                            progress=100,
+                            file_id=file_id,
+                            resolved_name=file_name[:300],
+                            last_error=(
+                                "REMOTE_VERIFY_TIMEOUT: 服务端任务已完成，但在核验窗口内仍无法确认远端正片；"
+                                "已释放自动占位，允许后续候选继续"
+                            ),
+                            next_retry_at=0,
+                            remote_video_confirmed=False,
+                            remote_verify_source="timeout_unverified",
+                            pending_verify_since=pending_verify_since,
+                            pending_verify_expired_at=now_ts,
+                        ) or source
+                        self._writeback_offline_candidate_diag_v209(
+                            updated,
+                            state="FAILED_RETRYABLE",
+                            reason_code="REMOTE_VERIFY_FAILED",
+                            stage="REMOTE_VERIFY",
+                            message="服务端任务完成但正片回执长期无法确认，已释放占位等待其它候选",
+                        )
+                        self._plugin_log(
+                            "WARNING",
+                            "【云添加终态】task_id=%s status=completed source=%s "
+                            "remote_video_verified=False verify_source=timeout_unverified "
+                            "pending_seconds=%s action=release_claim_for_fallback",
+                            task_id,
+                            str(source.get("id") or "")[:60],
+                            int(now_ts - pending_verify_since),
+                        )
+                        return {
+                            "success": False,
+                            "handled": True,
+                            "reason": "remote_verify_timeout",
+                            "message": str(updated.get("last_error") or "远端正片核验超时"),
+                            "data": updated,
+                        }
+
                 completed_state = "completed" if verified else "waiting"
                 reason_code = "REMOTE_VERIFY_CONFIRMED" if verified else "REMOTE_TASK_PENDING"
                 diag_state = "SUCCESS" if verified else "PENDING"
@@ -565,18 +710,25 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                     file_id=file_id,
                     resolved_name=file_name[:300],
                     completed_at=self._now_text() if verified else str(source.get("completed_at") or ""),
-                    completed_ts=time.time() if verified else float(source.get("completed_ts") or 0),
+                    completed_ts=now_ts if verified else float(source.get("completed_ts") or 0),
                     last_error="" if verified else "PENDING_VERIFY: 任务完成但远端正片未确认",
                     next_retry_at=0,
                     remote_video_confirmed=bool(verified),
                     remote_verify_source=verify_source,
+                    pending_verify_since=0 if verified else pending_verify_since,
                 ) or source
-                self._record_route_health(
-                    last_offline_completed_at=self._now_text(),
-                    last_offline_completed_id=str(source.get("id") or ""),
-                    last_offline_task_id=task_id,
-                )
-                subscribe = self._find_subscription(int(source.get("subscribe_id") or 0))
+                if verified:
+                    self._record_route_health(
+                        last_offline_completed_at=self._now_text(),
+                        last_offline_completed_id=str(source.get("id") or ""),
+                        last_offline_task_id=task_id,
+                    )
+                else:
+                    self._record_route_health(
+                        last_offline_pending_verify_at=self._now_text(),
+                        last_offline_pending_verify_id=str(source.get("id") or ""),
+                        last_offline_pending_verify_task_id=task_id,
+                    )
                 if subscribe and verified:
                     try:
                         self._sync_media_library_progress(subscribe)
@@ -677,6 +829,38 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
         def worker() -> None:
             try:
                 self._submit_offline_source(source_id)
+            except Exception as err:
+                # daemon worker 的异常不能只落到 stderr：否则 UI 仍显示 dispatching，
+                # source slot 虽释放但状态没有进入可恢复路径，形成“点了没反应”。
+                try:
+                    latest = dict((self._source_store().get("items") or {}).get(source_id) or {})
+                except Exception:
+                    latest = {}
+                try:
+                    if latest and str(latest.get("task_id") or "").strip():
+                        # 服务端 task 已存在时绝不能因为本地 worker 异常再 create/retry；
+                        # 保留 taskId 并回到 waiting，让下一轮只 poll 既有任务。
+                        self._update_source(
+                            source_id,
+                            state="waiting",
+                            last_error=f"后台执行异常，已保留 taskId 等待重新轮询：{str(err)[:360]}",
+                            next_retry_at=0,
+                        )
+                    elif latest:
+                        self._mark_offline_failure(latest, err)
+                except Exception as state_err:
+                    self._plugin_log(
+                        "WARNING",
+                        "【光鸭转存助手】【原生云添加】后台异常状态回写失败：source=%s error=%s",
+                        source_id[:60],
+                        str(state_err)[:260],
+                    )
+                self._plugin_log(
+                    "EXCEPTION",
+                    "【光鸭转存助手】【原生云添加】后台来源执行异常，已进入恢复路径：source=%s error=%s",
+                    source_id[:60],
+                    str(err)[:360],
+                )
             finally:
                 self._release_source_dispatch_slot(source_id)
 
