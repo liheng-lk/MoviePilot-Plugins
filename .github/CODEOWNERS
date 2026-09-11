@@ -1,0 +1,8 @@
+# Default repository owner
+* @liheng-lk
+
+# GuangYa transfer assistant: runtime + tests + contributor docs
+/plugins.v3/guangyatransferassistant/ @liheng-lk
+/tests/v3/guangyatransferassistant/ @liheng-lk
+/tests/test_guangya_* @liheng-lk
+/scripts/validate_guangya.py @liheng-lk
