@@ -220,6 +220,35 @@ transfer_verifier.py
 
 除非 PR 明确说明兼容窗口与删除计划。
 
+## 6.1 当前仅保留的两个历史特殊层
+
+维护性 CI 目前只允许以下两个带 `final/fix` 的历史文件继续存在；它们不是新增代码模板。
+
+### `dispatch_policy_final_v1125.py`
+
+当前约 470 行，承担最终调度 Authority 的实质职责：
+
+- 并发 trigger 原子记录与优先级；
+- Calendar 故障退避；
+- AiringDue 外部检索冷却；
+- 人工完整检查最终入口；
+- 新订阅 / 频道 / 每日补漏的最终 dispatch 语义。
+
+**退出条件**：先把 `dispatch_policy_v1125.py` 与 final 层的职责划成稳定接口，并用 Final Plugin E2E 覆盖所有 trigger，再合并/重命名。不能直接把两文件内容拼成一个更大的模块。
+
+### `runtime_fix_v1113.py`
+
+当前约 360 行，已经不是临时一行 hotfix，实际承担外部运行协议边界：
+
+- 迅雷 device_id/did/guid 合同；
+- captcha 失效一次恢复与批次熔断；
+- 迅雷/云添加完成通知；
+- 外部任务运行期异常保护。
+
+**退出条件**：这些职责分别迁入明确的 `xunlei runtime` 与 `notification/runtime recovery` Authority，并有真实行为测试后再删除该兼容层。
+
+规则：allowlist 只能减少；如需增加新的特殊层，必须在同一 PR 写明职责、必要性和删除条件，并修改维护性合同。
+
 ## 7. legacy.py 规则
 
 `legacy.py` 只保留早期已验证且仍被大量调用的兼容实现。
