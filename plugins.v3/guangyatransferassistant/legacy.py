@@ -941,6 +941,19 @@ class GuangYaTransferAssistant(_PluginBase):
         }
 
 
+    @staticmethod
+    def _flow_log_display_message(rendered: str) -> str:
+        """主流程页去掉历史实现版本噪声；debug/system logger 保留原文。"""
+        text = str(rendered or "")
+        text = re.sub(
+            r"【([^】]*?)(?:\s*[vV]\d+(?:\.\d+){1,3})】",
+            lambda match: "【" + str(match.group(1) or "").rstrip(" ·-_") + "】",
+            text,
+        )
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
+
     def _plugin_log(self, level: str, message: Any, *args: Any) -> None:
         """系统日志保留全部细节；插件页只保留关键流程节点与异常。"""
         level_name = str(level or "INFO").upper()
@@ -959,6 +972,7 @@ class GuangYaTransferAssistant(_PluginBase):
             now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             stage = self._flow_stage_from_log(rendered, level_name)
             context = self._flow_log_context(rendered)
+            flow_message = self._flow_log_display_message(rendered)
             with self._state_lock:
                 # 完整插件细节独立保存；排障 API 可按 detail=true 读取。
                 debug_rows = list(self.get_data("plugin_debug_logs") or [])
@@ -983,12 +997,12 @@ class GuangYaTransferAssistant(_PluginBase):
                         "stage": stage,
                         "subscribe_id": int(context.get("subscribe_id") or 0),
                         "run_id": str(context.get("run_id") or ""),
-                        "message": rendered,
+                        "message": flow_message,
                     }
                     if (
                         rows
                         and str(rows[-1].get("stage") or "") == stage
-                        and str(rows[-1].get("message") or "") == rendered
+                        and str(rows[-1].get("message") or "") == flow_message
                         and int(rows[-1].get("subscribe_id") or 0) == int(context.get("subscribe_id") or 0)
                         and str(rows[-1].get("run_id") or "") == str(context.get("run_id") or "")
                     ):
@@ -1490,27 +1504,73 @@ class GuangYaTransferAssistant(_PluginBase):
         })
 
         plugin_log_rows = list(self.get_data("plugin_logs") or [])
-        plugin_log_items = []
-        for row in reversed(plugin_log_rows[-400:]):
-            plugin_log_items.append({
-                "component": "VListItem",
-                "props": {
-                    "title": (
-                                f"{row.get('time') or '-'} · {row.get('stage') or '流程'}"
-                                + (f" · #{int(row.get('subscribe_id') or 0)}" if int(row.get('subscribe_id') or 0) > 0 else "")
-                                + (f" · {str(row.get('run_id') or '')[-18:]}" if str(row.get('run_id') or '') else "")
-                                + f" · {row.get('level') or 'INFO'}"
-                                + (f" · ×{int(row.get('repeat') or 1)}" if int(row.get('repeat') or 1) > 1 else "")
-                            ),
-                    "subtitle": str(row.get("message") or ""),
-                },
+        recent_flow_rows = list(plugin_log_rows[-400:])
+        flow_groups: Dict[str, Dict[str, Any]] = {}
+        for index, raw in enumerate(recent_flow_rows):
+            row = dict(raw or {})
+            sid = int(row.get("subscribe_id") or 0)
+            run_id = str(row.get("run_id") or "").strip()
+            stage = str(row.get("stage") or "流程")
+            if run_id:
+                group_key = f"run:{run_id}"
+            elif sid > 0:
+                group_key = f"sid:{sid}:{stage}"
+            else:
+                group_key = f"system:{stage}"
+            group = flow_groups.setdefault(group_key, {
+                "subscribe_id": sid,
+                "run_id": run_id,
+                "stage": stage,
+                "rows": [],
+                "last_index": index,
+                "last_time": str(row.get("time") or ""),
             })
+            group["rows"].append(row)
+            group["last_index"] = index
+            group["last_time"] = str(row.get("time") or group.get("last_time") or "")
+
+        ordered_flow_groups = sorted(
+            flow_groups.values(),
+            key=lambda group: int(group.get("last_index") or 0),
+            reverse=True,
+        )[:12]
+        plugin_log_items = []
+        for group in ordered_flow_groups:
+            sid = int(group.get("subscribe_id") or 0)
+            run_id = str(group.get("run_id") or "")
+            rows_in_group = list(group.get("rows") or [])[-30:]
+            if run_id:
+                group_title = (
+                    (f"订阅 #{sid}" if sid > 0 else "系统任务")
+                    + f" · 本轮 {run_id[-22:]}"
+                    + f" · {len(rows_in_group)} 条"
+                )
+            elif sid > 0:
+                group_title = f"订阅 #{sid} · {group.get('stage') or '流程'} · {len(rows_in_group)} 条"
+            else:
+                group_title = f"系统 · {group.get('stage') or '流程'} · {len(rows_in_group)} 条"
+            plugin_log_items.append({
+                "component": "VListSubheader",
+                "props": {"class": "font-weight-bold"},
+                "text": group_title,
+            })
+            for row in rows_in_group:
+                plugin_log_items.append({
+                    "component": "VListItem",
+                    "props": {
+                        "title": (
+                            f"{row.get('time') or '-'} · {row.get('stage') or '流程'} · {row.get('level') or 'INFO'}"
+                            + (f" · ×{int(row.get('repeat') or 1)}" if int(row.get('repeat') or 1) > 1 else "")
+                        ),
+                        "subtitle": str(row.get("message") or ""),
+                    },
+                })
         contents.append({
             "component": "VCard",
             "props": {"variant": "outlined", "class": "mt-4"},
             "content": [
-                {"component": "VCardTitle", "text": f"光鸭转存流程（最近 {len(plugin_log_rows[-400:])} 条）"},
-                {"component": "VCardText", "text": "默认只显示：任务 → 缺口 → 频道 → 观影 → 候选 → 转存 → 核验 → 命名 → 完成，以及异常。完整技术细节仍写 MoviePilot 日志，并可通过 /plugin_logs?detail=true 获取。"},
+                {"component": "VCardTitle", "text": f"光鸭转存流程（最近 {len(ordered_flow_groups)} 组 / {len(recent_flow_rows)} 条）"},
+                {"component": "VCardText", "text": "按订阅的一次运行分组，组内按 任务 → 缺口 → 频道 → 观影 → 候选 → 转存 → 核验 → 命名 → 完成 的时间顺序连续显示；并发订阅不会再交叉打散。完整技术细节仍写 MoviePilot 日志，并可通过 /plugin_logs?detail=true 或 subscribe_id/run_id 精确筛选。"},
                 {"component": "VCardActions", "content": [{
                     "component": "VBtn",
                     "props": {"size": "small", "variant": "text", "color": "warning", "prepend-icon": "mdi-delete-sweep-outline"},
