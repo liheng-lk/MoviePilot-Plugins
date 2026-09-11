@@ -29,7 +29,7 @@ def test_fallback_layer_parses_and_remains_beneath_runtime_recovery():
         ast.parse(text, filename=str(path))
     assert "GuangYaGyingFallbackReuseV1113Mixin" in runtime_fix_text
     assert "GuangYaGyingBrowserV1112Mixin" in fallback_text
-    assert "GuangYaConsoleControlCursorV1116Mixin" in ui_text
+    assert "GuangYaConsoleControlV1116Mixin" in ui_text
 
 
 def test_new_requests_session_never_restores_persisted_challenge_cookies():
