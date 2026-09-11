@@ -143,8 +143,10 @@ Magnet/ED2K 始终交给光鸭原生 cloudcollection，不经过 MoviePilot 下�
 最小检查：
 
 ```bash
-python -m compileall -q plugins.v3/guangyatransferassistant
-python tests/v3/guangyatransferassistant/run_contract_tests.py
+python scripts/validate_guangya.py
+
+# 需要连同仓库 unittest 一起跑：
+python scripts/validate_guangya.py --full
 ```
 
 提交前还应执行仓库完整 Validate Workflow。
