@@ -17,13 +17,12 @@ ENTRY = PLUGIN / "__init__.py"
 TYPES = PLUGIN / "source_types_v180.py"
 STORE = PLUGIN / "source_store_v180.py"
 MULTI = PLUGIN / "multisource_v180.py"
-SAFETY = PLUGIN / "offline_safety_v180.py"
 
 entry_text = ENTRY.read_text(encoding="utf-8")
 types_text = TYPES.read_text(encoding="utf-8")
 store_text = STORE.read_text(encoding="utf-8")
 multi_text = MULTI.read_text(encoding="utf-8")
-safety_text = SAFETY.read_text(encoding="utf-8")
+safety_text = multi_text
 
 
 def test_v180_files_parse_as_python():
@@ -32,7 +31,6 @@ def test_v180_files_parse_as_python():
         (TYPES, types_text),
         (STORE, store_text),
         (MULTI, multi_text),
-        (SAFETY, safety_text),
     ):
         ast.parse(text, filename=str(path))
 
@@ -42,11 +40,10 @@ def test_v180_contract_is_retained_by_current_runtime():
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
     assert package["version"] == local["version"] == "2.0.13"
     assert 'plugin_version = "2.0.13"' in entry_text
-    assert "GuangYaOfflineSafetyMixin" in entry_text
+    assert "GuangYaOfflineSafetyMixin" not in entry_text
+    assert "offline_safety_v180" not in entry_text
     assert "GuangYaMultiSourceMixin" in entry_text
-    assert entry_text.index("GuangYaOfflineSafetyMixin,", entry_text.index("class GuangYaTransferAssistant")) < entry_text.index(
-        "GuangYaMultiSourceMixin,", entry_text.index("class GuangYaTransferAssistant")
-    )
+    assert "Consolidated native-offline safety boundary" in multi_text
 
 
 def test_magnet_and_ed2k_normalization_and_stable_identity():
@@ -109,21 +106,21 @@ def test_native_guangya_cloudcollection_endpoints_are_complete():
 
 def test_existing_task_id_is_never_created_twice():
     assert "只要服务端任务已经存在" in safety_text
-    submit = safety_text.split("    def _submit_offline_source(", 1)[1].split("    def _poll_offline_source(", 1)[0]
+    submit = safety_text.rsplit("    def _submit_offline_source(", 1)[1].split("    def _poll_offline_source(", 1)[0]
     assert "if task_id:" in submit
     assert "return self._poll_offline_source(source)" in submit
     assert "create_task" not in submit
 
 
 def test_polling_transport_error_preserves_valid_server_task():
-    poll = safety_text.split("    def _poll_offline_source(", 1)[1].split("    @staticmethod\n    def _source_public_view", 1)[0]
+    poll = safety_text.rsplit("    def _poll_offline_source(", 1)[1].split("    @staticmethod\n    def _source_public_view", 1)[0]
     assert 'state="waiting"' in poll
     assert "attempts=before_attempts" in poll
     assert '!= 5' in poll
 
 
 def test_source_list_redacts_original_magnet_uri():
-    public = safety_text.split("    @staticmethod\n    def _source_public_view", 1)[1].split("    def api_source_list", 1)[0]
+    public = safety_text.rsplit("    @staticmethod\n    def _source_public_view", 1)[1].split("    def api_source_list", 1)[0]
     assert 'row.pop("uri"' in public
     assert "urn:btih" in public
     assert "uri_preview" in public
