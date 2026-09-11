@@ -389,7 +389,7 @@ class GuangYaChannelEventV1115Mixin(GuangYaXunleiFinalV1114Mixin):
         if channel_ids:
             self._plugin_log(
                 "INFO",
-                "【光鸭转存助手】【频道事件】本轮新增频道资源命中 %s 个订阅；只处理命中项，观影轮询顺延到下一 tick",
+                "【光鸭转存助手】【频道事件】本轮新增频道资源命中 %s 个订阅；先处理命中项，频道批次结束后继续检查其它到期观影订阅",
                 len(channel_ids),
             )
             self._queue_async_route_check(channel_ids, trigger="频道新增资源")
