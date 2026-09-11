@@ -35,7 +35,7 @@ _TRANSFER_ACTIVE_STATES = {"submitting", "submitted", "task_confirmed", "verifyi
 class GuangYaStatusUiMixin:
     """最终状态页展示层；由 PlannerSafety 置于运行 MRO 最前端。"""
 
-    build_id = "20260901-r3"
+    build_id = "20260901-r8"
 
     @staticmethod
     def _safe_int(value: Any, default: int = 0) -> int:
@@ -131,7 +131,7 @@ class GuangYaStatusUiMixin:
         elif attention_count:
             overall = "warning"
 
-        return {
+        overview = {
             "overall": overall,
             "healthy": not bool(critical_checks),
             "attention_count": attention_count,
@@ -151,6 +151,42 @@ class GuangYaStatusUiMixin:
             "version": str(getattr(self, "plugin_version", "")),
             "build": str(getattr(self, "build_id", "")),
         }
+
+
+        viewing = self.get_data("viewing_session_state") or {}
+        if not isinstance(viewing, dict):
+            viewing = {}
+        active_node = str(viewing.get("active_node") or "")
+        node_row = dict(((viewing.get("nodes") or {}).get(active_node) or {})) if active_node else {}
+        overview["viewing"] = {
+            "enabled": bool(getattr(self, "_viewing_enabled", False)),
+            "active_node": active_node,
+            "status": str(node_row.get("status") or ("waiting" if getattr(self, "_viewing_enabled", False) else "disabled")),
+            "verified": bool(node_row.get("verified")),
+            "login_mode": str(node_row.get("login_mode") or ""),
+        }
+
+        xunlei = self.get_data("xunlei_flash_state") or {}
+        items = (
+            (xunlei.get("items") or {}).values()
+            if isinstance(xunlei, dict) and isinstance(xunlei.get("items"), dict)
+            else []
+        )
+        completed = failed = 0
+        for raw in items:
+            if not isinstance(raw, dict):
+                continue
+            state = str(raw.get("state") or "")
+            if state == "completed":
+                completed += 1
+            elif state == "failed":
+                failed += 1
+        overview["xunlei_flash"] = {
+            "enabled": bool(getattr(self, "_xunlei_flash_enabled", True)),
+            "completed": completed,
+            "failed": failed,
+        }
+        return overview
 
     def api_status_overview(self) -> Dict[str, Any]:
         """返回首页使用的轻量汇总，供后续独立前端复用。"""
@@ -332,6 +368,10 @@ class GuangYaStatusUiMixin:
         sources = overview["sources"]
         attention_cards = self._attention_cards(overview)
         active_cards = self._active_cards(overview)
+        viewing = dict(overview.get("viewing") or {})
+        xunlei = dict(overview.get("xunlei_flash") or {})
+        active_node = str(viewing.get("active_node") or "-")
+        viewing_state = str(viewing.get("status") or "-")
 
         if overview["overall"] == "healthy":
             overall_title = "运行正常"
@@ -352,7 +392,7 @@ class GuangYaStatusUiMixin:
                     "component": "VCardText",
                     "text": (
                         f"{overall_title} · 最近刷新 {overview['channel_updated']}。\n"
-                        "资源策略：光鸭直接转存 > Magnet > ED2K。\n"
+                        "资源策略：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。\n"
                         "Magnet/ED2K 使用光鸭原生云添加。"
                     ),
                 },
@@ -492,7 +532,9 @@ class GuangYaStatusUiMixin:
                         f"索引 {overview['channel_count']} 条，最近错误 {overview['channel_errors']} 个；"
                         f"Magnet {sources['magnet']}，ED2K {sources['ed2k']}，"
                         f"计划 {overview['resource_plan_count']} 个。\n"
-                        "详细诊断通过“运行自检”、/resource/plan 和 /status/overview 查看，首页不再展示长日志。"
+                        "详细诊断通过“运行自检”、/resource/plan 和 /status/overview 查看，首页不再展示长日志。\n"
+                        f"观影：{viewing_state} · 当前节点 {active_node} · "
+                        f"迅雷秒传：完成 {int(xunlei.get('completed') or 0)} / 失败 {int(xunlei.get('failed') or 0)}。"
                     ),
                 },
                 {
