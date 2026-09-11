@@ -7,12 +7,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 PATCH = PLUGIN / "channel_event_v1115.py"
-GUARD = PLUGIN / "channel_event_guard_v1115.py"
 CURSOR = PLUGIN / "channel_cursor_event_v1115.py"
 UI = PLUGIN / "gying_ui_v1109.py"
 
 patch = PATCH.read_text(encoding="utf-8")
-guard = GUARD.read_text(encoding="utf-8")
 cursor = CURSOR.read_text(encoding="utf-8")
 ui = UI.read_text(encoding="utf-8")
 
@@ -23,14 +21,12 @@ def _method(name: str, next_name: str) -> str:
 
 def test_v1115_layer_parses_and_is_wired_above_xunlei_final():
     ast.parse(patch, filename=str(PATCH))
-    ast.parse(guard, filename=str(GUARD))
     ast.parse(cursor, filename=str(CURSOR))
     ast.parse(ui, filename=str(UI))
     assert "class GuangYaChannelEventV1115Mixin(GuangYaXunleiFinalV1114Mixin):" in patch
-    assert "class GuangYaChannelEventGuardV1115Mixin(GuangYaChannelEventV1115Mixin):" in guard
-    assert "class GuangYaChannelCursorEventV1115Mixin(GuangYaChannelEventGuardV1115Mixin):" in cursor
-    assert "from .console_control_cursor_v1116 import GuangYaConsoleControlCursorV1116Mixin" in ui
-    assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlCursorV1116Mixin):" in ui
+    assert "class GuangYaChannelCursorEventV1115Mixin(GuangYaChannelEventV1115Mixin):" in cursor
+    assert "from .console_control_v1116 import GuangYaConsoleControlV1116Mixin" in ui
+    assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlV1116Mixin):" in ui
     assert 'build_id = "20260902-r26"' in patch
 
 
@@ -88,11 +84,11 @@ def test_channel_event_does_not_consume_viewing_search_cooldown():
 
 
 def test_channel_event_does_not_call_generic_provider_search():
-    assert '== "channel_event"' in guard
-    assert "return None" in guard
-    assert "super()._dispatch_provider_candidate(subscribe, uncovered)" in guard
-    assert "_enqueue_external_recall_v208" in guard
-    assert "local_candidates_exhausted" in guard
+    assert '== "channel_event"' in cursor
+    assert "return None" in cursor
+    assert "super()._dispatch_provider_candidate(subscribe, uncovered)" in cursor
+    assert "_enqueue_external_recall_v208" in cursor
+    assert "local_candidates_exhausted" in cursor
 
 
 def test_viewing_poll_is_independent_and_only_schedules_due_missing_subscriptions():
