@@ -141,3 +141,20 @@ def test_every_runtime_module_is_reachable_from_final_plugin_entry():
         + ", ".join(f"{name}.py" for name in unreachable)
         + "; delete dead code or connect it through an explicit Authority import"
     )
+
+
+
+def test_final_entry_docstring_is_runtime_contract_not_version_history():
+    entry = _text("__init__.py")
+    tree = ast.parse(entry)
+    doc = ast.get_docstring(tree, clean=False) or ""
+    assert len(doc.splitlines()) < 40
+    assert doc.count("v1.") == 0
+    for token in (
+        "观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K",
+        "managed subscription 不回落 MoviePilot 原生下载",
+        "Magnet/ED2K 继续使用光鸭原生 cloudcollection",
+        "ARCHITECTURE.md",
+        "CHANGELOG.md",
+    ):
+        assert token in doc
