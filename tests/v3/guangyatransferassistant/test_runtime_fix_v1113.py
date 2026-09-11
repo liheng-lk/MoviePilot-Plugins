@@ -8,21 +8,19 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 PATCH = PLUGIN / "runtime_fix_v1113.py"
 GOV = PLUGIN / "governance_v1114.py"
-FINAL = PLUGIN / "xunlei_final_v1114.py"
 UI = PLUGIN / "gying_ui_v1109.py"
 
 patch = PATCH.read_text(encoding="utf-8")
 gov = GOV.read_text(encoding="utf-8")
-final = FINAL.read_text(encoding="utf-8")
 ui = UI.read_text(encoding="utf-8")
 
 
 def test_runtime_fix_parses_and_is_retained_in_final_gying_chain():
-    for path, text in ((PATCH, patch), (GOV, gov), (FINAL, final), (UI, ui)):
+    for path, text in ((PATCH, patch), (GOV, gov), (UI, ui)):
         ast.parse(text, filename=str(path))
     assert "class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin):" in patch
     assert "class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin):" in gov
-    assert "class GuangYaXunleiFinalV1114Mixin(GuangYaGovernanceV1114Mixin):" in final
+    assert "Consolidated final Xunlei boundary" in gov
     assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlV1116Mixin):" in ui
 
 
