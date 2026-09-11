@@ -147,7 +147,7 @@ def _load_mixin():
         "threading": threading,
         "_legacy_module": _LegacyStub,
         "_entry_key_v1115": _entry_key,
-        "GuangYaCorePipelineFinalV11214Mixin": _CoreBase,
+        "GuangYaCorePipelineV11214Mixin": _CoreBase,
     }
     exec(compile(module, str(PLUGIN / "channel_reconcile_v11215.py"), "exec"), namespace)
     return namespace["GuangYaChannelReconcileV11215Mixin"]
