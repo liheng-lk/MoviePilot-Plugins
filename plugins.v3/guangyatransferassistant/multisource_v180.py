@@ -1393,6 +1393,7 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                 last_error=str(result.get("message") or data.get("last_error") or "任务状态查询暂不可用")[:500],
             ) or data
             return {
+                **dict(result),
                 "success": False,
                 "message": str(result.get("message") or "任务状态查询暂不可用，已保留 taskId 等待恢复"),
                 "data": updated,
