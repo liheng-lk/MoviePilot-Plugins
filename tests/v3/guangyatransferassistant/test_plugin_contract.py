@@ -269,3 +269,10 @@ def test_plugin_logs_use_focused_flow_timeline_with_debug_detail_escape_hatch():
     assert 'key = "plugin_debug_logs" if bool(detail) else "plugin_logs"' in legacy_text
     assert "任务 → 缺口 → 频道 → 观影 → 候选 → 转存 → 核验 → 命名 → 完成" in legacy_text
     assert "repeat" in legacy_text
+
+
+def test_focused_flow_log_keeps_user_initiated_actions_visible():
+    stage = legacy_text.split("def _flow_stage_from_log", 1)[1].split("def _plugin_log", 1)[0]
+    for marker in ("【人工检查】", "【页面操作】", "【控制台】"):
+        assert marker in stage
+    assert "【服务】" not in stage
