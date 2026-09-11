@@ -11,14 +11,13 @@ ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 PATCH_PATH = PLUGIN / "gying_pow_v1111.py"
 PATCH = PATCH_PATH.read_text(encoding="utf-8")
 UI = (PLUGIN / "gying_ui_v1109.py").read_text(encoding="utf-8")
-FINAL = (PLUGIN / "xunlei_final_v1114.py").read_text(encoding="utf-8")
 GOV = (PLUGIN / "governance_v1114.py").read_text(encoding="utf-8")
 RUNTIME_FIX = (PLUGIN / "runtime_fix_v1113.py").read_text(encoding="utf-8")
 FALLBACK = (PLUGIN / "gying_fallback_reuse_v1113.py").read_text(encoding="utf-8")
 
 
 def test_v1111_release_and_layer_parse():
-    for text in (PATCH, ENTRY, UI, FINAL, GOV, RUNTIME_FIX, FALLBACK):
+    for text in (PATCH, ENTRY, UI, GOV, RUNTIME_FIX, FALLBACK):
         ast.parse(text)
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
@@ -31,7 +30,7 @@ def test_v1111_release_and_layer_parse():
     assert "v1.10.11" in package.get("history", {})
     assert "class GuangYaGyingPowV1111Mixin(GuangYaGyingPanSouV1110Mixin)" in PATCH
     assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlV1116Mixin)" in UI
-    assert "class GuangYaXunleiFinalV1114Mixin(GuangYaGovernanceV1114Mixin)" in FINAL
+    assert "Consolidated final Xunlei boundary" in GOV
     assert "class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin)" in GOV
     assert "class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin)" in RUNTIME_FIX
     assert "class GuangYaGyingFallbackReuseV1113Mixin(GuangYaGyingBrowserV1112Mixin)" in FALLBACK
