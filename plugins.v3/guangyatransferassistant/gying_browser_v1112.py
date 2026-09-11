@@ -50,6 +50,7 @@ from .gying_runtime_v193 import (
 
 _MIN_POW_SECONDS_V1112 = 3.15
 _BROWSER_WAIT_SECONDS_V1112 = 6.5
+_DEFAULT_VIEWPORT_V1112 = {"width": 1280, "height": 720}
 _BROWSER_MAX_SESSIONS_V1112 = 4
 _BROWSER_TTL_SECONDS_V1112 = 15 * 60
 _BROWSER_BOUND_COOKIES_V1112 = frozenset(
@@ -421,6 +422,7 @@ class GuangYaGyingBrowserV1112Mixin(GuangYaGyingPowV1111Mixin):
     ) -> None:
         if row.get("context") is not None and row.get("page") is not None:
             return
+
         try:
             from app.sdk.browser import launch_browser_context
         except Exception as err:
@@ -428,8 +430,25 @@ class GuangYaGyingBrowserV1112Mixin(GuangYaGyingPowV1111Mixin):
                 f"MoviePilot 浏览器 SDK 不可用：{type(err).__name__}"
             ) from err
 
+        context_kwargs: Dict[str, Any] = {
+            "viewport": dict(_DEFAULT_VIEWPORT_V1112),
+        }
         try:
-            context = launch_browser_context(headless=True)
+            from app.runtime.settings import get_runtime_setting
+
+            humanize = get_runtime_setting("CLOAKBROWSER_HUMANIZE")
+            human_preset = get_runtime_setting("CLOAKBROWSER_HUMAN_PRESET")
+            if humanize is not None:
+                context_kwargs["humanize"] = humanize
+            if human_preset is not None:
+                context_kwargs["human_preset"] = human_preset
+        except Exception:
+            # 兼容早期 MoviePilot V3：公开 browser SDK 可用时，即使运行设置入口发生变化，
+            # 仍可使用 CloakBrowser 默认反检测参数，而不是把整个 GYING 链降级回 requests。
+            pass
+
+        try:
+            context = launch_browser_context(headless=True, **context_kwargs)
             page = context.new_page()
             if hasattr(page, "set_default_timeout"):
                 page.set_default_timeout(max(int(timeout), 5) * 1000)
@@ -441,6 +460,9 @@ class GuangYaGyingBrowserV1112Mixin(GuangYaGyingPowV1111Mixin):
         row["context"] = context
         row["page"] = page
 
+        # 只尝试注入业务/登录 Cookie；browser_pow/browser_verified/vrg_* 已被过滤。
+        # 某些 CloakBrowser 版本未暴露 context.add_cookies，此时让账号自动登录重新建态，
+        # 不使用固定 Cookie HTTP header，以免覆盖服务端随后写入的验证 Cookie。
         cookie_rows = _cookie_rows_v1112(
             "; ".join(
                 f"{getattr(item, 'name', '')}={getattr(item, 'value', '')}"
@@ -457,7 +479,16 @@ class GuangYaGyingBrowserV1112Mixin(GuangYaGyingPowV1111Mixin):
                 except Exception:
                     pass
 
-    @staticmethod
+        self._gying_auth_log(
+            "INFO",
+            "CloakBrowser：已应用 MoviePilot 宿主浏览器配置，viewport=1280x720 humanize=%s preset=%s",
+            "on" if "humanize" in context_kwargs else "default",
+            "configured" if "human_preset" in context_kwargs else "default",
+        )
+
+
+__all__ = ["GuangYaGyingBrowserProfileV1112Mixin"]
+
     def _gying_browser_context_cookies_v1112(row: Dict[str, Any]) -> List[Dict[str, Any]]:
         context = row.get("context")
         if not context:
@@ -622,6 +653,7 @@ class GuangYaGyingBrowserV1112Mixin(GuangYaGyingPowV1111Mixin):
         row: Dict[str, Any],
         response: requests.Response,
     ) -> requests.Response:
+        """等待站点 solver；browser_verified Cookie 比尚未刷新的旧 challenge DOM 更可信。"""
         kind = _challenge_kind_v1110(response)
         if not kind:
             return response
@@ -644,7 +676,19 @@ class GuangYaGyingBrowserV1112Mixin(GuangYaGyingPowV1111Mixin):
                 break
             if not _challenge_kind_v1110(latest):
                 break
-        return latest
+
+        if not self._gying_browser_has_cookie_v1112(row, "browser_verified"):
+            return latest
+
+        # 同一 CloakBrowser context 已写入 verified，旧 DOM 只是尚未刷新。
+        # 这里仅结束 bootstrap 等待；紧接着的真实业务 fetch 仍会再次验真。
+        current_url = str(getattr(page, "url", "") or getattr(latest, "url", "") or "")
+        return _response_v1112(
+            current_url,
+            int(getattr(latest, "status_code", 200) or 200),
+            "",
+            dict(getattr(latest, "headers", {}) or {}),
+        )
 
     def _gying_browser_solve_v1112(
         self,
