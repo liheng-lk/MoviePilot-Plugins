@@ -14,7 +14,7 @@ import functools
 import inspect
 from typing import Any, Dict, List
 
-from .channel_event_guard_v1115 import GuangYaChannelEventGuardV1115Mixin
+from .channel_cursor_event_v1115 import GuangYaChannelCursorEventV1115Mixin
 
 
 _CONSOLE_ACTION_PATHS_V1116 = {
@@ -36,10 +36,21 @@ _CONSOLE_ACTION_PATHS_V1116 = {
 }
 
 
-class GuangYaConsoleControlV1116Mixin(GuangYaChannelEventGuardV1115Mixin):
+class GuangYaConsoleControlV1116Mixin(GuangYaChannelCursorEventV1115Mixin):
     """给控制台补真实动作、真实回执和可处理任务按钮。"""
 
     build_id = "20260902-r27"
+
+    def _run_reliability_route_batch(self, batch: List[int], trigger: str) -> None:
+        if "控制台处理缺集" in str(trigger or ""):
+            return self._run_v1115_mode_batch(
+                batch,
+                trigger,
+                "subscription_prime",
+                force=True,
+            )
+        return super()._run_reliability_route_batch(batch, trigger)
+
 
     # ------------------------------------------------------------------
     # 操作回执
