@@ -1378,12 +1378,21 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
         except (TypeError, ValueError):
             task_status_code = -1
 
+        final_state = str(data.get("state") or "")
+        reason = str(result.get("reason") or data.get("reason") or "")
+        business_terminal = (
+            final_state in {"needs_review", "disabled", "completed"}
+            or reason in {"remote_verify_timeout", "library_satisfied_unattributed"}
+        )
+
         # status=5 是光鸭明确返回的部分完成/失败，允许进入 retry/failed。
-        # 其它失败若已有 taskId，则属于“查询暂不可用”，必须保留任务等待下轮，不得重新提交。
+        # needs_review / disabled 等业务终态同样必须保留，不能被“网络查询保护”改回 waiting。
+        # 只有真正的临时查询失败，才保持既有 taskId 并等待下一轮。
         if (
             str(source.get("task_id") or "").strip()
             and not bool(result.get("success"))
             and task_status_code != 5
+            and not business_terminal
         ):
             updated = self._update_source(
                 str(source.get("id") or ""),
