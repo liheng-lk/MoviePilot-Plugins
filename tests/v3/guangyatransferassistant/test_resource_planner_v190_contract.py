@@ -14,10 +14,9 @@ PLANNER = PLUGIN / "resource_planner_v190.py"
 PLANNER_SAFETY = PLUGIN / "planner_safety_v190.py"
 STORE = PLUGIN / "source_store_v180.py"
 MULTI = PLUGIN / "multisource_v180.py"
-OFFLINE_SAFETY = PLUGIN / "offline_safety_v180.py"
 
 texts = {path: path.read_text(encoding="utf-8") for path in (
-    ENTRY, RESOLVER, CHANNEL, PLANNER, PLANNER_SAFETY, STORE, MULTI, OFFLINE_SAFETY,
+    ENTRY, RESOLVER, CHANNEL, PLANNER, PLANNER_SAFETY, STORE, MULTI,
 )}
 
 
@@ -36,7 +35,6 @@ def test_runtime_mro_puts_planner_safety_and_planner_before_native_offline_layer
     order = [
         "GuangYaPlannerSafetyMixin,",
         "GuangYaResourcePlannerMixin,",
-        "GuangYaOfflineSafetyMixin,",
         "GuangYaMultiSourceMixin,",
     ]
     positions = [entry.index(token, start) for token in order]
@@ -152,7 +150,7 @@ def test_complete_config_survives_async_route_persistence():
 
 
 def test_no_moviepilot_downloader_is_reintroduced_for_magnet_or_ed2k():
-    combined = "\n".join(texts[path] for path in (RESOLVER, CHANNEL, PLANNER, PLANNER_SAFETY, STORE, MULTI, OFFLINE_SAFETY)).lower()
+    combined = "\n".join(texts[path] for path in (RESOLVER, CHANNEL, PLANNER, PLANNER_SAFETY, STORE, MULTI)).lower()
     for forbidden in (
         "from app.chain.download",
         "downloadchain(",
