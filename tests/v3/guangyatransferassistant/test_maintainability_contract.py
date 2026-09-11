@@ -8,16 +8,13 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 
 # r97 管理性重构基线。目标是只减不增；确需突破时必须在同一 PR 解释并更新架构文档。
-MAX_RUNTIME_PY_FILES = 96
+MAX_RUNTIME_PY_FILES = 93
 MAX_LEGACY_LINES = 4578
-MAX_TOP_LEVEL_MRO_BASES = 49
+MAX_TOP_LEVEL_MRO_BASES = 48
 
 ALLOWED_LAYERED_MODULES = {
-    "airing_weekly_impl_v1121.py",
     "dispatch_policy_final_v1125.py",
-    "episode_fence_final_v1124.py",
     "runtime_fix_v1113.py",
-    "xunlei_final_v1114.py",
 }
 
 
