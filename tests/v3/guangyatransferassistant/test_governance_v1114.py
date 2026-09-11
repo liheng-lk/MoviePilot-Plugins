@@ -24,8 +24,8 @@ def test_governance_layer_parses_and_is_retained_beneath_final_xunlei_layer():
     ast.parse(UI_TEXT, filename=str(UI))
     assert "class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin):" in TEXT
     assert "class GuangYaXunleiFinalV1114Mixin(GuangYaGovernanceV1114Mixin):" in FINAL_TEXT
-    assert "from .console_control_cursor_v1116 import GuangYaConsoleControlCursorV1116Mixin" in UI_TEXT
-    assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlCursorV1116Mixin):" in UI_TEXT
+    assert "from .console_control_v1116 import GuangYaConsoleControlV1116Mixin" in UI_TEXT
+    assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlV1116Mixin):" in UI_TEXT
     assert 'build_id = "20260902-r27"' in UI_TEXT
 
 
