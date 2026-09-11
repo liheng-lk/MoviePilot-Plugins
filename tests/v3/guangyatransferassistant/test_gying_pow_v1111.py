@@ -30,7 +30,7 @@ def test_v1111_release_and_layer_parse():
     assert "v1.10.12" in package.get("history", {})
     assert "v1.10.11" in package.get("history", {})
     assert "class GuangYaGyingPowV1111Mixin(GuangYaGyingPanSouV1110Mixin)" in PATCH
-    assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlCursorV1116Mixin)" in UI
+    assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlV1116Mixin)" in UI
     assert "class GuangYaXunleiFinalV1114Mixin(GuangYaGovernanceV1114Mixin)" in FINAL
     assert "class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin)" in GOV
     assert "class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin)" in RUNTIME_FIX
