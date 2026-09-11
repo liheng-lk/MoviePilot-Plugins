@@ -4,8 +4,8 @@
 - 5 分钟 tick 只负责频道增量，不再同时启动主动 GYING；
 - 频道是被动到达的资源，命中真实缺集后不受播出日期门禁限制，也不依赖日历服务可用，
   但仍受媒体身份、reservation/source claim、episode fence 与质量门禁限制；频道批次继续禁止主动 GYING；
-- 主动 GYING 只由更新日历服务统一驱动：TV/动漫先按 due_uncovered 过滤，电影按外部
-  检索冷却参与；日历不可用时才退回旧的“真实缺集 + 冷却”语义；
+- 常规观影轮询继续以“真实缺集 + 外部检索冷却”为准，不再被更新日历二次拦截；
+- AiringDue 只是更快的主动拉取加速器：TV/动漫按 due_uncovered 过滤，电影按冷却参与；
 - 每天 04:10 全员复核改为两阶段：先用频道缓存/现查补全，再只对仍未覆盖且不在途的
   订阅做一次强制 GYING 补漏，避免频道已有资源时仍先打观影服务器；
 - due scope 改为线程局部上下文，避免频道、日历、人工任务并发处理不同订阅时互相串集数范围。
@@ -356,14 +356,19 @@ class GuangYaDispatchPolicyV1125Mixin:
         text = str(trigger or "")
         normalized = sorted(self._positive_ids_v1125(batch or []))
         if "频道新增资源" in text:
-            if normalized:
-                return self._run_v1115_mode_batch(normalized, trigger, "channel_event", force=False)
-            return None
+            # 频道事件本身仍是纯被动消费，但必须让下层 AiringWeekly 在频道批次结束后
+            # 启动独立 viewing_poll；不能在本层提前 return，否则 GYING 会被高频频道事件饿死。
+            return super()._run_reliability_route_batch(batch, trigger)
         if "观影定时轮询" in text:
-            allowed = set(self._smart_pull_due_ids_v1125())
-            filtered = [sid for sid in normalized if sid in allowed]
-            if filtered:
-                return self._run_v1115_mode_batch(filtered, "更新日历主动拉取", "airing_pull", force=False)
+            # 这批 ID 已由 _viewing_due_subscription_ids_v1115 按“真实缺集 + 冷却”筛选完成。
+            # 不再重复套日历 due gate；AiringDue 是加速器，不是 GYING 唯一入口。
+            if normalized:
+                return self._run_v1115_mode_batch(
+                    normalized,
+                    text,
+                    "viewing_poll",
+                    force=False,
+                )
             return None
         return super()._run_reliability_route_batch(batch, trigger)
 
