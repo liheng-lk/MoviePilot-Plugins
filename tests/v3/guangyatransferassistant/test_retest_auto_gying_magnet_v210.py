@@ -184,11 +184,25 @@ def test_a_auto_gying_missing_full_path():
 
 
 def test_b_auto_gying_unknown_cooldown_due():
+    """OLD: UNKNOWN+empty → auto GYING. NEW: UNKNOWN+empty → no pull.
+    WHY: avoid white-search when no due target exists."""
     obj, _ = _smart_obj(gate={
         "preflight_state": "UNKNOWN",
         "decision": "continue_match",
         "due_uncovered": [],
         "target_episodes": [],
+        "final_target": [],
+    }, cooldown=True)
+    assert obj._smart_pull_due_ids_v1125() == []
+
+
+def test_b2_auto_gying_unknown_with_targets_still_pulls():
+    obj, _ = _smart_obj(gate={
+        "preflight_state": "UNKNOWN",
+        "decision": "continue_match",
+        "due_uncovered": [7],
+        "target_episodes": [7],
+        "final_target": [7],
     }, cooldown=True)
     assert obj._smart_pull_due_ids_v1125() == [124]
 

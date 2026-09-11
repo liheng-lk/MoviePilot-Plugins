@@ -343,8 +343,12 @@ def test_n_library_existing_empty_success_no_note_fallback():
 def test_o_mro_wires_episode_target():
     entry = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
     assert "GuangYaEpisodeTargetV210Mixin" in entry
+    assert "GuangYaEpisodeRuntimeV211Mixin" in entry
     class_block = entry.split("class GuangYaTransferAssistant(")[1].split("):")[0]
     assert class_block.index("GuangYaFoundationOpsV209Mixin") < class_block.index(
+        "GuangYaEpisodeRuntimeV211Mixin"
+    )
+    assert class_block.index("GuangYaEpisodeRuntimeV211Mixin") < class_block.index(
         "GuangYaEpisodeTargetV210Mixin"
     )
     assert class_block.index("GuangYaEpisodeTargetV210Mixin") < class_block.index(
@@ -354,8 +358,8 @@ def test_o_mro_wires_episode_target():
 
 def test_p_version_freeze_r94():
     entry = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
-    assert 'plugin_version = "2.0.11"' in entry
-    assert 'build_id = "20260911-r95"' in entry
+    assert 'plugin_version = "2.0.12"' in entry
+    assert 'build_id = "20260911-r96"' in entry
 
 
 def test_q_remember_marks_pending_library():
@@ -398,5 +402,7 @@ def test_t_progress_uses_emby_not_note():
         mp_state="used_complete",
     )
     sub = _tv(total=3, note=[1, 2, 3])
+    # UI progress is zero-I/O: warm cache via one transfer-path snapshot first.
+    h._episode_target_snapshot_v210(sub, force_library=True, log=False)
     done, total, lack = h._subscription_episode_progress(sub)
     assert (done, total, lack) == (2, 3, 1)

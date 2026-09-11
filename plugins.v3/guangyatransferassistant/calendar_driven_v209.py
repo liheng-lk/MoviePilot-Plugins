@@ -310,7 +310,22 @@ class GuangYaCalendarDrivenV209Mixin:
         # Fallback: prefer Emby/library missing. Logical/note missing is auxiliary only —
         # never hard-cap Emby gaps away via intersection.
         try:
-            sync = dict(self._sync_media_library_progress(subscribe) or {})
+            ctx = None
+            getter = getattr(self, "_episode_run_context_for_subscribe_v211", None)
+            if callable(getter):
+                try:
+                    ctx = getter(subscribe)
+                except Exception:
+                    ctx = None
+            if isinstance(ctx, dict) and isinstance(ctx.get("library_sync"), dict):
+                sync = dict(ctx.get("library_sync") or {})
+            else:
+                before = int(ctx.get("emby_query_count") or 0) if isinstance(ctx, dict) else 0
+                sync = dict(self._sync_media_library_progress(subscribe) or {})
+                if isinstance(ctx, dict) and int(ctx.get("emby_query_count") or 0) > before:
+                    ctx["mp_missing_related_library_calls"] = int(
+                        ctx.get("mp_missing_related_library_calls") or 0
+                    ) + 1
             if not bool(sync.get("success")):
                 library_missing = set()
             else:
@@ -605,6 +620,24 @@ class GuangYaCalendarDrivenV209Mixin:
 
     def _library_existing_episodes_v209(self, subscribe: Any) -> Set[int]:
         """Emby/library success (including empty) wins; note only when library query failed."""
+        # Prefer per-run context — do not open a second Emby query inside airing gate.
+        getter = getattr(self, "_episode_run_context_for_subscribe_v211", None)
+        if callable(getter):
+            try:
+                ctx = getter(subscribe)
+            except Exception:
+                ctx = None
+            if isinstance(ctx, dict):
+                if isinstance(ctx.get("library_sync"), dict):
+                    sync = dict(ctx.get("library_sync") or {})
+                    if bool(sync.get("success")):
+                        return {int(v) for v in (sync.get("existing") or []) if int(v or 0) > 0}
+                existing = ctx.get("library_existing")
+                if existing is not None and str(ctx.get("library_state") or "") == "OK":
+                    return {int(v) for v in (existing or []) if int(v or 0) > 0}
+                snap = ctx.get("snapshot")
+                if isinstance(snap, dict) and str(snap.get("library_state") or "") == "OK":
+                    return {int(v) for v in (snap.get("emby_existing") or []) if int(v or 0) > 0}
         try:
             sync = dict(self._sync_media_library_progress(subscribe) or {})
             if bool(sync.get("success")):
@@ -1016,12 +1049,17 @@ class GuangYaCalendarDrivenV209Mixin:
             preflight = str(gate.get("preflight_state") or "")
             targets = self._positive_ids_v1125(gate.get("target_episodes") or [])
             due_eps = self._positive_ids_v1125(gate.get("due_uncovered") or [])
-            has_targets = bool(due_eps or targets)
-            # MISSING with targets, or UNKNOWN/continue_match (even with empty targets).
+            final_eps = self._positive_ids_v1125(gate.get("final_target") or [])
+            has_targets = bool(due_eps or targets or final_eps)
+            # MISSING with targets only. UNKNOWN/continue_match with empty target → no GYING.
             selected = False
-            if decision in {"search", "search_due"} or (preflight == "MISSING" and has_targets):
+            if decision in {"search", "search_due", "search_missing", "search_mp_calendar_fallback", "search_mp_missing_fallback"} and has_targets:
                 selected = True
-            elif decision == "continue_match" or preflight == "UNKNOWN":
+            elif preflight == "MISSING" and has_targets:
+                selected = True
+            elif decision == "unknown_no_due_target":
+                selected = False
+            elif (decision == "continue_match" or preflight == "UNKNOWN") and has_targets:
                 selected = True
             elif decision in {"skip_future", "skip_complete"} or preflight == "SATISFIED":
                 selected = False

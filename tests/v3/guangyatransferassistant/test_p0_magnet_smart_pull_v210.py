@@ -208,11 +208,26 @@ def test_e_smart_selector_missing_due():
 
 
 def test_f_smart_selector_unknown_cooldown_due():
+    """OLD: UNKNOWN+empty targets → selected=True (white GYING).
+    NEW: UNKNOWN+empty targets → selected=False (no white search).
+    WHY: empty final_target must not open GYING/PanSou."""
     obj, logs = _smart_obj(gate={
         "preflight_state": "UNKNOWN",
         "decision": "continue_match",
         "due_uncovered": [],
         "target_episodes": [],
+        "final_target": [],
+    }, cooldown=True)
+    assert obj._smart_pull_due_ids_v1125() == []
+
+
+def test_f2_smart_selector_unknown_with_due_targets_still_selected():
+    obj, _ = _smart_obj(gate={
+        "preflight_state": "UNKNOWN",
+        "decision": "continue_match",
+        "due_uncovered": [5],
+        "target_episodes": [5],
+        "final_target": [5],
     }, cooldown=True)
     assert obj._smart_pull_due_ids_v1125() == [124]
 

@@ -145,8 +145,9 @@ class GuangYaViewingLoggingV1113Mixin(
         if existing_viewing:
             return result
 
-        # completed / pending 已表示真实覆盖合同；handled 只表示 ownership，不能单独阻断内部来源链。
-        if bool(result.get("completed")) or bool(result.get("pending")):
+        # completed = 订阅级完成合同；pending 仅表示前序来源有在途任务，
+        # 不能单独阻断：Direct 只覆盖 E05 时，剩余 E07/E09 仍需同轮进入 GYING Magnet/ED2K。
+        if bool(result.get("completed")):
             return result
 
         gap = self._viewing_gap_v1113(subscribe)
@@ -154,14 +155,23 @@ class GuangYaViewingLoggingV1113Mixin(
         if bool(gap.get("covered")):
             self._plugin_log(
                 "INFO",
-                "【光鸭转存助手】【观影执行】#%s 当前目标已真实覆盖(covered=True)，停止 Magnet/ED2K；handled=%s missing=%s reserved=%s claimed=%s",
+                "【光鸭转存助手】【观影执行】#%s 当前目标已真实覆盖(covered=True)，停止 Magnet/ED2K；handled=%s pending=%s missing=%s reserved=%s claimed=%s",
                 sid,
                 bool(result.get("handled")),
+                bool(result.get("pending")),
                 ",".join(str(v) for v in (gap.get("missing") or [])) or "-",
                 ",".join(str(v) for v in (gap.get("reserved") or [])) or "-",
                 ",".join(str(v) for v in (gap.get("claimed") or [])) or "-",
             )
             return result
+
+        if bool(result.get("pending")):
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【观影执行】#%s 前序 pending=True 但 uncovered=%s；继续内部 Magnet/ED2K 补齐剩余缺集（仍禁止 native）",
+                sid,
+                ",".join(str(v) for v in (gap.get("uncovered") or [])) or "movie",
+            )
 
         if bool(result.get("handled")):
             self._plugin_log(
@@ -174,11 +184,12 @@ class GuangYaViewingLoggingV1113Mixin(
 
         self._plugin_log(
             "INFO",
-            "【光鸭转存助手】【观影执行】#%s 前序链未完整覆盖，继续观影 Magnet/ED2K；uncovered=%s 前序success=%s handled=%s 信息=%s",
+            "【光鸭转存助手】【观影执行】#%s 前序链未完整覆盖，继续观影 Magnet/ED2K；uncovered=%s 前序success=%s handled=%s pending=%s 信息=%s",
             sid,
             ",".join(str(v) for v in (gap.get("uncovered") or [])) or "movie",
             bool(result.get("success")),
             bool(result.get("handled")),
+            bool(result.get("pending")),
             str(result.get("message") or "-")[:260],
         )
         try:

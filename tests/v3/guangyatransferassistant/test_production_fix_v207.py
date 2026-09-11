@@ -21,8 +21,8 @@ ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 
 
 def test_v207_version_markers():
-    assert 'plugin_version = "2.0.11"' in ENTRY
-    assert 'build_id = "20260911-r95"' in ENTRY
+    assert 'plugin_version = "2.0.12"' in ENTRY
+    assert 'build_id = "20260911-r96"' in ENTRY
 
 
 def test_p0_shareid_retry_on_legacy_failure_contract():

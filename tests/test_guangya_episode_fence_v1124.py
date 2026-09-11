@@ -47,7 +47,12 @@ class GuangYaEpisodeFenceV1124Tests(unittest.TestCase):
         pending = self.fence.split("    def _pending_reservations(", 1)[1].split(
             "    @staticmethod\n    def _planned_path_v1124", 1
         )[0]
-        self.assertIn("base[\"episodes\"].update(self._acquired_episode_facts_v1124(subscribe))", pending)
+        # Transfer receipts must NOT become permanent reservations (runtime arch hotfix).
+        self.assertNotIn(
+            "base[\"episodes\"].update(self._acquired_episode_facts_v1124(subscribe))",
+            pending,
+        )
+        self.assertIn("Do NOT union acquired episode facts into reservations", pending)
 
     def test_direct_share_is_filtered_again_after_xunlei_receipt(self):
         helper = self.fence.split("    def _resolved_item_episodes_v1124(", 1)[1].split(

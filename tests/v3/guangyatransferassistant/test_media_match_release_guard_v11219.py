@@ -12,9 +12,9 @@ PACKAGE_JSON = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8")
 
 
 def test_media_match_slice_is_public_v11219_release():
-    assert 'plugin_version = "2.0.11"' in ENTRY
-    assert PLUGIN_JSON["version"] == "2.0.11"
-    assert PACKAGE_JSON["version"] == "2.0.11"
+    assert 'plugin_version = "2.0.12"' in ENTRY
+    assert PLUGIN_JSON["version"] == "2.0.12"
+    assert PACKAGE_JSON["version"] == "2.0.12"
     assert "v1.12.19" in PACKAGE_JSON["history"]
     assert "GuangYaMediaMatchV11219Mixin" in FAST
     assert "requested_episodes" in MATCH

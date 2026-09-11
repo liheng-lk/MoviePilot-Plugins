@@ -635,23 +635,25 @@ class GuangYaAiringSchedulerV1120Mixin:
             return result
 
         decision = str(gate.get("decision") or "")
-        # UNKNOWN / continue_match must not short-circuit into "已追平".
-        if decision == "continue_match" or str(gate.get("preflight_state") or "") == "UNKNOWN":
-            due = list(gate.get("due_uncovered") or gate.get("target_episodes") or [])
-            if due:
-                with self._due_scope_v1120(subscribe, due):
-                    result = dict(super()._try_transfer_subscription(
-                        subscribe,
-                        force=force,
-                        refresh_channel=refresh_channel,
-                    ) or {})
-                result["due_scope"] = due
-            else:
+        # UNKNOWN / continue_match with concrete due targets only — never white-search.
+        if decision in {"continue_match", "unknown_no_due_target"} or str(gate.get("preflight_state") or "") == "UNKNOWN":
+            due = list(gate.get("due_uncovered") or gate.get("target_episodes") or gate.get("final_target") or [])
+            if not due or decision == "unknown_no_due_target":
+                return {
+                    "success": True,
+                    "handled": True,
+                    "calendar_wait": True,
+                    "calendar_gate": gate,
+                    "message": "library/calendar UNKNOWN 且无明确 due target，跳过主动 GYING",
+                    "selected": False,
+                }
+            with self._due_scope_v1120(subscribe, due):
                 result = dict(super()._try_transfer_subscription(
                     subscribe,
                     force=force,
                     refresh_channel=refresh_channel,
                 ) or {})
+            result["due_scope"] = due
             result["calendar_gate"] = gate
             result["calendar_continue_match"] = True
             return result

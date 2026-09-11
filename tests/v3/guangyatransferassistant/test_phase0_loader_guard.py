@@ -12,7 +12,7 @@ ENTRY = (ROOT / "plugins.v3" / "guangyatransferassistant" / "__init__.py").read_
 
 
 def test_phase0_loader_scrub_helpers_exist_without_version_bump():
-    assert 'plugin_version = "2.0.11"' in ENTRY
+    assert 'plugin_version = "2.0.12"' in ENTRY
     assert "def _scrub_public_mixin_exports()" in ENTRY
     assert "def _emergency_restore_subscribe_chain_patches()" in ENTRY
     assert "_scrub_public_mixin_exports()" in ENTRY

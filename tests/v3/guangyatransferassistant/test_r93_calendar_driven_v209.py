@@ -21,19 +21,20 @@ PACKAGE = (ROOT / "package.v3.json").read_text(encoding="utf-8")
 
 
 def test_r93_version_and_mro():
-    assert 'plugin_version = "2.0.11"' in ENTRY
-    assert 'build_id = "20260911-r95"' in ENTRY
+    assert 'plugin_version = "2.0.12"' in ENTRY
+    assert 'build_id = "20260911-r96"' in ENTRY
     assert "GuangYaCalendarDrivenV209Mixin" in ENTRY
     assert "GuangYaPowSingleflightV209Mixin" in ENTRY
     assert "GuangYaFoundationOpsV209Mixin" in ENTRY
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     lines = [ln.strip().rstrip(",") for ln in head.strip().splitlines() if ln.strip()]
     assert lines[0] == "GuangYaFoundationOpsV209Mixin"
-    assert lines[1] == "GuangYaEpisodeTargetV210Mixin"
-    assert lines[2] == "GuangYaCalendarDrivenV209Mixin"
-    assert lines[3] == "GuangYaPowSingleflightV209Mixin"
+    assert lines[1] == "GuangYaEpisodeRuntimeV211Mixin"
+    assert lines[2] == "GuangYaEpisodeTargetV210Mixin"
+    assert lines[3] == "GuangYaCalendarDrivenV209Mixin"
+    assert lines[4] == "GuangYaPowSingleflightV209Mixin"
     assert "GuangYaEpisodeTargetV210Mixin" in ENTRY
-    assert '"version": "2.0.11"' in PACKAGE
+    assert '"version": "2.0.12"' in PACKAGE
     assert "v2.0.9" in PACKAGE
     assert "0 21 * * *" in CAL
     assert "GuangYaTransferAssistantDailyReconcile" in CAL

@@ -1,37 +1,34 @@
-## v2.0.11-r95 — Episode Integrity Beta（Controlled Real-World Beta）
+## v2.0.12-r96 — Episode Runtime Hotfix（Controlled Real-World Beta）
 
-本版本为 **Controlled Real-World Beta（剧集完整性实机验证版）**，不是 Stable / 正式稳定版 / 生产稳定版。
+本版本为 **Controlled Real-World Beta**，不是 Stable / 正式稳定版 / 生产稳定版。
 
 ### 本版重点
-- 电视剧补集改为结合 Emby 实际媒体库状态
-- 修复历史缺集可能因 MoviePilot note / missing 状态被永久跳过
-- 新增统一 Episode Target Resolver
-- 已播但 Emby 实际缺失的剧集重新进入补集目标
-- 未来未播集继续保护，不提前下载
-- 刚完成转存但 Emby 尚未扫描时增加 pending library confirmation，避免重复任务
-- TV 订阅完成前增加 fresh Emby 实际完整性确认
-- 修复 Auto GYING 主动检索选择链
-- 修复 Magnet/ED2K real fileIndex 与纯字幕任务保护
-- 增强资源选择、剧集目标、远端完成、Emby 入库的诊断日志
+- Library observation ≠ transfer receipt；清理 r95 library-as-receipt 污染并可 reopen
+- AiringDue cycle context：同轮 Emby ≤1、MP resolve ≤1
+- ED2K no-subfiles 单文件 ambiguous 清除，合法视频可 create_task
+- Direct 部分 pending 后同轮继续 GYING Magnet/ED2K 补齐剩余缺集
+- GYING search singleflight + 真实 run_id；runtime init ready 门禁
+- Final Plugin E2E：Direct E05 → Magnet E07 → ED2K E09
 
 ### 仍需实机验证
-- Episode Target Resolver 在大批真实订阅下的长期稳定性
-- Emby 扫描延迟 / pending library confirmation
-- PanSou verified session 并发稳定性
-- Magnet/ED2K 远端实际落盘结果
-- 少量 diagnostics trace 完整性
+- 大批真实订阅下 AiringDue / Emby 查询次数
+- ED2K / Magnet 远端实际落盘
+- Direct→GYING 同轮补齐在复杂 ResourceGroup 下的稳定性
+- PanSou verified session 并发
 
 ### 发布后优先观察
-1. Emby 历史缺集是否真正进入 final_target
-2. 未来未播集是否仍不提前下载
-3. remote success 到 Emby 入库之间是否避免重复任务
-4. Emby 真正完整后才完成订阅
-5. Auto GYING：selected=True → 【观影】搜索开始
-6. Magnet：selected_video>=1 → 实际有视频落盘
-7. 第一声啼哭类多资源是否不重复提交同一 episode
+1. 同一次 AiringDue Emby / MP 是否仍风暴式重复
+2. ED2K 单文件是否还会 needs_review
+3. Direct 只覆盖部分集后 Magnet/ED2K 是否同轮跟上
+4. 第二轮是否零重复 create_task
+5. managed 是否仍禁止 native fallback
 
 ### 实机红线（出现任一停止扩大 Beta）
-错误媒体/错季转存；managed 回落 native；同 episode 批量重复；subtitle-only 被判媒体成功；Emby 明显缺历史集但 final_target 为空；未来集提前批量转存；TV Emby 不完整却完成订阅。
+错误媒体/错季转存；managed 回落 native；同 episode 批量重复；subtitle-only 被判媒体成功；Emby I/O 风暴 / recursion；未来集提前批量转存。
+
+## v2.0.11-r95 — Episode Integrity Beta（Controlled Real-World Beta）
+
+r95 引入 Emby 实际库驱动补集与统一 Episode Target Resolver；详见历史 changelog。
 
 ## v2.0.10 Beta - Controlled Real-World Beta（20260911-r94）
 

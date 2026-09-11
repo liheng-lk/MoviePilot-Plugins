@@ -2571,7 +2571,8 @@ class GuangYaTransferAssistant(_PluginBase):
                         library_existing = target.difference(missing_set)
                     else:
                         library_existing = set()
-            self._remember_episode_facts(subscribe, library_existing, origin="library")
+            # Library observation only — NEVER write transfer receipt / media_facts.
+            # Emby existing must not enter Episode Fence acquired / reservation.
             current = set()
             for value in (getattr(subscribe, "note", None) or []):
                 try:
@@ -2595,6 +2596,7 @@ class GuangYaTransferAssistant(_PluginBase):
                 "success": True,
                 "existing": sorted(library_existing),
                 "missing": sorted(target.difference(library_existing)),
+                "library_state": "OK",
             }
         except Exception as err:
             self._plugin_log("WARNING", "【光鸭转存助手】【媒体库同步】#%s %s 同步失败：%s", sid, getattr(subscribe, "name", ""), err)

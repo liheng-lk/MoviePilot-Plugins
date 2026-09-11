@@ -16,11 +16,24 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .episode_resolver_v190 import AUTO_SELECT_CONFIDENCE, reliable_episode_set, resolve_episode
 from .legacy import _entry_match_reason, _is_subtitle, _is_video
-from .source_types_v180 import source_identity
+from .source_types_v180 import normalize_ed2k, source_identity
 
 
 _AMBIGUOUS_PREFIX = "EPISODE_AMBIGUOUS:"
-_ACTIVE_CLAIM_STATES = {"new", "retry", "dispatching", "submitted", "queued", "waiting", "completed"}
+_ACTIVE_CLAIM_STATES = {"new", "retry", "dispatching", "submitted", "queued", "waiting"}
+
+
+def _ed2k_uri_basename(uri: Any) -> str:
+    text = str(uri or "").strip()
+    if not text.lower().startswith("ed2k://|file|"):
+        return ""
+    try:
+        return str(normalize_ed2k(text).get("name") or "").strip()
+    except Exception:
+        parts = text.split("|")
+        if len(parts) >= 3:
+            return str(parts[2] or "").strip()
+        return ""
 
 
 class GuangYaResourcePlannerMixin:
@@ -356,6 +369,133 @@ class GuangYaResourcePlannerMixin:
         normalized = str(value or "").replace("\\", "/")
         return normalized.rsplit("/", 1)[0].lower() if "/" in normalized else ""
 
+    def _ed2k_single_file_selection_v190(
+        self,
+        source: Dict[str, Any],
+        subscribe: Any,
+        resolve_data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """ED2K no-subfiles: parse basename from resolve/URI — never generic multi-file ambiguous."""
+        bt_info = resolve_data.get("btResInfo") if isinstance(resolve_data, dict) else None
+        resolved_name = ""
+        if isinstance(bt_info, dict):
+            resolved_name = str(bt_info.get("fileName") or "").strip()
+        probe = (
+            resolved_name
+            or str(source.get("name") or source.get("label") or "").strip()
+            or _ed2k_uri_basename(
+                source.get("uri")
+                or (resolve_data.get("url") if isinstance(resolve_data, dict) else "")
+            )
+        )
+        diagnostics = [f"ed2k_single_file:{probe or '-'}"]
+        if not probe:
+            return {
+                "indexes": [],
+                "episodes": [],
+                "diagnostics": diagnostics,
+                "ambiguous": True,
+                "message": "ED2K 单文件无法取得文件名",
+                "ed2k_single_file": True,
+            }
+        if _is_subtitle(probe) and not _is_video(probe):
+            return {
+                "indexes": [],
+                "episodes": [],
+                "diagnostics": diagnostics + ["subtitle_only"],
+                "ambiguous": False,
+                "ed2k_single_file": True,
+                "subtitle_only": True,
+                "message": "SELECTED_VIDEO_MISSING: ED2K 单文件是字幕",
+            }
+        if self._is_movie_subscription(subscribe):
+            return {
+                "indexes": [],
+                "episodes": [],
+                "diagnostics": diagnostics,
+                "ambiguous": False,
+                "ed2k_single_file": True,
+            }
+
+        missing = set(int(v) for v in (self._subscription_missing_episodes(subscribe) or []) if int(v or 0) > 0)
+        reserved = set(int(v) for v in (self._pending_reservations(subscribe).get("episodes") or set()) if int(v or 0) > 0)
+        configured_target = set()
+        for raw in source.get("target_episodes") or []:
+            try:
+                value = int(raw)
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                configured_target.add(value)
+        # Prefer final_target from active EpisodeFacts context when present.
+        final_target: set[int] = set()
+        try:
+            ctx_fn = getattr(self, "_episode_run_context_for_subscribe_v211", None)
+            ctx = ctx_fn(subscribe) if callable(ctx_fn) else None
+            if isinstance(ctx, dict):
+                final_target = {
+                    int(v) for v in (ctx.get("final_target") or [])
+                    if int(v or 0) > 0
+                }
+        except Exception:
+            final_target = set()
+        base_target = final_target or missing
+        target = (configured_target or base_target).intersection(base_target) - reserved
+        if not target:
+            return {
+                "indexes": [],
+                "episodes": [],
+                "diagnostics": diagnostics + ["covered_or_empty_target"],
+                "ambiguous": False,
+                "covered": True,
+                "ed2k_single_file": True,
+            }
+
+        season_hint = getattr(subscribe, "season", None)
+        episode_hint = str(source.get("episode_hint") or "").strip()
+        threshold = float(self._episode_auto_confidence or AUTO_SELECT_CONFIDENCE)
+        actual_episodes: set[int] = set()
+        result = resolve_episode(
+            probe,
+            package_paths=[probe],
+            season_hint=season_hint,
+            episode_hint=episode_hint,
+        )
+        actual_episodes.update(reliable_episode_set(result, threshold))
+        if not actual_episodes and episode_hint:
+            hinted = resolve_episode(episode_hint, season_hint=season_hint)
+            actual_episodes.update(reliable_episode_set(hinted, 0.99))
+        matched = sorted(actual_episodes.intersection(target))
+        if matched:
+            return {
+                "indexes": [],
+                "episodes": matched,
+                "diagnostics": diagnostics + [
+                    f"{probe} => {','.join(f'E{v:02d}' for v in matched)}"
+                ],
+                "ambiguous": False,
+                "ed2k_single_file": True,
+            }
+        if actual_episodes and not actual_episodes.intersection(target):
+            return {
+                "indexes": [],
+                "episodes": [],
+                "diagnostics": diagnostics + [f"out_of_target:{sorted(actual_episodes)}"],
+                "ambiguous": False,
+                "ed2k_single_file": True,
+                "out_of_target": True,
+                "parsed_episodes": sorted(actual_episodes),
+                "message": "EPISODE_NOT_TARGET: ED2K 单文件不在当前 final_target",
+            }
+        return {
+            "indexes": [],
+            "episodes": [],
+            "diagnostics": diagnostics,
+            "ambiguous": True,
+            "ed2k_single_file": True,
+            "message": f"ED2K 单文件无法高置信映射当前缺集：{probe[:180]}",
+        }
+
     def _planner_file_selection(
         self,
         source: Dict[str, Any],
@@ -364,6 +504,14 @@ class GuangYaResourcePlannerMixin:
     ) -> Dict[str, Any]:
         rows = self._media_rows(resolve_data)
         media_rows = [row for row in rows if row["video"] or row["subtitle"]]
+        source_type = str(source.get("type") or "").strip().lower()
+        bt_info = resolve_data.get("btResInfo") if isinstance(resolve_data, dict) else None
+        subfiles = bt_info.get("subfiles") if isinstance(bt_info, dict) else None
+        no_subfiles = not (isinstance(subfiles, list) and subfiles)
+        # ED2K without enumerable subfiles must NOT enter generic multi-file ambiguous path.
+        if source_type == "ed2k" and no_subfiles:
+            return self._ed2k_single_file_selection_v190(source, subscribe, resolve_data)
+
         if not rows:
             return {"indexes": [], "episodes": [], "diagnostics": [], "ambiguous": False}
 
@@ -496,7 +644,21 @@ class GuangYaResourcePlannerMixin:
         no_subfiles = not (isinstance(subfiles, list) and subfiles)
         # ED2K no-subfiles: require resolved filename to be a real video before submit.
         if source_type == "ed2k" and no_subfiles:
-            probe_name = resolved_name or str(source.get("name") or source.get("label") or "")
+            if bool(selection.get("subtitle_only")):
+                raise RuntimeError(
+                    f"{_AMBIGUOUS_PREFIX}SELECTED_VIDEO_MISSING: "
+                    f"ED2K 单文件是字幕：{str(selection.get('message') or resolved_name or '-')[:180]}"
+                )
+            if bool(selection.get("out_of_target")):
+                raise RuntimeError(
+                    f"{_AMBIGUOUS_PREFIX}EPISODE_NOT_TARGET: "
+                    f"ED2K 单文件不在当前目标：{sorted(selection.get('parsed_episodes') or [])}"
+                )
+            probe_name = (
+                resolved_name
+                or str(source.get("name") or source.get("label") or "").strip()
+                or _ed2k_uri_basename(source.get("uri") or resolved_url)
+            )
             if not _is_video(probe_name):
                 raise RuntimeError(
                     f"{_AMBIGUOUS_PREFIX}SELECTED_VIDEO_MISSING: "
@@ -504,48 +666,70 @@ class GuangYaResourcePlannerMixin:
                 )
 
         if source_type == "ed2k" and not self._is_movie_subscription(subscribe) and no_subfiles:
-            season_hint = getattr(subscribe, "season", None)
-            episode_hint = str(source.get("episode_hint") or "").strip()
-            actual_names = []
-            for value in (resolved_name, bt_info.get("fileName") if isinstance(bt_info, dict) else ""):
-                value = str(value or "").strip()
-                if value and value not in actual_names:
-                    actual_names.append(value)
-            actual_episodes = set()
-            threshold = float(self._episode_auto_confidence or AUTO_SELECT_CONFIDENCE)
-            for value in actual_names:
-                result = resolve_episode(
-                    value,
-                    package_paths=actual_names,
-                    season_hint=season_hint,
-                    episode_hint=episode_hint,
-                )
-                actual_episodes.update(reliable_episode_set(result, threshold))
-            if not actual_episodes and episode_hint:
-                hinted = resolve_episode(episode_hint, season_hint=season_hint)
-                actual_episodes.update(reliable_episode_set(hinted, 0.99))
-
-            missing_now = {
-                int(value) for value in (self._subscription_missing_episodes(subscribe) or [])
+            # Prefer selection already built by single-file planner (ambiguous cleared there).
+            matched_from_planner = {
+                int(value) for value in (selection.get("episodes") or [])
                 if int(value or 0) > 0
             }
-            configured_target = {
-                int(value) for value in (source.get("target_episodes") or [])
-                if str(value).isdigit() and int(value) > 0
-            }
-            allowed_target = (configured_target or missing_now).intersection(missing_now)
-            matched_episodes = actual_episodes.intersection(allowed_target)
-            if not matched_episodes:
-                detail = ", ".join(actual_names[:2]) or str(source.get("name") or "ED2K 单文件")
-                raise RuntimeError(
-                    f"{_AMBIGUOUS_PREFIX}ED2K 已解析但真实文件无法确认覆盖当前缺集：{detail}"
+            if matched_from_planner and not bool(selection.get("ambiguous")):
+                selection["episodes"] = sorted(matched_from_planner)
+                selection["ambiguous"] = False
+                selection.pop("message", None)
+                self._plugin_log(
+                    "INFO",
+                    "【光鸭转存助手】【频道云添加】ED2K 单文件解析命中缺集=%s，允许提交光鸭 cloudcollection",
+                    ",".join(f"E{value:02d}" for value in sorted(matched_from_planner)),
                 )
-            selection["episodes"] = sorted(matched_episodes)
-            self._plugin_log(
-                "INFO",
-                "【光鸭转存助手】【频道云添加】ED2K 单文件解析命中缺集=%s，允许提交光鸭 cloudcollection",
-                ",".join(f"E{value:02d}" for value in sorted(matched_episodes)),
-            )
+            else:
+                season_hint = getattr(subscribe, "season", None)
+                episode_hint = str(source.get("episode_hint") or "").strip()
+                actual_names = []
+                for value in (
+                    resolved_name,
+                    bt_info.get("fileName") if isinstance(bt_info, dict) else "",
+                    _ed2k_uri_basename(source.get("uri") or resolved_url),
+                ):
+                    value = str(value or "").strip()
+                    if value and value not in actual_names:
+                        actual_names.append(value)
+                actual_episodes = set()
+                threshold = float(self._episode_auto_confidence or AUTO_SELECT_CONFIDENCE)
+                for value in actual_names:
+                    result = resolve_episode(
+                        value,
+                        package_paths=actual_names,
+                        season_hint=season_hint,
+                        episode_hint=episode_hint,
+                    )
+                    actual_episodes.update(reliable_episode_set(result, threshold))
+                if not actual_episodes and episode_hint:
+                    hinted = resolve_episode(episode_hint, season_hint=season_hint)
+                    actual_episodes.update(reliable_episode_set(hinted, 0.99))
+
+                missing_now = {
+                    int(value) for value in (self._subscription_missing_episodes(subscribe) or [])
+                    if int(value or 0) > 0
+                }
+                configured_target = {
+                    int(value) for value in (source.get("target_episodes") or [])
+                    if str(value).isdigit() and int(value) > 0
+                }
+                allowed_target = (configured_target or missing_now).intersection(missing_now)
+                matched_episodes = actual_episodes.intersection(allowed_target)
+                if not matched_episodes:
+                    detail = ", ".join(actual_names[:2]) or str(source.get("name") or "ED2K 单文件")
+                    raise RuntimeError(
+                        f"{_AMBIGUOUS_PREFIX}ED2K 已解析但真实文件无法确认覆盖当前缺集：{detail}"
+                    )
+                # CRITICAL: clear any stale ambiguous from earlier generic planner paths.
+                selection["episodes"] = sorted(matched_episodes)
+                selection["ambiguous"] = False
+                selection.pop("message", None)
+                self._plugin_log(
+                    "INFO",
+                    "【光鸭转存助手】【频道云添加】ED2K 单文件解析命中缺集=%s，允许提交光鸭 cloudcollection",
+                    ",".join(f"E{value:02d}" for value in sorted(matched_episodes)),
+                )
         if not self._is_movie_subscription(subscribe) and bool(selection.get("covered")) and not indexes:
             raise RuntimeError(f"{_AMBIGUOUS_PREFIX}当前缺集已被其它在途任务覆盖，暂不创建重复离线任务")
         if bool(selection.get("ambiguous")):

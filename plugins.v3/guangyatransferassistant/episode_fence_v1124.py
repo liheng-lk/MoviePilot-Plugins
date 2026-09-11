@@ -55,7 +55,35 @@ class GuangYaEpisodeFenceV1124Mixin:
                 locks[key] = lock
             return lock
 
+    _LIBRARY_OBSERVATION_ORIGINS_V1124 = frozenset({
+        "library", "emby", "mediaserver", "scan", "media_library", "library_observation",
+    })
+
+    @classmethod
+    def _is_library_observation_origin_v1124(cls, origin: Any) -> bool:
+        text = str(origin or "").strip().lower()
+        if not text:
+            return False
+        if text in cls._LIBRARY_OBSERVATION_ORIGINS_V1124:
+            return True
+        return any(token in text for token in ("library", "emby", "mediaserver", "scan"))
+
+    @classmethod
+    def _is_transfer_receipt_origin_v1124(cls, origin: Any) -> bool:
+        """Only real transfer/remote origins count as transfer-acquired."""
+        if cls._is_library_observation_origin_v1124(origin):
+            return False
+        text = str(origin or "").strip().lower()
+        if not text:
+            return False
+        markers = (
+            "guangya", "xunlei", "magnet", "ed2k", "offline", "transfer",
+            "receipt", "remote", "cloud", "viewing", "flash", "share",
+        )
+        return any(token in text for token in markers)
+
     def _acquired_episode_facts_v1124(self, subscribe: Any) -> Set[int]:
+        """Transfer receipts only — library observation must never become acquired."""
         if not subscribe or self._is_movie_subscription(subscribe):
             return set()
         prefix = self._media_fact_prefix(subscribe) + ":e"
@@ -63,13 +91,25 @@ class GuangYaEpisodeFenceV1124Mixin:
         acquired: Set[int] = set()
         if not isinstance(facts, dict):
             return acquired
-        for key in facts.keys():
+        for key, row in facts.items():
             text = str(key or "")
             if not text.startswith(prefix):
                 continue
             suffix = text[len(prefix):]
-            if suffix.isdigit() and int(suffix) > 0:
-                acquired.add(int(suffix))
+            if not (suffix.isdigit() and int(suffix) > 0):
+                continue
+            origin = ""
+            if isinstance(row, dict):
+                origin = str(row.get("origin") or "")
+            # Legacy keys without origin: treat as transfer only if not explicitly library.
+            if origin and self._is_library_observation_origin_v1124(origin):
+                continue
+            if origin and not self._is_transfer_receipt_origin_v1124(origin):
+                continue
+            if not origin:
+                # Ambiguous pre-r95 rows without origin — do not treat as permanent acquired.
+                continue
+            acquired.add(int(suffix))
         return acquired
 
     def _subscription_missing_episodes(self, subscribe: Any) -> List[int]:
@@ -82,7 +122,7 @@ class GuangYaEpisodeFenceV1124Mixin:
         return sorted(parent_missing - self._acquired_episode_facts_v1124(subscribe))
 
     def _pending_reservations(self, subscribe: Any, exclude_job_key: str = "") -> Dict[str, Any]:
-        """把“已成功”与“正在处理”统一成来源规划不可再次占用的集级栅栏。"""
+        """In-flight jobs only — transfer receipts are NOT reservations."""
         base = dict(super()._pending_reservations(subscribe, exclude_job_key=exclude_job_key) or {})
         base["paths"] = set(base.get("paths") or set())
         base["episodes"] = set(base.get("episodes") or set())
@@ -91,8 +131,7 @@ class GuangYaEpisodeFenceV1124Mixin:
                 base["movie"] = bool(base.get("movie")) or bool(self._movie_transfer_confirmed(subscribe))
             except Exception:
                 base["movie"] = bool(base.get("movie"))
-        else:
-            base["episodes"].update(self._acquired_episode_facts_v1124(subscribe))
+        # Do NOT union acquired episode facts into reservations.
         return base
 
     @staticmethod
@@ -345,8 +384,11 @@ class GuangYaEpisodeFenceV1124Mixin:
             for value in episodes
             if _safe_int_v1124_fence(value) > 0
         })
+        # Library observation must never enter transfer receipt / 集级终止 / missing recalc.
+        if self._is_library_observation_origin_v1124(origin):
+            return 0
         changed = super()._remember_episode_facts(subscribe, values, origin=origin)
-        if values and not self._is_movie_subscription(subscribe):
+        if values and not self._is_movie_subscription(subscribe) and self._is_transfer_receipt_origin_v1124(origin):
             self._commit_episode_receipt_v1124(subscribe, values, origin)
         return changed
 

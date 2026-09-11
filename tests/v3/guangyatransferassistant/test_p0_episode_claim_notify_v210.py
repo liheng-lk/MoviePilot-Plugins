@@ -101,8 +101,8 @@ def _ops_instance():
 
 
 def test_version_unchanged_r94():
-    assert 'plugin_version = "2.0.11"' in ENTRY
-    assert 'build_id = "20260911-r95"' in ENTRY
+    assert 'plugin_version = "2.0.12"' in ENTRY
+    assert 'build_id = "20260911-r96"' in ENTRY
 
 
 def test_a_first_cry_duplicate_episode_claim():
