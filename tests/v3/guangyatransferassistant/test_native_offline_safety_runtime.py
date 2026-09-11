@@ -1,4 +1,4 @@
-﻿"""脱离 MoviePilot 运行时验证 v1.8.0 安全层的真实方法行为。"""
+﻿"""脱离 MoviePilot 运行时验证 multisource 中原生云添加安全边界的真实方法行为。"""
 
 from __future__ import annotations
 
@@ -8,33 +8,39 @@ from typing import Any, Dict
 
 
 ROOT = Path(__file__).resolve().parents[3]
-SAFETY = ROOT / "plugins.v3" / "guangyatransferassistant" / "offline_safety_v180.py"
+SAFETY = ROOT / "plugins.v3" / "guangyatransferassistant" / "multisource_v180.py"
 text = SAFETY.read_text(encoding="utf-8")
 tree = ast.parse(text)
 
-# 只抽取安全 mixin 类，移除相对 import，给最小状态常量即可。
-class_node = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "GuangYaOfflineSafetyMixin")
+source_class = next(
+    node for node in tree.body
+    if isinstance(node, ast.ClassDef) and node.name == "GuangYaMultiSourceMixin"
+)
+wanted = {
+    "_submit_offline_source",
+    "_poll_offline_source",
+    "_source_public_view",
+    "api_source_list",
+}
+methods = [
+    node for node in source_class.body
+    if isinstance(node, ast.FunctionDef) and node.name in wanted
+]
+class_node = ast.ClassDef(
+    name="GuangYaOfflineSafetyProbe",
+    bases=[],
+    keywords=[],
+    body=methods,
+    decorator_list=[],
+)
 module = ast.Module(body=[class_node], type_ignores=[])
 ast.fix_missing_locations(module)
-ns: Dict[str, Any] = {
-    "Any": Any,
-    "Dict": Dict,
-    "SOURCE_INFLIGHT_STATES": {"dispatching", "submitted", "queued", "waiting"},
-}
+ns: Dict[str, Any] = {"Any": Any, "Dict": Dict}
 exec(compile(module, str(SAFETY), "exec"), ns)
-Mixin = ns["GuangYaOfflineSafetyMixin"]
+Mixin = ns["GuangYaOfflineSafetyProbe"]
 
 
-class _Base:
-    def _submit_offline_source(self, source_id: str):
-        self.base_submit_calls += 1
-        return {"success": True, "message": "base-submit"}
-
-    def _poll_offline_source(self, source):
-        return self.poll_result
-
-
-class _Harness(Mixin, _Base):
+class _Harness(Mixin):
     def __init__(self, source):
         self.source = dict(source)
         self.base_submit_calls = 0
@@ -44,6 +50,13 @@ class _Harness(Mixin, _Base):
 
     def _source_store(self):
         return {"items": {str(self.source.get("id")): dict(self.source)}}
+
+    def _submit_offline_source_base_v180(self, source_id: str):
+        self.base_submit_calls += 1
+        return {"success": True, "message": "base-submit"}
+
+    def _poll_offline_source_base_v180(self, source):
+        return self.poll_result
 
     def _poll_offline_source(self, source):
         self.poll_calls += 1
