@@ -198,7 +198,7 @@ class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin):
         sid = int(getattr(subscribe, "id", 0) or 0)
         return bool(self._external_round_allowed_v1114.get(sid, True))
 
-    def _dispatch_xunlei_flash(self, subscribe: Any) -> Dict[str, Any]:
+    def _dispatch_xunlei_flash_governed_v1114(self, subscribe: Any) -> Dict[str, Any]:
         sid = int(getattr(subscribe, "id", 0) or 0)
         if not self._is_movie_subscription(subscribe):
             missing = list(self._subscription_missing_episodes(subscribe) or [])
@@ -614,6 +614,44 @@ class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin):
             "quality_custom_reject": self._quality_custom_reject_v1114,
         })
         return form, defaults
+
+
+    # ------------------------------------------------------------------
+    # Consolidated final Xunlei boundary (formerly xunlei_final_v1114)
+    # ------------------------------------------------------------------
+    def _xunlei_headers(self, action: str, *, refresh: bool = False) -> Dict[str, str]:
+        headers = dict(super()._xunlei_headers(action, refresh=refresh) or {})
+        configured_token = str(getattr(self, "_xunlei_captcha_token", "") or "").strip()
+        configured_device = str(getattr(self, "_xunlei_device_id", "") or "").strip()
+        actual_token = str(headers.get("x-captcha-token") or "").strip()
+        # 用户脚本验证可工作的匿名分享请求只要求真实 client/device/captcha；
+        # 当正在使用用户提供的真实 pair 时，不覆盖它所来自页面的 client-version 语义。
+        if configured_token and configured_device and actual_token == configured_token:
+            headers.pop("x-client-version", None)
+            headers.pop("X-Client-Version", None)
+        return headers
+
+    def _provider_candidate_matches(self, subscribe: Any, candidate: Dict[str, Any]) -> bool:
+        # 只在迅雷候选批处理中生效；退出迅雷批次后 Magnet/ED2K 继续使用正常匹配链。
+        if (
+            bool(getattr(self, "_xunlei_batch_active_v1114", False))
+            and bool(getattr(self, "_xunlei_captcha_circuit_open_v1113", False))
+        ):
+            return False
+        return bool(super()._provider_candidate_matches(subscribe, candidate))
+
+    def _dispatch_xunlei_flash(self, subscribe: Any) -> Dict[str, Any]:
+        self._xunlei_batch_active_v1114 = True
+        try:
+            result = dict(self._dispatch_xunlei_flash_governed_v1114(subscribe) or {})
+        finally:
+            self._xunlei_batch_active_v1114 = False
+        if result.get("captcha_circuit_open"):
+            self._plugin_log(
+                "WARNING",
+                "【光鸭转存助手】【迅雷秒传】captcha 熔断已生效，本批剩余迅雷候选已直接跳过；立即回退下一来源",
+            )
+        return result
 
 
 __all__ = ["GuangYaGovernanceV1114Mixin"]
