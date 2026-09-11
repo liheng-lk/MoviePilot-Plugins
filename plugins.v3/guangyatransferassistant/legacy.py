@@ -1698,16 +1698,135 @@ class GuangYaTransferAssistant(_PluginBase):
         result["missing_episodes"] = missing
         return result
 
+    @staticmethod
+    def _pending_job_verify_items(job: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """仅从既有任务快照重建只读落盘核验清单，不触发任何候选搜索/新任务创建。"""
+        items: List[Dict[str, Any]] = []
+        seen = set()
+        for raw in (job.get("paths") or job.get("completed_paths") or []):
+            path = _safe_relative_path(str(raw or ""))
+            if not path or path in seen:
+                continue
+            seen.add(path)
+            parent = str(Path(path).parent.as_posix())
+            if parent == ".":
+                parent = ""
+            items.append({
+                "effective_path": path,
+                "relative_path": path,
+                "target_parent": parent,
+                "size": 0,
+            })
+        return items
+
+    def _recheck_pending_only(self, subscribe: Any) -> Dict[str, Any]:
+        """Verify-only：只核验已有待落盘任务，绝不刷新频道、访问 GYING 或创建新转存。"""
+        sid = int(getattr(subscribe, "id", 0) or 0)
+        if not sid:
+            return {"success": False, "handled": True, "message": "订阅不存在"}
+
+        pending = list(self._pending_jobs_for_subscription(subscribe) or [])
+        if not pending:
+            return {
+                "success": True,
+                "handled": True,
+                "verify_only": True,
+                "verified": 0,
+                "pending": 0,
+                "message": "当前没有待落盘任务，无需复查；未执行资源搜索或新转存",
+            }
+
+        verified_count = 0
+        waiting_count = 0
+        errors: List[str] = []
+        verified_items: List[Dict[str, Any]] = []
+        for job_key, raw in pending:
+            job = dict(raw or {})
+            target = str(job.get("target") or job.get("target_path") or self._target_path(subscribe) or "/")
+            items = self._pending_job_verify_items(job)
+            if not items:
+                waiting_count += 1
+                message = "旧任务缺少文件清单，无法只读核验；保持待确认，不重新提交"
+                self._set_job_state(job_key, "verifying", verification_message=message)
+                errors.append(message)
+                continue
+
+            check = dict(self._verify_restored_items(target, items, max_try=1) or {})
+            if not bool(check.get("success")):
+                waiting_count += 1
+                message = str(check.get("message") or "目标文件尚未确认可见")
+                self._set_job_state(
+                    job_key,
+                    "verifying",
+                    verification_message=message,
+                    verify_only=True,
+                )
+                errors.append(message)
+                continue
+
+            confirmed = list(check.get("verified_items") or items)
+            verified_items.extend(confirmed)
+            verified_count += 1
+            self._remember_media_facts(subscribe, confirmed, origin="pending_recheck")
+            self._sync_progress(subscribe, confirmed)
+            self._set_job_state(
+                job_key,
+                "verified",
+                completed_paths=[
+                    str(item.get("effective_path") or item.get("relative_path") or item.get("name") or "")
+                    for item in confirmed
+                ],
+                verification_message="目标文件已确认可见",
+                verify_only=True,
+            )
+
+        # 只做事实同步与官方完成判断，不进入资源获取链。
+        if verified_items:
+            try:
+                self._sync_media_library_progress(subscribe)
+            except Exception as err:
+                self._plugin_log(
+                    "WARNING",
+                    "【光鸭转存助手】【核验】#%s 待落盘文件已可见，但媒体库同步失败：%s",
+                    sid,
+                    str(err)[:260],
+                )
+            try:
+                self._finish_subscription_if_complete(subscribe)
+            except Exception:
+                pass
+
+        self._plugin_log(
+            "INFO" if waiting_count == 0 else "WARNING",
+            "【光鸭转存助手】【核验】#%s verify-only 完成：待复查=%s 已确认=%s 仍等待=%s；未执行频道/GYING/新转存",
+            sid,
+            len(pending),
+            verified_count,
+            waiting_count,
+        )
+        return {
+            "success": waiting_count == 0,
+            "handled": True,
+            "verify_only": True,
+            "verified": verified_count,
+            "pending": waiting_count,
+            "message": (
+                f"已确认 {verified_count} 个待落盘任务"
+                if waiting_count == 0
+                else f"已确认 {verified_count} 个，仍有 {waiting_count} 个等待落盘"
+            ),
+            "errors": errors[:10],
+        }
+
     def api_recheck_pending(self, subscribe_id: int = 0) -> Dict[str, Any]:
-        """复查已经提交但尚未落盘确认的任务；force=False 保证不会绕过 v1.4 的防重复提交保护。"""
+        """只复查已有待落盘任务；不会执行频道/GYING 搜索，也不会创建新转存。"""
         sid = int(subscribe_id or 0)
         subscribe = self._find_subscription(sid)
         if not sid or not subscribe:
             return {"success": False, "message": "订阅不存在"}
         if sid not in set(self._selected_subscriptions):
             return {"success": False, "message": "该订阅当前不是光鸭固定转存路线"}
-        self._inspect_cache.clear()
-        result = self._try_transfer_subscription(subscribe, force=False)
+        result = self._recheck_pending_only(subscribe)
         result["console"] = self._subscription_console_snapshot(
             self._find_subscription(sid) or subscribe,
             (self.get_data("channel_index") or {}).get("items") or [],
