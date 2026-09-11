@@ -895,7 +895,7 @@ class GuangYaTransferAssistant(_PluginBase):
         if level in {"WARNING", "ERROR", "EXCEPTION", "CRITICAL"}:
             return "异常"
         stage_markers = (
-            ("任务", ("【来源调度】", "【主动检索派发】", "【立即检查】", "【新订阅】")),
+            ("任务", ("【来源调度】", "【主动检索派发】", "【立即检查】", "【新订阅】", "【人工检查】", "【页面操作】", "【控制台】")),
             ("缺口", ("【EpisodeTarget", "【缺集", "【覆盖修正】", "remaining_actual_gap", "due gap")),
             ("频道", ("【频道事件】", "【频道补偿", "【频道命中】", "【缓存命中】", "【缓存未命中】")),
             ("观影", ("【观影执行】", "【观影搜索】", "【GYING", "CloakBrowser", "PanSou")),
