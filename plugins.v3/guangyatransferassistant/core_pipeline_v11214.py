@@ -46,6 +46,14 @@ _GENERIC_SHARE_ROOTS_V11214 = {
     "电视剧", "电影", "视频", "资源", "全集", "全季",
 }
 
+_ACTUAL_EP_MARKER_V11214 = re.compile(
+    r"(?i)(?:\bS\d{1,2}[ ._\-]*E\d{1,4}\b|\b(?:E|EP|Episode)[ ._\-]*0*\d{1,4}\b|第\s*\d{1,4}\s*(?:集|话))"
+)
+_GENERIC_ACTUAL_TITLE_KEYS_V11214 = {
+    "file", "files", "video", "videos", "tv", "season", "resource", "share",
+    "资源", "文件", "视频", "电视剧", "剧集", "分享", "全集", "全季",
+}
+
 
 def _positive_episode_set_v11214(values: Iterable[Any]) -> Set[int]:
     result: Set[int] = set()
@@ -245,7 +253,7 @@ class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixi
     # ------------------------------------------------------------------
     # GYING panlist GuangYa share -> temporary direct-share entry.
     # ------------------------------------------------------------------
-    def _hydrate_viewing_guangya_shares_v11214(self, subscribe: Any) -> int:
+    def _hydrate_viewing_guangya_shares_base_v11214(self, subscribe: Any) -> int:
         if not bool(getattr(self, "_viewing_enabled", False)):
             return 0
         keyword = str(self._provider_keyword(subscribe) or "").strip()
@@ -323,6 +331,15 @@ class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixi
     # Exact TMDB official aliases for TV/anime GYING recall.
     # ------------------------------------------------------------------
     @staticmethod
+
+    def _hydrate_viewing_guangya_shares_v11214(self, subscribe: Any) -> int:
+        """GYING 光鸭分享在订阅 TMDB alias scope 内进入统一直接转存候选。"""
+        scope = getattr(self, "_gying_alias_scope_v11212", None)
+        if not callable(scope):
+            return int(self._hydrate_viewing_guangya_shares_base_v11214(subscribe) or 0)
+        with scope(subscribe):
+            return int(self._hydrate_viewing_guangya_shares_base_v11214(subscribe) or 0)
+
     def _tmdb_id_tv_v11214(subscribe: Any) -> str:
         raw_type = str(getattr(subscribe, "type", "") or "").lower()
         if "movie" in raw_type or "电影" in str(getattr(subscribe, "type", "") or ""):
@@ -464,18 +481,34 @@ class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixi
         return claims
 
     def _authoritative_missing_v11214(self, subscribe: Any, *, current_source_id: str = "") -> Set[int]:
+        """最终写盘只服从 MoviePilot library fact，再扣 reservation / 其它来源 claim。"""
         if self._is_movie_subscription(subscribe):
             return set()
-        # Reuse v1.12.13 fail-closed library reader; it both refreshes MoviePilot and validates the returned gap.
-        library_missing = set(self._library_missing_v11213(subscribe))
-        logical_missing = _positive_episode_set_v11214(self._subscription_missing_episodes(subscribe) or [])
-        if logical_missing:
-            allowed = library_missing.intersection(logical_missing)
-        else:
-            allowed = set(library_missing)
         try:
-            reservations = self._pending_reservations(subscribe)
-            allowed -= _positive_episode_set_v11214((reservations or {}).get("episodes") or [])
+            sync = dict(self._sync_media_library_progress(subscribe) or {})
+        except Exception as err:
+            sync = {"success": False, "missing": [], "message": str(err)[:260]}
+        if not bool(sync.get("success")):
+            raise RuntimeError(
+                "MoviePilot 媒体库缺集事实读取失败，最终写盘 fail closed："
+                + str(sync.get("message") or "unknown")[:260]
+            )
+
+        library_missing = _positive_episode_set_v11214(sync.get("missing") or [])
+        try:
+            logical_missing = set(self._base_missing_without_due_scope_v11213(subscribe) or set())
+        except Exception:
+            logical_missing = _positive_episode_set_v11214(self._subscription_missing_episodes(subscribe) or [])
+
+        allowed = set(library_missing)
+        if library_missing and logical_missing:
+            allowed -= library_missing - _positive_episode_set_v11214(logical_missing)
+        elif not library_missing and logical_missing:
+            allowed = _positive_episode_set_v11214(logical_missing)
+
+        try:
+            reservations = dict(self._pending_reservations(subscribe) or {})
+            allowed -= _positive_episode_set_v11214(reservations.get("episodes") or [])
         except Exception:
             pass
         sid = int(getattr(subscribe, "id", 0) or 0)
@@ -497,17 +530,37 @@ class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixi
     # ------------------------------------------------------------------
     @staticmethod
     def _direct_share_primary_roots_v11214(paths: Sequence[str], expected_year: Any = None) -> List[str]:
+        """目录根 + rootless 文件 Episode 前标题，共同构成实际分享身份 primary evidence。"""
+        rows: List[str] = []
         roots = {
             str(path or "").replace("\\", "/").split("/", 1)[0].strip()
             for path in paths or [] if "/" in str(path or "").replace("\\", "/")
         }
-        if len(roots) != 1:
-            return []
-        root = next(iter(roots))
-        key = title_key_v1111(root, expected_year=expected_year).casefold()
-        if len(key) < 3 or key in _GENERIC_SHARE_ROOTS_V11214 or re.fullmatch(r"s\d{1,2}|season\d{1,2}", key):
-            return []
-        return [root]
+        if len(roots) == 1:
+            root = next(iter(roots))
+            key = title_key_v1111(root, expected_year=expected_year).casefold()
+            if (
+                len(key) >= 3
+                and key not in _GENERIC_SHARE_ROOTS_V11214
+                and not re.fullmatch(r"s\d{1,2}|season\d{1,2}", key)
+            ):
+                rows.append(root)
+
+        seen = {str(value or "").casefold() for value in rows}
+        for raw in paths or []:
+            name = str(raw or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
+            matched = _ACTUAL_EP_MARKER_V11214.search(name)
+            if not matched:
+                continue
+            prefix = name[:matched.start()].strip(" ._-[]()（）【】")
+            key = title_key_v1111(prefix, expected_year=expected_year).casefold()
+            if len(key) < 3 or key in _GENERIC_ACTUAL_TITLE_KEYS_V11214:
+                continue
+            marker = prefix.casefold()
+            if marker and marker not in seen:
+                seen.add(marker)
+                rows.append(prefix)
+        return rows
 
     def _identity_stats_snapshot_v208(self, probe: Dict[str, Any], video_paths: Sequence[str], *, reason: str = "") -> Dict[str, Any]:
         files = [row for row in (probe.get("files") or []) if isinstance(row, dict)]
