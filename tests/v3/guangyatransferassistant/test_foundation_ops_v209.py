@@ -16,8 +16,8 @@ ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 
 
 def test_foundation_mro_and_version_frozen():
-    assert 'plugin_version = "2.0.9"' in ENTRY
-    assert 'build_id = "20260911-r93"' in ENTRY
+    assert 'plugin_version = "2.0.10"' in ENTRY
+    assert 'build_id = "20260911-r94"' in ENTRY
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
     lines = [ln.strip().rstrip(",") for ln in head.strip().splitlines() if ln.strip()]
     assert lines[0] == "GuangYaFoundationOpsV209Mixin"

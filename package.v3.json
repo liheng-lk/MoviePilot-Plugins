@@ -92,15 +92,16 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "MP原生日历驱动精确追更：白天只搜应播∩真实缺失；21:00全员兜底；频道Push保持实时。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+    "description": "Controlled Real-World Beta：MP原生日历驱动精确追更 + Raw Resource Inbox + 多来源转存诊断。建议小范围实机验证。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
     "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,缺集,追更,频道标题清洗,剧集名季集命名,订阅日历",
-    "version": "2.0.9",
+    "version": "2.0.10",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "release": true,
     "history": {
+      "v2.0.10": "r94 Controlled Real-World Beta（实机验证测试版）：冻结已审 2.0.9-r93 业务基线并开放小范围实机验证。重点验证：MP 原生日历驱动匹配、频道 Raw HTML Resource Inbox、隐藏分享链接识别、GuangYa/Xunlei/Magnet/ED2K 多来源、媒体库预检查、TMDB 强身份、Episode Fence、managed subscription 原生搜索隔离、Resource Trace、结构化失败原因、批次汇总、多来源候选聚合与诊断跟踪。建议先 5~10 个 managed subscriptions 小范围验证，确认无错媒体/错季/重复转存后再扩大。已知待观察（非 blocker）：episode attempt backoff 生产行为、21:00 reconcile 与 external recall 顺序、TGM channel source label 状态区分。欢迎反馈运行日志。非 Stable Release。",
       "v2.0.9": "r93：优先复用 MoviePilot 原生订阅日历与 resolve_subscribe_missing；白天仅主动搜索应播∩真实缺失−reservation/claim；日期精度不再提前12小时狂搜；按集 backoff；每日兜底改为可配置 21:00（替换04:10）；handled≠covered，未覆盖继续内部来源但 native=0；PanSou PoW 同节点 singleflight；保留频道 Push 与 r92 身份/缓存/补搜。",
       "v2.0.8": "r92：TMDB 强身份确认（同 ID 放行标题差异，异 ID 硬拒绝）；身份拒绝保留 video stats 并禁止伪报无扩展名；同 share 同轮只执行一次；本地候选耗尽/新订阅频道未覆盖异步入队 GYING；失效分享短期 tombstone；扫描周期识别缓存；失败通知批次汇总。r91：P0 exclusive ownership；due fail-closed；Browser→PanSou；encoded channel discovery。",
       "v2.0.7": "r90：接管订阅管理器支持「全选当前结果 / 取消全选」、已选数量展示；全选仅作用于当前搜索可见项并与已选做并集，筛选变化不丢选择。r89：修复 runtime 位置参数重复传递；due 筛选异常 fail-closed/交还原生禁止全量 sids；inspect.signature 兼容旧 ABI；调度 progress_callback 对 Scheduler 可见；加强 production 直接回归。",

@@ -61,9 +61,9 @@ def _autocomplete(card: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def test_r90_release_metadata_only_here_and_contract():
-    assert 'plugin_version = "2.0.9"' in ENTRY
-    assert 'build_id = "20260911-r93"' in ENTRY
-    assert '"version": "2.0.9"' in PACKAGE
+    assert 'plugin_version = "2.0.10"' in ENTRY
+    assert 'build_id = "20260911-r94"' in ENTRY
+    assert '"version": "2.0.10"' in PACKAGE
     assert "全选当前结果" in PACKAGE
 
 

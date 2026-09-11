@@ -1,3 +1,29 @@
+## v2.0.10 Beta - Controlled Real-World Beta（20260911-r94）
+
+本版本为实机验证测试版（非 Stable Release），冻结已审 `2.0.9-r93` 业务基线。
+
+重点验证：
+
+- MoviePilot 原生订阅日历驱动匹配
+- 频道 Raw HTML Resource Inbox
+- 隐藏分享链接识别
+- GuangYa / Xunlei / Magnet / ED2K 多来源处理
+- MoviePilot / Emby 媒体库预检查
+- TMDB 强身份确认
+- Episode Fence
+- managed subscription 原生搜索隔离
+- Resource Trace
+- 结构化转存失败原因
+- 批次状态汇总
+- 多来源候选聚合
+- Magnet / ED2K / Xunlei 诊断跟踪
+
+建议分阶段小范围实机验证：先 5~10 个 managed subscriptions 人工触发；再观察真实频道增量；再跑至少一个完整 scheduler 周期。确认没有错媒体、错季、重复转存后再扩大。
+
+已知观察项（非 blocker）：episode attempt backoff 真实生产行为；21:00 reconcile 与 external recall 顺序；TGM channel source label 状态区分。欢迎反馈运行日志。
+
+实机红线（出现任一立即回滚到可用的 `2.0.9-r93` 包）：错媒体/错季转存；已存在剧集大量重复转存；managed SID 回退 MoviePilot native search；同一资源反复创建多个任务；不同 Telegram message 密码串线；cursor 前进导致新资源永久漏掉；插件异常影响 MoviePilot 主流程。
+
 ## v1.12.26 - 频道标题清洗与剧集名季集命名
 
 - 兼容 `名称：标题(2026） 4K 更新至xx集`、`[剧集·光鸭] 标题 (年份)` 等模板噪声，避免匹配失败直接跳过转存。

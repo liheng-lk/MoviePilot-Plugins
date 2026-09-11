@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "MP原生日历驱动精确追更：白天只搜应播∩真实缺失；21:00全员兜底；频道Push保持实时。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
-  "version": "2.0.9",
+  "description": "Controlled Real-World Beta：MP原生日历驱动精确追更 + Raw Resource Inbox + 多来源转存诊断。建议小范围实机验证。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+  "version": "2.0.10",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,

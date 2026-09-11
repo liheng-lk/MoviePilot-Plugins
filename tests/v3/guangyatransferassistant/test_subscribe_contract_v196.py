@@ -18,5 +18,5 @@ def test_v196_keeps_early_v3_fallback():
 
 
 def test_v196_release_marker():
-    assert 'plugin_version = "2.0.9"' in ENTRY
+    assert 'plugin_version = "2.0.10"' in ENTRY
 
