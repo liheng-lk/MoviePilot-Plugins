@@ -103,7 +103,6 @@ from .resource_planner_v190 import GuangYaResourcePlannerMixin
 from .runtime_v170 import GuangYaRuntimeFinalizerMixin
 from .routing_v170 import GuangYaTransferAssistant as _RoutingV170Assistant
 from .stability_v1106 import GuangYaStabilityV1106Mixin
-from .status_hardening_v193 import GuangYaStatusHardeningMixin
 from .viewing_logging_v1113 import GuangYaViewingLoggingV1113Mixin
 from .xunlei_flash_v193 import GuangYaXunleiFlashMixin
 from .xunlei_hardening_v193 import GuangYaXunleiHardeningMixin
@@ -156,7 +155,6 @@ class GuangYaTransferAssistant(
     GuangYaXunleiHardeningMixin,
     GuangYaXunleiFlashMixin,
     GuangYaProviderSourcesMixin,
-    GuangYaStatusHardeningMixin,
     GuangYaPlannerSafetyMixin,
     GuangYaResourcePlannerMixin,
     GuangYaOfflineSafetyMixin,
