@@ -21,8 +21,8 @@ PACKAGE = (ROOT / "package.v3.json").read_text(encoding="utf-8")
 
 
 def test_r93_version_and_mro():
-    assert 'plugin_version = "2.0.12"' in ENTRY
-    assert 'build_id = "20260911-r96"' in ENTRY
+    assert 'plugin_version = "2.0.13"' in ENTRY
+    assert 'build_id = "20260911-r97"' in ENTRY
     assert "GuangYaCalendarDrivenV209Mixin" in ENTRY
     assert "GuangYaPowSingleflightV209Mixin" in ENTRY
     assert "GuangYaFoundationOpsV209Mixin" in ENTRY
@@ -34,7 +34,7 @@ def test_r93_version_and_mro():
     assert lines[3] == "GuangYaCalendarDrivenV209Mixin"
     assert lines[4] == "GuangYaPowSingleflightV209Mixin"
     assert "GuangYaEpisodeTargetV210Mixin" in ENTRY
-    assert '"version": "2.0.12"' in PACKAGE
+    assert '"version": "2.0.13"' in PACKAGE
     assert "v2.0.9" in PACKAGE
     assert "0 21 * * *" in CAL
     assert "GuangYaTransferAssistantDailyReconcile" in CAL
