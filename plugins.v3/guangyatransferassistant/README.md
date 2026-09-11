@@ -94,6 +94,16 @@ MoviePilot / Emby 同步
 
 完整技术日志仍保留在 MoviePilot 日志和 `/plugin_logs?detail=true`。
 
+## Magnet / ED2K 执行边界
+
+Magnet/ED2K 始终交给光鸭原生 cloudcollection，不经过 MoviePilot 下载器。
+
+实际调用链：
+
+`/cloudcollection/v1/resolve_res → /cloudcollection/v1/create_task → /cloudcollection/v1/list_task → /cloudcollection/v2/retry_task`
+
+插件只负责解析、筛选、提交和核验远端任务，**不调用 MoviePilot DownloadChain**，也不会把 managed subscription 静默交回本地下载器。
+
 ## 资源安全边界
 
 所有来源在最终写盘前都必须重新检查真实 payload：
