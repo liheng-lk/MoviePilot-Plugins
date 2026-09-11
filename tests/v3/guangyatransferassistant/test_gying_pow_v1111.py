@@ -34,7 +34,7 @@ def test_v1111_release_and_layer_parse():
     assert "class GuangYaXunleiFinalV1114Mixin(GuangYaGovernanceV1114Mixin)" in FINAL
     assert "class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin)" in GOV
     assert "class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin)" in RUNTIME_FIX
-    assert "class GuangYaGyingFallbackReuseV1113Mixin(GuangYaGyingBrowserProfileV1112Mixin)" in FALLBACK
+    assert "class GuangYaGyingFallbackReuseV1113Mixin(GuangYaGyingBrowserV1112Mixin)" in FALLBACK
 
 
 def test_remote_pow_timer_starts_after_challenge_fetch():
