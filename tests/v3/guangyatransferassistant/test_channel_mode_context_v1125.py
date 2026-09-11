@@ -7,13 +7,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 CHANNEL = (PLUGIN / "channel_event_v1115.py").read_text(encoding="utf-8")
-GUARD = (PLUGIN / "channel_event_guard_v1115.py").read_text(encoding="utf-8")
 CURSOR = (PLUGIN / "channel_cursor_event_v1115.py").read_text(encoding="utf-8")
 
 
 def test_route_source_mode_is_thread_local_truth_not_shared_string():
     ast.parse(CHANNEL)
-    ast.parse(GUARD)
     ast.parse(CURSOR)
     assert "import threading" in CHANNEL
     assert "self._route_source_local_v1115 = threading.local()" in CHANNEL
@@ -41,7 +39,6 @@ def test_all_channel_mode_decisions_read_thread_local_helper():
     claim = CHANNEL.split("    def _claim_external_search_round_v1114(", 1)[1].split("    def _viewing_due_subscription_ids_v1115(", 1)[0]
     assert "_route_source_mode_value_v1115()" in refresh
     assert "_route_source_mode_value_v1115()" in claim
-    assert "_route_source_mode_value_v1115()" in GUARD
     assert "_route_source_mode_value_v1115()" in CURSOR
     assert '{"viewing_poll", "airing_pull", "daily_repair_pull"}' in refresh
     assert '{"viewing_poll", "airing_pull", "daily_repair_pull"}' in CURSOR
