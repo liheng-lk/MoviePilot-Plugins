@@ -85,6 +85,7 @@ from .media_identity_guard_v1111 import GuangYaMediaIdentityGuardV1111Mixin
 from .page_perf_v1123 import GuangYaPagePerfV1123Mixin
 from .production_safety_v208 import GuangYaProductionSafetyV208Mixin
 from .calendar_driven_v209 import GuangYaCalendarDrivenV209Mixin
+from .foundation_ops_v209 import GuangYaFoundationOpsV209Mixin
 from .pow_singleflight_v209 import GuangYaPowSingleflightV209Mixin
 from .airing_weekly_v1121 import GuangYaAiringWeeklyV1121Mixin
 from .airing_scheduler_v1120 import GuangYaAiringSchedulerV1120Mixin
@@ -112,6 +113,7 @@ install_channel_title_rename_v11226(_legacy_module)
 
 
 class GuangYaTransferAssistant(
+    GuangYaFoundationOpsV209Mixin,
     GuangYaCalendarDrivenV209Mixin,
     GuangYaPowSingleflightV209Mixin,
     GuangYaProductionSafetyV208Mixin,
@@ -237,7 +239,17 @@ class GuangYaTransferAssistant(
                 owned = getattr(plugin, "_is_managed_subscription", None)
                 if not callable(owned):
                     owned = plugin._is_guangya_route
-                if active and all(owned(item) for item in active):
+                managed = [item for item in active if owned(item)]
+                native = [item for item in active if not owned(item)]
+                plugin._plugin_log(
+                    "INFO",
+                    "【原生审计】【RSS】active=%s managed=%s native=%s decision=%s",
+                    len(active),
+                    ",".join(str(int(getattr(item, "id", 0) or 0)) for item in managed) or "-",
+                    ",".join(str(int(getattr(item, "id", 0) or 0)) for item in native) or "-",
+                    "skip_native" if active and not native else ("mixed_native" if managed and native else "native"),
+                )
+                if active and not native:
                     plugin._plugin_log(
                         "INFO",
                         "【光鸭转存助手】【RSS硬分流】当前可匹配订阅全部为光鸭路线，跳过 MoviePilot 本地资源匹配/下载链",
@@ -250,6 +262,13 @@ class GuangYaTransferAssistant(
                     if progress_callback:
                         progress_callback(value=100, text="固定转存订阅已由光鸭接管，跳过原生 RSS 匹配")
                     return None
+                if managed and native:
+                    plugin._plugin_log(
+                        "INFO",
+                        "【原生审计】【RSS】混合路线：managed=%s 仍由下载断路器阻断；native=%s 继续 Match",
+                        ",".join(str(int(getattr(item, "id", 0) or 0)) for item in managed),
+                        ",".join(str(int(getattr(item, "id", 0) or 0)) for item in native),
+                    )
             except Exception as err:
                 plugin._plugin_log("WARNING", "【光鸭转存助手】【RSS硬分流】前置判断失败，继续执行并由下载断路器兜底：%s", err)
             return original(chain_self, torrents, progress_callback=progress_callback)

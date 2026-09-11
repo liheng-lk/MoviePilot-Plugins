@@ -11,6 +11,13 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from app.chain.media import MediaChain
 
+from .media_source_v209 import is_tmdb_source, normalize_media_source_token
+from .transfer_diag_v209 import (
+    batch_summary_buckets,
+    classify_transfer_message_v209,
+    format_batch_summary,
+)
+
 
 class GuangYaProductionSafetyV208Mixin:
     """薄安全层：异步 GYING 补搜、同轮识别缓存、分享 tombstone、批次失败通知。"""
@@ -52,9 +59,9 @@ class GuangYaProductionSafetyV208Mixin:
         media_id = str(kwargs.get("media_id") or "").strip()
         if not media_id and meta is not None:
             media_id = str(getattr(meta, "tmdb_id", None) or getattr(meta, "media_id", None) or "").strip()
-        media_source = cls._enum_token_v208(kwargs.get("media_source"))
+        media_source = normalize_media_source_token(kwargs.get("media_source"))
         if not media_source and meta is not None:
-            media_source = cls._enum_token_v208(getattr(meta, "media_source", None))
+            media_source = normalize_media_source_token(getattr(meta, "media_source", None))
         mtype = cls._normalize_mtype_v208(kwargs.get("mtype"))
         if mtype in {"", "-"} and meta is not None:
             mtype = cls._normalize_mtype_v208(getattr(meta, "type", None))
@@ -76,7 +83,7 @@ class GuangYaProductionSafetyV208Mixin:
 
         if media_id:
             source_token = media_source or ("tmdb" if media_id.isdigit() else "id")
-            if media_id.isdigit() and (not media_source or "tmdb" in media_source):
+            if media_id.isdigit() and (not media_source or media_source == "tmdb"):
                 source_token = "tmdb"
             # 有确定 ID 时按 identity 去重；不同季共享同一 MediaInfo identity。
             return f"id:{source_token}:{mtype}:{media_id}"
@@ -268,15 +275,77 @@ class GuangYaProductionSafetyV208Mixin:
             self._failure_batch_active_v208 = int(getattr(self, "_failure_batch_active_v208", 0) or 0) + 1
             if not isinstance(getattr(self, "_failure_batch_v208", None), list):
                 self._failure_batch_v208 = []
+            if not isinstance(getattr(self, "_diag_batch_v209", None), list):
+                self._diag_batch_v209 = []
+
+    def _record_transfer_diag_v209(self, subscribe: Any, diag: Dict[str, Any], *, final: bool = True) -> None:
+        """Accumulate structured diags for end-of-batch summary (upsert by subscription_run_id)."""
+        lock = getattr(self, "_failure_batch_lock_v208", None) or threading.RLock()
+        self._failure_batch_lock_v208 = lock
+        with lock:
+            if int(getattr(self, "_failure_batch_active_v208", 0) or 0) <= 0:
+                return
+            rows = getattr(self, "_diag_batch_v209", None)
+            if not isinstance(rows, list):
+                rows = []
+                self._diag_batch_v209 = rows
+            item = dict(diag or {})
+            item.setdefault("sid", int(getattr(subscribe, "id", 0) or 0))
+            item.setdefault("subscribe_title", str(getattr(subscribe, "name", "") or ""))
+            item["_final"] = bool(final)
+            run_id = str(item.get("subscription_run_id") or "").strip()
+            if run_id:
+                for idx, existing in enumerate(rows):
+                    if str((existing or {}).get("subscription_run_id") or "") == run_id:
+                        # Prefer final over provisional; otherwise replace in place.
+                        if (not bool((existing or {}).get("_final"))) or bool(final):
+                            rows[idx] = item
+                        return
+            # Without run_id, still dedupe by sid within the same batch for final rows.
+            if final and item.get("sid"):
+                for idx, existing in enumerate(rows):
+                    if (
+                        bool((existing or {}).get("_final"))
+                        and int((existing or {}).get("sid") or 0) == int(item.get("sid") or 0)
+                        and not str((existing or {}).get("subscription_run_id") or "").strip()
+                    ):
+                        rows[idx] = item
+                        return
+            rows.append(item)
 
     def _queue_failure_notice_v208(self, subscribe: Any, message: str, *, level: str = "retryable") -> bool:
-        """返回 True 表示已进入批次缓冲，调用方不要再即时推送。"""
+        """返回 True 表示已进入批次缓冲，调用方不要再即时推送。
+
+        注意：这里只缓冲失败文案，不计入最终 batch checked —— 最终计数由
+        `_trace_transfer_result_v209` → `_record_transfer_diag_v209(final=True)` upsert。
+        """
         text = str(message or "")
         hard = level == "error" or any(
             token in text for token in ("认证", "登录", "Authorization", "token 无效", "全局不可用", "API 不可用")
         )
         if hard:
             return False
+        # Prefer structured diag carried on the current run when available.
+        diag = None
+        current = getattr(self, "_current_subscription_candidate_diags_v209", None)
+        if isinstance(current, list) and current:
+            try:
+                from .transfer_diag_v209 import aggregate_subscription_diag
+                diag = aggregate_subscription_diag(current)
+            except Exception:
+                diag = None
+        if not diag:
+            diag = classify_transfer_message_v209({"message": text}, subscribe)
+        code = str(diag.get("reason_code") or "")
+        # Soft codes: do not create per-item failure rows; final upsert handles counting.
+        if code in {
+            "NO_LOCAL_RESOURCE", "NO_SUBSCRIPTION_MATCH", "CHANNEL_NO_ACTIONABLE_URL",
+            "RESOURCE_CONTAINS_ONLY_EXISTING_EPISODES", "CURRENT_TARGET_ALREADY_SATISFIED",
+            "NO_NEW_ACTION", "REMOTE_TASK_PENDING", "TRANSFER_ALREADY_RESERVED",
+            "SUPERSEDED_BY_HIGHER_PRIORITY_SOURCE", "FUTURE_EPISODE_NOT_DUE",
+            "SUBSCRIPTION_COMPLETED", "LIBRARY_ALREADY_SATISFIED",
+        }:
+            return True
         lock = getattr(self, "_failure_batch_lock_v208", None) or threading.RLock()
         self._failure_batch_lock_v208 = lock
         with lock:
@@ -290,7 +359,9 @@ class GuangYaProductionSafetyV208Mixin:
                 "sid": int(getattr(subscribe, "id", 0) or 0),
                 "name": str(getattr(subscribe, "name", "") or ""),
                 "message": text[:240],
+                "diag": diag,
             })
+            # Do NOT call _record_transfer_diag here — avoids double-count with final trace.
             return True
 
     def _flush_failure_batch_v208(self) -> None:
@@ -302,26 +373,70 @@ class GuangYaProductionSafetyV208Mixin:
                 self._failure_batch_active_v208 = active - 1
             if int(getattr(self, "_failure_batch_active_v208", 0) or 0) > 0:
                 return
-            rows = list(getattr(self, "_failure_batch_v208", None) or [])
+            legacy_rows = list(getattr(self, "_failure_batch_v208", None) or [])
+            diag_rows = [
+                row for row in (getattr(self, "_diag_batch_v209", None) or [])
+                if bool((row or {}).get("_final", True))
+            ]
             self._failure_batch_v208 = []
-        if not rows or not bool(getattr(self, "_notify", False)):
+            self._diag_batch_v209 = []
+        if not bool(getattr(self, "_notify", False)):
             return
-        samples = []
-        for row in rows[:8]:
-            samples.append(f"#{row.get('sid')} {row.get('name')}: {row.get('message')}")
-        text = (
-            f"本轮处理：{len(rows)}\n"
-            f"失败/待补搜：{len(rows)}\n"
-            + "\n".join(samples)
-            + ("\n..." if len(rows) > 8 else "")
-        )
+        # Prefer structured diags; fall back to legacy failure rows.
+        diags = list(diag_rows)
+        if not diags and legacy_rows:
+            for row in legacy_rows:
+                sub = type("S", (), {"id": row.get("sid"), "name": row.get("name")})()
+                diags.append(classify_transfer_message_v209({"message": row.get("message")}, sub))
+        if not diags:
+            return
+        buckets = batch_summary_buckets(diags)
+        highlights = []
+        for diag in diags:
+            code = str(diag.get("reason_code") or "")
+            if code in {
+                "TMDB_ID_MISMATCH", "SEASON_MISMATCH", "SHARE_EXPIRED",
+                "CLOUD_TASK_SUBMIT_FAILED", "REMOTE_VERIFY_FAILED", "TRANSFER_FAILED",
+                "MEDIA_IDENTITY_UNCONFIRMED",
+            }:
+                evidence = diag.get("evidence") or {}
+                extra = ""
+                if code == "SEASON_MISMATCH":
+                    extra = f" 期望 S{evidence.get('expected_season')} 实际 {evidence.get('actual_seasons')}"
+                elif code == "TMDB_ID_MISMATCH":
+                    extra = f" 期望 {evidence.get('expected_tmdb')} 实际 {evidence.get('actual_tmdb')}"
+                highlights.append(
+                    f"#{diag.get('sid') or evidence.get('subscribe_id') or '-'} "
+                    f"{diag.get('subscribe_title') or evidence.get('subscribe_title') or '-'} "
+                    f"{code}{extra}"
+                )
+            if len(highlights) >= 8:
+                break
+        # Skip empty-noise-only batches (all NO_LOCAL) unless there are highlights/failures.
+        if (
+            buckets.get("failed", 0) <= 0
+            and buckets.get("identity_reject", 0) <= 0
+            and buckets.get("season_conflict", 0) <= 0
+            and buckets.get("expired", 0) <= 0
+            and buckets.get("success", 0) <= 0
+            and buckets.get("pending", 0) <= 0
+            and buckets.get("completed", 0) <= 0
+            and not highlights
+        ):
+            # Still log; do not notify every NO_LOCAL-only round.
+            self._plugin_log("INFO", "【转存诊断】批次仅本地暂无资源 checked=%s，跳过通知", buckets.get("checked", 0))
+            return
+        text = format_batch_summary(buckets, highlights)
+        # Hard guard: never emit the old misleading counter wording.
+        if "失败/待补搜" in text:
+            text = text.replace("失败/待补搜", "真正失败")
         try:
             try:
                 from app.schemas.types import NotificationType
                 mtype = NotificationType.Plugin
             except Exception:
                 mtype = "Plugin"
-            self.post_message(mtype=mtype, title="⚠️ 光鸭转存检查完成", text=text[:1800])
+            self.post_message(mtype=mtype, title="⚠️ 光鸭转存检查汇总", text=text[:1800])
         except Exception as err:
             self._plugin_log("WARNING", "【光鸭转存助手】【通知】批次汇总发送失败：%s", err)
 

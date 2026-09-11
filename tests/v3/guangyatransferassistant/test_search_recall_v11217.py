@@ -137,6 +137,13 @@ def _namespace():
         body.append(node)
     module = ast.Module(body=body, type_ignores=[])
     ast.fix_missing_locations(module)
+    ms_spec = importlib.util.spec_from_file_location(
+        "media_source_v209_for_search_recall",
+        PLUGIN / "media_source_v209.py",
+    )
+    ms_mod = importlib.util.module_from_spec(ms_spec)
+    assert ms_spec and ms_spec.loader
+    ms_spec.loader.exec_module(ms_mod)
     namespace = {
         "_legacy_module": _Legacy,
         "_entry_key_v1115": _entry_key,
@@ -144,6 +151,9 @@ def _namespace():
         "explicit_seasons_v1111": MEDIA.explicit_seasons_v1111,
         "explicit_years_v1111": MEDIA.explicit_years_v1111,
         "title_key_v1111": MEDIA.title_key_v1111,
+        "is_tmdb_source": ms_mod.is_tmdb_source,
+        "is_imdb_source": ms_mod.is_imdb_source,
+        "normalize_media_source_token": ms_mod.normalize_media_source_token,
     }
     exec(compile(module, str(SOURCE), "exec"), namespace)
     return namespace

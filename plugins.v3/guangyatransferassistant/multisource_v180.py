@@ -323,10 +323,25 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                 target_path,
                 len(resolved["selected_indexes"]),
             )
+            self._writeback_offline_candidate_diag_v209(
+                updated or source,
+                state="PENDING",
+                reason_code="REMOTE_TASK_PENDING",
+                stage="SUBMIT",
+                message="已提交光鸭原生云添加",
+            )
             return {"success": True, "message": "已提交光鸭原生云添加", "data": updated}
         except Exception as err:
             latest = dict(self._source_store()["items"].get(str(source_id)) or source)
-            return {"success": False, "message": str(err), "data": self._mark_offline_failure(latest, err)}
+            failed = self._mark_offline_failure(latest, err)
+            self._writeback_offline_candidate_diag_v209(
+                failed or latest,
+                state="FAILED_RETRYABLE",
+                reason_code="CLOUD_TASK_SUBMIT_FAILED",
+                stage="SUBMIT",
+                message=str(err)[:360],
+            )
+            return {"success": False, "message": str(err), "data": failed}
 
     def _retry_offline_task(self, source: Dict[str, Any]) -> Dict[str, Any]:
         task_id = str(source.get("task_id") or "").strip()
@@ -425,6 +440,13 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                     file_id or "-",
                     file_name or "-",
                 )
+                self._writeback_offline_candidate_diag_v209(
+                    updated or source,
+                    state="SUCCESS",
+                    reason_code="REMOTE_VERIFY_CONFIRMED",
+                    stage="REMOTE_VERIFY",
+                    message="光鸭原生云添加已完成",
+                )
                 return {"success": True, "message": "光鸭原生云添加已完成", "data": updated}
 
             if status == 5:
@@ -439,6 +461,13 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                         last_error="光鸭任务部分完成或添加失败，已达到自动重试上限",
                         next_retry_at=0,
                     ) or source
+                    self._writeback_offline_candidate_diag_v209(
+                        updated,
+                        state="FAILED_FINAL",
+                        reason_code="REMOTE_VERIFY_FAILED",
+                        stage="REMOTE_VERIFY",
+                        message=str(updated.get("last_error") or "光鸭任务失败"),
+                    )
                     return {"success": False, "message": updated.get("last_error"), "data": updated}
                 updated = self._update_source(
                     str(source.get("id") or ""),
@@ -904,6 +933,77 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
         report["offline_sources"] = self._offline_source_summary()
         report["build"] = self.build_id
         return report
+
+    def _writeback_offline_candidate_diag_v209(
+        self,
+        source: Dict[str, Any],
+        *,
+        state: str,
+        reason_code: str,
+        stage: str,
+        message: str = "",
+    ) -> None:
+        """Append terminal/pending diag to Resource Trace using action-carried ids (idempotent)."""
+        if not isinstance(source, dict):
+            return
+        resource_trace = str(source.get("resource_trace_id") or "").strip()
+        candidate_trace = str(source.get("candidate_trace_id") or "").strip()
+        if not resource_trace and not candidate_trace:
+            return
+        # First terminal wins.
+        terminal_key = f"diag_terminal::{candidate_trace or resource_trace}"
+        if state in {"SUCCESS", "FAILED_FINAL", "FAILED_RETRYABLE", "SKIPPED", "SKIPPED_COMPLETE"}:
+            if bool(source.get(terminal_key)):
+                return
+            try:
+                self._update_source(str(source.get("id") or ""), **{terminal_key: True})
+            except Exception:
+                pass
+        try:
+            from .transfer_diag_v209 import make_diag
+        except Exception:
+            return
+        row = make_diag(
+            state=state,
+            reason_code=reason_code,
+            stage=stage,
+            source=str(source.get("type") or "magnet"),
+            message=str(message or "")[:360],
+            resource_trace_id=resource_trace,
+            candidate_trace_id=candidate_trace,
+            subscription_run_id=str(source.get("subscription_run_id") or ""),
+            sid=source.get("subscribe_id"),
+            evidence={
+                "source_id": str(source.get("id") or ""),
+                "task_id": str(source.get("task_id") or ""),
+                "identity": str(source.get("diag_identity") or source.get("identity") or "")[:120],
+                "message_id": str(source.get("message_id") or ""),
+            },
+        )
+        note = getattr(self, "_note_candidate_diag_v209", None)
+        if callable(note):
+            try:
+                note(row)
+                return
+            except Exception:
+                pass
+        # Worker may run outside subscription TLS — write resource trace directly.
+        tracer = getattr(self, "_resource_trace_v209", None)
+        if callable(tracer) and resource_trace:
+            try:
+                tracer(
+                    entry={
+                        "resource_trace_id": resource_trace,
+                        "message_id": str(source.get("message_id") or "-"),
+                        "source_url": str(source.get("source_label") or ""),
+                        "title": str(source.get("label") or ""),
+                    },
+                    state=f"{stage}/{state}",
+                    reason=f"{reason_code}|{candidate_trace}|{str(message)[:120]}",
+                    matched_sid=source.get("subscribe_id"),
+                )
+            except Exception:
+                pass
 
 
 __all__ = ["GuangYaMultiSourceMixin"]

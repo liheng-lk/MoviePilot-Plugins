@@ -193,19 +193,28 @@ def assess_media_identity_v1111(
     if year and years and year not in years:
         return {
             "ok": False, "hard_conflict": True, "score": 0,
+            "reason_code": "YEAR_MISMATCH",
+            "stage": "IDENTITY",
             "reason": f"实际资源年份冲突：期望={year} 实际={','.join(sorted(years))}",
+            "evidence": {"expected_year": year, "actual_years": sorted(years)},
         }
 
     seasons = explicit_seasons_v1111(actual)
     if is_movie and seasons:
         return {
             "ok": False, "hard_conflict": True, "score": 0,
+            "reason_code": "SEASON_MISMATCH",
+            "stage": "IDENTITY",
             "reason": f"电影资源出现季号：{sorted(seasons)}",
+            "evidence": {"expected_season": 0, "actual_seasons": sorted(seasons)},
         }
     if not is_movie and season > 0 and seasons and season not in seasons:
         return {
             "ok": False, "hard_conflict": True, "score": 0,
+            "reason_code": "SEASON_MISMATCH",
+            "stage": "IDENTITY",
             "reason": f"实际资源季号冲突：期望=S{season:02d} 实际={sorted(seasons)}",
+            "evidence": {"expected_season": season, "actual_seasons": sorted(seasons)},
         }
 
     primary_match = any_alias_title_match_v1111(aliases, primary, expected_year=year)
@@ -217,7 +226,10 @@ def assess_media_identity_v1111(
         preview = " | ".join(primary[:3])[:220]
         return {
             "ok": False, "hard_conflict": True, "score": 0,
+            "reason_code": "MEDIA_IDENTITY_UNCONFIRMED",
+            "stage": "IDENTITY",
             "reason": f"实际资源顶层标题与订阅不一致：{preview}",
+            "evidence": {"primary": primary[:3]},
         }
 
     score = 0
@@ -249,8 +261,11 @@ def assess_media_identity_v1111(
     if score >= required:
         if season > 1 and not seasons:
             reasons.append("季号缺失但无冲突，按多证据置信度放行")
+        reason_code = "OFFICIAL_ALIAS_MATCH" if discovery_match and not primary_match else "TITLE_MATCH"
         return {
             "ok": True, "hard_conflict": False, "score": score,
+            "reason_code": reason_code,
+            "stage": "IDENTITY",
             "reason": "；".join(reasons) or f"媒体身份置信度={score}",
             "primary_match": primary_match, "file_match": file_match,
             "discovery_match": discovery_match, "years": sorted(years), "seasons": sorted(seasons),
@@ -259,6 +274,8 @@ def assess_media_identity_v1111(
     preview = " | ".join((primary + files[:3] + discovery[:2])[:6])[:260]
     return {
         "ok": False, "hard_conflict": False, "score": score,
+        "reason_code": "MEDIA_IDENTITY_UNCONFIRMED",
+        "stage": "IDENTITY",
         "reason": f"媒体身份置信度不足：{score}<{required}；{preview}",
         "primary_match": primary_match, "file_match": file_match,
         "discovery_match": discovery_match, "years": sorted(years), "seasons": sorted(seasons),

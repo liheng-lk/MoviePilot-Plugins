@@ -842,7 +842,34 @@ class GuangYaXunleiFlashMixin:
         fully_handled = bool(runtime.get("movie")) if is_movie else bool(missing and missing.issubset(set(completed_episodes)))
         if fully_handled:
             self._plugin_log("INFO", "【光鸭转存助手】【迅雷秒传】#%s 观影迅雷分享已最高优先级覆盖目标，跳过光鸭分享/Magnet/ED2K", sid)
-        return {"success": successful_files > 0, "handled": fully_handled, "priority": 0, "shares": tried_shares, "attempted_files": attempted_files, "successful_files": successful_files, "episodes": completed_episodes, "movie": bool(runtime.get("movie")), "errors": errors[:20], "message": (f"迅雷秒传成功 {successful_files} 个文件" + (f"，覆盖 E{','.join(str(v) for v in completed_episodes)}" if completed_episodes else "")) if successful_files else "观影迅雷候选未命中光鸭秒传，继续下一来源"}
+        last_trace = ""
+        last_cand = ""
+        last_share = ""
+        try:
+            for candidate in candidates:
+                rid = str((candidate or {}).get("resource_trace_id") or "").strip()
+                if rid:
+                    last_trace = rid
+                    last_share = str((candidate or {}).get("share_id") or (candidate or {}).get("identity") or "")
+                    last_cand = str((candidate or {}).get("candidate_trace_id") or f"xunlei:{last_share}")
+                    break
+        except Exception:
+            pass
+        return {
+            "success": successful_files > 0,
+            "handled": fully_handled,
+            "priority": 0,
+            "shares": tried_shares,
+            "attempted_files": attempted_files,
+            "successful_files": successful_files,
+            "episodes": completed_episodes,
+            "movie": bool(runtime.get("movie")),
+            "errors": errors[:20],
+            "share_id": last_share,
+            "resource_trace_id": last_trace,
+            "candidate_trace_id": last_cand,
+            "message": (f"迅雷秒传成功 {successful_files} 个文件" + (f"，覆盖 E{','.join(str(v) for v in completed_episodes)}" if completed_episodes else "")) if successful_files else "观影迅雷候选未命中光鸭秒传，继续下一来源",
+        }
 
     def _try_transfer_subscription_inner(self, subscribe: Any, force: bool = False, refresh_channel: bool = True) -> Dict[str, Any]:
         sid = int(getattr(subscribe, "id", 0) or 0)
@@ -853,14 +880,170 @@ class GuangYaXunleiFlashMixin:
             except Exception as err:
                 self._plugin_log("WARNING", "【光鸭转存助手】【迅雷秒传】#%s 预检失败，回退后续来源：%s", sid, err)
                 flash = {"success": False, "handled": False, "message": str(err)}
+            self._note_xunlei_flash_diag_v209(subscribe, flash)
             if flash.get("handled"):
-                return {"success": True, "handled": True, "xunlei_flash": flash, "message": f"观影迅雷分享秒传优先完成；{flash.get('message')}"}
+                return {
+                    "success": True, "handled": True, "xunlei_flash": flash,
+                    "message": f"观影迅雷分享秒传优先完成；{flash.get('message')}",
+                    "candidate_diags": list(flash.get("candidate_diags") or []),
+                    "resource_trace_id": str(flash.get("resource_trace_id") or ""),
+                }
             lower = super()._try_transfer_subscription_inner(subscribe, force=force, refresh_channel=refresh_channel)
             if flash.get("success"):
-                return {**dict(lower or {}), "xunlei_flash": flash, "message": f"{flash.get('message')}；{str((lower or {}).get('message') or '已检查后续来源')}"}
+                merged = dict(lower or {})
+                # Attach xunlei candidate diags; lower sources may be superseded.
+                xdiags = list(flash.get("candidate_diags") or [])
+                ldiags = list(merged.get("candidate_diags") or [])
+                if flash.get("handled") or flash.get("successful_files"):
+                    try:
+                        from .transfer_diag_v209 import make_diag
+                        for src_name in ("magnet", "ed2k"):
+                            xdiags.append(make_diag(
+                                state="SKIPPED",
+                                reason_code="SUPERSEDED_BY_HIGHER_PRIORITY_SOURCE",
+                                stage="SOURCE_SELECTION",
+                                source=src_name,
+                                message="迅雷已成功，低优先级来源跳过",
+                                resource_trace_id=str(flash.get("resource_trace_id") or ""),
+                                sid=sid,
+                            ))
+                    except Exception:
+                        pass
+                merged["candidate_diags"] = xdiags + ldiags
+                if flash.get("resource_trace_id") and not merged.get("resource_trace_id"):
+                    merged["resource_trace_id"] = flash.get("resource_trace_id")
+                merged["xunlei_flash"] = flash
+                merged["message"] = f"{flash.get('message')}；{str(merged.get('message') or '已检查后续来源')}"
+                return merged
             return lower
         finally:
             self._xunlei_runtime_reservations.pop(sid, None)
+
+    def _note_xunlei_flash_diag_v209(self, subscribe: Any, flash: Dict[str, Any]) -> None:
+        """Attach structured Xunlei diagnostics without changing flash protocol."""
+        if not isinstance(flash, dict):
+            return
+        try:
+            from .transfer_diag_v209 import make_candidate_trace_id, make_diag
+        except Exception:
+            return
+        sid = int(getattr(subscribe, "id", 0) or 0)
+        share_id = str(flash.get("share_id") or flash.get("identity") or "").strip()
+        resource_trace = str(flash.get("resource_trace_id") or "").strip()
+        cand_trace = str(flash.get("candidate_trace_id") or "").strip() or (
+            make_candidate_trace_id("xunlei", share_id) if share_id else ""
+        )
+        diags = list(flash.get("candidate_diags") or [])
+        message = str(flash.get("message") or "")
+        low = message.lower()
+        if flash.get("success") and (flash.get("handled") or int(flash.get("successful_files") or 0) > 0):
+            code = "XUNLEI_TRANSFER_CONFIRMED"
+            if any(token in message for token in ("已存在", "已经存在", "already")):
+                code = "XUNLEI_ALREADY_PRESENT"
+            row = make_diag(
+                state="SUCCESS",
+                reason_code=code,
+                stage="REMOTE_VERIFY",
+                source="xunlei",
+                message=message[:360],
+                resource_trace_id=resource_trace,
+                candidate_trace_id=cand_trace,
+                sid=sid,
+                evidence={"share_id": share_id, "successful_files": flash.get("successful_files")},
+            )
+        elif any(token in message or token in low for token in ("失效", "过期", "不存在", "expired", "deleted", "404")):
+            row = make_diag(
+                state="FAILED_RETRYABLE",
+                reason_code="SHARE_EXPIRED",
+                stage="SHARE_INSPECT",
+                source="xunlei",
+                message=message[:360],
+                resource_trace_id=resource_trace,
+                candidate_trace_id=cand_trace,
+                sid=sid,
+                evidence={"share_id": share_id},
+            )
+        elif any(token in message or token in low for token in ("认证", "登录", "401", "unauthorized", "token")):
+            row = make_diag(
+                state="FAILED_FINAL",
+                reason_code="AUTH_ERROR",
+                stage="SHARE_INSPECT",
+                source="xunlei",
+                message=message[:360],
+                resource_trace_id=resource_trace,
+                candidate_trace_id=cand_trace,
+                sid=sid,
+            )
+        elif any(token in low for token in ("timeout", "超时")):
+            row = make_diag(
+                state="FAILED_RETRYABLE",
+                reason_code="HTTP_TIMEOUT",
+                stage="SHARE_INSPECT",
+                source="xunlei",
+                message=message[:360],
+                resource_trace_id=resource_trace,
+                candidate_trace_id=cand_trace,
+                sid=sid,
+            )
+        elif any(token in low for token in ("network", "connection", "连接")):
+            row = make_diag(
+                state="FAILED_RETRYABLE",
+                reason_code="NETWORK_ERROR",
+                stage="SHARE_INSPECT",
+                source="xunlei",
+                message=message[:360],
+                resource_trace_id=resource_trace,
+                candidate_trace_id=cand_trace,
+                sid=sid,
+            )
+        elif "json" in low or "模板" in message:
+            row = make_diag(
+                state="FAILED_RETRYABLE",
+                reason_code="XUNLEI_TEMPLATE_BUILD_FAILED",
+                stage="SUBMIT",
+                source="xunlei",
+                message=message[:360],
+                resource_trace_id=resource_trace,
+                candidate_trace_id=cand_trace,
+                sid=sid,
+            )
+        elif flash.get("handled"):
+            # e.g. no missing episodes — treat as complete skip
+            row = make_diag(
+                state="SKIPPED_COMPLETE",
+                reason_code="CURRENT_TARGET_ALREADY_SATISFIED",
+                stage="LIBRARY_PREFLIGHT",
+                source="xunlei",
+                message=message[:360],
+                resource_trace_id=resource_trace,
+                candidate_trace_id=cand_trace,
+                sid=sid,
+                subscription_level=True,
+            )
+        else:
+            return
+        diags.append(row)
+        flash["candidate_diags"] = diags
+        if cand_trace:
+            flash["candidate_trace_id"] = cand_trace
+        note = getattr(self, "_note_candidate_diag_v209", None)
+        if callable(note):
+            try:
+                note(row)
+            except Exception:
+                pass
+        # Prefer first channel candidate's resource_trace_id when missing.
+        if not resource_trace:
+            try:
+                rows = self._channel_xunlei_candidates_v11214(subscribe) if hasattr(self, "_channel_xunlei_candidates_v11214") else []
+                for cand in rows or []:
+                    rid = str((cand or {}).get("resource_trace_id") or "").strip()
+                    if rid:
+                        flash["resource_trace_id"] = rid
+                        row["resource_trace_id"] = rid
+                        break
+            except Exception:
+                pass
 
     def api_xunlei_flash_test(self, share_url: str = "", passcode: str = "") -> Dict[str, Any]:
         parsed = parse_xunlei_share(str(share_url or ""), label="test")

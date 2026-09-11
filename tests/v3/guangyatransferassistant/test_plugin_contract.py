@@ -39,6 +39,17 @@ legacy_ns = {
     "Any": Any, "Dict": Dict, "Iterable": Iterable, "List": List,
     "Optional": Optional, "Tuple": Tuple,
 }
+# legacy now uses media_source_v209 for themoviedb tokens
+import importlib.util as _ilu
+_ms_spec = _ilu.spec_from_file_location(
+    "media_source_v209_for_plugin_contract",
+    ROOT / "plugins.v3" / "guangyatransferassistant" / "media_source_v209.py",
+)
+_ms_mod = _ilu.module_from_spec(_ms_spec)
+assert _ms_spec and _ms_spec.loader
+_ms_spec.loader.exec_module(_ms_mod)
+legacy_ns["is_tmdb_source"] = _ms_mod.is_tmdb_source
+legacy_ns["normalize_media_source_token"] = _ms_mod.normalize_media_source_token
 exec(compile(legacy_mod, str(LEGACY), "exec"), legacy_ns)
 
 

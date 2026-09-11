@@ -38,6 +38,7 @@ from .media_identity_v1111 import (
     explicit_years_v1111,
     title_key_v1111,
 )
+from .media_source_v209 import is_imdb_source, is_tmdb_source, normalize_media_source_token
 
 
 # release title 中一旦出现这些独立 token，后面通常不再属于媒体标题。
@@ -177,7 +178,7 @@ class GuangYaSearchRecallV11217Mixin(GuangYaManualCheckV11211Mixin):
     # ------------------------------------------------------------------
     @staticmethod
     def _source_token_v11217(value: Any) -> str:
-        return str(getattr(value, "value", value) or "").strip().lower()
+        return normalize_media_source_token(value)
 
     def _canonical_identity_v11217(self, subscribe: Any) -> Tuple[str, str]:
         for field in ("tmdb_id", "tmdbid"):
@@ -187,9 +188,9 @@ class GuangYaSearchRecallV11217Mixin(GuangYaManualCheckV11211Mixin):
         source = self._source_token_v11217(getattr(subscribe, "media_source", None))
         media_id = str(getattr(subscribe, "media_id", "") or "").strip()
         if media_id:
-            if "tmdb" in source and media_id.isdigit():
+            if source == "tmdb" and media_id.isdigit():
                 return "tmdb", media_id
-            if "imdb" in source:
+            if source == "imdb" or is_imdb_source(getattr(subscribe, "media_source", None)):
                 return "imdb", media_id.lower()
         imdb_id = str(getattr(subscribe, "imdb_id", "") or "").strip().lower()
         if imdb_id:
@@ -243,9 +244,9 @@ class GuangYaSearchRecallV11217Mixin(GuangYaManualCheckV11211Mixin):
             return "imdb", imdb
         source = str(row.get("media_source") or "").strip().lower()
         media_id = str(row.get("media_id") or "").strip()
-        if media_id and "tmdb" in source and media_id.isdigit():
+        if media_id and is_tmdb_source(row.get("media_source") or source) and media_id.isdigit():
             return "tmdb", media_id
-        if media_id and "imdb" in source:
+        if media_id and is_imdb_source(row.get("media_source") or source):
             return "imdb", media_id.lower()
         return "", ""
 
@@ -326,11 +327,11 @@ class GuangYaSearchRecallV11217Mixin(GuangYaManualCheckV11211Mixin):
                 cand_source = self._source_token_v11217(getattr(candidate, "media_source", None))
                 cand_media_id = str(getattr(candidate, "media_id", "") or "").strip()
                 if identity[0] == "tmdb":
-                    actual = cand_tmdb or (cand_media_id if "tmdb" in cand_source else "")
+                    actual = cand_tmdb or (cand_media_id if is_tmdb_source(cand_source) else "")
                     ok = bool(actual and actual == identity[1])
                     reason = f"MoviePilot 同作品消歧：TMDB {actual or '-'} {'命中' if ok else '不匹配'}"
                 elif identity[0] == "imdb":
-                    actual = cand_imdb or (cand_media_id.lower() if "imdb" in cand_source else "")
+                    actual = cand_imdb or (cand_media_id.lower() if is_imdb_source(cand_source) else "")
                     ok = bool(actual and actual == identity[1])
                     reason = f"MoviePilot 同作品消歧：IMDb {actual or '-'} {'命中' if ok else '不匹配'}"
         except Exception as err:

@@ -551,9 +551,28 @@ class GuangYaResourcePlannerMixin:
                         continue
 
                 rank = 1 if source_type == "magnet" else 2
+                uri = str(candidate.get("uri") or "").strip()
+                identity = str(candidate.get("identity") or "").strip()
+                resource_trace = str(entry.get("resource_trace_id") or entry.get("trace_id") or "").strip()
+                try:
+                    from .transfer_diag_v209 import make_candidate_trace_id
+                    if source_type == "magnet":
+                        cand_trace = make_candidate_trace_id("magnet", identity or uri)
+                    else:
+                        # ed2k: prefer hash:size when present in identity/uri
+                        cand_trace = make_candidate_trace_id("ed2k", identity or uri)
+                except Exception:
+                    cand_trace = f"{source_type}:{identity or uri[:40]}"
+                run_id = ""
+                getter = getattr(self, "_current_subscription_run_id", None)
+                if callable(getter):
+                    try:
+                        run_id = str(getter() or "")
+                    except Exception:
+                        run_id = ""
                 row = self._upsert_source(
                     sid,
-                    str(candidate.get("uri") or ""),
+                    uri,
                     label=str(candidate.get("name") or "")[:120],
                     origin="telegram",
                     auto_dispatch=True,
@@ -564,10 +583,29 @@ class GuangYaResourcePlannerMixin:
                     message_id=str(entry.get("message_id") or ""),
                     candidate_rank=rank,
                 )
+                # Persist cross-thread diagnostic context on the source row.
+                try:
+                    self._update_source(
+                        str(row.get("id") or ""),
+                        resource_trace_id=resource_trace,
+                        candidate_trace_id=cand_trace,
+                        subscription_run_id=run_id,
+                        diag_identity=identity,
+                        diag_uri=uri,
+                        passcode_present=bool(candidate.get("passcode")),
+                    )
+                except Exception:
+                    pass
                 action = {
                     "resource_group_id": str(entry.get("resource_group_id") or ""),
                     "source_id": str(row.get("id") or ""),
                     "type": source_type,
+                    "uri": uri,
+                    "identity": identity,
+                    "resource_trace_id": resource_trace,
+                    "candidate_trace_id": cand_trace,
+                    "subscription_run_id": run_id,
+                    "message_id": str(entry.get("message_id") or ""),
                     "episodes": sorted(target),
                     "reason": f"{match_reason}；光鸭直接转存未覆盖这些目标集；候选优先级 {rank}",
                 }
@@ -606,7 +644,6 @@ class GuangYaResourcePlannerMixin:
         force: bool = False,
         refresh_channel: bool = True,
     ) -> Dict[str, Any]:
-        # super 先执行成熟的光鸭分享增量转存；其 pending reservation 天然成为最高优先级占位。
         share_result = super()._try_transfer_subscription_inner(
             subscribe,
             force=force,
@@ -617,14 +654,70 @@ class GuangYaResourcePlannerMixin:
         except Exception as err:
             self._plugin_log("WARNING", "【光鸭转存助手】【资源决策】#%s 外部候选规划失败：%s", getattr(subscribe, "id", 0), err)
             external = {"success": False, "actions": [], "message": str(err)}
-        if external.get("actions"):
+        share_result = dict(share_result or {})
+        candidate_diags = list(share_result.get("candidate_diags") or [])
+        share_success = bool(share_result.get("success")) and not bool(share_result.get("pending")) and not bool(share_result.get("partial"))
+        actions = list(external.get("actions") or [])
+        if actions:
+            try:
+                from .transfer_diag_v209 import make_candidate_trace_id, make_diag
+            except Exception:
+                make_diag = None
+                make_candidate_trace_id = None
+            for action in actions:
+                if not isinstance(action, dict) or make_diag is None:
+                    continue
+                src = str(action.get("type") or action.get("source") or action.get("protocol") or "magnet").lower()
+                identity = str(action.get("identity") or "").strip()
+                uri = str(action.get("uri") or "").strip()
+                if not identity and uri:
+                    identity = uri
+                resource_trace = str(action.get("resource_trace_id") or "").strip()
+                cand_trace = str(action.get("candidate_trace_id") or "").strip()
+                if not cand_trace and make_candidate_trace_id is not None:
+                    cand_trace = make_candidate_trace_id(src, identity or uri)
+                if share_success:
+                    note = make_diag(
+                        state="SKIPPED",
+                        reason_code="SUPERSEDED_BY_HIGHER_PRIORITY_SOURCE",
+                        stage="SOURCE_SELECTION",
+                        source=src,
+                        message="更高优先级来源已成功，本候选不再执行",
+                        candidate_trace_id=cand_trace,
+                        resource_trace_id=resource_trace,
+                        subscription_run_id=str(action.get("subscription_run_id") or share_result.get("subscription_run_id") or ""),
+                        sid=getattr(subscribe, "id", 0),
+                        evidence={"uri": uri[:160], "identity": identity[:120], "message_id": action.get("message_id")},
+                    )
+                else:
+                    note = make_diag(
+                        state="PENDING",
+                        reason_code="REMOTE_TASK_PENDING",
+                        stage="SUBMIT",
+                        source=src,
+                        message=str(action.get("reason") or "外部候选已入队待远端确认"),
+                        candidate_trace_id=cand_trace,
+                        resource_trace_id=resource_trace,
+                        subscription_run_id=str(action.get("subscription_run_id") or share_result.get("subscription_run_id") or ""),
+                        sid=getattr(subscribe, "id", 0),
+                        evidence={"uri": uri[:160], "identity": identity[:120], "message_id": action.get("message_id")},
+                    )
+                note_fn = getattr(self, "_note_candidate_diag_v209", None)
+                if callable(note_fn):
+                    note_fn(note, candidate_diags)
+                else:
+                    candidate_diags.append(note)
+            share_result["candidate_diags"] = candidate_diags
             return {
-                **dict(share_result or {}),
-                "success": True,
+                **share_result,
+                "success": True if actions and not share_success else bool(share_result.get("success")),
                 "handled": True,
-                "external_actions": external.get("actions"),
-                "message": f"{str((share_result or {}).get('message') or '光鸭分享已检查')}；{external.get('message')}",
+                "pending": True if actions and not share_success else bool(share_result.get("pending")),
+                "external_actions": actions,
+                "message": f"{str(share_result.get('message') or '光鸭分享已检查')}；{external.get('message')}",
             }
+        if candidate_diags:
+            share_result["candidate_diags"] = candidate_diags
         return share_result
 
     # ------------------------------------------------------------------

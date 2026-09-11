@@ -195,6 +195,14 @@ def _bind_plan_incremental(aliases: Optional[List[str]] = None, tmdb_id: str = "
         "Tuple": __import__("typing").Tuple,
         "Iterable": __import__("typing").Iterable,
     }
+    # core_pipeline now depends on media_source_v209 helpers for themoviedb tokens
+    ms_path = PLUGIN / "media_source_v209.py"
+    ms_spec = importlib.util.spec_from_file_location("media_source_v209_for_r92", ms_path)
+    ms_mod = importlib.util.module_from_spec(ms_spec)
+    assert ms_spec.loader is not None
+    ms_spec.loader.exec_module(ms_mod)
+    ns["is_tmdb_source"] = ms_mod.is_tmdb_source
+    ns["normalize_media_source_token"] = ms_mod.normalize_media_source_token
     # Provide helper functions used by class methods from core module body
     for name in (
         "_positive_episode_set_v11214",
@@ -374,12 +382,22 @@ def test_share_execution_dedup_marker_in_legacy():
     assert "execute=once" in LEGACY
 
 
-def test_external_recall_enqueue_production():
-    tree = ast.parse(SAFETY)
-    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "GuangYaProductionSafetyV208Mixin")
-    module = ast.Module(body=[cls], type_ignores=[])
-    ast.fix_missing_locations(module)
-    ns: Dict[str, Any] = {
+def _safety_helper_ns() -> Dict[str, Any]:
+    ms_spec = importlib.util.spec_from_file_location(
+        "media_source_v209_for_safety",
+        PLUGIN / "media_source_v209.py",
+    )
+    ms_mod = importlib.util.module_from_spec(ms_spec)
+    assert ms_spec.loader is not None
+    ms_spec.loader.exec_module(ms_mod)
+    diag_spec = importlib.util.spec_from_file_location(
+        "transfer_diag_v209_for_safety",
+        PLUGIN / "transfer_diag_v209.py",
+    )
+    diag = importlib.util.module_from_spec(diag_spec)
+    assert diag_spec.loader is not None
+    diag_spec.loader.exec_module(diag)
+    return {
         "Any": Any,
         "Dict": Dict,
         "Iterable": __import__("typing").Iterable,
@@ -387,8 +405,22 @@ def test_external_recall_enqueue_production():
         "Optional": Optional,
         "threading": __import__("threading"),
         "time": __import__("time"),
-        "MediaChain": MagicMock(),
+        "copy": __import__("copy"),
+        "is_tmdb_source": ms_mod.is_tmdb_source,
+        "normalize_media_source_token": ms_mod.normalize_media_source_token,
+        "classify_transfer_message_v209": diag.classify_transfer_message_v209,
+        "batch_summary_buckets": diag.batch_summary_buckets,
+        "format_batch_summary": diag.format_batch_summary,
     }
+
+
+def test_external_recall_enqueue_production():
+    tree = ast.parse(SAFETY)
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "GuangYaProductionSafetyV208Mixin")
+    module = ast.Module(body=[cls], type_ignores=[])
+    ast.fix_missing_locations(module)
+    ns: Dict[str, Any] = _safety_helper_ns()
+    ns["MediaChain"] = MagicMock()
     exec(compile(module, "<safety_v208>", "exec"), ns)
 
     class Base:
@@ -433,16 +465,8 @@ def test_tombstone_and_recognition_cache_production():
             calls["n"] += 1
             return {"tmdb_id": kwargs.get("media_id"), "title": "尼古喵喵", "original_name": "Chainsmoker Cat"}
 
-    ns: Dict[str, Any] = {
-        "Any": Any,
-        "Dict": Dict,
-        "Iterable": __import__("typing").Iterable,
-        "List": List,
-        "Optional": Optional,
-        "threading": __import__("threading"),
-        "time": __import__("time"),
-        "MediaChain": FakeChain,
-    }
+    ns: Dict[str, Any] = _safety_helper_ns()
+    ns["MediaChain"] = FakeChain
     exec(compile(module, "<safety_v208b>", "exec"), ns)
 
     class Base:
@@ -486,7 +510,9 @@ def test_tombstone_and_recognition_cache_production():
         assert obj._queue_failure_notice_v208(SimpleNamespace(id=i, name=f"m{i}"), f"retryable-{i}") is True
     obj._flush_failure_batch_v208()
     assert len(getattr(obj, "messages", [])) == 1
-    assert obj.messages[0]["title"] == "⚠️ 光鸭转存检查完成"
+    assert obj.messages[0]["title"] == "⚠️ 光鸭转存检查汇总"
+    assert "失败/待补搜" not in str(obj.messages[0].get("text") or "")
+    assert "真正失败" in str(obj.messages[0].get("text") or "") or "本轮检查" in str(obj.messages[0].get("text") or "")
 
 
 def test_channel_guard_enqueues_not_sync_provider():

@@ -27,6 +27,7 @@ from typing import Any, Dict, Iterable, List
 from app.chain.media import MediaChain
 from app.schemas.types import MediaSource, MediaType
 
+from .media_source_v209 import is_tmdb_source
 from .movie_bilingual_identity_v11216 import GuangYaMovieBilingualIdentityV11216Mixin
 from .empty_dir_guard_v11218 import GuangYaEmptyDirGuardV11218Mixin
 
@@ -76,7 +77,7 @@ class GuangYaMovieIdentityV1129Mixin(
                 return value
         source = self._enum_token_v1129(getattr(subscribe, "media_source", None))
         media_id = str(getattr(subscribe, "media_id", "") or "").strip()
-        if media_id.isdigit() and "tmdb" in source:
+        if media_id.isdigit() and is_tmdb_source(getattr(subscribe, "media_source", None) or source):
             return media_id
         return ""
 

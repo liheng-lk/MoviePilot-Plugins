@@ -36,6 +36,7 @@ from .media_identity_v1111 import (
     extract_share_media_identity_v1111,
     title_key_v1111,
 )
+from .media_source_v209 import is_tmdb_source, normalize_media_source_token
 from .xunlei_existing_fence_v11213 import GuangYaXunleiExistingEpisodeFenceV11213Mixin
 
 
@@ -180,6 +181,7 @@ class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixi
                     "identity": share_id,
                     "share_id": share_id,
                     "passcode": passcode,
+                    "passcode_present": bool(passcode),
                     "name": discovery_title,
                     "search_title": discovery_title,
                     "year": entry.get("year_hint"),
@@ -187,6 +189,8 @@ class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixi
                     "source_label": str(entry.get("source_label") or "频道"),
                     "message_id": str(entry.get("message_id") or ""),
                     "resource_group_id": str(entry.get("resource_group_id") or ""),
+                    "resource_trace_id": str(entry.get("resource_trace_id") or entry.get("trace_id") or ""),
+                    "candidate_trace_id": f"xunlei:{share_id}",
                 })
         return candidates
 
@@ -298,11 +302,10 @@ class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixi
                 "candidate_types": ["guangya"],
                 "provider_origin_v11214": True,
             }
-            source = str(getattr(subscribe, "media_source", "") or "").lower()
             media_id = str(getattr(subscribe, "media_id", "") or "").strip()
             # 只在订阅本身就是 TMDB 精确身份且 GYING discovery 已通过 provider matcher 时附加该身份。
             # 最终真实分享文件仍会经过下面的 actual-content gate，TMDB discovery 不能覆盖硬冲突。
-            if media_id.isdigit() and "tmdb" in source:
+            if media_id.isdigit() and is_tmdb_source(getattr(subscribe, "media_source", None)):
                 entry["tmdb_id"] = media_id
             entries.append(entry)
 
@@ -328,9 +331,10 @@ class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixi
             value = str(getattr(subscribe, field, "") or "").strip()
             if value.isdigit():
                 return value
-        source = str(getattr(getattr(subscribe, "media_source", None), "value", getattr(subscribe, "media_source", "")) or "").lower()
         media_id = str(getattr(subscribe, "media_id", "") or "").strip()
-        return media_id if media_id.isdigit() and "tmdb" in source else ""
+        if media_id.isdigit() and is_tmdb_source(getattr(subscribe, "media_source", None)):
+            return media_id
+        return ""
 
     @staticmethod
     def _flatten_aliases_v11214(value: Any) -> List[str]:
@@ -533,6 +537,8 @@ class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixi
         ]
         primary_roots = self._direct_share_primary_roots_v11214(video_paths, getattr(subscribe, "year", None))
         share_identity = extract_share_media_identity_v1111(list(primary_roots) + list(video_paths[:300]))
+        source_raw = getattr(subscribe, "media_source", None)
+        source_normalized = normalize_media_source_token(source_raw) or "-"
         subscription_tmdb = str(self._tmdb_id_tv_v11214(subscribe) or "").strip()
         share_tmdb_ids = [str(value).strip() for value in (share_identity.get("tmdb_ids") or []) if str(value).strip().isdigit()]
         share_tmdb = str(share_identity.get("tmdb_id") or (share_tmdb_ids[0] if share_tmdb_ids else "")).strip()
@@ -542,19 +548,40 @@ class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixi
             if len(unique_share) == 1 and unique_share[0] == subscription_tmdb:
                 self._plugin_log(
                     "INFO",
-                    "【光鸭转存助手】【最终身份】sid=%s subscription_tmdb=%s share_tmdb=%s alias_match=- decision=confirmed reason=tmdb_match",
-                    getattr(subscribe, "id", 0), subscription_tmdb, unique_share[0],
+                    "【光鸭转存助手】【最终身份】sid=%s source_raw=%s source_normalized=%s subscription_tmdb=%s share_tmdb=%s alias_match=- decision=confirmed reason=TMDB_MATCH",
+                    getattr(subscribe, "id", 0),
+                    source_raw if source_raw not in (None, "") else "-",
+                    source_normalized,
+                    subscription_tmdb,
+                    unique_share[0],
                 )
-                assessment = {"ok": True, "hard_conflict": False, "reason": "tmdb_match", "decision": "confirmed"}
+                assessment = {
+                    "ok": True, "hard_conflict": False, "reason": "TMDB_MATCH",
+                    "reason_code": "TMDB_MATCH", "stage": "IDENTITY", "decision": "confirmed",
+                    "evidence": {"expected_tmdb": subscription_tmdb, "actual_tmdb": unique_share[0]},
+                }
+                if stats is not None:
+                    stats["identity_reason_code"] = "TMDB_MATCH"
+                    stats["identity_diag"] = assessment
             else:
                 reason = f"tmdb_mismatch subscription={subscription_tmdb} share={','.join(unique_share)}"
                 self._plugin_log(
                     "WARNING",
-                    "【光鸭转存助手】【最终身份】sid=%s subscription_tmdb=%s share_tmdb=%s alias_match=- decision=hard_reject reason=tmdb_mismatch",
-                    getattr(subscribe, "id", 0), subscription_tmdb, ",".join(unique_share),
+                    "【光鸭转存助手】【最终身份】sid=%s source_raw=%s source_normalized=%s subscription_tmdb=%s share_tmdb=%s alias_match=- decision=hard_reject reason=TMDB_ID_MISMATCH",
+                    getattr(subscribe, "id", 0),
+                    source_raw if source_raw not in (None, "") else "-",
+                    source_normalized,
+                    subscription_tmdb,
+                    ",".join(unique_share),
                 )
                 if stats is not None:
                     stats.update(self._identity_stats_snapshot_v208(probe, video_paths, reason=reason))
+                    stats["identity_reason_code"] = "TMDB_ID_MISMATCH"
+                    stats["identity_diag"] = {
+                        "ok": False, "reason_code": "TMDB_ID_MISMATCH", "stage": "IDENTITY",
+                        "state": "FAILED_FINAL",
+                        "evidence": {"expected_tmdb": subscription_tmdb, "actual_tmdb": unique_share},
+                    }
                 return []
         else:
             aliases = list(self._identity_aliases_v1111(subscribe) or []) if hasattr(self, "_identity_aliases_v1111") else [str(getattr(subscribe, "name", "") or "")]
@@ -577,28 +604,53 @@ class GuangYaCorePipelineV11214Mixin(GuangYaXunleiExistingEpisodeFenceV11213Mixi
             )
             if assessment.get("hard_conflict"):
                 reason = str(assessment.get("reason") or "title_unconfirmed")
+                reason_code = str(assessment.get("reason_code") or "MEDIA_IDENTITY_UNCONFIRMED")
                 self._plugin_log(
                     "WARNING",
-                    "【光鸭转存助手】【最终身份】sid=%s subscription_tmdb=%s share_tmdb=%s alias_match=%s decision=hard_reject reason=%s",
+                    "【光鸭转存助手】【最终身份】sid=%s source_raw=%s source_normalized=%s subscription_tmdb=%s share_tmdb=%s alias_match=%s decision=hard_reject reason=%s reason_code=%s",
                     getattr(subscribe, "id", 0),
+                    source_raw if source_raw not in (None, "") else "-",
+                    source_normalized,
                     subscription_tmdb or "-",
                     share_tmdb or "-",
                     "true" if any(a for a in aliases[1:]) else "-",
                     reason[:240],
+                    reason_code,
                 )
                 if stats is not None:
                     stats.update(self._identity_stats_snapshot_v208(probe, video_paths, reason=reason))
+                    stats["identity_reason_code"] = reason_code
+                    stats["identity_diag"] = {
+                        "ok": False,
+                        "reason_code": reason_code,
+                        "stage": "IDENTITY",
+                        "state": "FAILED_FINAL",
+                        "evidence": assessment.get("evidence") or {},
+                        "message": reason[:320],
+                    }
                 return []
             if assessment.get("ok"):
+                reason_code = str(assessment.get("reason_code") or "OFFICIAL_ALIAS_MATCH")
                 self._plugin_log(
                     "INFO",
-                    "【光鸭转存助手】【最终身份】sid=%s subscription_tmdb=%s share_tmdb=%s alias_match=%s decision=confirmed reason=%s",
+                    "【光鸭转存助手】【最终身份】sid=%s source_raw=%s source_normalized=%s subscription_tmdb=%s share_tmdb=%s alias_match=%s decision=confirmed reason=%s reason_code=%s",
                     getattr(subscribe, "id", 0),
+                    source_raw if source_raw not in (None, "") else "-",
+                    source_normalized,
                     subscription_tmdb or "-",
                     share_tmdb or "-",
                     "true",
                     str(assessment.get("reason") or "alias_or_title")[:240],
+                    reason_code,
                 )
+                if stats is not None:
+                    stats["identity_reason_code"] = reason_code
+                    stats["identity_diag"] = {
+                        "ok": True,
+                        "reason_code": reason_code,
+                        "stage": "IDENTITY",
+                        "state": "CONTINUE",
+                    }
 
         allowed = self._authoritative_missing_v11214(subscribe)
         planned = list(super()._plan_incremental_files(probe, assets, subscribe=subscribe, target_path=target_path, stats=stats) or [])

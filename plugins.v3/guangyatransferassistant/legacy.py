@@ -32,6 +32,14 @@ from app.sdk.config import settings
 from app.sdk.logging import logger
 from app.sdk.network import RequestUtils
 from .media_identity_v1111 import explicit_seasons_v1111, strong_title_match_v1111
+from .media_source_v209 import is_tmdb_source
+from .transfer_diag_v209 import (
+    aggregate_subscription_diag,
+    classify_share_inspect_failure,
+    identity_diag_from_assessment,
+    make_candidate_trace_id,
+    make_diag,
+)
 
 
 DEFAULT_CHANNEL_URLS = [
@@ -425,10 +433,9 @@ def _entry_matches_subscription(
     media_source: Any = None, media_id: Any = None,
 ) -> bool:
     """频道身份门禁：TMDB 冲突硬拒绝；标题强匹配；缺少季号不等于冲突。"""
-    source = str(media_source or "").lower()
     entry_tmdb = str(entry.get("tmdb_id") or "").strip()
     subscribe_id = str(media_id or "").strip()
-    comparable_tmdb = bool(entry_tmdb and subscribe_id and ("tmdb" in source or "themoviedb" in source))
+    comparable_tmdb = bool(entry_tmdb and subscribe_id and is_tmdb_source(media_source))
     if comparable_tmdb and entry_tmdb != subscribe_id:
         return False
     text_value = str(entry.get("text") or "")
@@ -443,7 +450,15 @@ def _entry_matches_subscription(
     if comparable_tmdb:
         return True
     parsed_title = str(entry.get("display_title") or "").strip()
-    title_evidence = [parsed_title] if parsed_title else [line.strip() for line in text_value.splitlines()[:12] if line.strip()]
+    title_evidence: List[str] = []
+    if parsed_title:
+        title_evidence.append(parsed_title)
+    for alias in entry.get("title_candidates") or []:
+        token = str(alias or "").strip()
+        if token and token not in title_evidence:
+            title_evidence.append(token)
+    if not title_evidence:
+        title_evidence = [line.strip() for line in text_value.splitlines()[:12] if line.strip()]
     raw_name = str(name or "").strip()
     candidates = [raw_name, re.split(r"[(/（]", raw_name, maxsplit=1)[0]]
     if not any(
@@ -497,7 +512,7 @@ def _subscription_aliases(subscribe: Any) -> List[str]:
 
 
 def _entry_match_reason(entry: Dict[str, Any], subscribe: Any) -> Tuple[bool, str]:
-    source = str(getattr(subscribe, "media_source", "") or "").lower()
+    source = getattr(subscribe, "media_source", None)
     media_id = str(getattr(subscribe, "media_id", "") or "")
     entry_tmdb = str(entry.get("tmdb_id") or "")
     primary_name = getattr(subscribe, "name", "")
@@ -510,12 +525,12 @@ def _entry_match_reason(entry: Dict[str, Any], subscribe: Any) -> Tuple[bool, st
         media_id,
     )
     if matched:
-        if entry_tmdb and media_id and ("tmdb" in source or "themoviedb" in source) and entry_tmdb == media_id:
+        if entry_tmdb and media_id and is_tmdb_source(source) and entry_tmdb == media_id:
             return True, "TMDB精确"
         return True, "标题/年份/季匹配"
 
     # 如果频道和订阅都有可比较 TMDB 且不一致，绝不允许别名绕过身份冲突。
-    if entry_tmdb and media_id and ("tmdb" in source or "themoviedb" in source):
+    if entry_tmdb and media_id and is_tmdb_source(source):
         return False, ""
 
     primary_norm = _normalize_media_text(primary_name)
@@ -1773,10 +1788,75 @@ class GuangYaTransferAssistant(_PluginBase):
                     pages += 1
                     page_html = response.text or ""
                     button_count += len(re.findall(r"查看资源", page_html, re.I))
+                    # RAW HTML → Resource Inbox FIRST, then legacy parser.
+                    ingest_result: Dict[str, Any] = {}
+                    ingest = getattr(self, "_ingest_raw_channel_page_v209", None)
+                    if callable(ingest):
+                        try:
+                            ingest_result = dict(ingest(page_html, source_url, label) or {})
+                        except Exception as ingest_err:
+                            ingest_result = {}
+                            try:
+                                self._plugin_log("WARNING", "【Resource Inbox】raw ingest 异常：%s", str(ingest_err)[:220])
+                            except Exception:
+                                pass
                     found = _extract_channel_entries(page_html, source_url, label)
+                    # Cursor: prefer raw message block max ids (even when legacy found=0).
                     page_ids: List[int] = []
-                    for item in found:
+                    for mid in ingest_result.get("message_ids") or []:
+                        try:
+                            numeric = int(mid)
+                        except (TypeError, ValueError):
+                            continue
+                        if numeric > 0:
+                            page_ids.append(numeric)
+                            source_max_id = max(source_max_id, numeric)
+                    raw_max = int(ingest_result.get("max_message_id") or 0)
+                    if raw_max > source_max_id:
+                        source_max_id = raw_max
+                    # Merge Inbox-only entries into this page's fetch set (dedup by process key / identity).
+                    merged_found = list(found or [])
+                    legacy_keys = set()
+                    for item in merged_found:
                         key = _entry_process_key(item) or _share_identity(item.get("share_url") or "")
+                        if key:
+                            legacy_keys.add(key)
+                        mid = str(item.get("message_id") or "")
+                        if mid.isdigit():
+                            legacy_keys.add(f"msg:{mid}")
+                    for inbox_entry in ingest_result.get("entries") or []:
+                        if not isinstance(inbox_entry, dict):
+                            continue
+                        entry = dict(inbox_entry)
+                        entry["source_url"] = source_url
+                        entry["source_label"] = label
+                        entry["stale"] = False
+                        entry["cached_index"] = False
+                        key = _entry_process_key(entry) or _share_identity(entry.get("share_url") or "") or str(entry.get("resource_group_id") or "")
+                        mid = str(entry.get("message_id") or "")
+                        msg_key = f"msg:{mid}" if mid.isdigit() else ""
+                        # Same message already represented by legacy → mark origin both, skip duplicate event row.
+                        if msg_key and msg_key in legacy_keys:
+                            for existing in merged_found:
+                                if str(existing.get("message_id") or "") == mid:
+                                    existing["origin"] = "both"
+                                    if entry.get("resource_trace_id") and not existing.get("resource_trace_id"):
+                                        existing["resource_trace_id"] = entry.get("resource_trace_id")
+                                    if entry.get("title_candidates") and not existing.get("title_candidates"):
+                                        existing["title_candidates"] = list(entry.get("title_candidates") or [])
+                                    break
+                            continue
+                        if key and key in legacy_keys:
+                            continue
+                        if key:
+                            legacy_keys.add(key)
+                        if msg_key:
+                            legacy_keys.add(msg_key)
+                        if not entry.get("origin"):
+                            entry["origin"] = "inbox"
+                        merged_found.append(entry)
+                    for item in merged_found:
+                        key = _entry_process_key(item) or _share_identity(item.get("share_url") or "") or str(item.get("resource_group_id") or "")
                         if not key or key in source_seen:
                             continue
                         source_seen.add(key)
@@ -1805,7 +1885,20 @@ class GuangYaTransferAssistant(_PluginBase):
                 except Exception as err:
                     page_errors.append(f"{page_url}: {err}")
             unresolved = max(0, button_count - button_links)
-            parse_suspect = bool(pages and button_count and not fetched_entries and unresolved)
+            # Cursor safety: resource features exist but BOTH raw+legacy found zero resources.
+            raw_suspect = bool(getattr(self, "_channel_parse_suspect_v209", False))
+            try:
+                delattr(self, "_channel_parse_suspect_v209")
+            except Exception:
+                self._channel_parse_suspect_v209 = False
+            parse_suspect = bool(
+                pages
+                and not fetched_entries
+                and (
+                    (button_count and unresolved)
+                    or raw_suspect
+                )
+            )
             old_source = [dict(old) for old in previous_items if old.get("source_label") == label]
             if pages > 0 and not parse_suspect:
                 source_successes += 1
@@ -2602,11 +2695,100 @@ class GuangYaTransferAssistant(_PluginBase):
                 return False, f"资源未满足订阅{label}规则"
         return True, ""
 
+    def _note_candidate_diag_v209(self, diag: Dict[str, Any], bucket: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        """Write once to authoritative TLS collector; optional local snapshot for result packing."""
+        row = dict(diag or {})
+        run_id = ""
+        getter = getattr(self, "_current_subscription_run_id", None)
+        if callable(getter):
+            try:
+                run_id = str(getter() or "")
+            except Exception:
+                run_id = ""
+        if not run_id:
+            run_id = str(getattr(self, "_current_subscription_run_id_v209", "") or "")
+        if run_id and not row.get("subscription_run_id"):
+            row["subscription_run_id"] = run_id
+        appender = getattr(self, "_append_candidate_diag_v209", None)
+        if callable(appender):
+            try:
+                appender(row)
+            except Exception:
+                pass
+        # Local bucket is a snapshot for return packing only — do not double-append to collector.
+        if bucket is not None:
+            key = (
+                str(row.get("subscription_run_id") or ""),
+                str(row.get("resource_trace_id") or row.get("trace_id") or ""),
+                str(row.get("candidate_trace_id") or ""),
+                str(row.get("stage") or ""),
+                str(row.get("reason_code") or ""),
+                str(row.get("state") or ""),
+            )
+            for existing in bucket:
+                if (
+                    str(existing.get("subscription_run_id") or ""),
+                    str(existing.get("resource_trace_id") or existing.get("trace_id") or ""),
+                    str(existing.get("candidate_trace_id") or ""),
+                    str(existing.get("stage") or ""),
+                    str(existing.get("reason_code") or ""),
+                    str(existing.get("state") or ""),
+                ) == key:
+                    break
+            else:
+                bucket.append(row)
+        return row
+
+    def _pack_transfer_result_v209(
+        self,
+        payload: Dict[str, Any],
+        *,
+        candidate_diags: Optional[List[Dict[str, Any]]] = None,
+        entry: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        out = dict(payload or {})
+        run_id = str(getattr(self, "_current_subscription_run_id_v209", "") or out.get("subscription_run_id") or "")
+        if run_id:
+            out["subscription_run_id"] = run_id
+        rows = list(candidate_diags or [])
+        if rows:
+            out["candidate_diags"] = rows
+            if not isinstance(out.get("diag"), dict) or not (out.get("diag") or {}).get("reason_code"):
+                out["diag"] = aggregate_subscription_diag(rows)
+        resource_trace = str(
+            out.get("resource_trace_id")
+            or (entry or {}).get("resource_trace_id")
+            or ""
+        )
+        if not resource_trace:
+            for row in rows:
+                resource_trace = str(row.get("resource_trace_id") or row.get("trace_id") or "")
+                if resource_trace:
+                    break
+        if resource_trace:
+            out["resource_trace_id"] = resource_trace
+            if isinstance(out.get("diag"), dict):
+                out["diag"].setdefault("resource_trace_id", resource_trace)
+                out["diag"].setdefault("trace_id", resource_trace)
+        if entry and entry.get("message_id") is not None:
+            out.setdefault("message_id", entry.get("message_id"))
+            out.setdefault("source_url", entry.get("source_url") or entry.get("channel") or "")
+        return out
+
     def _try_transfer_subscription(self, subscribe: Any, force: bool = False, refresh_channel: bool = True) -> Dict[str, Any]:
         token, lock_key = self._acquire_subscription_run(subscribe)
         if not token:
             self._plugin_log("INFO", "【光鸭转存助手】【并发】#%s %s 已有同媒体转存任务执行中，本次跳过", getattr(subscribe, "id", 0), getattr(subscribe, "name", ""))
-            return {"success": True, "handled": True, "busy": True, "message": "已有同媒体转存任务执行中"}
+            return {
+                "success": True, "handled": True, "busy": True, "message": "已有同媒体转存任务执行中",
+                "diag": make_diag(
+                    state="PENDING",
+                    reason_code="TRANSFER_ALREADY_RESERVED",
+                    stage="SOURCE_SELECTION",
+                    message="已有同媒体转存任务执行中",
+                    sid=getattr(subscribe, "id", 0),
+                ),
+            }
         try:
             return self._try_transfer_subscription_inner(subscribe, force=force, refresh_channel=refresh_channel)
         finally:
@@ -2650,7 +2832,16 @@ class GuangYaTransferAssistant(_PluginBase):
         if not matched_pairs:
             detail = "本地频道索引暂未匹配到光鸭分享"
             self._plugin_log("INFO", "【光鸭转存助手】【匹配】#%s %s %s；固定转存路线不触发原生下载", sid, getattr(subscribe, "name", ""), detail)
-            return {"success": False, "handled": True, "message": detail}
+            return self._pack_transfer_result_v209({
+                "success": False, "handled": True, "message": detail,
+                "diag": make_diag(
+                    state="NO_RESULT",
+                    reason_code="NO_LOCAL_RESOURCE",
+                    stage="MATCH",
+                    message=detail,
+                    sid=sid,
+                ),
+            })
         self._plugin_log("INFO", "【光鸭转存助手】【匹配】#%s %s 命中 %s 个缓存/当前分享", sid, getattr(subscribe, "name", ""), len(matched_pairs))
         if fallback_cache_matches:
             self._plugin_log(
@@ -2679,7 +2870,17 @@ class GuangYaTransferAssistant(_PluginBase):
                 "【光鸭转存助手】【消息去重】#%s %s 当前没有新链接/新消息，跳过已处理 %s 条；进度 %s/%s，剩余 %s",
                 sid, getattr(subscribe, "name", ""), processed_matches, done, total, lack,
             )
-            return {"success": True, "handled": True, "already": True, "message": f"没有新链接/新消息；已处理记录不重复测试，进度 {done}/{total}，剩余 {lack}" if total else "没有新链接/新消息；已处理记录不重复测试"}
+            msg = f"没有新链接/新消息；已处理记录不重复测试，进度 {done}/{total}，剩余 {lack}" if total else "没有新链接/新消息；已处理记录不重复测试"
+            return self._pack_transfer_result_v209({
+                "success": True, "handled": True, "already": True, "message": msg,
+                "diag": make_diag(
+                    state="SKIPPED",
+                    reason_code="NO_NEW_ACTION",
+                    stage="MATCH",
+                    message=msg,
+                    sid=sid,
+                ),
+            })
 
         history = self.get_data("transfer_history") or {}
         inventory = self.get_data("transfer_inventory") or {}
@@ -2687,6 +2888,7 @@ class GuangYaTransferAssistant(_PluginBase):
         inv_row = inventory.get(sid_key) or {"assets": {}}
         assets = inv_row.get("assets") or {}
         errors: List[str] = []
+        candidate_diags: List[Dict[str, Any]] = []
         transferred_assets: List[Dict[str, Any]] = []
         task_ids: List[str] = []
         sources = set()
@@ -2698,13 +2900,30 @@ class GuangYaTransferAssistant(_PluginBase):
         match_reasons = set()
         target_path = self._target_path(subscribe)
         executed_share_keys: set[str] = set()
+        last_entry: Optional[Dict[str, Any]] = None
 
         for entry, match_reason in action_pairs[:20]:
+            last_entry = entry
+            resource_trace = str(entry.get("resource_trace_id") or "")
             share_url = entry.get("share_url") or ""
             share_key = _share_identity(share_url)
             if not share_key:
+                self._note_candidate_diag_v209(
+                    make_diag(
+                        state="SKIPPED",
+                        reason_code="SOURCE_CANDIDATE_INVALID",
+                        stage="SOURCE_SELECTION",
+                        source="guangya",
+                        message="候选缺少有效光鸭分享身份",
+                        resource_trace_id=resource_trace,
+                        candidate_trace_id=make_candidate_trace_id("guangya", ""),
+                        sid=sid,
+                    ),
+                    candidate_diags,
+                )
                 continue
             share_id_only = share_key.split("|", 1)[0]
+            cand_trace = make_candidate_trace_id("guangya", share_id_only)
             if share_key in executed_share_keys:
                 self._plugin_log(
                     "INFO",
@@ -2722,15 +2941,41 @@ class GuangYaTransferAssistant(_PluginBase):
                     share_id_only,
                 )
                 errors.append(f"share_id={share_id_only} 短期标记为失效，跳过远端访问")
+                self._note_candidate_diag_v209(
+                    make_diag(
+                        state="FAILED_RETRYABLE",
+                        reason_code="SHARE_EXPIRED",
+                        stage="SHARE_INSPECT",
+                        source="guangya",
+                        message=f"share_id={share_id_only} 短期标记为失效，跳过远端访问",
+                        resource_trace_id=resource_trace,
+                        candidate_trace_id=cand_trace,
+                        evidence={"share_id": share_id_only, "tombstone": True},
+                        sid=sid,
+                    ),
+                    candidate_diags,
+                )
                 continue
             probe = self._inspect_share(share_url)
             if not probe.get("success"):
                 error = str(probe.get("message") or "分享读取失败")
                 self._plugin_log("WARNING", "【光鸭转存助手】【匹配】分享读取失败 share_id=%s：%s", share_id_only, error)
                 errors.append(error)
+                inspect_diag = classify_share_inspect_failure(error, source="guangya")
+                inspect_diag = {
+                    **inspect_diag,
+                    "resource_trace_id": resource_trace or inspect_diag.get("resource_trace_id") or "",
+                    "candidate_trace_id": cand_trace,
+                    "sid": sid,
+                    "evidence": {
+                        **dict(inspect_diag.get("evidence") or {}),
+                        "share_id": share_id_only,
+                    },
+                }
+                self._note_candidate_diag_v209(inspect_diag, candidate_diags)
                 marker = getattr(self, "_mark_share_tombstone_v208", None)
                 if callable(marker):
-                    temporary = not any(token in error for token in ("失效", "不存在", "404", "无效", "过期", "expired", "invalid"))
+                    temporary = str(inspect_diag.get("reason_code") or "") != "SHARE_EXPIRED"
                     marker("guangya", share_id_only, error, temporary=temporary)
                 continue
             resource_allowed, resource_reason = self._subscription_resource_allowed(subscribe, entry, probe)
@@ -2757,6 +3002,18 @@ class GuangYaTransferAssistant(_PluginBase):
             stats: Dict[str, int] = {}
             planned = self._plan_incremental_files(probe, assets, subscribe=subscribe, target_path=target_path, stats=stats)
             valid_route_match = True
+            identity_pass = stats.get("identity_diag") if isinstance(stats.get("identity_diag"), dict) else None
+            if identity_pass and bool(identity_pass.get("ok")):
+                self._note_candidate_diag_v209(
+                    identity_diag_from_assessment(
+                        identity_pass,
+                        source="guangya",
+                        resource_trace_id=resource_trace,
+                        candidate_trace_id=cand_trace,
+                        sid=sid,
+                    ),
+                    candidate_diags,
+                )
             self._plugin_log(
                 "INFO",
                 "【光鸭转存助手】【分享解析】#%s %s share_id=%s 节点=%s 叶子=%s 视频=%s 字幕=%s 可用=%s 未识别集号=%s 推断集号=%s",
@@ -2779,6 +3036,24 @@ class GuangYaTransferAssistant(_PluginBase):
                         f"视频={stats.get('video', 0)} 字幕={stats.get('subtitle', 0)}；{reason}"
                     )
                     errors.append(message)
+                    identity_raw = stats.get("identity_diag") if isinstance(stats.get("identity_diag"), dict) else {
+                        "ok": False,
+                        "reason_code": str(stats.get("identity_reason_code") or "MEDIA_IDENTITY_UNCONFIRMED"),
+                        "stage": "IDENTITY",
+                        "state": "FAILED_FINAL",
+                        "message": reason,
+                        "evidence": {},
+                    }
+                    self._note_candidate_diag_v209(
+                        identity_diag_from_assessment(
+                            identity_raw,
+                            source="guangya",
+                            resource_trace_id=resource_trace,
+                            candidate_trace_id=cand_trace,
+                            sid=sid,
+                        ),
+                        candidate_diags,
+                    )
                     self._plugin_log(
                         "WARNING",
                         "【光鸭转存助手】【分享解析】#%s %s share_id=%s 叶子=%s identity_reject=1；%s",
@@ -2789,17 +3064,67 @@ class GuangYaTransferAssistant(_PluginBase):
                     samples = "、".join(str(value) for value in (stats.get("unparsed_paths") or [])[:8])
                     message = f"分享内有 {stats.get('unparsed', 0)} 个媒体/字幕文件无法解析集号，未标记为已处理；示例：{samples or '-'}"
                     errors.append(message)
+                    self._note_candidate_diag_v209(
+                        make_diag(
+                            state="FAILED_RETRYABLE",
+                            reason_code="EPISODE_NUMBER_UNRESOLVED",
+                            stage="EPISODE_FENCE",
+                            source="guangya",
+                            message=message,
+                            resource_trace_id=resource_trace,
+                            candidate_trace_id=cand_trace,
+                            evidence={"unparsed": stats.get("unparsed", 0), "samples": samples},
+                            sid=sid,
+                        ),
+                        candidate_diags,
+                    )
                     self._plugin_log("WARNING", "【光鸭转存助手】【文件识别】#%s %s share_id=%s %s", sid, getattr(subscribe, "name", ""), share_id_only, message)
                     continue
                 if self._media_only and stats.get("total", 0) > 0 and not stats.get("video", 0) and not stats.get("subtitle", 0):
                     samples = "、".join(str(value) for value in (stats.get("unsupported_paths") or [])[:8])
                     message = f"分享已读取 {stats.get('total', 0)} 个叶子文件，但没有识别到支持的视频/字幕扩展名；示例：{samples or '-'}"
                     errors.append(message)
+                    self._note_candidate_diag_v209(
+                        make_diag(
+                            state="FAILED_RETRYABLE",
+                            reason_code="NO_SUPPORTED_MEDIA_FILES",
+                            stage="SHARE_INSPECT",
+                            source="guangya",
+                            message=message,
+                            resource_trace_id=resource_trace,
+                            candidate_trace_id=cand_trace,
+                            evidence={"total": stats.get("total", 0), "video": 0, "subtitle": 0},
+                            sid=sid,
+                        ),
+                        candidate_diags,
+                    )
                     self._plugin_log("WARNING", "【光鸭转存助手】【文件识别】#%s %s share_id=%s %s", sid, getattr(subscribe, "name", ""), share_id_only, message)
                     continue
                 message = "分享内没有需要的新剧集；已入库/已完成/范围外内容不再重复测试"
                 self._mark_entry_processed(entry, "no_new_episode", message, subscribe)
                 synchronized_match = True
+                # Prefer existing-only when identity already passed / videos present.
+                existing_code = "RESOURCE_CONTAINS_ONLY_EXISTING_EPISODES"
+                if int(stats.get("episode", 0) or 0) > 0 or int(stats.get("video", 0) or 0) > 0:
+                    existing_code = "RESOURCE_CONTAINS_ONLY_EXISTING_EPISODES"
+                self._note_candidate_diag_v209(
+                    make_diag(
+                        state="SKIPPED",
+                        reason_code=existing_code,
+                        stage="EPISODE_FENCE",
+                        source="guangya",
+                        message=message,
+                        resource_trace_id=resource_trace,
+                        candidate_trace_id=cand_trace,
+                        evidence={
+                            "eligible": stats.get("eligible", 0),
+                            "video": stats.get("video", 0),
+                            "episode_filtered": stats.get("episode", 0),
+                        },
+                        sid=sid,
+                    ),
+                    candidate_diags,
+                )
                 self._plugin_log("INFO", "【光鸭转存助手】【消息去重】#%s %s share_id=%s %s", sid, getattr(subscribe, "name", ""), share_id_only, message)
                 continue
 
@@ -2902,6 +3227,20 @@ class GuangYaTransferAssistant(_PluginBase):
             self._trim_history(history)
             self.save_data("transfer_history", history)
             if restored.get("success"):
+                self._note_candidate_diag_v209(
+                    make_diag(
+                        state="SUCCESS",
+                        reason_code="REMOTE_VERIFY_CONFIRMED",
+                        stage="REMOTE_VERIFY",
+                        source="guangya",
+                        message=str(restored.get("message") or "增量转存并落盘确认完成"),
+                        resource_trace_id=resource_trace,
+                        candidate_trace_id=cand_trace,
+                        evidence={"task_ids": list(restored.get("task_ids") or [])},
+                        sid=sid,
+                    ),
+                    candidate_diags,
+                )
                 if deferred_for_entry <= 0:
                     self._mark_entry_processed(entry, "transferred", restored.get("message") or "增量转存完成", subscribe)
                 else:
@@ -2912,6 +3251,20 @@ class GuangYaTransferAssistant(_PluginBase):
                 if restored.get("pending_verification"):
                     pending_verification = True
                     self._set_job_state(job_key, "verifying", verification_message=str(restored.get("message") or "等待落盘确认"))
+                    self._note_candidate_diag_v209(
+                        make_diag(
+                            state="PENDING",
+                            reason_code="REMOTE_TASK_PENDING",
+                            stage="REMOTE_VERIFY",
+                            source="guangya",
+                            message=str(restored.get("message") or "等待落盘确认"),
+                            resource_trace_id=resource_trace,
+                            candidate_trace_id=cand_trace,
+                            evidence={"task_ids": list(restored.get("task_ids") or [])},
+                            sid=sid,
+                        ),
+                        candidate_diags,
+                    )
                     self._plugin_log("WARNING", 
                         "【光鸭转存助手】【落盘确认】#%s %s share_id=%s 任务已提交但文件尚未全部确认；保持待确认，不自动重复提交",
                         sid, getattr(subscribe, "name", ""), share_key.split("|", 1)[0],
@@ -2919,6 +3272,27 @@ class GuangYaTransferAssistant(_PluginBase):
                 else:
                     self._set_job_state(job_key, "failed", error=str(restored.get("message") or "增量转存失败"))
                     errors.append(str(restored.get("message") or "增量转存失败"))
+                    stage = str(restored.get("stage") or "")
+                    if stage in {"restore_share", "submit"}:
+                        code, stg = "CLOUD_TASK_SUBMIT_FAILED", "SUBMIT"
+                    elif stage in {"remote_verify", "restore_task"}:
+                        code, stg = "REMOTE_VERIFY_FAILED", "REMOTE_VERIFY"
+                    else:
+                        code, stg = "CLOUD_TASK_SUBMIT_FAILED", "SUBMIT"
+                    self._note_candidate_diag_v209(
+                        make_diag(
+                            state="FAILED_RETRYABLE" if restored.get("retryable", True) else "FAILED_FINAL",
+                            reason_code=code,
+                            stage=stg,
+                            source="guangya",
+                            message=str(restored.get("message") or "增量转存失败"),
+                            resource_trace_id=resource_trace,
+                            candidate_trace_id=cand_trace,
+                            evidence={"task_ids": list(restored.get("task_ids") or []), "stage": stage},
+                            sid=sid,
+                        ),
+                        candidate_diags,
+                    )
 
         unique_paths = []
         seen_paths = set()
@@ -2963,25 +3337,58 @@ class GuangYaTransferAssistant(_PluginBase):
                 self.post_message(mtype=NotificationType.Plugin, title="✅ 光鸭订阅完成" if completed_subscription else ("⚠️ 光鸭部分转存" if partial else "✅ 光鸭转存成功"), text="\n".join(lines))
                 self._plugin_log("INFO", "【光鸭转存助手】【通知】已发送%s通知：#%s %s", "部分转存" if partial else "增量转存成功", sid, getattr(subscribe, "name", ""))
             if partial:
-                return {"success": False, "handled": True, "message": f"部分转存 {len(unique_paths)} 个文件，剩余等待下轮转存", "new_count": len(unique_paths), "target_path": target_path}
-            return {"success": True, "handled": True, "completed": completed_subscription, "message": (f"转存成功，本次新增 {len(unique_paths)} 个文件；订阅已完成并移入历史" if completed_subscription else f"增量转存成功，本次新增 {len(unique_paths)} 个文件"), "new_count": len(unique_paths), "target_path": target_path, "remaining": remaining_due_to_cap}
+                return self._pack_transfer_result_v209({
+                    "success": True, "handled": True, "partial": True, "pending": True,
+                    "message": f"部分转存 {len(unique_paths)} 个文件，剩余等待下轮转存",
+                    "new_count": len(unique_paths), "target_path": target_path,
+                    "remaining": int(remaining_due_to_cap or 0),
+                    "diag": make_diag(
+                        state="PENDING",
+                        reason_code="PARTIAL_TRANSFER_PENDING",
+                        stage="COMPLETION",
+                        message=f"部分转存 {len(unique_paths)} 个文件，剩余等待下轮转存",
+                        evidence={"new_count": len(unique_paths), "remaining": int(remaining_due_to_cap or 0)},
+                        sid=sid,
+                        subscription_level=True,
+                    ),
+                }, candidate_diags=candidate_diags, entry=last_entry)
+            return self._pack_transfer_result_v209({
+                "success": True, "handled": True, "completed": completed_subscription,
+                "message": (f"转存成功，本次新增 {len(unique_paths)} 个文件；订阅已完成并移入历史" if completed_subscription else f"增量转存成功，本次新增 {len(unique_paths)} 个文件"),
+                "new_count": len(unique_paths), "target_path": target_path, "remaining": remaining_due_to_cap,
+            }, candidate_diags=candidate_diags, entry=last_entry)
 
         if valid_route_match and not errors and (synchronized_match or not attempted_new):
             if self._finish_subscription_if_complete(subscribe, channel_state=channel_state):
-                return {"success": True, "handled": True, "completed": True, "message": "目标剧集已全部完成，订阅已移入历史"}
+                return self._pack_transfer_result_v209({
+                    "success": True, "handled": True, "completed": True,
+                    "message": "目标剧集已全部完成，订阅已移入历史",
+                    "diag": make_diag(state="SUCCESS", reason_code="SUBSCRIPTION_COMPLETED", stage="COMPLETION", message="目标剧集已全部完成，订阅已移入历史", sid=sid),
+                }, candidate_diags=candidate_diags, entry=last_entry)
             done, total, lack = self._subscription_episode_progress(subscribe)
             self._plugin_log("INFO", "【光鸭转存助手】【去重】#%s %s 所有有效匹配均无新增；订阅进度 %s/%s，剩余 %s；固定转存路线不触发重复下载", sid, getattr(subscribe, "name", ""), done, total, lack)
-            return {"success": True, "handled": True, "already": True, "message": f"已同步，无新增资源；进度 {done}/{total}，剩余 {lack}" if total else "已同步，无新增资源"}
+            msg = f"已同步，无新增资源；进度 {done}/{total}，剩余 {lack}" if total else "已同步，无新增资源"
+            # Prefer existing-episode skip when candidate diags already said so.
+            return self._pack_transfer_result_v209({
+                "success": True, "handled": True, "already": True, "message": msg,
+            }, candidate_diags=candidate_diags, entry=last_entry)
 
         if pending_verification and not errors:
             self._plugin_log("INFO", 
                 "【光鸭转存助手】【落盘确认】#%s %s 已有转存任务等待目标文件确认；本轮不重复提交、不触发失败通知",
                 sid, getattr(subscribe, "name", ""),
             )
-            return {
+            return self._pack_transfer_result_v209({
                 "success": True, "handled": True, "pending": True,
                 "message": "转存任务已提交，等待目标文件落盘确认；不会重复提交",
-            }
+                "diag": make_diag(
+                    state="PENDING",
+                    reason_code="REMOTE_TASK_PENDING",
+                    stage="REMOTE_VERIFY",
+                    message="转存任务已提交，等待目标文件落盘确认；不会重复提交",
+                    sid=sid,
+                ),
+            }, candidate_diags=candidate_diags, entry=last_entry)
 
         final_message = "；".join(dict.fromkeys(errors))[:1200] or "匹配分享均不可用"
         self._plugin_log("WARNING", "【光鸭转存助手】【失败】#%s %s 转存未完成：%s；固定转存路线不触发原生下载", sid, getattr(subscribe, "name", ""), final_message)
@@ -3014,7 +3421,9 @@ class GuangYaTransferAssistant(_PluginBase):
                         self._plugin_log("INFO", "【光鸭转存助手】【通知】已发送转存失败通知：#%s %s（相同错误 6 小时内不重复推送）", sid, getattr(subscribe, "name", ""))
                     except Exception as err:
                         self._plugin_log("WARNING", "【光鸭转存助手】【通知】发送失败通知异常：%s", err)
-        return {"success": False, "handled": True, "message": final_message}
+        return self._pack_transfer_result_v209({
+            "success": False, "handled": True, "message": final_message,
+        }, candidate_diags=candidate_diags, entry=last_entry)
 
     def _target_path(self, subscribe: Any) -> str:
         base = _normalize_config_path(self._save_path, "/")

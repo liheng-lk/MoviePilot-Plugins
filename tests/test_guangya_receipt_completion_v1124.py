@@ -20,6 +20,7 @@ class GuangYaReceiptCompletionV1124Tests(unittest.TestCase):
         class_head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
         mixins = [line.strip().rstrip(",") for line in class_head.splitlines() if line.strip()]
         self.assertEqual(mixins[:15], [
+            "GuangYaFoundationOpsV209Mixin",
             "GuangYaCalendarDrivenV209Mixin",
             "GuangYaPowSingleflightV209Mixin",
             "GuangYaProductionSafetyV208Mixin",
@@ -34,7 +35,6 @@ class GuangYaReceiptCompletionV1124Tests(unittest.TestCase):
             "GuangYaMediaIdentityGuardV1111Mixin",
             "GuangYaReleaseV1110Mixin",
             "GuangYaEpisodeFenceFinalV1124Mixin",
-            "GuangYaReceiptCompletionV1124Mixin",
         ])
         self.assertEqual(
             mixins.index("GuangYaReceiptCompletionV1124Mixin"),

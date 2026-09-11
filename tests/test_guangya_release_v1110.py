@@ -21,6 +21,7 @@ class GuangYaReleaseV1110Tests(unittest.TestCase):
         head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
         mixins = [line.strip().rstrip(",") for line in head.splitlines() if line.strip()]
         self.assertEqual(mixins[:15], [
+            "GuangYaFoundationOpsV209Mixin",
             "GuangYaCalendarDrivenV209Mixin",
             "GuangYaPowSingleflightV209Mixin",
             "GuangYaProductionSafetyV208Mixin",
@@ -35,7 +36,6 @@ class GuangYaReleaseV1110Tests(unittest.TestCase):
             "GuangYaMediaIdentityGuardV1111Mixin",
             "GuangYaReleaseV1110Mixin",
             "GuangYaEpisodeFenceFinalV1124Mixin",
-            "GuangYaReceiptCompletionV1124Mixin",
         ])
         self.assertIn("GuangYaReleaseV1110Mixin", ENTRY)
         self.assertIn("plugin_version = ", ENTRY)

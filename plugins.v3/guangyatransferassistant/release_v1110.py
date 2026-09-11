@@ -16,6 +16,8 @@ from apscheduler.triggers.cron import CronTrigger
 from app.chain.media import MediaChain
 from app.schemas.types import MediaSource, MediaType
 
+from .media_source_v209 import is_tmdb_source
+
 
 class GuangYaReleaseV1110Mixin:
     """v1.11.0 更新日历 + 每日全员补漏。"""
@@ -72,8 +74,7 @@ class GuangYaReleaseV1110Mixin:
         direct = getattr(subscribe, "tmdbid", None) or getattr(subscribe, "tmdb_id", None)
         if direct not in (None, ""):
             return str(direct)
-        source = str(getattr(getattr(subscribe, "media_source", None), "value", getattr(subscribe, "media_source", "")) or "").lower()
-        if "tmdb" not in source and "themoviedb" not in source:
+        if not is_tmdb_source(getattr(subscribe, "media_source", None)):
             return ""
         media_id = getattr(subscribe, "mediaid", None) or getattr(subscribe, "media_id", None)
         return str(media_id or "").strip()

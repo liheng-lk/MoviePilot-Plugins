@@ -24,7 +24,8 @@ CORE = (PLUGIN / "core_pipeline_v11214.py").read_text(encoding="utf-8")
 def test_r92_mro_owns_recognition_cache():
     assert "GuangYaProductionSafetyV208Mixin" in ENTRY
     head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
-    assert head.strip().splitlines()[0].strip().rstrip(",") == "GuangYaCalendarDrivenV209Mixin"
+    assert head.strip().splitlines()[0].strip().rstrip(",") == "GuangYaFoundationOpsV209Mixin"
+    assert "GuangYaCalendarDrivenV209Mixin" in head
     assert "GuangYaProductionSafetyV208Mixin" in head
     assert "_recognize_media_cached_v208" in SAFETY
     assert "_recognize_by_meta_cached_v208" in SAFETY
@@ -43,6 +44,14 @@ def _load_safety_mixin(media_chain_cls):
     cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "GuangYaProductionSafetyV208Mixin")
     module = ast.Module(body=[cls], type_ignores=[])
     ast.fix_missing_locations(module)
+    import importlib.util
+    ms_spec = importlib.util.spec_from_file_location(
+        "media_source_v209_for_gap",
+        PLUGIN / "media_source_v209.py",
+    )
+    ms_mod = importlib.util.module_from_spec(ms_spec)
+    assert ms_spec and ms_spec.loader
+    ms_spec.loader.exec_module(ms_mod)
     ns: Dict[str, Any] = {
         "Any": Any,
         "Dict": Dict,
@@ -53,6 +62,8 @@ def _load_safety_mixin(media_chain_cls):
         "threading": __import__("threading"),
         "time": __import__("time"),
         "MediaChain": media_chain_cls,
+        "is_tmdb_source": ms_mod.is_tmdb_source,
+        "normalize_media_source_token": ms_mod.normalize_media_source_token,
     }
     exec(compile(module, "<safety_v208_gap>", "exec"), ns)
     return ns["GuangYaProductionSafetyV208Mixin"]
@@ -251,8 +262,15 @@ def test_external_recall_channel_guard_to_dispatch_force_once():
     plugin._notify = True
     plugin._route_source_mode_value_v1115 = lambda: "channel_event"
     plugin._plugin_log = lambda *a, **k: None
-    plugin._queue_async_route_check = obj._queue_async_route_check.__get__(plugin, Combined)
-    plugin._enqueue_external_recall_v208 = obj._enqueue_external_recall_v208.__get__(plugin, Combined)
+
+    def queue_async_route_check(sids, trigger=""):
+        calls["queue"] = calls.get("queue", 0) + 1
+        plugin.queued = list(sids)
+        plugin.trigger = trigger
+
+    plugin._queue_async_route_check = queue_async_route_check
+    # Bind production enqueue from the safety class unbound function.
+    plugin._enqueue_external_recall_v208 = obj.__class__._enqueue_external_recall_v208.__get__(plugin, Combined)
     plugin._external_recall_lock_v208 = obj._external_recall_lock_v208
     plugin._external_recall_pending_v208 = obj._external_recall_pending_v208
     plugin._external_recall_dedup_seconds_v208 = obj._external_recall_dedup_seconds_v208
@@ -263,6 +281,7 @@ def test_external_recall_channel_guard_to_dispatch_force_once():
         assert plugin._dispatch_provider_candidate(sub, {10}) is None
     assert calls.get("queue") == 1
     assert "外部补搜" in getattr(plugin, "trigger", "")
+    assert 90 in list(getattr(plugin, "queued", []) or [])
 
     # production dispatch trigger
     dispatch_tree = ast.parse(DISPATCH)

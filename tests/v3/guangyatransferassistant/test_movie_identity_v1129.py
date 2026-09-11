@@ -44,6 +44,16 @@ def _mixin_class(fake_media_chain):
         "GuangYaEmptyDirGuardV11218Mixin": type("_EmptyDirGuardBase", (), {}),
         "GuangYaManualCheckV11211Mixin": _XunleiFenceBase,
     }
+    import importlib.util
+    ms_spec = importlib.util.spec_from_file_location(
+        "media_source_v209_for_movie_identity",
+        PLUGIN / "media_source_v209.py",
+    )
+    ms_mod = importlib.util.module_from_spec(ms_spec)
+    assert ms_spec and ms_spec.loader
+    ms_spec.loader.exec_module(ms_mod)
+    ns["is_tmdb_source"] = ms_mod.is_tmdb_source
+    ns["normalize_media_source_token"] = ms_mod.normalize_media_source_token
     exec(compile(module, str(PATCH), "exec"), ns)
     return ns["GuangYaMovieIdentityV1129Mixin"]
 
