@@ -1021,3 +1021,62 @@ def test_final_chain_direct_gying_magnet_ed2k_one_airing_due():
     row = plugin._source_store()["items"]["bad_super"]
     assert row.get("state") == "new"
     assert row.get("enabled") is True
+
+
+
+def test_user_journey_page_check_missing_final_mro_is_channel_then_external_same_run():
+    """真实 Final Plugin MRO：状态页立即检查必须经过最终 dispatch，再进入统一人工完整链。"""
+    plugin = make_final_plugin()
+    sid = 990777
+    sub = _tv(id=sid, name="用户旅程测试剧", media_id=str(sid), tmdbid=sid)
+
+    plugin._enabled = True
+    plugin._selected_subscriptions = [sid]
+    plugin._selected_subscription_ids = [sid]
+    plugin._managed_subscription_ids = [sid]
+    plugin._inspect_cache = {}
+    plugin._runtime_is_current = lambda: True
+    plugin._find_subscription = lambda value: sub if int(value or 0) == sid else None
+    plugin._is_guangya_route = lambda subscribe: int(getattr(subscribe, "id", 0) or 0) == sid
+    plugin._is_movie_subscription = lambda subscribe: False
+    plugin._hydrate_channel_index_for_subscription_v1115 = lambda subscribe: None
+
+    events: List[Any] = []
+    gap = {5, 7}
+    plugin.refresh_channels = lambda force=False: events.append(("refresh", bool(force))) or []
+
+    def fake_transfer(subscribe, force=False, refresh_channel=False):
+        mode = plugin._route_source_mode_value_v1115()
+        events.append(("transfer", mode, bool(force), bool(refresh_channel), sorted(gap)))
+        if mode == "channel_event":
+            # 模拟频道先覆盖 E05；剩余 E07 必须在同一次人工操作中继续外部补搜。
+            gap.discard(5)
+            return {"success": True, "handled": True, "message": "频道覆盖 E05"}
+        if mode == "airing_pull":
+            gap.clear()
+            return {"success": True, "handled": True, "message": "外部链覆盖 E07"}
+        raise AssertionError(f"unexpected route mode: {mode}")
+
+    plugin._try_transfer_subscription = fake_transfer
+    plugin._uncovered_missing_v1125 = lambda subscribe: set(gap)
+    plugin._record_route_health = lambda **kwargs: events.append(("health", dict(kwargs)))
+    plugin._now_text = lambda: "2026-09-12 00:00:00"
+
+    logs: List[str] = []
+    plugin._plugin_log = lambda level, msg, *args: logs.append(
+        (str(msg) % args) if args else str(msg)
+    )
+
+    # 从最终 MRO authority 进入，而不是直接调用 ManualCheck mixin。
+    plugin._run_dispatch_trigger_v1125([sid], "状态页立即检查缺集")
+
+    assert events[0] == ("refresh", True)
+    transfers = [row for row in events if row[0] == "transfer"]
+    assert transfers == [
+        ("transfer", "channel_event", False, False, [5, 7]),
+        ("transfer", "airing_pull", True, False, [7]),
+    ]
+    assert gap == set()
+    assert any("先强刷频道" in row for row in logs)
+    assert any("观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K" in row for row in logs)
+    assert any(row[0] == "health" and row[1].get("last_manual_full_check_ids") == [sid] for row in events)
