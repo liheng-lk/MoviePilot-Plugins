@@ -43,7 +43,7 @@ def test_v1121_past_scheduled_episode_is_not_searched_on_wrong_weekday():
 
 
 def test_v1121_infers_weekly_release_day_only_from_stable_history():
-    pattern = GATE[IMPL.index("def _weekly_pattern_v1121"):IMPL.index("def _scheduled_rows_v1121")]
+    pattern = GATE[GATE.index("def _weekly_pattern_v1121"):GATE.index("def _scheduled_rows_v1121")]
     assert "Counter(day.weekday()" in pattern
     assert "_weekday_sample_limit_v1121 = 16" in GATE
     assert "_weekday_confidence_min_v1121 = 0.60" in GATE
@@ -52,7 +52,7 @@ def test_v1121_infers_weekly_release_day_only_from_stable_history():
 
 
 def test_v1121_unscheduled_gap_only_runs_on_inferred_weekday():
-    legacy_gate = GATE[IMPL.index("def _airing_gate_v1120"):IMPL.index("def _poster_v1121")]
+    legacy_gate = GATE[GATE.index("def _airing_gate_base_v1121"):GATE.index("def _poster_v1121")]
     assert "int(inferred_weekday) == today.weekday()" in legacy_gate
     assert "fallback_episode = min(unscheduled)" in legacy_gate
     assert "due.add(fallback_episode)" in legacy_gate
@@ -63,7 +63,7 @@ def test_v1121_unscheduled_gap_only_runs_on_inferred_weekday():
 
 
 def test_v1121_week_view_has_seven_days_status_and_posters():
-    snapshot = GATE[IMPL.index("def _weekly_calendar_snapshot_v1121"):IMPL.index("def _legacy_calendar_card_v1121")]
+    snapshot = GATE[GATE.index("def _weekly_calendar_snapshot_base_v1121"):GATE.index("def _legacy_calendar_card_v1121")]
     assert "for index in range(7)" in snapshot
     assert '"poster": poster' in snapshot
     assert '"movie_count": len(movies)' in snapshot
@@ -147,7 +147,7 @@ def test_v1122_new_subscription_cache_miss_repairs_channel_once_before_viewing()
 
 
 def test_v1121_page_matches_calendar_card_product_direction():
-    page = GATE[IMPL.index("def _weekly_page_v1121"):]
+    page = GATE[GATE.index("def _weekly_page_base_v1121"):GATE.index("def get_page", GATE.index("def _weekly_page_base_v1121"))]
     for token in (
         '"追剧日历"', '"本周更新"', '"今日更新"', '"已入库"', '"待补"', '"电影待匹配"', '"VRow"',
     ):
