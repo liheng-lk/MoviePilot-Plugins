@@ -10,7 +10,6 @@ BROWSER = PLUGIN / "gying_browser_v1112.py"
 FALLBACK = PLUGIN / "gying_fallback_reuse_v1113.py"
 RUNTIME_FIX = PLUGIN / "runtime_fix_v1113.py"
 GOV = PLUGIN / "governance_v1114.py"
-FINAL = PLUGIN / "xunlei_final_v1114.py"
 CHANNEL = PLUGIN / "channel_event_v1115.py"
 CURSOR = PLUGIN / "channel_cursor_event_v1115.py"
 CONTROL = PLUGIN / "console_control_v1116.py"
@@ -21,7 +20,6 @@ browser_text = BROWSER.read_text(encoding="utf-8")
 fallback_text = FALLBACK.read_text(encoding="utf-8")
 runtime_fix_text = RUNTIME_FIX.read_text(encoding="utf-8")
 gov_text = GOV.read_text(encoding="utf-8")
-final_text = FINAL.read_text(encoding="utf-8")
 channel_text = CHANNEL.read_text(encoding="utf-8")
 cursor_text = CURSOR.read_text(encoding="utf-8")
 control_text = CONTROL.read_text(encoding="utf-8")
@@ -34,7 +32,6 @@ def test_v1112_browser_files_parse():
         (FALLBACK, fallback_text),
         (RUNTIME_FIX, runtime_fix_text),
         (GOV, gov_text),
-        (FINAL, final_text),
         (CHANNEL, channel_text),
         (CURSOR, cursor_text),
         (CONTROL, control_text),
@@ -121,8 +118,8 @@ def test_ui_chain_retains_current_channel_console_and_gying_layers():
     assert "class GuangYaGyingUiV1109Mixin(GuangYaConsoleControlV1116Mixin):" in ui_text
     assert "GuangYaChannelCursorEventV1115Mixin" in control_text
     assert "class GuangYaChannelCursorEventV1115Mixin(GuangYaChannelEventV1115Mixin):" in cursor_text
-    assert "class GuangYaChannelEventV1115Mixin(GuangYaXunleiFinalV1114Mixin):" in channel_text
-    assert "class GuangYaXunleiFinalV1114Mixin(GuangYaGovernanceV1114Mixin):" in final_text
+    assert "class GuangYaChannelEventV1115Mixin(GuangYaGovernanceV1114Mixin):" in channel_text
+    assert "Consolidated final Xunlei boundary" in gov_text
     assert "class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin):" in gov_text
     assert "class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin):" in runtime_fix_text
     assert "class GuangYaGyingFallbackReuseV1113Mixin(GuangYaGyingBrowserV1112Mixin):" in fallback_text
