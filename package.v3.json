@@ -92,15 +92,16 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "Controlled Real-World Beta：Episode Runtime Architecture + Final Plugin Direct→GYING→Magnet→ED2K 链。建议小范围实机验证。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+    "description": "Controlled Real-World Beta：r97 可用性加固，修复云添加完成待核验卡死、后台 worker 异常恢复与状态页核验语义。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
     "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,缺集,追更,频道标题清洗,剧集名季集命名,订阅日历",
-    "version": "2.0.12",
+    "version": "2.0.13",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "release": true,
     "history": {
+      "v2.0.13": "r97 Usability Hardening（Controlled Real-World Beta）：修复 cloudcollection 远端 completed 但 fileName/正片回执不足时永久 waiting/占用 Episode claim；引入 20 分钟远端核验窗口，超时转 needs_review 并释放后续候选；媒体库已满足目标时仅停止重复占位并标记 library_satisfied_unattributed，不把 Emby 观察伪造成来源成功；daemon source worker 异常写回可恢复状态，已有 taskId 只恢复轮询禁止重复建任务；未验证完成不再污染 completed 健康指标；状态页明确展示“远端任务已完成，正在核验正片”及等待时长；修复 final-plugin E2E 对 pytest 的隐式依赖。完整 CI 1058 GuangYa contract tests 通过。",
       "v2.0.12": "r96 Episode Runtime Hotfix（Controlled Real-World Beta）：Library observation≠transfer receipt；AiringDue cycle context 保证同轮 Emby≤1 / MP resolve≤1；ED2K no-subfiles 单文件 ambiguous 清除并可 create_task；Direct 部分 pending 后同轮继续 GYING Magnet/ED2K；GYING search singleflight + 真实 run_id；runtime init ready 门禁；Final Plugin E2E 证明 Direct E05→Magnet E07→ED2K E09。仍建议小范围实机验证。非 Stable Release。",
       "v2.0.11": "r95 Episode Integrity Beta（Controlled Real-World Beta / 剧集完整性实机验证版）：电视剧补集改为结合 Emby 实际媒体库状态；修复历史缺集可能因 MoviePilot note/missing 被永久跳过；新增统一 Episode Target Resolver；已播但 Emby 实际缺失的剧集重新进入补集目标；未来未播集继续保护；remote success 后增加 pending library confirmation 避免重复任务；TV 完成前 fresh Emby 实际完整性确认；修复 Auto GYING 主动检索选择链；修复 Magnet/ED2K real fileIndex 与纯字幕保护；增强剧集目标/资源选择/远端完成/Emby 入库诊断日志。仍需实机验证 Resolver 长期稳定性、Emby 扫描延迟、PanSou 并发、Magnet/ED2K 落盘与 diagnostics 完整性。非 Stable Release。",
       "v2.0.10": "r94 Controlled Real-World Beta（实机验证测试版）：冻结已审 2.0.9-r93 业务基线并开放小范围实机验证。重点验证：MP 原生日历驱动匹配、频道 Raw HTML Resource Inbox、隐藏分享链接识别、GuangYa/Xunlei/Magnet/ED2K 多来源、媒体库预检查、TMDB 强身份、Episode Fence、managed subscription 原生搜索隔离、Resource Trace、结构化失败原因、批次汇总、多来源候选聚合与诊断跟踪。建议先 5~10 个 managed subscriptions 小范围验证，确认无错媒体/错季/重复转存后再扩大。已知待观察（非 blocker）：episode attempt backoff 生产行为、21:00 reconcile 与 external recall 顺序、TGM channel source label 状态区分。欢迎反馈运行日志。非 Stable Release。",
