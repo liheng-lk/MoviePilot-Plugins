@@ -61,7 +61,7 @@ complete or keep missing
 - `episode_target_v210.py`：唯一剧集目标计算入口。
 - `episode_runtime_v211.py`：同一运行周期内的 Emby / MP snapshot 复用。
 - `calendar_driven_v209.py`：日历 due / future 事实。
-- `episode_fence_final_v1124.py`：最终集号边界兼容层，后续目标是并入单一 fence authority。
+- `episode_fence_v1124.py`：跨来源集级终止、在途 reservation、云添加实时裁剪的单一 Fence Authority。
 
 核心不变量：
 
@@ -75,7 +75,7 @@ complete or keep missing
 - `manual_check_v11211.py`：人工完整链。
 - `channel_event_v1115.py`：被动频道 push / 缓存 tick。
 - `channel_reconcile_v11215.py`：频道缓存补偿、新订阅预热。
-- `airing_scheduler_v1120.py` / `airing_weekly_v1121.py`：主动追更调度。
+- `airing_scheduler_v1120.py`：主动追更时钟与 due 执行。\n- `airing_weekly_v1121.py`：星期门禁、周视图和频道后观影防饿死；旧 impl wrapper 已合并。
 
 禁止在来源模块中自行创建第二套 scheduler。
 
