@@ -324,8 +324,8 @@ def test_external_recall_channel_guard_to_dispatch_force_once():
 def test_external_recall_skipped_when_second_local_candidate_succeeds_marker():
     """本地仍有成功候选时不应把“成功”路径误当成 exhausted；guard 只在 uncovered 调用。"""
     # 源码契约：guard 仅在 channel_event 且被上层因 uncovered 调用时 enqueue
-    assert "local_candidates_exhausted" in GUARD
-    assert "_enqueue_external_recall_v208" in GUARD
+    assert "local_candidates_exhausted" in CURSOR
+    assert "_enqueue_external_recall_v208" in CURSOR
 
 
 def test_ordinary_airing_due_not_forced_by_external_recall():
