@@ -326,7 +326,7 @@ def test_l_calendar_fallback_prefers_library_missing():
 
 
 def test_m_core_xunlei_no_hard_intersection():
-    core = (PLUGIN / "core_pipeline_final_v11214.py").read_text(encoding="utf-8")
+    core = (PLUGIN / "core_pipeline_v11214.py").read_text(encoding="utf-8")
     xunlei = (PLUGIN / "xunlei_existing_fence_v11213.py").read_text(encoding="utf-8")
     assert "library_missing.intersection" not in core
     assert "library_missing.intersection(logical_missing)" not in xunlei
