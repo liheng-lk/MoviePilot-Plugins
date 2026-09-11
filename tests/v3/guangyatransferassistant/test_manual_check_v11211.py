@@ -191,3 +191,24 @@ def test_gycheck_command_ack_explains_channel_zero_does_not_stop_viewing():
     assert "频道为 0 不会停止后续观影检索" in text
     assert "观影迅雷秒传 → 光鸭直接转存 → Magnet → ED2K" in text
     assert "绕过自动外部检索冷却" in text
+
+def test_status_page_check_missing_uses_same_forced_full_chain_as_gycheck():
+    probe = _Probe()
+    probe._run_dispatch_trigger_v1125([210], "状态页立即检查缺集")
+    assert probe.refreshes == [True]
+    assert probe.mode_batches == [
+        ([210], "人工立即检查·频道阶段", "channel_event", False),
+        ([210], "人工立即检查·完整资源链", "airing_pull", True),
+    ]
+    assert any("收到人工立即检查" in row[1] for row in probe.logs)
+    assert not any("v1.12.11" in row[1] for row in probe.logs)
+
+
+def test_manual_trigger_recognizes_chat_page_and_internal_manual_names_only():
+    probe = _Probe()
+    helper = probe._manual_full_chain_trigger_v11211
+    assert helper("消息立即检查·完整资源链") is True
+    assert helper("状态页立即检查缺集") is True
+    assert helper("人工立即检查·完整资源链") is True
+    assert helper("观影定时轮询") is False
+    assert helper("状态页复查待落盘") is False
