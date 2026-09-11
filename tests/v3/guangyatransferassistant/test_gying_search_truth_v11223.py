@@ -253,10 +253,10 @@ def test_v11223_release_metadata_and_runtime_order_are_consistent():
     package = json.loads(PACKAGE_JSON.read_text(encoding="utf-8"))["GuangYaTransferAssistant"]
     doc = RELEASE_DOC.read_text(encoding="utf-8")
 
-    assert plugin["version"] == package["version"] == "2.0.12"
+    assert plugin["version"] == package["version"] == "2.0.13"
     assert "v2.0.8" in package["history"]
     assert "v2.0.9" in package["history"]
-    assert 'plugin_version = "2.0.12"' in entry
+    assert 'plugin_version = "2.0.13"' in entry
     assert "from .gying_search_truth_v11223 import GuangYaGyingSearchTruthV11223Mixin" in entry
     start = entry.index("class GuangYaTransferAssistant(")
     assert entry.index("GuangYaGyingObservabilityV1104Mixin,", start) < entry.index(
