@@ -7,7 +7,7 @@ MULTI = (ROOT / "plugins.v3" / "guangyatransferassistant" / "multisource_v180.py
 
 
 def test_create_task_persists_guangya_task_id():
-    block = MULTI.split("    def _submit_offline_source(", 1)[1].split("    def _retry_offline_task(", 1)[0]
+    block = MULTI.split("    def _submit_offline_source_base_v180(", 1)[1].split("    def _retry_offline_task(", 1)[0]
     assert 'data.get("taskId")' in block
     assert 'task_id=task_id' in block
     assert 'state="submitted"' in block
@@ -15,7 +15,7 @@ def test_create_task_persists_guangya_task_id():
 
 
 def test_native_status_mapping_is_explicit():
-    block = MULTI.split("    def _poll_offline_source(", 1)[1].split("    # ------------------------------------------------------------------\n    # 调度与 API", 1)[0]
+    block = MULTI.split("    def _poll_offline_source_base_v180(", 1)[1].split("    # ------------------------------------------------------------------\n    # 调度与 API", 1)[0]
     assert "if status == 2:" in block
     # Verified remote video may set completed; unverified stays waiting/PENDING_VERIFY.
     assert 'completed_state = "completed" if verified else "waiting"' in block or 'state="completed"' in block
@@ -28,7 +28,7 @@ def test_native_status_mapping_is_explicit():
 
 def test_resolved_file_indexes_are_forwarded_to_guangya_not_local_downloader():
     select = MULTI.split("    def _select_offline_file_indexes(", 1)[1].split("    def _resolve_offline_source(", 1)[0]
-    submit = MULTI.split("    def _submit_offline_source(", 1)[1].split("    def _retry_offline_task(", 1)[0]
+    submit = MULTI.split("    def _submit_offline_source_base_v180(", 1)[1].split("    def _retry_offline_task(", 1)[0]
     assert "_is_video" in select and "_is_subtitle" in select
     assert "_subscription_missing_episodes" in select
     assert 'payload["fileIndexes"] = resolved["selected_indexes"]' in submit
@@ -44,3 +44,13 @@ def test_no_native_downloader_submission_symbols_in_multisource_layer():
         "transmission.",
     ):
         assert forbidden not in MULTI, forbidden
+
+
+def test_consolidated_safety_wrapper_preserves_structured_failure_reason():
+    safety = MULTI.rsplit("    def _poll_offline_source(", 1)[1].split(
+        "    @staticmethod\n    def _source_public_view",
+        1,
+    )[0]
+    assert "**dict(result)" in safety
+    assert '"data": updated' in safety
+    assert "reason" not in safety or "**dict(result)" in safety
