@@ -29,10 +29,10 @@ from typing import Any, Dict, Iterable, List, Set, Tuple
 
 from . import legacy as _legacy_module
 from .channel_event_v1115 import _entry_key_v1115
-from .core_pipeline_final_v11214 import GuangYaCorePipelineFinalV11214Mixin
+from .core_pipeline_v11214 import GuangYaCorePipelineV11214Mixin
 
 
-class GuangYaChannelReconcileV11215Mixin(GuangYaCorePipelineFinalV11214Mixin):
+class GuangYaChannelReconcileV11215Mixin(GuangYaCorePipelineV11214Mixin):
     """让“频道已有资源”成为可恢复事实，并保证新订阅先预热频道再匹配。"""
 
     plugin_version = "1.12.15"
