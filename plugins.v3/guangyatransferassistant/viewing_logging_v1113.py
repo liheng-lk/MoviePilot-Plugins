@@ -72,14 +72,19 @@ class GuangYaViewingLoggingV1113Mixin(
             data = result.get("data") if isinstance(result.get("data"), dict) else {}
             self._plugin_log(
                 "INFO" if bool(result.get("success")) else "WARNING",
-                "【光鸭转存助手】【原生云添加】观影任务轮询结果：source=%s task=%s state=%s progress=%s fileId=%s name=%s 信息=%s",
+                "【光鸭转存助手】【原生云添加】观影任务轮询结果：source=%s task=%s state=%s progress=%s "
+                "remote=%s rename=%s library=%s landing=%s fileId=%s name=%s 信息=%s",
                 str(source.get("id") or "-")[:40],
                 str(data.get("task_id") or source.get("task_id") or "-")[:90],
                 str(data.get("state") or "-"),
                 int(data.get("progress") or 0),
+                bool(data.get("remote_video_confirmed")),
+                str(data.get("rename_state") or "-"),
+                str(data.get("library_snapshot_state") or "-"),
+                str(data.get("landing_stage") or "-"),
                 str(data.get("file_id") or "-")[:90],
-                str(data.get("resolved_name") or data.get("requested_name") or "-")[:220],
-                str(result.get("message") or data.get("last_error") or "-")[:360],
+                str(data.get("renamed_name") or data.get("resolved_name") or data.get("requested_name") or "-")[:220],
+                str(result.get("message") or data.get("last_error") or data.get("rename_error") or "-")[:360],
             )
         return result
 
