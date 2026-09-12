@@ -115,6 +115,7 @@ _bundle_sys.meta_path.insert(0, _GuangYaBundledModuleFinder())
 
 
 import functools
+import hashlib
 import inspect
 import re
 import time
@@ -419,6 +420,16 @@ def _select_verified_new_landing(before_ids, rows, expected_name, expected_size=
 
 
 
+def _success_notice_fingerprint(title, text):
+    """Stable key for exactly-once successful acquisition notifications."""
+    normalized_title = re.sub(r"\s+", " ", str(title or "")).strip()
+    normalized_text = re.sub(r"[ \t]+", " ", str(text or ""))
+    normalized_text = re.sub(r"\n{3,}", "\n\n", normalized_text).strip()
+    raw = f"{normalized_title}\n{normalized_text}".encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:24]
+
+
+
 class GuangYaTransferAssistant(
     GuangYaFoundationOpsV209Mixin,
     GuangYaEpisodeRuntimeV211Mixin,
@@ -476,6 +487,203 @@ class GuangYaTransferAssistant(
     def _normalize_transfer_candidate(self, candidate: dict, *, origin: str = "") -> dict:
         """Normalize TG/GYING discoveries to the four supported execution routes."""
         return _normalize_unified_resource_candidate(candidate, origin=origin)
+
+    def _gying_raw_results(self, keyword: str, force: bool = False):
+        """Attach unified route evidence to every GYING resource row."""
+        rows, state = super()._gying_raw_results(keyword, force=force)
+        normalized = [
+            self._normalize_transfer_candidate(dict(row or {}), origin="gying")
+            for row in (rows or [])
+        ]
+        route_counts = {name: 0 for name in _UNIFIED_SOURCE_PRIORITY}
+        for row in normalized:
+            source_type = str(row.get("type") or "")
+            if source_type in route_counts:
+                route_counts[source_type] += 1
+        state = dict(state or {})
+        state["unified_route_counts"] = route_counts
+        state["unified_candidate_count"] = sum(route_counts.values())
+        return normalized, state
+
+    def refresh_channels(self, force: bool = False):
+        """Persist one normalized candidate matrix for Telegram channel entries."""
+        rows = [dict(row or {}) for row in (super().refresh_channels(force=force) or [])]
+        route_counts = {name: 0 for name in _UNIFIED_SOURCE_PRIORITY}
+        for entry in rows:
+            candidates = []
+            share_url = str(entry.get("share_url") or "").strip()
+            if share_url:
+                candidates.append(
+                    self._normalize_transfer_candidate(
+                        {"share_url": share_url},
+                        origin="telegram",
+                    )
+                )
+            for row in entry.get("xunlei_sources") or []:
+                candidates.append(
+                    self._normalize_transfer_candidate(
+                        dict(row or {}),
+                        origin="telegram",
+                    )
+                )
+            for row in entry.get("external_sources") or []:
+                candidates.append(
+                    self._normalize_transfer_candidate(
+                        dict(row or {}),
+                        origin="telegram",
+                    )
+                )
+            candidates = [
+                row for row in candidates
+                if str(row.get("type") or "") in _UNIFIED_TRANSFER_ROUTES
+            ]
+            candidates.sort(
+                key=lambda row: (
+                    _UNIFIED_SOURCE_PRIORITY.get(str(row.get("type") or ""), 99),
+                    str(row.get("uri") or ""),
+                )
+            )
+            entry["unified_candidates"] = candidates
+            entry["candidate_types"] = [
+                source_type
+                for source_type in ("xunlei", "guangya", "magnet", "ed2k")
+                if any(str(row.get("type") or "") == source_type for row in candidates)
+            ]
+            for row in candidates:
+                source_type = str(row.get("type") or "")
+                route_counts[source_type] += 1
+
+        try:
+            index = dict(self.get_data("channel_index") or {})
+            if index:
+                index["items"] = rows
+                index["unified_route_counts"] = route_counts
+                self.save_data("channel_index", index)
+        except Exception as err:
+            try:
+                self._plugin_log(
+                    "DEBUG",
+                    "【统一资源链】Telegram 路由证据写回失败：%s",
+                    str(err)[:180],
+                )
+            except Exception:
+                pass
+        return rows
+
+    def _notify_cloud_completed_v1113(self, source: dict, result: dict):
+        """Cloudcollection completion may notify only after remote video + final name."""
+        source_id = str((source or {}).get("id") or "")
+        current = dict(source or {})
+        try:
+            if source_id:
+                stored = dict((self._source_store().get("items") or {}).get(source_id) or {})
+                current = {**current, **stored}
+        except Exception:
+            pass
+        data = result.get("data") if isinstance(result, dict) and isinstance(result.get("data"), dict) else {}
+        current = {**current, **data}
+        if str(current.get("state") or "") == "completed":
+            if not bool(current.get("remote_video_confirmed")):
+                self._plugin_log(
+                    "WARNING",
+                    "【统一成功终态】source=%s 已标 completed 但 remote_video_confirmed=False，禁止成功通知",
+                    source_id or "-",
+                )
+                return None
+            final_name = str(
+                current.get("landing_file_name")
+                or current.get("final_name")
+                or current.get("renamed_name")
+                or current.get("requested_name")
+                or current.get("resolved_name")
+                or ""
+            ).strip()
+            if not final_name:
+                self._plugin_log(
+                    "WARNING",
+                    "【统一成功终态】source=%s 已确认正片但最终文件名为空，禁止成功通知",
+                    source_id or "-",
+                )
+                return None
+            current["final_name"] = final_name
+            if source_id:
+                try:
+                    self._update_source(source_id, final_name=final_name)
+                except Exception:
+                    pass
+            result = {**dict(result or {}), "data": current}
+        return super()._notify_cloud_completed_v1113(source, result)
+
+    def _rename_restored_media_v11224(self, subscribe: Any, save_path: str, items):
+        """Mirror inherited share rename receipts into one final naming receipt."""
+        renamed = super()._rename_restored_media_v11224(subscribe, save_path, items)
+        video_items = []
+        final_names = []
+        pending = []
+        for item in items or []:
+            path = str(
+                (item or {}).get("effective_path")
+                or (item or {}).get("relative_path")
+                or (item or {}).get("name")
+                or ""
+            )
+            if not re.search(r"(?i)\.(?:mkv|mp4|ts|m2ts|mts|avi|mov|wmv|flv|webm|iso|rmvb|m4v|mpg|mpeg|vob)$", path):
+                continue
+            video_items.append(item)
+            final_name = str((item or {}).get("final_name_v200") or "").strip()
+            if final_name:
+                final_names.append(final_name)
+            if not bool((item or {}).get("rename_verified_v200")):
+                old_name = path.replace("\\", "/").rsplit("/", 1)[-1]
+                desired = self._canonical_transfer_name_v11226(subscribe, path)
+                if desired and desired != old_name:
+                    pending.append(desired)
+                elif desired:
+                    final_names.append(desired)
+        self._share_naming_receipt_v200 = {
+            "verified": not pending,
+            "video_count": len(video_items),
+            "renamed": int(renamed or 0),
+            "final_names": list(dict.fromkeys(final_names)),
+            "pending_names": list(dict.fromkeys(pending)),
+        }
+        return renamed
+
+    def _restore_items(self, probe: dict, save_path: str, items: list, job_key: str = "") -> dict:
+        """A GuangYa share is successful only after its final MP-priority name is confirmed."""
+        self._share_naming_receipt_v200 = None
+        result = dict(super()._restore_items(probe, save_path, items, job_key=job_key) or {})
+        completed = list(result.get("completed_items") or [])
+        video_completed = [
+            row for row in completed
+            if re.search(
+                r"(?i)\.(?:mkv|mp4|ts|m2ts|mts|avi|mov|wmv|flv|webm|iso|rmvb|m4v|mpg|mpeg|vob)$",
+                str(
+                    (row or {}).get("effective_path")
+                    or (row or {}).get("relative_path")
+                    or (row or {}).get("name")
+                    or ""
+                ),
+            )
+        ]
+        if not video_completed:
+            return result
+        receipt = dict(getattr(self, "_share_naming_receipt_v200", None) or {})
+        naming_verified = bool(receipt.get("verified"))
+        result["naming_verified"] = naming_verified
+        result["final_names"] = list(receipt.get("final_names") or [])
+        if not naming_verified:
+            result.update({
+                "success": False,
+                "pending_verification": True,
+                "stage": "rename_verify",
+                "reason": "RENAME_VERIFY_PENDING",
+                "message": (
+                    "转存文件已落盘，但最终文件名尚未确认；"
+                    "暂不记成功、不发送成功通知，等待下一轮复核"
+                ),
+            })
+        return result
 
     def _canonical_transfer_name_v11226(self, subscribe: Any, original: Any) -> str:
         """MP identity first; preserve source technical tags for every transfer path."""
@@ -664,7 +872,7 @@ class GuangYaTransferAssistant(
         return result
 
     plugin_version = "2.1.0"
-    build_id = "20260912-r98"
+    build_id = "20260912-r99"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
@@ -697,7 +905,57 @@ class GuangYaTransferAssistant(
             return None
         if title == "⚠️ 光鸭转存失败" and kwargs.get("text"):
             kwargs["text"] = collapse_unparsed_failure_notice(kwargs.get("text"))
-        return super().post_message(*args, **kwargs)
+            text = str(kwargs.get("text") or "")
+
+        success_notice = (
+            title.startswith("✅ 光鸭")
+            or title == "⚡ 光鸭秒传成功"
+            or title == "☁️ 光鸭云添加完成"
+        )
+        receipt_key = ""
+        receipts = {}
+        already_notified = False
+        if success_notice:
+            receipt_key = _success_notice_fingerprint(title, text)
+            try:
+                receipts = dict(self.get_data("success_notice_receipts_v200") or {})
+                already_notified = bool(receipts.get(receipt_key))
+            except Exception:
+                receipts = {}
+                already_notified = False
+            if already_notified:
+                try:
+                    self._plugin_log(
+                        "INFO",
+                        "【统一成功通知】已去重：fingerprint=%s title=%s",
+                        receipt_key,
+                        title[:80],
+                    )
+                except Exception:
+                    pass
+                return None
+
+        response = super().post_message(*args, **kwargs)
+        if success_notice and receipt_key:
+            try:
+                receipts[receipt_key] = (
+                    self._now_text()
+                    if callable(getattr(self, "_now_text", None))
+                    else str(time.time())
+                )
+                if len(receipts) > 500:
+                    receipts = dict(list(receipts.items())[-500:])
+                self.save_data("success_notice_receipts_v200", receipts)
+            except Exception as err:
+                try:
+                    self._plugin_log(
+                        "WARNING",
+                        "【统一成功通知】去重回执持久化失败：%s",
+                        str(err)[:180],
+                    )
+                except Exception:
+                    pass
+        return response
 
     @eventmanager.register(EventType.PluginAction)
     def action_event_handler(self, event: Event) -> None:
