@@ -8,6 +8,12 @@ import unittest
 from concurrent.futures import Future
 from types import SimpleNamespace
 
+# MoviePilot 源码仓的 SitesHelper 是独立动态资源；官方测试引导负责安装该资源垫片、
+# 隔离 CONFIG_DIR 并建立临时数据库。这里没有伪造任何本插件依赖的 MoviePilot API。
+from app.testing.bootstrap import prepare_backend
+
+prepare_backend()
+
 from app.plugins.shukguangyadisk import GuangYaOrganizerV4, ShukGuangYaDisk
 
 
