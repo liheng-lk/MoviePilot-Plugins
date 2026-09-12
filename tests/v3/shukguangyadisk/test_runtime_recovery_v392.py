@@ -33,9 +33,9 @@ class RuntimeRecoveryV392ContractTest(unittest.TestCase):
 
     def test_moviepilot_history_is_scoped_to_current_guangya_source(self):
         orchestrator = source_text("organizer_orchestrator_v351.py")
-        marker = "def record(self: Any, event: Event, success: bool) -> None:"
+        marker = "def record(self: Any, event: Any, success: bool) -> None:"
         self.assertIn(marker, orchestrator)
-        block = orchestrator.split(marker, 1)[1].split("GuangYaOrganizerMixin._record_terminal_transfer = record", 1)[0]
+        block = orchestrator.split(marker, 1)[1].split("GuangYaRecognitionMixin._record_terminal_transfer = record", 1)[0]
         self.assertIn("_is_own_transfer_fileitem", block)
         self.assertIn("_is_monitored_path", block)
         self.assertLess(block.index("_is_own_transfer_fileitem"), block.index("original_record(self, event, success)"))
