@@ -15,9 +15,13 @@ REMOTE = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf
 
 def test_v362_legacy_cleanup_is_no_longer_every_init_hot_path():
     assert "_V362_RECHECK_SECONDS = 60.0" in CLEANUP
-    assert 'checked = bool(getattr(self, "_v362_legacy_cleanup_checked", False))' in CLEANUP
+    assert "_V362_PROCESS_LOCK_ATTR" in CLEANUP
+    assert "_V362_PROCESS_STATE_ATTR" in CLEANUP
+    assert "with _migration_runtime_lock():" in CLEANUP
+    assert 'checked = bool(shared.get("checked", False))' in CLEANUP
     assert "if checked and now_mono < next_recheck:" in CLEANUP
-    assert "本实例永久退出迁移热路径" in CLEANUP
+    assert '"next_recheck": next_recheck' in CLEANUP
+    assert "本进程其它插件实例不会重复扫描/清理全局队列" in CLEANUP
     assert "每次初始化都会重新检查" not in CLEANUP
 
 

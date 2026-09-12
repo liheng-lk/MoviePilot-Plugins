@@ -5,7 +5,7 @@ import unittest
 from source_helper import source_text
 
 
-class RuntimeRecoveryV392ContractTest(unittest.TestCase):
+class RuntimeRecoveryV393ContractTest(unittest.TestCase):
     def test_qr_errors_are_not_swallowed(self):
         client = source_text("guangya_client.py")
         legacy = source_text("_plugin_legacy.py")
@@ -40,6 +40,31 @@ class RuntimeRecoveryV392ContractTest(unittest.TestCase):
         self.assertIn("_is_monitored_path", block)
         self.assertLess(block.index("_is_own_transfer_fileitem"), block.index("original_record(self, event, success)"))
         self.assertLess(block.index("_is_monitored_path"), block.index("original_record(self, event, success)"))
+
+    def test_worker_handoff_does_not_join_under_owner_lock(self):
+        guard = source_text("organizer_worker_guard.py")
+        claim = guard.split("def _claim_isolated_runtime", 1)[1].split("def _release_isolated_runtime", 1)[0]
+        self.assertIn("worker.join(timeout=1.25)", claim)
+        self.assertIn("current_owner = _runtime_owner()", claim)
+        self.assertIn("旧实例交接完成，新实例已接管 Worker owner", claim)
+        self.assertIn('"owner_running_path"', guard)
+        self.assertIn('"owner_handoff_requested"', guard)
+        # join 必须位于第一个 owner-lock 临界区之后，避免旧 worker finally 释放 owner 时锁互等。
+        first_lock = claim.index("with _runtime_lock():")
+        join = claim.index("worker.join(timeout=1.25)")
+        second_lock = claim.index("with _runtime_lock():", first_lock + 1)
+        self.assertLess(first_lock, join)
+        self.assertLess(join, second_lock)
+
+    def test_legacy_queue_cleanup_is_process_serialized(self):
+        cleanup = source_text("organizer_legacy_queue_cleanup_v343.py")
+        self.assertIn("_V362_PROCESS_LOCK_ATTR", cleanup)
+        self.assertIn("_V362_PROCESS_STATE_ATTR", cleanup)
+        self.assertIn("def _migration_runtime_lock", cleanup)
+        self.assertIn("def _migration_runtime_state", cleanup)
+        self.assertIn("with _migration_runtime_lock():", cleanup)
+        self.assertIn('"v362_process_serialized": True', cleanup)
+        self.assertIn('shared["scope"] = scope', cleanup)
 
     def test_missing_source_resource_can_reach_terminal_queue_cleanup(self):
         hardening = source_text("organizer_hardening_v369.py")
