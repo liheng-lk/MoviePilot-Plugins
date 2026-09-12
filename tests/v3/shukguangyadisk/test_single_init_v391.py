@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
 
 
-class SingleInitV399ContractTest(unittest.TestCase):
+class SingleInitV3910ContractTest(unittest.TestCase):
     def test_runtime_has_exactly_one_physical_python_file(self):
         python_files = sorted(path.name for path in PLUGIN.glob("*.py"))
         self.assertEqual(python_files, ["__init__.py"])
@@ -112,7 +112,7 @@ class SingleInitV399ContractTest(unittest.TestCase):
 
     def test_legacy_entry_mro_and_final_monitor_are_preserved(self):
         entry = source_text("__init__.py")
-        self.assertIn('plugin_version = "3.9.9"', entry)
+        self.assertIn('plugin_version = "3.9.10"', entry)
         class_slice = entry.split("class ShukGuangYaDisk(", 1)[1].split("):", 1)[0]
         self.assertLess(
             class_slice.index("_GuangYaFinalMonitorV390Mixin"),
@@ -126,10 +126,10 @@ class SingleInitV399ContractTest(unittest.TestCase):
         local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
         package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
         remote = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf-8")
-        self.assertEqual(local["version"], "3.9.9")
-        self.assertEqual(package["version"], "3.9.9")
-        self.assertIn("v3.9.9", local["history"])
-        self.assertIn("?v=3.9.9", remote)
+        self.assertEqual(local["version"], "3.9.10")
+        self.assertEqual(package["version"], "3.9.10")
+        self.assertIn("v3.9.10", local["history"])
+        self.assertIn("?v=3.9.10", remote)
 
 
 if __name__ == "__main__":

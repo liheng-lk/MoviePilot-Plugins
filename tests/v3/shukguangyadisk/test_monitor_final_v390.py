@@ -25,7 +25,7 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
 
     def test_final_monitor_is_first_mro_and_release_is_v390(self):
         entry = ENTRY.read_text(encoding="utf-8")
-        self.assertIn('plugin_version = "3.9.9"', entry)
+        self.assertIn('plugin_version = "3.9.10"', entry)
         class_slice = entry.split("class ShukGuangYaDisk(", 1)[1].split("):", 1)[0]
         self.assertLess(class_slice.index("_GuangYaFinalMonitorV390Mixin"), class_slice.index("_GuangYaOrganizerMonitorV366Mixin"))
         self.assertIn("as _GuangYaFinalMonitorV390Mixin", entry)
@@ -99,9 +99,9 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
     def test_federation_uses_fresh_v390_chunk(self):
         remote = REMOTE.read_text(encoding="utf-8")
         page = PAGE.read_text(encoding="utf-8")
-        self.assertIn("__federation_expose_AssistantPage-v390.js?v=3.9.9", remote)
+        self.assertIn("__federation_expose_AssistantPage-v390.js?v=3.9.10", remote)
         self.assertNotIn("AssistantPage-v381.js?v=3.8.1", remote)
-        self.assertIn("整理监控控制 · v3.9.9", page)
+        self.assertIn("整理监控控制 · v3.9.10", page)
         self.assertIn("install_registration_safe", page)
 
     def test_loose_container_skips_waiting_or_terminal_members(self):
@@ -120,11 +120,32 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
         self.assertIn("continue", dispatch)
         self.assertIn('"worker_not_accept"', dispatch)
 
-    def test_watch_log_separates_created_and_refreshed_queue_rows(self):
+    def test_watch_log_separates_created_refreshed_and_state_rechecks(self):
         core = CORE.read_text(encoding="utf-8")
         self.assertIn('"refreshed": refreshed', core)
+        self.assertIn('"state_recheck": state_recheck', core)
         self.assertIn("watch_refreshed=refreshed", core)
-        self.assertIn('f"新增={queued} 刷新={refreshed} 当前持久队列={len(resource_rows)}"', core)
+        self.assertIn("watch_state_rechecks=state_rechecks", core)
+        self.assertIn("状态复核={state_rechecks}", core)
+
+    def test_unchanged_blocked_resource_is_requeued_at_its_recheck_time(self):
+        core = CORE.read_text(encoding="utf-8")
+        scan = core.split("def _scan_directory", 1)[1].split("def _watch_pulse", 1)[0]
+        self.assertIn("_blocked_recheck_at(plugin, primary)", scan)
+        self.assertIn("changed or force_resource or state_recheck", scan)
+        self.assertIn('f"{reason}:blocked-recheck"', scan)
+        self.assertIn('"next_due": max(float(blocked_recheck_at or 0), now)', scan)
+        self.assertIn('"state_recheck": "blocked"', scan)
+
+    def test_blocked_terminal_row_is_retained_until_recheck_at(self):
+        core = CORE.read_text(encoding="utf-8")
+        dispatch = core.split("def _dispatch_one", 1)[1].split("def install_watch_pipeline_v380", 1)[0]
+        self.assertIn('if int(phases.get("blocked") or 0) > 0', dispatch)
+        self.assertIn("_blocked_recheck_at(plugin", dispatch)
+        self.assertIn('"last_result": "blocked_wait"', dispatch)
+        self.assertIn('"state_recheck": "blocked"', dispatch)
+        self.assertIn("blocked>0 但 queue=0", dispatch)
+        self.assertIn("rows[path] = row", dispatch)
 
     def test_manual_full_scan_dispatches_and_wait_reason_is_visible(self):
         source = FINAL.read_text(encoding="utf-8")
@@ -136,8 +157,8 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
 
     def test_plugin_json_is_v390(self):
         data = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], "3.9.9")
-        self.assertIn("v3.9.9", data.get("history") or {})
+        self.assertEqual(data["version"], "3.9.10")
+        self.assertIn("v3.9.10", data.get("history") or {})
 
 
 if __name__ == "__main__":

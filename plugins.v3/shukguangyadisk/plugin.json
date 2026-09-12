@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
   "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
-  "version": "3.9.9",
+  "version": "3.9.10",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v3.9.10": "修复 blocked 资源静默丢失复核：watch pipeline 不再只依赖目录内容变化触发资源入队；即使目录签名完全不变，只要直属主媒体存在匹配 fingerprint 的 blocked 状态，也会按 OrganizerStateStore.recheck_at 自动重新挂回持久 resource queue。未到期仅 queue_wait，不占用 Worker；到期后重新执行 MoviePilot 历史/状态预检；新资源仍可正常调度。监控日志新增“状态复核”计数，解决 blocked>0 但当前持久队列=0 导致永不再检查的问题。",
     "v3.9.9": "修复 MoviePilot 持久失败任务的自动重试链：历史预检与原生 workflow 一致，优先使用数据库持久化 retry_count，Redis/TTLCache 断连不再让失败预算回退为 0/3；命中带 transfer_task_id 的失败历史时不再 fresh do_transfer 重新准入，而是调用 MoviePilot durable retry 复用冻结计划，避免插件升级或识别上下文变化后触发“整理源文件已按不同输入准入”；竞态下若仍撞准入冲突也优先切回 durable retry，只有无可复用任务时才 blocked。",
     "v3.9.8": "修复自动整理持久队列头阻塞：loose 泛化目录不再固定只检查第一个主视频，而是跳过 completed/blocked/stabilizing 等成员寻找首个 ready 成员；同一 heartbeat 遇到 member_wait/resource_wait/state_changed 等延迟项后继续尝试其它到期资源，仍保证最多提交一个真实 Worker；监控日志拆分显示队列新增与刷新数量，避免“变化>0但新增/刷新=0”的误导。",
     "v3.9.7": "修复 WebDAV PUT 成功后的未定义变量：上传前记录目标文件是否已存在，成功后新建返回 201、覆盖返回 204，避免成功上传后因 item 未定义抛出 NameError；新增单文件回归测试，保持 MoviePilot V3 SDK、自动整理与远端终态主链不变。",
