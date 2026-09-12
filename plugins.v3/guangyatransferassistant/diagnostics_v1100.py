@@ -1,8 +1,8 @@
-"""v1.10.0 一键完整诊断。
+"""非破坏性运行健康诊断。
 
-把资源来源、固定订阅统一搜索、观影/迅雷/光鸭秒传预检收敛为一个非破坏性入口。
-不会创建光鸭文件、上传任务或 MoviePilot 下载任务；公开结果不包含 Cookie、密码、token、
-captcha_token 等敏感值。
+只检查资源来源/观影会话、固定订阅搜索前置条件与迅雷秒传预检。
+不会搜索具体订阅资源，不创建光鸭文件、上传任务或 MoviePilot 下载任务；
+公开结果不包含 Cookie、密码、token、captcha_token 等敏感值。
 """
 
 from __future__ import annotations
@@ -169,7 +169,7 @@ class GuangYaDiagnosticsV1100Mixin:
         success = all(bool(row.get("ok")) for row in hard) if hard else True
         result = {
             "success": success,
-            "message": "完整诊断通过" if success else "完整诊断发现问题，请按 checks / issues 排查",
+            "message": "健康诊断通过" if success else "健康诊断发现问题，请按 checks / issues 排查",
             "checks": checks,
             "issues": issues[:12],
             "updated_at": self._now_text(),
