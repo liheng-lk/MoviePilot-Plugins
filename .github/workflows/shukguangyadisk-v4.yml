@@ -100,7 +100,25 @@ jobs:
           assert issubclass(ShukGuangYaDisk, GuangYaOrganizerV4)
           assert callable(ShukGuangYaDisk.get_api)
           assert callable(ShukGuangYaDisk.get_service)
-          print("MoviePilot V3 import smoke: OK")
+
+          plugin = ShukGuangYaDisk()
+          plugin.init_plugin({"enabled": False})
+          api_paths = {(row.get("path"), tuple(row.get("methods") or [])) for row in plugin.get_api()}
+          assert ("/config", ("GET",)) in api_paths
+          assert ("/organize/monitor/status", ("GET",)) in api_paths
+          assert ("/organize/monitor/graceful-stop", ("POST",)) in api_paths
+
+          modules = plugin.get_module()
+          for name in ("list_files", "upload_file", "download_file", "storage_manage", "get_folder"):
+              assert callable(modules.get(name)), name
+
+          services = plugin.get_service()
+          assert {row["id"] for row in services} == {
+              "ShukGuangYaDiskV4Bootstrap",
+              "ShukGuangYaDiskV4Monitor",
+          }
+          plugin.stop_service()
+          print("MoviePilot V3 import/init/API/module/service smoke: OK")
           PY
 
       - name: V4 runtime behavior tests
