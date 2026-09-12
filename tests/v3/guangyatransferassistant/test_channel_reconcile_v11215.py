@@ -189,12 +189,18 @@ def test_movie_cache_reconciles_only_while_movie_still_needs_pull():
     assert probe._subscriptions_for_new_channel_entries_v1115() == [1101]
 
 
-def test_reconcile_path_remains_passive_channel_event_and_never_adds_gying_calls():
+def test_reconcile_path_keeps_channel_passive_but_orchestrator_can_pull_due_gying():
     assert "_gying_" not in SOURCE
     assert "_search_viewing" not in SOURCE
+    helper = DISPATCH.split("    def _run_channel_then_due_gying_v103(", 1)[1].split("    def _run_reliability_route_batch(", 1)[0]
     dispatch = DISPATCH.split("    def _run_reliability_route_batch(", 1)[1].split("    # ------------------------------------------------------------------", 1)[0]
+    assert '"channel_event"' in helper
+    assert "_smart_pull_due_ids_v1125()" in helper
+    assert '"频道后观影补搜"' in helper
+    assert '"airing_pull"' in helper
+    assert "force=False" in helper
     assert 'if "频道新增资源" in text:' in dispatch
-    assert '"channel_event", force=False' in dispatch
+    assert "_run_channel_then_due_gying_v103" in dispatch
     xunlei = CORE.split("    def _search_viewing_xunlei(", 1)[1].split("    # ------------------------------------------------------------------", 1)[0]
     assert '== "channel_event"' in xunlei
     assert "不主动访问 GYING" in xunlei

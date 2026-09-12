@@ -258,10 +258,13 @@ def test_five_minute_tick_is_channel_only_without_disabling_other_threads_select
     assert harness._viewing_due_subscription_ids_v1115() == [1, 3, 4]
 
 
-def test_channel_worker_never_appends_post_channel_viewing_pull():
+def test_channel_worker_runs_channel_first_then_only_due_gying_fallback():
     harness = _Harness()
     harness._run_reliability_route_batch([1, 2], "频道新增资源")
-    assert harness.mode_batches == [([1, 2], "频道新增资源", "channel_event", False)]
+    assert harness.mode_batches == [
+        ([1, 2], "频道新增资源·频道阶段", "channel_event", False),
+        ([1], "频道后观影补搜", "airing_pull", False),
+    ]
     assert harness.base_batches == []
 
 

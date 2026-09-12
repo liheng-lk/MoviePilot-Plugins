@@ -83,8 +83,8 @@ def test_episode_range_recovers_season_and_full_range():
     assert meta["episode_hint"] == "S02E01-E06"
 
 
-def test_r102_dispatch_and_log_semantics_are_explicit():
+def test_r102_parser_survives_r103_dispatch_release():
     assert "【光鸭转存助手】【媒体解析】title=%s season=%s episodes=%s" in ENTRY
-    assert "【光鸭转存助手】【调度入口v2.1.4】source=manual_refresh" in ENTRY
-    assert "【光鸭转存助手】【调度入口v2.1.4】source=tick" in ENTRY
-    assert "【光鸭转存助手】【订阅调度v2.1.4】trigger=%s" in ENTRY
+    assert "【光鸭转存助手】【调度入口v2.1.5】source=manual_refresh" in ENTRY
+    assert "【光鸭转存助手】【调度入口v2.1.5】source=tick" in ENTRY
+    assert "【光鸭转存助手】【订阅调度v2.1.5】trigger=%s" in ENTRY
