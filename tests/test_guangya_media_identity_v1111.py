@@ -118,7 +118,7 @@ class GuangYaMediaIdentityV1111Tests(unittest.TestCase):
         self.assertNotIn("value in haystack", method)
 
     def test_final_provider_matcher_checks_explicit_year_and_season_conflicts(self):
-        guard = (PLUGIN / "media_identity_guard_v1111.py").read_text(encoding="utf-8")
+        guard = bundle_source("media_identity_guard_v1111")
         matcher = guard.split("    def _provider_candidate_matches(", 1)[1].split("    def _xunlei_json_identity_matches_v1123", 1)[0]
         self.assertIn("explicit_years_v1111", matcher)
         self.assertIn("explicit_seasons_v1111", matcher)
