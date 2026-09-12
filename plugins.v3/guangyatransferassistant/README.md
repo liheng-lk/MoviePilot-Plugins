@@ -1,3 +1,15 @@
+## v2.1.2-r100 — Emby 实际缺集恢复（Controlled Real-World Beta）
+
+本版修复“目标计算正确，但直接分享仍被旧完成事实拦截”的实机问题。只要同一轮已经取得 `library_state=OK`，且 Emby-first `final_target` 明确某集当前真实缺失，该集就允许绕过陈旧的 `subscribe.note`、`media_facts` 和 `transfer_inventory` 去重，再交给后续硬门禁重新验证。
+
+### 安全边界
+
+- 只对当前 `final_target` 生效，不会把整季重新开放。
+- `reservation`、source claim、`pending_library`、未来集仍在目标计算层先扣除。
+- 媒体身份、Season 范围、物理文件集号与最终缺集子集门禁继续生效。
+- processed 分享如果权威修复目标发生变化会立即重开；目标未变化仍保持去重。
+- 没有可靠 Emby 快照时不放宽任何旧去重事实，继续 fail closed。
+
 ## v2.1.1-r99 — 跨季物理文件栅栏修复（Controlled Real-World Beta）
 
 本版修复统一 Episode Resolver 的 Season 优先级错误：真实文件/目录中显式的 `Sxx` / `Season xx` 现在优先于订阅传入的 `season_hint`。例如 S03 订阅遇到 `S06E04` 时，必须识别为 S06E04，而不能再降成 S03E04。
