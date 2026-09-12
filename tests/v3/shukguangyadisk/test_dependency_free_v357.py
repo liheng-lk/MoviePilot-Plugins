@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from source_helper import load_embedded_module, single_init_plugin_path
+
 import importlib.util
 import json
 from pathlib import Path
@@ -8,15 +10,12 @@ import xml.etree.ElementTree as ET
 
 
 ROOT = Path(__file__).resolve().parents[3]
-PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
+PLUGIN = single_init_plugin_path(ROOT / "plugins.v3" / "shukguangyadisk")
 LEGACY = (PLUGIN / "guangya_client_legacy.py").read_text(encoding="utf-8")
 ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 REMOTE = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf-8")
 
-spec = importlib.util.spec_from_file_location("oss_native_v357_test", PLUGIN / "oss_native_v357.py")
-assert spec and spec.loader
-OSS = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(OSS)
+OSS = load_embedded_module("oss_native_v357.py", "oss_native_v357_test")
 
 
 class DependencyFreeV357Tests(unittest.TestCase):

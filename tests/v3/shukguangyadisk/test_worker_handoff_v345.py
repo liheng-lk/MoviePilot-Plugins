@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from source_helper import single_init_plugin_path
+
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
+PLUGIN = single_init_plugin_path(ROOT / "plugins.v3" / "shukguangyadisk")
 GUARD = (PLUGIN / "organizer_worker_guard.py").read_text(encoding="utf-8")
 ACCOUNT_PAGE = (PLUGIN / "dist" / "assets" / "__federation_expose_AssistantPage-dev.js").read_text(encoding="utf-8")
 

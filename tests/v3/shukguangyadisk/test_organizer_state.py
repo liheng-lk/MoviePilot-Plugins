@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from source_helper import load_embedded_module
+
 import importlib.util
 import threading
 import unittest
@@ -7,11 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-MODULE_PATH = ROOT / "plugins.v3" / "shukguangyadisk" / "organizer_state.py"
-spec = importlib.util.spec_from_file_location("shukguangyadisk_organizer_state", MODULE_PATH)
-module = importlib.util.module_from_spec(spec)
-assert spec.loader
-spec.loader.exec_module(module)
+module = load_embedded_module("organizer_state.py", "shukguangyadisk_organizer_state")
 OrganizerStateStore = module.OrganizerStateStore
 
 

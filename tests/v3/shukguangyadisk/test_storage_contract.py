@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from source_helper import load_embedded_module
+
 import inspect
 import importlib.util
 import unittest
@@ -7,11 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-MODULE_PATH = ROOT / "plugins.v3" / "shukguangyadisk" / "storage_contract.py"
-spec = importlib.util.spec_from_file_location("shukguangyadisk_storage_contract", MODULE_PATH)
-module = importlib.util.module_from_spec(spec)
-assert spec.loader
-spec.loader.exec_module(module)
+module = load_embedded_module("storage_contract.py", "shukguangyadisk_storage_contract")
 V3StorageContractMixin = module.V3StorageContractMixin
 
 
