@@ -107,7 +107,7 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
     def test_loose_container_skips_waiting_or_terminal_members(self):
         source = FINAL.read_text(encoding="utf-8")
         schedule = source.split("    def _v360_schedule_resource", 1)[1].split("    def organize_monitor_tick", 1)[0]
-        self.assertIn("candidates = primary if loose else primary", schedule)
+        self.assertIn("for member in primary:", schedule)
         self.assertIn("if loose:", schedule)
         self.assertIn("break", schedule)
         self.assertNotIn("primary[:1] if loose", schedule)
