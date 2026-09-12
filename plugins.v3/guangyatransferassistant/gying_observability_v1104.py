@@ -471,13 +471,19 @@ class GuangYaGyingObservabilityV1104Mixin:
         viewing = dict(overview.get("viewing") or {})
         raw = self.get_data("viewing_observability_state") or {}
         recent = dict(raw) if isinstance(raw, dict) else {}
+        recent_failure = bool(viewing.get("enabled")) and recent.get("success") is False
         viewing.update({
             "last_stage": str(recent.get("stage") or ""),
             "last_success": recent.get("success"),
             "last_message": str(recent.get("message") or "")[:200],
             "last_updated_at": str(recent.get("updated_at") or ""),
+            "recent_failure": recent_failure,
         })
         overview["viewing"] = viewing
+        if recent_failure:
+            overview["attention_count"] = int(overview.get("attention_count") or 0) + 1
+            if str(overview.get("overall") or "healthy") == "healthy":
+                overview["overall"] = "warning"
         return overview
 
     @staticmethod
