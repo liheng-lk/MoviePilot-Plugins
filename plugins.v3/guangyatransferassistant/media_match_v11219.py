@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, Iterable, List, Set, Tuple
+from typing import Any, Dict, Iterable, List, Set
 
 from .episode_resolver_v190 import AUTO_SELECT_CONFIDENCE, reliable_episode_set, resolve_episode
 from .legacy import _is_video
@@ -416,7 +416,7 @@ class GuangYaMediaMatchV11219Mixin:
         candidate: Dict[str, Any],
         info: Dict[str, Any],
         template: Dict[str, Any],
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """迅雷电影最终执行前按真实分享标题与视频路径再次验真。"""
         accepted, reason = super()._xunlei_json_identity_matches_v1123(
             subscribe,
