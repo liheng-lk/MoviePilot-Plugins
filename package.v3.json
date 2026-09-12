@@ -104,9 +104,9 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "Controlled Real-World Beta：r101 目标感知检索冷却。外部观影检索冷却不再只绑定订阅 ID，而会记录上次真实搜索的目标集；新播集或 Emby 重新确认的真实缺集出现时可立即重开一次，目标未增加时继续遵守原 10/180 分钟冷却。r100 Emby 缺集恢复、最终物理门禁与来源优先级保持不变。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+    "description": "Controlled Real-World Beta：r102 修复 Telegram 镜像 Forwarded 标题污染与季集元数据缺口，并补齐手动刷新、定时 tick、订阅入队的调度证据日志；不改变四来源执行协议、最终媒体身份门禁和来源优先级。r101 目标感知外部检索冷却、r100 Emby 缺集恢复继续保留。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
     "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,缺集,追更,单文件运行时,真实落盘,MP优先命名,最终命名确认,跨季保护,Season门禁,Emby缺集恢复,陈旧回执恢复,目标感知冷却,缺集重开",
-    "version": "2.1.3",
+    "version": "2.1.4",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
@@ -210,7 +210,8 @@
       "v1.2.0": "增强资源解析、精确匹配、缓存、路径安全和失败退避。",
       "v1.1.0": "修复频道刷新后不转存，并增加文件级增量去重。",
       "v1.0.1": "新增转存成功失败通知、任务确认和后台日志。",
-      "v1.0.0": "首版支持 Telegram 频道资源匹配、光鸭转存和订阅分流。"
+      "v1.0.0": "首版支持 Telegram 频道资源匹配、光鸭转存和订阅分流。",
+      "v2.1.4": "r102 Channel Parse & Dispatch Observability（Controlled Real-World Beta）：修复 Telegram 镜像把 `光鸭云盘资源频道 Forwarded from 光鸭云盘资源频道` 拼进标题，导致 Resource Inbox/频道标题无法稳定命中 MoviePilot 订阅的问题；仅对已知光鸭频道 Forwarded 模板做前缀归一化，并清理尾部 NF/NETFLIX 展示标签，不引入通用模糊匹配。补齐 `更新至N集` 与 `SxxEyy-Ezz` 的 season/episode 元数据恢复；频道发现日志中的 `媒体匹配` 改为准确的 `媒体解析`，并新增 manual_refresh、tick、selected-subscription queue 的调度入口/出口证据。最终 TMDB/年份/Season/物理文件/Emby final_target 门禁、reservation/source claim/pending-library、四来源执行协议均不放宽。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。"
     }
   }
 }
