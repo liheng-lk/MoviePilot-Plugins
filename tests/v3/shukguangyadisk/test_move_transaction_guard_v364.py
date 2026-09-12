@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from source_helper import single_init_plugin_path
+
 import json
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
+PLUGIN = single_init_plugin_path(ROOT / "plugins.v3" / "shukguangyadisk")
 PATCH = (PLUGIN / "guangya_move_transaction_guard_v364.py").read_text(encoding="utf-8")
 EXECUTION = (PLUGIN / "organizer_execution_v360.py").read_text(encoding="utf-8")
 LEGACY = (PLUGIN / "_plugin_legacy.py").read_text(encoding="utf-8")

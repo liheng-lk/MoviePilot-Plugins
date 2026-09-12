@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from source_helper import single_init_plugin_path
+
 import json
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
+PLUGIN = single_init_plugin_path(ROOT / "plugins.v3" / "shukguangyadisk")
 
 
 def test_shukguangya_v356_history_and_current_version_are_consistent():

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from source_helper import single_init_plugin_path
+
 import json
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
+PLUGIN = single_init_plugin_path(ROOT / "plugins.v3" / "shukguangyadisk")
 INIT = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 ORGANIZER = (PLUGIN / "organizer.py").read_text(encoding="utf-8")
 RECOGNITION = (PLUGIN / "organizer_recognition.py").read_text(encoding="utf-8")

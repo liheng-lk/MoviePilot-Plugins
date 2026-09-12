@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from source_helper import single_init_plugin_path
+
 import ast
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
+PLUGIN = single_init_plugin_path(ROOT / "plugins.v3" / "shukguangyadisk")
 PATH_PATCH = (PLUGIN / "guangya_path_resolution_v369.py").read_text(encoding="utf-8")
 MONITOR_PATCH = (PLUGIN / "organizer_hardening_v369.py").read_text(encoding="utf-8")
 EXECUTION = (PLUGIN / "organizer_execution_v360.py").read_text(encoding="utf-8")

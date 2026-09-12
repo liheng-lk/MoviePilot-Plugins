@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from source_helper import single_init_plugin_path
+
 import ast
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
+PLUGIN = single_init_plugin_path(ROOT / "plugins.v3" / "shukguangyadisk")
 PATCH = (PLUGIN / "organizer_monitor_v366.py").read_text(encoding="utf-8")
 ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 FOLDER_BATCH = (PLUGIN / "organizer_folder_batch_v342.py").read_text(encoding="utf-8")

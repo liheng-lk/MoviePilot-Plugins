@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from source_helper import single_init_plugin_path
+
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
+PLUGIN = single_init_plugin_path(ROOT / "plugins.v3" / "shukguangyadisk")
 RECONCILE = (PLUGIN / "organizer_completion_reconcile_v354.py").read_text(encoding="utf-8")
 CANDIDATE = (PLUGIN / "organizer_candidate_filter.py").read_text(encoding="utf-8")
 
