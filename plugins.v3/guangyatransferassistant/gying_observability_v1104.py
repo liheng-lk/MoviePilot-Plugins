@@ -671,13 +671,13 @@ class GuangYaGyingObservabilityV1104Mixin:
             if sid > 0 and sid not in ids:
                 ids.append(sid)
 
-        first = None
+        explicit_subscribe = None
         for sid in ids:
             subscribe = self._find_subscription(sid)
             if not subscribe:
                 continue
-            if first is None:
-                first = subscribe
+            if explicit > 0 and sid == explicit:
+                explicit_subscribe = subscribe
             try:
                 if self._is_movie_subscription(subscribe):
                     checker = getattr(self, "_movie_needs_pull_v1125", None)
@@ -692,8 +692,11 @@ class GuangYaGyingObservabilityV1104Mixin:
                 if missing:
                     return subscribe
             except Exception:
-                return subscribe
-        return first
+                if explicit > 0 and sid == explicit:
+                    return subscribe
+
+        # 无显式 id 时不拿已追平订阅做探针，避免诊断按钮破坏 caught-up 零搜索语义。
+        return explicit_subscribe
 
     def api_viewing_live_search_probe(self, subscribe_id: int = 0) -> Dict[str, Any]:
         """强制真实 GYING /search，只返回脱敏统计证据，不创建候选 source 或转存任务。"""
