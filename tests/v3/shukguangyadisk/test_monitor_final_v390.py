@@ -25,7 +25,7 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
 
     def test_final_monitor_is_first_mro_and_release_is_v390(self):
         entry = ENTRY.read_text(encoding="utf-8")
-        self.assertIn('plugin_version = "3.9.7"', entry)
+        self.assertIn('plugin_version = "3.9.8"', entry)
         class_slice = entry.split("class ShukGuangYaDisk(", 1)[1].split("):", 1)[0]
         self.assertLess(class_slice.index("_GuangYaFinalMonitorV390Mixin"), class_slice.index("_GuangYaOrganizerMonitorV366Mixin"))
         self.assertIn("as _GuangYaFinalMonitorV390Mixin", entry)
@@ -99,10 +99,32 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
     def test_federation_uses_fresh_v390_chunk(self):
         remote = REMOTE.read_text(encoding="utf-8")
         page = PAGE.read_text(encoding="utf-8")
-        self.assertIn("__federation_expose_AssistantPage-v390.js?v=3.9.7", remote)
+        self.assertIn("__federation_expose_AssistantPage-v390.js?v=3.9.8", remote)
         self.assertNotIn("AssistantPage-v381.js?v=3.8.1", remote)
-        self.assertIn("整理监控控制 · v3.9.7", page)
+        self.assertIn("整理监控控制 · v3.9.8", page)
         self.assertIn("install_registration_safe", page)
+
+    def test_loose_container_skips_waiting_or_terminal_members(self):
+        source = FINAL.read_text(encoding="utf-8")
+        schedule = source.split("    def _v360_schedule_resource", 1)[1].split("    def organize_monitor_tick", 1)[0]
+        self.assertIn("for member in primary:", schedule)
+        self.assertIn("if loose:", schedule)
+        self.assertIn("break", schedule)
+        self.assertNotIn("primary[:1] if loose", schedule)
+
+    def test_dispatch_skips_deferred_resource_and_tries_next_due_item(self):
+        source = FINAL.read_text(encoding="utf-8")
+        dispatch = source.split("    def _v390_dispatch_one", 1)[1].split("    def organize_monitor_tick", 1)[0]
+        self.assertIn("_DEFERRED_RESOURCE_REASONS", source)
+        self.assertIn("if reason in _DEFERRED_RESOURCE_REASONS:", dispatch)
+        self.assertIn("continue", dispatch)
+        self.assertIn('"worker_not_accept"', dispatch)
+
+    def test_watch_log_separates_created_and_refreshed_queue_rows(self):
+        core = CORE.read_text(encoding="utf-8")
+        self.assertIn('"refreshed": refreshed', core)
+        self.assertIn("watch_refreshed=refreshed", core)
+        self.assertIn('f"新增={queued} 刷新={refreshed} 当前持久队列={len(resource_rows)}"', core)
 
     def test_manual_full_scan_dispatches_and_wait_reason_is_visible(self):
         source = FINAL.read_text(encoding="utf-8")
@@ -114,8 +136,8 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
 
     def test_plugin_json_is_v390(self):
         data = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], "3.9.7")
-        self.assertIn("v3.9.7", data.get("history") or {})
+        self.assertEqual(data["version"], "3.9.8")
+        self.assertIn("v3.9.8", data.get("history") or {})
 
 
 if __name__ == "__main__":
