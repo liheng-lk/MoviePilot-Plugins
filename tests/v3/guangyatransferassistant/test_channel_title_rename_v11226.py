@@ -169,3 +169,13 @@ def test_v11226_mp_target_folder_title_skips_season_directory():
     assert is_season("S01") is True
     assert strip("生逢其时 (2026)") == "生逢其时"
     assert strip("生逢其时 (2026) {tmdbid=12345}") == "生逢其时"
+
+
+def test_v11226_direct_share_rename_reuses_remote_readback_confirmation():
+    rename = MODULE_TEXT.split("    def _rename_restored_media_v11224(", 1)[1]
+    assert 'getattr(self, "_confirm_remote_rename_v1113", None)' in rename
+    assert 'target_path=folder_path' in rename
+    assert 'desired_name=desired' in rename
+    assert 'file_id=file_id' in rename
+    assert "分享落盘后远端重命名已读回确认" in rename
+    assert "分享 rename 已接受但远端读回未确认" in rename
