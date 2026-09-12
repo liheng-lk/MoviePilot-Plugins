@@ -95,6 +95,14 @@ def test_state_machine_only_marks_terminal_success_completed():
         assert token in STATE
 
 
+def test_moviepilot_history_gate_uses_persisted_retry_and_exposes_durable_task():
+    assert 'retry_count=getattr(history, "retry_count", None) if history is not None else None' in HISTORY
+    assert '"transfer_task_id": transfer_task_id' in HISTORY
+    assert '"retry_count": retry_count' in HISTORY
+    assert '"durable_retry_recommended": durable_retry' in HISTORY
+    assert 'getattr(HistoryGateAction, "PASS_FAILED", None)' in HISTORY
+
+
 def test_moviepilot_history_gate_is_reused():
     for token in (
         "HistoryGateAction",
