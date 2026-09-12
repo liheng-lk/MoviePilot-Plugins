@@ -1,4 +1,4 @@
-import BasePage from './__federation_expose_AssistantPage-v352.js?v=3.9.8';
+import BasePage from './__federation_expose_AssistantPage-v352.js?v=3.9.9';
 import { importShared } from './__federation_fn_import-054b33c3.js';
 
 const { defineComponent, h, ref, computed, onMounted, onUnmounted } = await importShared('vue');
@@ -94,7 +94,7 @@ export default defineComponent({
       h('div',{class:'gya390-card'},[
         h('div',{class:'gya390-head'},[
           h('div',[
-            h('div',{class:'gya390-title'},'整理监控控制 · v3.9.8'),
+            h('div',{class:'gya390-title'},'整理监控控制 · v3.9.9'),
             h('div',{class:'gya390-sub'},'安装期零副作用；持续目录观察负责发现，持久待整理队列负责排队，单 Worker 串行执行；全量巡检独立补漏。')
           ]),
           h('div',{class:'gya390-actions'},[
