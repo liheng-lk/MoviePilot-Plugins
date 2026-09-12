@@ -82,3 +82,11 @@ def test_console_runtime_health_shows_recent_gying_stage_without_extra_request()
     assert 'viewing.get("last_updated_at")' in CONSOLE
     assert 'viewing.get("recent_failure")' in CONSOLE
     assert "viewing_detail" in CONSOLE
+
+
+def test_runtime_health_does_not_mark_intentionally_disabled_sources_as_failures():
+    assert 'viewing_ok = (not viewing_enabled) or (' in CONSOLE
+    assert 'xunlei_ok = (not xunlei_enabled) or xunlei_ready' in CONSOLE
+    assert 'and not xunlei_status.get("circuit_open")' in CONSOLE
+    assert 'api_ok = True' in CONSOLE
+    assert "Captcha 熔断中，建议执行秒传预检" in CONSOLE
