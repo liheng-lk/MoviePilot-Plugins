@@ -202,3 +202,33 @@ def test_xunlei_runtime_requires_verified_landing_before_success():
     assert "def _dispatch_xunlei_flash(" in final_class
     assert "_xunlei_pending_landing_v200" in final_class
     assert 'result["handled"] = True' in final_class
+
+
+def test_xunlei_success_state_and_notification_require_verified_landing():
+    plugin = ROOT / "plugins.v3" / "guangyatransferassistant"
+    flash = (plugin / "xunlei_flash_v193.py").read_text(encoding="utf-8")
+    runtime = (plugin / "runtime_fix_v1113.py").read_text(encoding="utf-8")
+
+    assert '"landing_verified": bool(result.get("landing_verified"))' in flash
+    assert '"final_name": str(result.get("final_name") or "")' in flash
+    notify = runtime.split("    def _dispatch_xunlei_flash(", 1)[1].split(
+        "    def _notify_cloud_completed_v1113(", 1
+    )[0]
+    assert 'and bool(row.get("landing_verified"))' in notify
+    assert 'row.get("final_name")' in notify
+    assert "最终文件：" in notify
+    assert "key not in before_completed" in notify
+
+
+def test_gying_observability_distinguishes_cache_from_real_network():
+    plugin = ROOT / "plugins.v3" / "guangyatransferassistant"
+    protocol = (plugin / "gying_protocol_v1106.py").read_text(encoding="utf-8")
+    observability = (plugin / "gying_observability_v1104.py").read_text(encoding="utf-8")
+    assert '"transport": "cache"' in protocol
+    assert '"cache_hit": True' in protocol
+    assert '"search_http_requests": 0' in protocol
+    assert '"transport": "network"' in protocol
+    assert "downurl_attempts" in protocol
+    assert "downurl_success" in protocol
+    assert "downurl_failures" in protocol
+    assert '"transport", "cache_hit", "cache_age_seconds", "search_http_requests"' in observability
