@@ -463,9 +463,8 @@ class _LegacyGuangYaClient:
 
         if need_auth:
             logger.debug(
-                "【光鸭云盘助手】发起请求: %s %s, device_id=%s, access_token=%s, refresh_token=%s",
-                method.upper(), url, self._device_id,
-                self._mask_token(self._access_token), self._mask_token(self._refresh_token),
+                "【光鸭云盘助手】发起请求: %s %s, device_id=%s, authenticated=%s",
+                method.upper(), url, self._device_id, bool(self._access_token),
             )
 
         try:
@@ -492,10 +491,7 @@ class _LegacyGuangYaClient:
                         "error": err.response.text[:500] if err.response.text else str(err),
                     }
             if status_code == 401 and retry_on_401 and need_auth:
-                logger.info(
-                    "【光鸭云盘助手】Token 失效，尝试刷新: access_token=%s, refresh_token=%s, device_id=%s",
-                    self._mask_token(self._access_token), self._mask_token(self._refresh_token), self._device_id,
-                )
+                logger.info("【光鸭云盘助手】Token 失效，尝试刷新: device_id=%s", self._device_id)
                 if self.refresh_access_token():
                     return self._request(
                         method=method,
@@ -576,11 +572,7 @@ class _LegacyGuangYaClient:
             self._access_token = result.get("access_token") or ""
             self._refresh_token = result.get("refresh_token") or self._refresh_token
             self._last_refresh_invalid = False
-            logger.info(
-                "【光鸭云盘助手】Token 刷新成功: access_token %s -> %s, refresh_token %s -> %s",
-                self._mask_token(old_access_token), self._mask_token(self._access_token),
-                self._mask_token(old_refresh_token), self._mask_token(self._refresh_token),
-            )
+            logger.info("【光鸭云盘助手】Token 刷新成功")
             if self._on_token_refresh:
                 try:
                     self._on_token_refresh(self._access_token, self._refresh_token)
@@ -589,8 +581,8 @@ class _LegacyGuangYaClient:
             return True
         self._last_refresh_invalid = self._is_auth_invalid_result(result)
         logger.warning(
-            "【光鸭云盘助手】Token 刷新失败: device_id=%s, refresh_token=%s, auth_invalid=%s, response=%s",
-            self._device_id, self._mask_token(old_refresh_token), self._last_refresh_invalid, result,
+            "【光鸭云盘助手】Token 刷新失败: device_id=%s, auth_invalid=%s, response=%s",
+            self._device_id, self._last_refresh_invalid, result,
         )
         return False
 
@@ -2770,7 +2762,7 @@ from typing import List, Optional, Tuple
 from app import schemas
 from app.sdk.logging import logger
 
-class GuangYaApi(_GuangYaApiV111):
+class _GuangYaApiV112(_GuangYaApiV111):
     """在 v1.1.1 API 上增加回收站幂等彻底删除保护。"""
 
     def _iter_recycle_items_checked(self) -> Tuple[List[schemas.FileItem], bool]:
@@ -2908,6 +2900,186 @@ class GuangYaApi(_GuangYaApiV111):
 
 
 __all__ = ["GuangYaApi"]
+
+
+# =============================================================================
+# GuangYa storage safety (direct V4 implementation)
+# =============================================================================
+
+def _guangya_response_success(response: Any) -> bool:
+    if not isinstance(response, dict):
+        return False
+    return response.get("code", -1) == 0 or response.get("msg") == "success"
+
+
+def _guangya_response_error(response: Any) -> str:
+    if not isinstance(response, dict):
+        return repr(response)
+    return str(
+        response.get("error")
+        or response.get("msg")
+        or response.get("message")
+        or f"code={response.get('code')}"
+    )
+
+
+def _guangya_page_has_more(
+    data: Dict[str, Any],
+    page_size: int,
+    page_items: int,
+    accumulated: int,
+) -> bool:
+    try:
+        total = int(data.get("total") or 0)
+    except (TypeError, ValueError):
+        total = 0
+    if page_items <= 0:
+        return False
+    if total > 0:
+        return accumulated < total
+    return page_items >= page_size
+
+
+class GuangYaApi(_GuangYaApiV112):
+    """V4 光鸭存储 API。
+
+    把 v3.6.9 已验证的分页路径解析、实例缓存隔离、严格目录读取直接并入类实现，
+    不再通过 import-time monkey patch 修改方法。
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # 旧实现使用类属性缓存。V4 明确改为实例缓存，避免账号切换/热重载污染。
+        self._id_cache = {}
+        self._item_cache = {}
+
+    def _path_to_id(self, path: str) -> str:
+        normalized_path = self._normalize_path(path)
+        if normalized_path == "/":
+            return ""
+        cached = str(self._id_cache.get(normalized_path) or "")
+        if cached:
+            return cached
+
+        current_id = ""
+        current_path = "/"
+        for part in Path(normalized_path).parts[1:]:
+            page = 0
+            found: Optional[Dict[str, Any]] = None
+            accumulated = 0
+            while True:
+                response = self.client.get_file_list(
+                    parent_id=current_id,
+                    page_size=self._page_size,
+                    order_by=self._order_by,
+                    sort_type=self._sort_type,
+                    file_types=[],
+                    page=page,
+                )
+                if not _guangya_response_success(response):
+                    raise RuntimeError(
+                        f"【光鸭云盘助手】解析路径 {normalized_path} 时读取目录失败: "
+                        f"parent={current_path} page={page} "
+                        f"error={_guangya_response_error(response)}"
+                    )
+
+                data = dict(response.get("data") or {})
+                items = list(data.get("list") or [])
+                accumulated += len(items)
+                for raw in items:
+                    if str(raw.get("fileName") or "") == part:
+                        found = dict(raw)
+                        break
+                if found is not None:
+                    break
+                if not _guangya_page_has_more(
+                    data, self._page_size, len(items), accumulated
+                ):
+                    break
+                page += 1
+
+            if found is None:
+                raise FileNotFoundError(f"【光鸭云盘助手】{normalized_path} 不存在")
+
+            current_id = str(found.get("fileId") or "")
+            current_path = (
+                f"{current_path.rstrip('/')}/{part}"
+                if current_path != "/"
+                else f"/{part}"
+            )
+            self._cache_path_id(current_path, current_id)
+            parent_path = str(Path(current_path).parent).replace("\\", "/") or "/"
+            self._build_file_item_from_api(parent_path, found)
+
+        return current_id
+
+    def list_strict(self, fileitem: Any) -> List[Any]:
+        """完整分页读取；上游错误必须抛出，不能伪装成成功的空目录。"""
+        if str(getattr(fileitem, "type", "") or "") == "file":
+            item = self.detail(fileitem)
+            return [item] if item else []
+
+        normalized_dir_path = self._normalize_path(getattr(fileitem, "path", "/"))
+        file_id = self._normalize_fileid(
+            getattr(fileitem, "fileid", ""), normalized_dir_path
+        )
+        if normalized_dir_path != "/" and not file_id:
+            file_id = self._path_to_id(normalized_dir_path)
+
+        results: List[Any] = []
+        page = 0
+        while True:
+            response = self.client.get_file_list(
+                parent_id=file_id,
+                page_size=self._page_size,
+                order_by=self._order_by,
+                sort_type=self._sort_type,
+                file_types=[],
+                page=page,
+            )
+            if not _guangya_response_success(response):
+                raise RuntimeError(
+                    f"【光鸭云盘助手】读取目录失败: "
+                    f"path={normalized_dir_path} page={page} "
+                    f"error={_guangya_response_error(response)}"
+                )
+            data = dict(response.get("data") or {})
+            item_list = list(data.get("list") or [])
+            for raw in item_list:
+                results.append(
+                    self._build_file_item_from_api(normalized_dir_path, raw)
+                )
+            if not _guangya_page_has_more(
+                data, self._page_size, len(item_list), len(results)
+            ):
+                break
+            page += 1
+        return results
+
+    def get_item(self, path: Path):
+        normalized = self._normalize_path(str(path))
+        if normalized == "/":
+            return super().get_item(path)
+
+        cached_item = self._restore_cached_item(normalized)
+        if cached_item:
+            return cached_item
+
+        try:
+            file_id = self._path_to_id(normalized)
+        except FileNotFoundError:
+            return None
+
+        resolved = self._restore_cached_item(normalized)
+        if resolved and str(getattr(resolved, "fileid", "") or "") == str(file_id or ""):
+            return resolved
+        return super().get_item(path)
+
+    def refresh_item(self, path: Path):
+        normalized = self._normalize_path(str(path))
+        self._invalidate_path_cache(normalized)
+        return self.get_item(Path(normalized))
+
 
 # =============================================================================
 # WebDAV provider
@@ -3744,12 +3916,7 @@ class _LegacyShukGuangYaDisk(_PluginBase):
                 "sort_type": self._sort_type,
                 "permanently_delete": self._permanently_delete,
             }
-            logger.info(
-                "【光鸭云盘助手】准备回写配置: device_id=%s, access_token=%s, refresh_token=%s",
-                self._device_id,
-                self._mask_token(access_token),
-                self._mask_token(refresh_token),
-            )
+            logger.info("【光鸭云盘助手】准备回写认证配置: device_id=%s", self._device_id)
             self.update_config(config_payload)
             logger.info("【光鸭云盘助手】Token 已自动保存")
 
@@ -5443,6 +5610,26 @@ class ShukGuangYaDisk(V3StorageContractMixin, _LegacyShukGuangYaDisk):
             "has_access_token": bool(self._access_token),
             "has_refresh_token": bool(self._refresh_token),
         }
+
+    def any_files(self, fileitem: Any, extensions: list = None):
+        try:
+            return super().any_files(fileitem, extensions)
+        except FileNotFoundError:
+            logger.debug(
+                "【光鸭云盘助手】【存储查询】any_files 检查时目录已不存在，按无文件处理: %s",
+                str(getattr(fileitem, "path", "") or ""),
+            )
+            return False
+
+    def list_files(self, fileitem: Any, recursion: bool = False):
+        try:
+            return super().list_files(fileitem, recursion)
+        except FileNotFoundError:
+            logger.debug(
+                "【光鸭云盘助手】【存储查询】list_files 检查时目录已不存在，按空目录处理: %s",
+                str(getattr(fileitem, "path", "") or ""),
+            )
+            return []
 
     def stop_service(self) -> None:
         self._device_code = ""
