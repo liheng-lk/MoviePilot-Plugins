@@ -83,53 +83,49 @@ class GuangYaDiagnosticsV1100Mixin:
             issues.append("资源来源检测异常")
             checks.append(self._diag_row("providers", "资源来源", False, str(err)))
 
-        # 2) 固定订阅统一搜索：真正走与自动处理相同的观影迅雷 + Magnet + ED2K 汇总逻辑。
+        # 2) 固定订阅搜索只检查“是否具备搜索条件”，不主动搜索具体媒体。
+        # 具体搜索已经有 /providers/search/selected；健康诊断不能因为一次点击
+        # 对全部固定订阅再次访问 GYING / 外部 Provider。
         selected: List[int] = []
         for value in (getattr(self, "_selected_subscriptions", []) or []):
             sid = self._diag_int(value, 0)
             if sid > 0 and sid not in selected:
                 selected.append(sid)
+
+        cached_search = self.get_data("provider_search_last") or {}
+        if not isinstance(cached_search, dict):
+            cached_search = {}
         if selected:
-            try:
-                search = dict(self.api_provider_search_selected() or {})
-                items = list(search.get("items") or [])
-                search_ok = bool(search.get("success")) and bool(items)
-                counts = dict(search.get("counts") or {})
-                if not search_ok:
-                    issues.append("固定订阅统一搜索未得到可用结果")
-                checks.append(self._diag_row(
-                    "selected_search",
-                    "固定订阅统一搜索",
-                    search_ok,
-                    str(search.get("message") or "搜索完成"),
-                    data={
-                        "subscriptions": len(items),
-                        "xunlei": self._diag_int(counts.get("xunlei"), 0),
-                        "magnet": self._diag_int(counts.get("magnet"), 0),
-                        "ed2k": self._diag_int(counts.get("ed2k"), 0),
-                        "items": [
-                            {
-                                "subscribe_id": self._diag_int(item.get("subscribe_id"), 0),
-                                "name": str(item.get("name") or "")[:120],
-                                "success": bool(item.get("success")),
-                                "message": str(item.get("message") or "")[:240],
-                                "counts": dict(item.get("counts") or {}),
-                            }
-                            for item in items[:12]
-                        ],
-                    },
-                ))
-            except Exception as err:
-                search_ok = False
-                issues.append("固定订阅统一搜索异常")
-                checks.append(self._diag_row("selected_search", "固定订阅统一搜索", False, str(err)))
-        else:
-            search_ok = True
+            search_ready = bool(provider_ok)
+            cached_items = list(cached_search.get("items") or [])
+            cached_matched = bool(cached_search.get("matched"))
+            cached_complete = cached_search.get("search_complete")
+            detail = (
+                f"已选择 {len(selected)} 个固定转存订阅；来源健康检查"
+                + ("通过" if search_ready else "未通过")
+                + "。具体资源请使用“搜索缺失资源”。"
+            )
             checks.append(self._diag_row(
-                "selected_search",
-                "固定订阅统一搜索",
+                "selected_search_ready",
+                "固定订阅搜索就绪",
+                search_ready,
+                detail,
+                data={
+                    "subscriptions": len(selected),
+                    "cached_search_available": bool(cached_items or cached_search.get("updated_at")),
+                    "cached_matched": cached_matched,
+                    "cached_search_complete": cached_complete,
+                    "cached_updated_at": str(cached_search.get("updated_at") or ""),
+                },
+            ))
+            if not search_ready:
+                issues.append("固定订阅搜索前置来源未就绪")
+        else:
+            checks.append(self._diag_row(
+                "selected_search_ready",
+                "固定订阅搜索就绪",
                 True,
-                "未选择固定走光鸭的 MoviePilot 订阅，跳过搜索",
+                "未选择固定走光鸭的 MoviePilot 订阅，跳过具体媒体搜索",
                 skipped=True,
             ))
 
@@ -189,7 +185,7 @@ class GuangYaDiagnosticsV1100Mixin:
                 "path": "/diagnostics/full",
                 "endpoint": self.api_full_diagnostics,
                 "methods": ["POST"],
-                "summary": "非破坏性完整检查资源搜索、固定订阅和迅雷秒传链路",
+                "summary": "非破坏性检查来源健康、固定订阅搜索前置条件和迅雷秒传链路",
             })
         return apis
 
