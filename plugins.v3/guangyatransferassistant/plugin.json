@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "Controlled Real-World Beta：r100 Emby实际缺集恢复。Emby-first final_target 可覆盖旧 note/media_facts/transfer_inventory 的陈旧“已完成”结论，直接光鸭分享会重新补回库内真实缺失集；reservation、claim、pending-library、未来集和最终物理门禁继续生效。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
-  "version": "2.1.2",
+  "description": "Controlled Real-World Beta：r101 目标感知检索冷却。外部观影检索冷却不再只绑定订阅 ID，而会记录上次真实搜索的目标集；新播集或 Emby 重新确认的真实缺集出现时可立即重开一次，目标未增加时继续遵守原 10/180 分钟冷却。r100 Emby 缺集恢复、最终物理门禁与来源优先级保持不变。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+  "version": "2.1.3",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
