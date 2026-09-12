@@ -10,6 +10,14 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 
 SOURCE_TYPES = ("guangya", "magnet", "ed2k")
+RESOURCE_TYPES = ("xunlei", "guangya", "magnet", "ed2k")
+RESOURCE_EXECUTOR_BY_TYPE = {
+    "xunlei": "flash_json",
+    "guangya": "share_restore",
+    "magnet": "cloudcollection",
+    "ed2k": "cloudcollection",
+}
+RESOURCE_SOURCE_ORIGINS = ("telegram", "viewing")
 SOURCE_SCHEMA_VERSION = 2
 # queued 已经对应服务端 taskId，必须继续轮询而不是再次 create_task。
 SOURCE_PENDING_STATES = {"new", "retry"}
@@ -28,6 +36,16 @@ def safe_int(value: Any, default: int = 0, minimum: int = 0) -> int:
         return default
     return max(minimum, result)
 
+
+
+
+def resource_executor_for(source_type: str) -> str:
+    """Return the only allowed transfer executor for a discovered resource type."""
+    value = str(source_type or "").strip().lower()
+    executor = RESOURCE_EXECUTOR_BY_TYPE.get(value)
+    if not executor:
+        raise ValueError(f"不支持的资源类型：{source_type}")
+    return executor
 
 def source_identity(source_type: str, identity: str, subscribe_id: int = 0) -> str:
     raw = f"{int(subscribe_id or 0)}|{source_type}|{identity}".encode("utf-8")
@@ -104,8 +122,9 @@ def normalize_source_uri(uri: str) -> Dict[str, Any]:
 
 
 __all__ = [
-    "SOURCE_TYPES", "SOURCE_SCHEMA_VERSION", "SOURCE_PENDING_STATES",
+    "SOURCE_TYPES", "RESOURCE_TYPES", "RESOURCE_EXECUTOR_BY_TYPE", "RESOURCE_SOURCE_ORIGINS",
+    "SOURCE_SCHEMA_VERSION", "SOURCE_PENDING_STATES",
     "SOURCE_INFLIGHT_STATES", "SOURCE_TERMINAL_STATES",
-    "safe_int", "source_identity", "normalize_magnet", "normalize_ed2k",
+    "safe_int", "resource_executor_for", "source_identity", "normalize_magnet", "normalize_ed2k",
     "normalize_source_uri",
 ]
