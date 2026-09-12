@@ -26,6 +26,11 @@ jobs:
       - name: Compile V4 plugin
         run: python -m py_compile plugins.v3/shukguangyadisk/__init__.py
 
+      - name: Check V4 frontend syntax
+        run: |
+          node --check plugins.v3/shukguangyadisk/dist/assets/__federation_expose_AssistantPage-v400.js
+          node --check plugins.v3/shukguangyadisk/dist/assets/remoteEntry.js
+
       - name: Enforce V4 source invariants
         run: |
           python - <<'PY'
