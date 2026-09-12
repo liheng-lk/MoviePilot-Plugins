@@ -419,3 +419,11 @@ CI 可以覆盖协议解析、PoW 算法、节点切换、隐私边界、缺集�
 - 搜索卡片/频道标题只作为发现证据；真正提交前重新检查实际分享/resolve 文件。真实标题、年份或 Season 明确冲突时拒绝；`S01E11.mkv` 这类没有作品标题的弱文件名不会被伪造为冲突证据。
 - 保持 `观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K`，一旦当前真实缺口被覆盖就停止后续来源。Magnet/ED2K 继续走光鸭原生 `cloudcollection`，不引入 MoviePilot 下载器。
 
+## 维护约束与代码职责
+
+转存助手进入维护阶段后，不再采用“每个修复新建一个版本补丁模块”的默认方式。当前运行时代码以职责域维护：入口与调度放在 `__init__.py / routing / foundation`；剧集与媒体身份放在 `episode_* / media_*`；GYING 搜索、登录与浏览器链放在 `gying_*`；迅雷真实分享与秒传放在 `xunlei_*`；Magnet/ED2K 与光鸭 cloudcollection 放在 `multisource / offline_safety / resource_planner`；频道发现放在 `channel_*`；状态与配置界面放在 `status / config / console / page_*`。
+
+新增功能应优先进入已有职责模块。只有出现独立生命周期、独立状态机或可单独测试的边界时才新增 Python 模块；单方法补丁、单纯 MRO 转接、`*_verified`/额外 `*_final` 薄壳应优先合并回所属职责模块。现有契约 runner 会限制运行时 Python 模块总量不超过维护基线，并阻止已经合并的历史薄壳重新出现。
+
+维护提交必须把“业务行为修改”和“结构整理”分开。结构整理不改来源优先级、订阅语义、真实文件身份门禁、Episode Fence、cloudcollection 回执合同或通知语义；每个小批次完成后必须通过完整 GuangYa contract suite，再进入下一批。大型 `legacy.py` 暂不做一次性拆分，后续按调用边界逐段迁移，确保每次迁移都能独立回退。
+
