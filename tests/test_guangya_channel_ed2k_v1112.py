@@ -18,7 +18,7 @@ class GuangYaChannelEd2kV1112Tests(unittest.TestCase):
         self.assertIn('return set(uncovered)', method)
 
     def test_single_file_ed2k_backfills_real_episode_before_cloud_create(self):
-        text = (PLUGIN / "resource_planner_v190.py").read_text(encoding="utf-8")
+        text = bundle_source("resource_planner_v190")
         method = text.split("    def _resolve_offline_source(", 1)[1].split("    def _mark_offline_failure", 1)[0]
         self.assertIn('source_type == "ed2k"', method)
         self.assertIn('no_subfiles', method)
