@@ -475,12 +475,36 @@ class GuangYaGyingProtocolV1106Mixin:
         cache_key_getter = getattr(self, "_gying_search_cache_key_v11223", None)
         cache_key = cache_key_getter(keyword) if callable(cache_key_getter) else keyword
         cached = dict(self._gying_search_cache.get(cache_key) or {})
-        if cached and not force and time.time() - _safe_float(cached.get("ts"), 0.0) < 120:
-            return list(cached.get("rows") or []), dict(cached.get("state") or {})
+        cache_age = time.time() - _safe_float(cached.get("ts"), 0.0) if cached else 0.0
+        if cached and not force and cache_age < 120:
+            cached_state = dict(cached.get("state") or {})
+            cached_state.update({
+                "transport": "cache",
+                "cache_hit": True,
+                "cache_age_seconds": round(max(0.0, cache_age), 3),
+                "search_http_requests": 0,
+                "downurl_attempts": 0,
+                "downurl_success": 0,
+                "downurl_failures": 0,
+                "message": (
+                    f"观影搜索缓存复用：缓存年龄 {max(0.0, cache_age):.1f}s · "
+                    f"本轮未发起 /search 或 downurl 网络请求"
+                ),
+            })
+            return list(cached.get("rows") or []), cached_state
 
         session, login = self._viewing_session()
         if not login.get("success"):
-            return [], {"provider": "viewing", **dict(login or {})}
+            return [], {
+                "provider": "viewing",
+                **dict(login or {}),
+                "transport": "network",
+                "cache_hit": False,
+                "search_http_requests": 0,
+                "downurl_attempts": 0,
+                "downurl_success": 0,
+                "downurl_failures": 0,
+            }
         node = str(
             login.get("node")
             or getattr(self, "_gying_active_node", "")
@@ -488,8 +512,22 @@ class GuangYaGyingProtocolV1106Mixin:
             or ""
         ).rstrip("/")
         if not node:
-            return [], {"provider": "viewing", "success": False, "message": "观影没有可用内容节点"}
+            return [], {
+                "provider": "viewing",
+                "success": False,
+                "message": "观影没有可用内容节点",
+                "transport": "network",
+                "cache_hit": False,
+                "search_http_requests": 0,
+                "downurl_attempts": 0,
+                "downurl_success": 0,
+                "downurl_failures": 0,
+            }
 
+        search_http_requests = 0
+        downurl_attempts = 0
+        downurl_success = 0
+        downurl_failures = 0
         try:
             query = quote(keyword, safe="")
             search_variants = [
@@ -500,6 +538,7 @@ class GuangYaGyingProtocolV1106Mixin:
             response: requests.Response | None = None
             search_mode = "browser"
             for mode, search_url in search_variants:
+                search_http_requests += 1
                 current = self._gying_request(
                     session,
                     node,
@@ -511,6 +550,7 @@ class GuangYaGyingProtocolV1106Mixin:
                     relogin = self._gying_login_password(session, node)
                     if not relogin.get("success"):
                         raise RuntimeError(str(relogin.get("message") or "观影登录失效"))
+                    search_http_requests += 1
                     current = self._gying_request(
                         session,
                         node,
@@ -545,6 +585,7 @@ class GuangYaGyingProtocolV1106Mixin:
                 if not resource_type or not resource_id:
                     continue
                 detail_referer = f"{node}/{quote(resource_type)}/{quote(resource_id)}"
+                downurl_attempts += 1
                 try:
                     payload = self._gying_detail(
                         session,
@@ -554,6 +595,7 @@ class GuangYaGyingProtocolV1106Mixin:
                         detail_referer,
                     )
                 except Exception as err:
+                    downurl_failures += 1
                     logger = getattr(self, "_gying_obs_log", None)
                     if callable(logger):
                         logger(
@@ -564,6 +606,7 @@ class GuangYaGyingProtocolV1106Mixin:
                             str(err)[:180],
                         )
                     continue
+                downurl_success += 1
                 rows.extend(extract_resource_rows_v1106(payload, item))
 
             deduped: List[Dict[str, Any]] = []
@@ -605,8 +648,17 @@ class GuangYaGyingProtocolV1106Mixin:
                 "ed2k_resources": ed2k_count,
                 "xunlei_resources": xunlei_count,
                 "search_mode": search_mode,
+                "transport": "network",
+                "cache_hit": False,
+                "cache_age_seconds": 0.0,
+                "search_http_requests": search_http_requests,
+                "downurl_attempts": downurl_attempts,
+                "downurl_success": downurl_success,
+                "downurl_failures": downurl_failures,
                 "message": (
-                    f"观影搜索请求完成：模糊卡片 {len(cards)} · 当前媒体卡片 "
+                    f"观影真实网络搜索完成：/search请求 {search_http_requests} · "
+                    f"downurl尝试 {downurl_attempts} 成功 {downurl_success} 失败 {downurl_failures} · "
+                    f"模糊卡片 {len(cards)} · 当前媒体卡片 "
                     f"{len(detail_cards) if target_scoped else '未限定'} · 已展开 {len(detail_cards)} · "
                     f"未核验链接：网盘 {pan_count} · 迅雷 {xunlei_count} · "
                     f"Magnet {magnet_count} · ED2K {ed2k_count}"
@@ -622,6 +674,13 @@ class GuangYaGyingProtocolV1106Mixin:
                 "search_complete": False,
                 "node": node,
                 "login_mode": login.get("mode"),
+                "transport": "network",
+                "cache_hit": False,
+                "cache_age_seconds": 0.0,
+                "search_http_requests": search_http_requests,
+                "downurl_attempts": downurl_attempts,
+                "downurl_success": downurl_success,
+                "downurl_failures": downurl_failures,
                 "message": str(err)[:400],
             }
 
