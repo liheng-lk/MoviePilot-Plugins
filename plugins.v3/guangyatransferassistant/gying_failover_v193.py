@@ -124,20 +124,47 @@ class GuangYaGyingFailoverMixin:
         }
 
     def _gying_raw_results(self, keyword: str, force: bool = False):
-        """搜索失败时把当前节点放入冷却并立即尝试下一个节点，最多三次。"""
+        """搜索失败时冷却当前节点并立即切换；返回真实节点尝试与网络请求证据。"""
         if not bool(getattr(self, "_viewing_auto_switch", True)):
-            return super()._gying_raw_results(keyword, force=force)
+            rows, state = super()._gying_raw_results(keyword, force=force)
+            state = dict(state or {})
+            node = _normalize_node_url(str(state.get("node") or ""))
+            state.setdefault("attempted_nodes", [node] if node else [])
+            state.setdefault("failover_attempts", 1)
+            state.setdefault(
+                "search_request_count_total",
+                int(state.get("search_request_count_this_call") or 0),
+            )
+            state.setdefault(
+                "detail_request_count_total",
+                int(state.get("detail_request_count_this_call") or 0),
+            )
+            return rows, state
+
         last_rows = []
         last_state: Dict[str, Any] = {"success": False, "message": "观影搜索失败"}
+        attempted_nodes: List[str] = []
+        total_search_requests = 0
+        total_detail_requests = 0
         for attempt in range(3):
             rows, state = super()._gying_raw_results(keyword, force=True if attempt else force)
             last_rows, last_state = rows, dict(state or {})
-            if state.get("success"):
-                return rows, state
-            failed_node = _normalize_node_url(str(state.get("node") or ""))
+            failed_node = _normalize_node_url(str(last_state.get("node") or ""))
+            if failed_node and failed_node not in attempted_nodes:
+                attempted_nodes.append(failed_node)
+            total_search_requests += int(last_state.get("search_request_count_this_call") or 0)
+            total_detail_requests += int(last_state.get("detail_request_count_this_call") or 0)
+
+            last_state["attempted_nodes"] = list(attempted_nodes)
+            last_state["failover_attempts"] = attempt + 1
+            last_state["search_request_count_total"] = total_search_requests
+            last_state["detail_request_count_total"] = total_detail_requests
+
+            if last_state.get("success"):
+                return rows, last_state
             if not failed_node:
                 break
-            self._gying_mark_node(failed_node, "search_error", str(state.get("message") or "搜索失败"))
+            self._gying_mark_node(failed_node, "search_error", str(last_state.get("message") or "搜索失败"))
             store = self._gying_state()
             if str(store.get("active_node") or "") == failed_node:
                 store["active_node"] = ""
