@@ -534,12 +534,10 @@ class GuangYaStatusUiMixin:
                         f"索引 {overview['channel_count']} 条，最近错误 {overview['channel_errors']} 个；"
                         f"Magnet {sources['magnet']}，ED2K {sources['ed2k']}，"
                         f"计划 {overview['resource_plan_count']} 个。\n"
-                        (
-                            "详细诊断通过“运行自检”、/resource/plan 和 /status/overview 查看，首页不再展示长日志。\n"
-                            f"观影：{viewing_state} · 当前节点 {active_node} · "
-                            f"迅雷秒传：完成 {int(xunlei.get('completed') or 0)} / "
-                            f"失败 {int(xunlei.get('failed') or 0)}。"
-                        )
+                        "详细诊断通过“运行自检”、/resource/plan 和 /status/overview 查看，首页不再展示长日志。\n"
+                        f"观影：{viewing_state} · 当前节点 {active_node} · "
+                        f"迅雷秒传：完成 {int(xunlei.get('completed') or 0)} / "
+                        f"失败 {int(xunlei.get('failed') or 0)}。"
                     ),
                 },
                 {
