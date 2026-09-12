@@ -61,6 +61,7 @@ class SingleInitV391ContractTest(unittest.TestCase):
         source = ast.get_source_segment(physical_init_text(), target) or ""
         self.assertIn('"/organize/monitor/status"', source)
         self.assertIn('"/organize/monitor/full-scan"', source)
+        self.assertIn('"/organize/monitor/graceful-stop"', source)
 
     def test_legacy_entry_mro_and_final_monitor_are_preserved(self):
         entry = source_text("__init__.py")
