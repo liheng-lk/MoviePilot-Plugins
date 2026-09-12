@@ -104,7 +104,7 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "Controlled Real-World Beta：r99 跨季物理文件栅栏修复。真实文件/目录中的显式 Sxx/Season xx 优先于订阅 season hint；Direct/Magnet/ED2K 最终写盘前再次校验实际 Season，阻止其它季同集号误入当前订阅。来源优先级不变。",
+    "description": "Controlled Real-World Beta：r99 跨季物理文件栅栏修复。真实文件/目录中的显式 Sxx/Season xx 优先于订阅 season hint；Direct/Magnet/ED2K 最终写盘前再次校验实际 Season，阻止其它季同集号误入当前订阅。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
     "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,缺集,追更,单文件运行时,真实落盘,MP优先命名,最终命名确认,跨季保护,Season门禁",
     "version": "2.1.1",
     "icon": "Guangyadisk_A.png",
