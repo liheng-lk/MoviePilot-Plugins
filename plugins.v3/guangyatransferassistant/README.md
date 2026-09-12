@@ -421,9 +421,24 @@ CI 可以覆盖协议解析、PoW 算法、节点切换、隐私边界、缺集�
 
 ## 维护约束与代码职责
 
-转存助手进入维护阶段后，不再采用“每个修复新建一个版本补丁模块”的默认方式。当前运行时代码以职责域维护：入口与调度放在 `__init__.py / routing / foundation`；剧集与媒体身份放在 `episode_* / media_*`；GYING 搜索、登录与浏览器链放在 `gying_*`；迅雷真实分享与秒传放在 `xunlei_*`；Magnet/ED2K 与光鸭 cloudcollection 放在 `multisource / offline_safety / resource_planner`；频道发现放在 `channel_*`；状态与配置界面放在 `status / config / console / page_*`。
+光鸭转存助手采用 **单文件运行时**：插件目录中的全部 Python 业务代码只允许存在于 `__init__.py`。不再创建 `routing_*.py`、`gying_*.py`、`xunlei_*.py`、`*_final.py`、`*_verified.py` 等补丁文件。Git 历史保留旧模块，当前代码统一在一个文件内维护。
 
-新增功能应优先进入已有职责模块。只有出现独立生命周期、独立状态机或可单独测试的边界时才新增 Python 模块；单方法补丁、单纯 MRO 转接、`*_verified`/额外 `*_final` 薄壳应优先合并回所属职责模块。现有契约 runner 会限制运行时 Python 模块总量不超过维护基线，并阻止已经合并的历史薄壳重新出现。
+`__init__.py` 内部仍按职责分区：MoviePilot 订阅与固定分流、TG/GYING 资源发现、媒体身份与缺集判定、四类资源执行器、真实落盘核验、MP 优先命名、通知、API/UI。历史模块源码以内联命名空间方式保存，目的是避免旧 helper 同名污染并保留现有行为；后续开发直接在单文件对应职责区修改，不再新增运行时 Python 文件。
 
-维护提交必须把“业务行为修改”和“结构整理”分开。结构整理不改来源优先级、订阅语义、真实文件身份门禁、Episode Fence、cloudcollection 回执合同或通知语义；每个小批次完成后必须通过完整 GuangYa contract suite，再进入下一批。大型 `legacy.py` 暂不做一次性拆分，后续按调用边界逐段迁移，确保每次迁移都能独立回退。
+统一业务链固定为：
+
+`MoviePilot订阅 → 同步光鸭接管 → TG/GYING检索 → 精确媒体/季集匹配 → 资源类型分流 → 真实落盘确认 → MP识别名优先重命名 → 成功/失败通知`
+
+四类资源只有以下执行方式：
+
+- 迅雷分享：解析真实分享文件 → 生成秒传 JSON → 光鸭秒传。
+- 光鸭分享：调用光鸭原生分享转存/恢复接口直接转存。
+- Magnet：调用光鸭原生 cloudcollection 云添加。
+- ED2K：调用光鸭原生 cloudcollection 云添加。
+
+命名以 MoviePilot 识别结果为第一优先级。剧集格式为 `剧名 SxxExx - 发布参数.ext`，并尽量保留原资源的分辨率、WEB-DL/BluRay/REMUX、H.264/H.265/HEVC/AV1、HDR/DV、音频、发布组等编码参数；不能让来源标题覆盖 MoviePilot 已识别的媒体名称。
+
+契约 runner 在正式测试前会检查仓库中的插件运行时代码只有 `__init__.py`。随后从单文件内联源码临时恢复历史模块路径，继续执行完整旧契约测试，测试结束立即清理。因此单文件化不以删除测试覆盖为代价。
+
+后续新增功能必须进入 `__init__.py` 的现有职责区；除非用户明确改变此规则，不允许新增第二个运行时 `.py` 文件。
 
