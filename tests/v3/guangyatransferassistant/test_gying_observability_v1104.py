@@ -1,6 +1,9 @@
 ﻿from __future__ import annotations
 
 import ast
+from contextlib import contextmanager
+from types import SimpleNamespace
+from typing import Any, Dict, List
 from pathlib import Path
 
 
@@ -129,3 +132,193 @@ def test_observability_distinguishes_cache_from_real_network_and_node_failover()
         "failover_attempts=failover_attempts",
     ):
         assert token in text
+
+
+
+def _live_probe_class():
+    tree = ast.parse(text, filename=str(OBS))
+    source_class = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "GuangYaGyingObservabilityV1104Mixin"
+    )
+    wanted = {"_viewing_probe_subscription_v1104", "api_viewing_live_search_probe"}
+    methods = []
+    for node in source_class.body:
+        if isinstance(node, ast.FunctionDef) and node.name in wanted:
+            node.returns = None
+            for arg in node.args.args:
+                arg.annotation = None
+            methods.append(node)
+    probe = ast.ClassDef(
+        name="LiveProbe",
+        bases=[],
+        keywords=[],
+        body=methods,
+        decorator_list=[],
+    )
+    module = ast.Module(body=[probe], type_ignores=[])
+    ast.fix_missing_locations(module)
+    ns = {"Any": Any, "Dict": Dict, "List": List}
+    exec(compile(module, str(OBS), "exec"), ns)
+    return ns["LiveProbe"]
+
+
+def test_live_gying_probe_forces_real_search_and_returns_only_sanitized_evidence():
+    Probe = _live_probe_class()
+
+    class Harness(Probe):
+        def __init__(self):
+            self._viewing_enabled = True
+            self._selected_subscriptions = [42]
+            self.calls = []
+            self.records = []
+
+        @staticmethod
+        def _find_subscription(sid):
+            return SimpleNamespace(id=42, name="示例剧", year=2026, season=1, type="TV") if sid == 42 else None
+
+        @staticmethod
+        def _is_movie_subscription(_subscribe):
+            return False
+
+        @staticmethod
+        def _subscription_missing_episodes(_subscribe):
+            return [5]
+
+        @staticmethod
+        def _provider_keyword(_subscribe):
+            return "示例剧 2026 S01"
+
+        @contextmanager
+        def _gying_alias_scope_v11212(self, subscribe):
+            assert subscribe.id == 42
+            self.calls.append(("scope", subscribe.id))
+            yield
+
+        def _gying_raw_results(self, keyword, force=False):
+            self.calls.append(("search", keyword, bool(force)))
+            return (
+                [
+                    {"url": "https://pan.xunlei.com/s/SECRET?pwd=7788", "resource_kind": "pan"},
+                    {"url": "magnet:?xt=urn:btih:ABC"},
+                    {"url": "ed2k://|file|demo.mkv|100|HASH|/"},
+                ],
+                {
+                    "success": True,
+                    "node": "https://b.example",
+                    "attempted_nodes": ["https://a.example", "https://b.example"],
+                    "failover_attempts": 2,
+                    "cache_hit": False,
+                    "network_requested": True,
+                    "search_request_count_total": 2,
+                    "detail_request_count_total": 3,
+                    "detail_failure_count_this_call": 1,
+                    "search_mode": "browser",
+                    "raw_cards": 5,
+                    "matched_cards": 2,
+                    "detail_cards": 2,
+                    "message": "ok",
+                },
+            )
+
+        @staticmethod
+        def _gying_node_label(value):
+            return str(value or "")
+
+        @staticmethod
+        def _gying_public_text(value, limit=300):
+            return str(value or "")[:limit]
+
+        def _gying_obs_log(self, *args):
+            self.calls.append(("log", args))
+
+        def _gying_obs_record(self, stage, **fields):
+            self.records.append((stage, fields))
+
+        def _upsert_source(self, *_args, **_kwargs):
+            raise AssertionError("live probe must not create source")
+
+        def _spawn_source_dispatch(self, *_args, **_kwargs):
+            raise AssertionError("live probe must not dispatch transfer")
+
+    h = Harness()
+    result = h.api_viewing_live_search_probe()
+
+    assert result["success"] is True
+    assert result["subscribe_id"] == 42
+    assert result["network_requested"] is True
+    assert result["search_requests"] == 2
+    assert result["detail_requests"] == 3
+    assert result["detail_failures"] == 1
+    assert result["attempted_nodes"] == ["https://a.example", "https://b.example"]
+    assert result["xunlei"] == 1
+    assert result["magnet"] == 1
+    assert result["ed2k"] == 1
+    assert ("search", "示例剧 2026 S01", True) in h.calls
+    assert h.records[-1][0] == "live_search_probe"
+
+    serialized = repr(result)
+    for secret in ("SECRET", "7788", "magnet:?xt=", "ed2k://|file|"):
+        assert secret not in serialized
+
+
+def test_live_gying_probe_requires_real_network_evidence_even_if_state_says_success():
+    Probe = _live_probe_class()
+
+    class Harness(Probe):
+        _viewing_enabled = True
+        _selected_subscriptions = [42]
+
+        @staticmethod
+        def _find_subscription(_sid):
+            return SimpleNamespace(id=42, name="示例剧", year=2026, season=1, type="TV")
+
+        @staticmethod
+        def _is_movie_subscription(_subscribe):
+            return False
+
+        @staticmethod
+        def _subscription_missing_episodes(_subscribe):
+            return [5]
+
+        @staticmethod
+        def _provider_keyword(_subscribe):
+            return "示例剧 2026 S01"
+
+        def _gying_raw_results(self, _keyword, force=False):
+            assert force is True
+            return [], {
+                "success": True,
+                "cache_hit": True,
+                "network_requested": False,
+                "search_request_count_this_call": 0,
+                "message": "cached only",
+            }
+
+        @staticmethod
+        def _gying_node_label(value):
+            return str(value or "")
+
+        @staticmethod
+        def _gying_public_text(value, limit=300):
+            return str(value or "")[:limit]
+
+        @staticmethod
+        def _gying_obs_log(*_args):
+            return None
+
+        @staticmethod
+        def _gying_obs_record(*_args, **_kwargs):
+            return None
+
+    out = Harness().api_viewing_live_search_probe()
+    assert out["success"] is False
+    assert out["network_requested"] is False
+    assert out["search_requests"] == 0
+
+
+def test_live_gying_probe_has_dedicated_api_and_page_action():
+    assert '"/viewing/search/probe"' in text
+    assert '"实时搜观影"' in text
+    assert "api_viewing_live_search_probe" in text
+    assert "强制实时搜索一个固定订阅，仅返回脱敏搜索证据" in text
