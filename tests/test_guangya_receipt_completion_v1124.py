@@ -17,8 +17,12 @@ class GuangYaReceiptCompletionV1124Tests(unittest.TestCase):
         self.assertIn("from .episode_fence_final_v1124 import GuangYaEpisodeFenceFinalV1124Mixin", ENTRY)
         self.assertIn("from .dispatch_policy_v1125 import GuangYaDispatchPolicyV1125Mixin", ENTRY)
         self.assertIn("from .dispatch_policy_final_v1125 import GuangYaDispatchPolicyFinalV1125Mixin", ENTRY)
-        class_head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
-        mixins = [line.strip().rstrip(",") for line in class_head.splitlines() if line.strip()]
+        tree = ast.parse(ENTRY)
+        final_class = [
+            node for node in tree.body
+            if isinstance(node, ast.ClassDef) and node.name == "GuangYaTransferAssistant"
+        ][-1]
+        mixins = [ast.unparse(base) for base in final_class.bases]
         self.assertEqual(mixins[:17], [
             "GuangYaFoundationOpsV209Mixin",
             "GuangYaEpisodeRuntimeV211Mixin",
