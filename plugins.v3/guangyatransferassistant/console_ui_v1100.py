@@ -112,8 +112,18 @@ class GuangYaConsoleUiV1100Mixin:
     def _runtime_health_rows(self, overview: Dict[str, Any]) -> List[Dict[str, Any]]:
         viewing = dict(overview.get("viewing") or {})
         viewing_enabled = bool(viewing.get("enabled"))
-        viewing_ok = viewing_enabled and str(viewing.get("status") or "") == "ok"
+        viewing_ok = viewing_enabled and str(viewing.get("status") or "") == "ok" and not bool(viewing.get("recent_failure"))
         viewing_node = str(viewing.get("active_node") or "未选择")
+        viewing_stage = str(viewing.get("last_stage") or "")
+        viewing_message = str(viewing.get("last_message") or "")[:120]
+        viewing_updated = str(viewing.get("last_updated_at") or "")
+        viewing_detail = "未启用" if not viewing_enabled else viewing_node
+        if viewing_enabled and viewing_stage:
+            viewing_detail += f" · 最近 {viewing_stage}"
+        if viewing_enabled and viewing_updated:
+            viewing_detail += f" · {viewing_updated}"
+        if viewing_enabled and viewing_message:
+            viewing_detail += f" · {viewing_message}"
 
         xunlei_status = {}
         try:
@@ -139,7 +149,7 @@ class GuangYaConsoleUiV1100Mixin:
             guangya_ok = False
 
         rows = [
-            ("观影 GYING", viewing_ok, "未启用" if not viewing_enabled else viewing_node, "mdi-movie-search-outline"),
+            ("观影 GYING", viewing_ok, viewing_detail, "mdi-movie-search-outline"),
             ("迅雷秒传", xunlei_ready and xunlei_enabled, "已关闭" if not xunlei_enabled else str(xunlei_status.get("message") or "等待预检"), "mdi-flash-outline"),
             ("Magnet / ED2K API", api_ok, f"已配置 {len(provider_defs)} 个接口" if provider_defs else "未配置外部 API", "mdi-magnet-on"),
             ("光鸭运行时", guangya_ok, "客户端与存储 API 已就绪" if guangya_ok else "未运行或未登录", "mdi-cloud-check-outline"),
