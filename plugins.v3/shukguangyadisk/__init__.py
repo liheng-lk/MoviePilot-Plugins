@@ -5912,6 +5912,13 @@ class GuangYaOrganizerV4:
         if not self._organizer_owner_id:
             self._organizer_owner_id = uuid.uuid4().hex
         self._organizer_stopping = False
+        persisted_scan = self.get_data(self._organizer_scan_key) or {}
+        if isinstance(persisted_scan, dict):
+            self._organizer_last_scan_at = float(
+                persisted_scan.get("completed_at")
+                or persisted_scan.get("updated_at")
+                or 0
+            )
         if self._organizer_enabled:
             self._organizer_graceful_paused = False
         if self._organizer_executor is None:
@@ -6172,6 +6179,7 @@ class GuangYaOrganizerV4:
                     directory_path,
                     err,
                 )
+                break
 
         state["queue"] = queue
         state["seen"] = list(seen)
@@ -6732,6 +6740,7 @@ class GuangYaOrganizerV4:
             return
         now = time.time()
         try:
+            self._organizer_recover_expired_leases()
             scan_state = self.get_data(self._organizer_scan_key) or {}
             scan_active = bool(isinstance(scan_state, dict) and scan_state.get("active"))
             if scan_active or now - self._organizer_last_scan_at >= self._organizer_interval:
