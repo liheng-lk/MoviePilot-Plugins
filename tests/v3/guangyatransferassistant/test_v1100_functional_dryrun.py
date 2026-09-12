@@ -467,9 +467,18 @@ class FunctionalDryRunTests(unittest.TestCase):
 
             @staticmethod
             def api_provider_search_selected():
-                return {"success": True, "message": "搜索完成", "counts": {"xunlei": 1, "magnet": 2, "ed2k": 1}, "items": [
-                    {"subscribe_id": 1, "name": "Demo", "success": True, "counts": {"xunlei": 1, "magnet": 2, "ed2k": 1}}
-                ]}
+                raise AssertionError("health diagnostics must not search selected subscriptions")
+
+            @staticmethod
+            def get_data(key):
+                if key == "provider_search_last":
+                    return {
+                        "matched": True,
+                        "search_complete": True,
+                        "updated_at": "2026-09-01 19:55:00",
+                        "items": [{"subscribe_id": 1, "name": "Demo"}],
+                    }
+                return {}
 
             @staticmethod
             def api_xunlei_preflight():
@@ -490,6 +499,10 @@ class FunctionalDryRunTests(unittest.TestCase):
         result = dummy.api_full_diagnostics()
         self.assertFalse(result["success"])
         self.assertTrue(any("迅雷匿名分享身份" in item for item in result["issues"]))
+        readiness = next(row for row in result["checks"] if row["key"] == "selected_search_ready")
+        self.assertTrue(readiness["ok"])
+        self.assertTrue(readiness["data"]["cached_search_available"])
+        self.assertTrue(readiness["data"]["cached_matched"])
         rapid = next(row for row in result["checks"] if row["key"] == "xunlei_rapid")
         self.assertFalse(rapid["ok"])
         self.assertEqual(dummy.saved[0], "full_diagnostics_last")
