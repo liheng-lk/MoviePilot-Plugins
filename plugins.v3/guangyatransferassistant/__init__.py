@@ -872,7 +872,7 @@ class GuangYaTransferAssistant(
         return result
 
     plugin_version = "2.1.0"
-    build_id = "20260912-r99"
+    build_id = "20260912-r98"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
