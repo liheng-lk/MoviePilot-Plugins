@@ -137,6 +137,16 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
         self.assertIn('"next_due": max(float(blocked_recheck_at or 0), now)', scan)
         self.assertIn('"state_recheck": "blocked"', scan)
 
+    def test_blocked_terminal_row_is_retained_until_recheck_at(self):
+        core = CORE.read_text(encoding="utf-8")
+        dispatch = core.split("def _dispatch_one", 1)[1].split("def install_watch_pipeline_v380", 1)[0]
+        self.assertIn('if int(phases.get("blocked") or 0) > 0', dispatch)
+        self.assertIn("_blocked_recheck_at(plugin", dispatch)
+        self.assertIn('"last_result": "blocked_wait"', dispatch)
+        self.assertIn('"state_recheck": "blocked"', dispatch)
+        self.assertIn("blocked>0 但 queue=0", dispatch)
+        self.assertIn("rows[path] = row", dispatch)
+
     def test_manual_full_scan_dispatches_and_wait_reason_is_visible(self):
         source = FINAL.read_text(encoding="utf-8")
         self.assertIn("def _v394_manual_full_with_dispatch", source)
