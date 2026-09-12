@@ -455,3 +455,87 @@ def test_pending_recheck_visible_file_only_syncs_facts_and_completion():
     assert h.finish_calls == 1
     assert h.search_calls == 0
     assert h.restore_calls == 0
+
+
+
+def _landing_snapshot_harness(sync_result):
+    mixin = _mixin_class()
+
+    class Harness(mixin):
+        def __init__(self):
+            self.source = {"id": "src-land"}
+            self.sync_result = sync_result
+            self.logs = []
+
+        def _sync_media_library_progress(self, _subscribe):
+            if isinstance(self.sync_result, Exception):
+                raise self.sync_result
+            return dict(self.sync_result)
+
+        def _update_source(self, _source_id, **fields):
+            self.source.update(fields)
+            return dict(self.source)
+
+        @staticmethod
+        def _now_text():
+            return "2026-09-12 12:00:00"
+
+        def _plugin_log(self, level, message, *args):
+            self.logs.append((level, message, args))
+
+    return Harness()
+
+
+def test_remote_confirmed_target_stays_library_pending_until_all_target_episodes_are_observed():
+    h = _landing_snapshot_harness({"success": True, "existing": [5]})
+    source = {"id": "src-land", "target_episodes": [5, 6]}
+    out = h._record_library_landing_snapshot_v180(source, _Sub(), {"state": "completed"})
+
+    assert out["library_snapshot_state"] == "pending"
+    assert out["library_observed_episodes"] == [5]
+    assert out["library_remaining_target_episodes"] == [6]
+    assert out["landing_stage"] == "LIBRARY_PENDING"
+    assert out["remote_confirmed_at"] == "2026-09-12 12:00:00"
+
+
+def test_remote_confirmed_target_becomes_library_confirmed_only_after_all_target_episodes_exist():
+    h = _landing_snapshot_harness({"success": True, "existing": [1, 5, 6, 99]})
+    source = {"id": "src-land", "resolved_episodes": [5, 6]}
+    out = h._record_library_landing_snapshot_v180(source, _Sub(), {"state": "completed"})
+
+    assert out["library_snapshot_state"] == "confirmed"
+    assert out["library_observed_episodes"] == [5, 6]
+    assert out["library_remaining_target_episodes"] == []
+    assert out["landing_stage"] == "LIBRARY_CONFIRMED"
+
+
+def test_remote_confirmed_movie_or_unscoped_source_is_checked_not_falsely_episode_confirmed():
+    h = _landing_snapshot_harness({"success": True, "existing": [5]})
+    source = {"id": "src-land", "target_episodes": []}
+    out = h._record_library_landing_snapshot_v180(source, _Sub(), {"state": "completed"})
+
+    assert out["library_snapshot_state"] == "checked"
+    assert out["library_observed_episodes"] == []
+    assert out["library_remaining_target_episodes"] == []
+    assert out["landing_stage"] == "LIBRARY_CHECKED"
+
+
+def test_library_snapshot_failure_is_unknown_and_never_rewrites_source_success_semantics():
+    h = _landing_snapshot_harness(RuntimeError("Emby unavailable"))
+    source = {"id": "src-land", "target_episodes": [5]}
+    out = h._record_library_landing_snapshot_v180(
+        source,
+        _Sub(),
+        {
+            "state": "completed",
+            "remote_video_confirmed": True,
+            "remote_verify_source": "task_result_filename",
+        },
+    )
+
+    assert out["state"] == "completed"
+    assert out["remote_video_confirmed"] is True
+    assert out["remote_verify_source"] == "task_result_filename"
+    assert out["library_snapshot_state"] == "unknown"
+    assert out["landing_stage"] == "LIBRARY_UNKNOWN"
+    assert "Emby unavailable" in out["library_snapshot_error"]
