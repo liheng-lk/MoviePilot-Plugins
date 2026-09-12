@@ -375,9 +375,30 @@ def test_valid_empty_browser_result_does_not_fall_through_to_legacy_recommendati
     assert rows == []
     assert state["success"] is True
     assert state["cards"] == 0
+    assert state["transport"] == "network"
+    assert state["cache_hit"] is False
+    assert state["search_http_requests"] == 1
+    assert state["downurl_attempts"] == 0
     assert len(probe.request_urls) == 1
     assert "mode=1" in probe.request_urls[0]
     assert probe.detail_ids == []
+
+
+def test_second_identical_search_is_explicit_cache_reuse_not_fake_network_success():
+    probe = _ProtocolHarness([_Response(_search_html([]))])
+    _rows1, first = probe._gying_raw_results("象行记 2026")
+    request_count = len(probe.request_urls)
+    _rows2, second = probe._gying_raw_results("象行记 2026")
+
+    assert first["transport"] == "network"
+    assert first["search_http_requests"] == 1
+    assert second["transport"] == "cache"
+    assert second["cache_hit"] is True
+    assert second["search_http_requests"] == 0
+    assert second["downurl_attempts"] == 0
+    assert second["cache_age_seconds"] >= 0
+    assert len(probe.request_urls) == request_count
+    assert "本轮未发起 /search 或 downurl 网络请求" in second["message"]
 
 
 def test_unparseable_browser_response_alone_falls_back_to_valid_legacy_response():
@@ -417,6 +438,21 @@ def test_protocol_calls_downurl_only_for_target_beyond_twenty_unrelated_cards():
     assert state["raw_cards"] == 26
     assert state["matched_cards"] == 1
     assert state["detail_cards"] == 1
+    assert state["transport"] == "network"
+    assert state["search_http_requests"] == 1
+    assert state["downurl_attempts"] == 1
+    assert state["downurl_success"] == 1
+    assert state["downurl_failures"] == 0
+
+
+def test_live_session_probe_returns_transport_and_request_evidence():
+    runtime = RUNTIME.read_text(encoding="utf-8")
+    observability = (PLUGIN / "gying_observability_v1104.py").read_text(encoding="utf-8")
+    assert '"transport": str(search_state.get("transport") or "unknown")' in runtime
+    assert '"search_http_requests": int(search_state.get("search_http_requests") or 0)' in runtime
+    assert '"downurl_success": int(search_state.get("downurl_success") or 0)' in runtime
+    assert "搜索请求完成：传输=%s cache_hit=%s /search真实请求=%s" in observability
+    assert '"transport", "cache_hit", "cache_age_seconds", "search_http_requests"' in observability
 
 
 def test_zero_target_cards_do_not_stop_keyword_fallback():
