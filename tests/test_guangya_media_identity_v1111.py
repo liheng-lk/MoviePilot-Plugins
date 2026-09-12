@@ -102,7 +102,7 @@ class GuangYaMediaIdentityV1111Tests(unittest.TestCase):
         self.assertIn("threshold=50", method)
 
     def test_offline_resolve_has_confidence_gate_before_cloud_create(self):
-        guard = (PLUGIN / "media_identity_guard_v1111.py").read_text(encoding="utf-8")
+        guard = bundle_source("media_identity_guard_v1111")
         method = guard.split("    def _resolve_offline_source(", 1)[1].split("    def _plan_incremental_files", 1)[0]
         self.assertIn('data.get("btResInfo")', method)
         self.assertIn('bt_info.get("subfiles")', method)
