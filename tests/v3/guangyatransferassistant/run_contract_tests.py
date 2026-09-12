@@ -72,6 +72,21 @@ def _cleanup_materialized_bundle(paths: list[Path]) -> None:
             pass
 
 
+def _project_entry_for_legacy_contracts() -> str:
+    """Hide embedded historical source text while legacy contracts inspect ENTRY."""
+    entry = PLUGIN_DIR / "__init__.py"
+    original = entry.read_text(encoding="utf-8")
+    start = original.index("_BUNDLED_SOURCES = ")
+    end = original.index("\n\n\nclass _GuangYaBundledModuleFinder", start)
+    projected = original[:start] + "_BUNDLED_SOURCES = {}" + original[end:]
+    entry.write_text(projected, encoding="utf-8")
+    return original
+
+
+def _restore_entry_after_legacy_contracts(original: str) -> None:
+    (PLUGIN_DIR / "__init__.py").write_text(original, encoding="utf-8")
+
+
 def _run_test_file(path: Path, failures: list[tuple[str, Exception, str]]) -> int:
     try:
         namespace = runpy.run_path(str(path))
@@ -121,6 +136,7 @@ def main() -> int:
         total += _run_test_file(layout_test, failures)
 
     materialized = _materialize_bundle_for_legacy_contracts()
+    original_entry = _project_entry_for_legacy_contracts()
     print(f"INFO legacy contract compatibility: materialized {len(materialized)} bundled modules")
     try:
         for path in sorted(HERE.glob("test_*.py")):
@@ -128,6 +144,7 @@ def main() -> int:
                 continue
             total += _run_test_file(path, failures)
     finally:
+        _restore_entry_after_legacy_contracts(original_entry)
         _cleanup_materialized_bundle(materialized)
 
     print(f"GuangYa contract tests: {total} run, {len(failures)} failed")
