@@ -2952,6 +2952,431 @@ class GuangYaApi(_GuangYaApiV112):
         # 旧实现使用类属性缓存。V4 明确改为实例缓存，避免账号切换/热重载污染。
         self._id_cache = {}
         self._item_cache = {}
+        self._move_delete_protection: Dict[str, Dict[str, Any]] = {}
+        self._move_delete_lock = threading.RLock()
+
+    @staticmethod
+    def _same_remote_identity(expected: Any, actual: Any) -> bool:
+        """优先按 fileId 比对，缺失时使用非零文件大小兜底。"""
+        expected_id = str(getattr(expected, "fileid", "") or "")
+        actual_id = str(getattr(actual, "fileid", "") or "")
+        if expected_id and actual_id:
+            return expected_id == actual_id
+        expected_size = getattr(expected, "size", None)
+        actual_size = getattr(actual, "size", None)
+        if expected_size not in (None, 0) and actual_size not in (None, 0):
+            return int(expected_size) == int(actual_size)
+        return True
+
+    def _delete_protection_keys(self, fileitem: Any) -> List[str]:
+        """生成移动状态不确定时的删除保护键。"""
+        keys: List[str] = []
+        fileid = str(getattr(fileitem, "fileid", "") or "")
+        path = str(getattr(fileitem, "path", "") or "")
+        if fileid:
+            keys.append(f"id:{fileid}")
+        if path:
+            keys.append(f"path:{self._normalize_path(path)}")
+        return keys
+
+    def _protect_from_delete(
+        self,
+        fileitem: Any,
+        *,
+        reason: str,
+        extra_paths: Optional[List[str]] = None,
+    ) -> None:
+        """移动/重命名结果不确定时冻结该 fileId/path 的 delete/purge。"""
+        record = {
+            "reason": str(reason or "remote_state_uncertain"),
+            "time": time.time(),
+            "fileid": str(getattr(fileitem, "fileid", "") or ""),
+            "path": self._normalize_path(str(getattr(fileitem, "path", "") or "/")),
+        }
+        keys = self._delete_protection_keys(fileitem)
+        for value in extra_paths or []:
+            if value:
+                keys.append(f"path:{self._normalize_path(value)}")
+        with self._move_delete_lock:
+            for key in keys:
+                self._move_delete_protection[key] = dict(record)
+        logger.error(
+            "【光鸭云盘助手】【数据保护】远端移动/重命名状态未确认，冻结删除: %s reason=%s",
+            record["path"],
+            record["reason"],
+        )
+
+    def _clear_delete_protection(self, fileitem: Any, *paths: str) -> None:
+        """操作获得确定成功终态后解除当前事务留下的保护键。"""
+        keys = self._delete_protection_keys(fileitem)
+        keys.extend(
+            f"path:{self._normalize_path(value)}"
+            for value in paths
+            if value
+        )
+        with self._move_delete_lock:
+            for key in keys:
+                self._move_delete_protection.pop(key, None)
+
+    def _delete_protection_record(self, fileitem: Any) -> Optional[Dict[str, Any]]:
+        """读取 fileId/path 命中的数据保护记录。"""
+        with self._move_delete_lock:
+            for key in self._delete_protection_keys(fileitem):
+                record = self._move_delete_protection.get(key)
+                if record:
+                    return dict(record)
+        return None
+
+    def _find_item_in_parent_strict(
+        self,
+        *,
+        parent_path: str,
+        name: Optional[str] = None,
+        expected_type: Optional[str] = None,
+        expected_fileid: Optional[str] = None,
+    ) -> Optional[Any]:
+        """严格读取父目录并匹配名称/类型/fileId；读取失败向上抛出。"""
+        normalized_parent = self._normalize_path(parent_path)
+        parent = self.refresh_item(Path(normalized_parent))
+        if not parent:
+            return None
+        for item in self.list_strict(parent):
+            if name is not None and str(getattr(item, "name", "") or "") != str(name):
+                continue
+            if expected_type and str(getattr(item, "type", "") or "") != str(expected_type):
+                continue
+            if expected_fileid and str(getattr(item, "fileid", "") or "") != str(expected_fileid):
+                continue
+            return item
+        return None
+
+    def _confirmed_named_item(
+        self,
+        *,
+        parent_path: str,
+        target_name: str,
+        source_item: Any,
+        compare_fileid: bool,
+        max_try: int = 30,
+        interval: float = 0.5,
+    ) -> Optional[Any]:
+        """确认 MoviePilot 目标名在远端真实可见，并校验文件身份。"""
+        for index in range(max_try):
+            try:
+                item = self._find_item_in_parent_strict(
+                    parent_path=parent_path,
+                    name=target_name,
+                    expected_type=getattr(source_item, "type", None),
+                )
+            except Exception as err:
+                logger.debug(
+                    "【光鸭云盘助手】【远端确认】第 %s/%s 次读取失败: %s/%s - %s",
+                    index + 1,
+                    max_try,
+                    parent_path,
+                    target_name,
+                    err,
+                )
+                item = None
+            if item:
+                if compare_fileid:
+                    if self._same_remote_identity(source_item, item):
+                        self._cache_item(item)
+                        return item
+                else:
+                    expected_size = getattr(source_item, "size", None)
+                    actual_size = getattr(item, "size", None)
+                    if (
+                        expected_size in (None, 0)
+                        or actual_size in (None, 0)
+                        or int(expected_size) == int(actual_size)
+                    ):
+                        self._cache_item(item)
+                        return item
+            if index < max_try - 1:
+                time.sleep(interval)
+        return None
+
+    def rename(self, fileitem: Any, name: str) -> bool:
+        """重命名只有在真实目标名可见后才向 MoviePilot 返回成功。"""
+        old_path = self._normalize_path(str(getattr(fileitem, "path", "") or ""))
+        parent_path = self._normalize_path(str(Path(old_path).parent))
+        current_name = str(getattr(fileitem, "name", "") or Path(old_path).name)
+        target_name = str(name or current_name).strip()
+        if not target_name:
+            return False
+        if target_name == current_name:
+            return True
+
+        target_path = self._normalize_path(str(Path(parent_path) / target_name))
+        if not super().rename(fileitem, target_name):
+            self._protect_from_delete(
+                fileitem,
+                reason="rename_api_failed_or_uncertain",
+                extra_paths=[target_path],
+            )
+            return False
+
+        # 基类会写入理论缓存，确认前必须清理，避免用缓存冒充远端终态。
+        self._invalidate_path_cache(old_path)
+        self._invalidate_path_cache(target_path)
+        confirmed = self._confirmed_named_item(
+            parent_path=parent_path,
+            target_name=target_name,
+            source_item=fileitem,
+            compare_fileid=True,
+        )
+        if confirmed:
+            self._clear_delete_protection(fileitem, old_path, target_path)
+            logger.info(
+                "【光鸭云盘助手】【重命名确认】远端已确认: %s -> %s",
+                current_name,
+                target_name,
+            )
+            return True
+
+        self._protect_from_delete(
+            fileitem,
+            reason="rename_target_not_confirmed",
+            extra_paths=[old_path, target_path],
+        )
+        logger.error(
+            "【光鸭云盘助手】【重命名确认】接口返回后仍未确认远端目标名，拒绝返回成功: %s -> %s",
+            old_path,
+            target_path,
+        )
+        return False
+
+    def move_item(
+        self,
+        fileitem: Any,
+        path: Path,
+        new_name: str,
+    ) -> Optional[Any]:
+        """MoviePilot 同盘移动：执行、目标可见性、命名三步均确认后才返回 FileItem。"""
+        source_path = self._normalize_path(str(getattr(fileitem, "path", "") or ""))
+        source_parent = self._normalize_path(str(Path(source_path).parent))
+        target_parent = self._normalize_path(str(path))
+        current_name = str(getattr(fileitem, "name", "") or Path(source_path).name)
+        target_name = str(new_name or current_name)
+
+        if source_parent == target_parent:
+            if target_name == current_name:
+                try:
+                    return self.refresh_item(Path(source_path)) or fileitem
+                except Exception:
+                    return fileitem
+            if not self.rename(fileitem, target_name):
+                return None
+            return self._confirmed_named_item(
+                parent_path=target_parent,
+                target_name=target_name,
+                source_item=fileitem,
+                compare_fileid=True,
+            )
+
+        target_current_path = self._normalize_path(
+            str(Path(target_parent) / current_name)
+        )
+        target_final_path = self._normalize_path(
+            str(Path(target_parent) / target_name)
+        )
+        try:
+            target_id = self._path_to_id(target_parent)
+            response = self.client.move_file([fileitem.fileid], target_id)
+        except Exception as err:
+            self._protect_from_delete(
+                fileitem,
+                reason=f"move_request_exception:{err}",
+                extra_paths=[target_current_path, target_final_path],
+            )
+            return None
+
+        if not _guangya_response_success(response):
+            self._protect_from_delete(
+                fileitem,
+                reason=f"move_api_failed:{_guangya_response_error(response)}",
+                extra_paths=[target_current_path, target_final_path],
+            )
+            return None
+
+        task_id = str((response.get("data", {}) or {}).get("taskId") or "")
+        task_confirmed = True
+        if task_id:
+            task_confirmed = self._wait_task_done(task_id, allow_missing=True)
+
+        self._invalidate_path_cache(source_path)
+        self._invalidate_path_cache(target_current_path)
+        self._invalidate_path_cache(target_final_path)
+
+        moved_item = self._confirmed_named_item(
+            parent_path=target_parent,
+            target_name=current_name,
+            source_item=fileitem,
+            compare_fileid=True,
+        )
+        if not moved_item:
+            # 失败前再次确认源是否还在；无论哪种情况都冻结 delete，避免失败清理误删同 fileId。
+            try:
+                source_actual = self._find_item_in_parent_strict(
+                    parent_path=source_parent,
+                    name=current_name,
+                    expected_type=getattr(fileitem, "type", None),
+                    expected_fileid=str(getattr(fileitem, "fileid", "") or "") or None,
+                )
+            except Exception:
+                source_actual = None
+            reason = (
+                "move_target_not_confirmed_source_visible"
+                if source_actual
+                else "move_visibility_uncertain"
+            )
+            if not task_confirmed:
+                reason = f"{reason}_task_unconfirmed"
+            self._protect_from_delete(
+                fileitem,
+                reason=reason,
+                extra_paths=[source_path, target_current_path, target_final_path],
+            )
+            return None
+
+        final_item = moved_item
+        if target_name != current_name:
+            if not self.rename(moved_item, target_name):
+                self._protect_from_delete(
+                    moved_item,
+                    reason="move_succeeded_but_rename_unconfirmed",
+                    extra_paths=[source_path, target_current_path, target_final_path],
+                )
+                return None
+            final_item = self._confirmed_named_item(
+                parent_path=target_parent,
+                target_name=target_name,
+                source_item=fileitem,
+                compare_fileid=True,
+            )
+            if not final_item:
+                self._protect_from_delete(
+                    moved_item,
+                    reason="move_final_target_not_confirmed",
+                    extra_paths=[source_path, target_current_path, target_final_path],
+                )
+                return None
+
+        self._clear_delete_protection(
+            fileitem,
+            source_path,
+            target_current_path,
+            target_final_path,
+        )
+        logger.info(
+            "【光鸭云盘助手】【移动终态】已确认远端目标: %s -> %s",
+            source_path,
+            target_final_path,
+        )
+        return final_item
+
+    def copy_item(
+        self,
+        fileitem: Any,
+        path: Path,
+        new_name: str,
+    ) -> Optional[Any]:
+        """MoviePilot 同盘复制：复制品必须按目标名和大小真实可见。"""
+        target_parent = self._normalize_path(str(path))
+        current_name = str(getattr(fileitem, "name", "") or "")
+        target_name = str(new_name or current_name)
+        target_current_path = self._normalize_path(str(Path(target_parent) / current_name))
+        target_final_path = self._normalize_path(str(Path(target_parent) / target_name))
+        try:
+            target_id = self._path_to_id(target_parent)
+            response = self.client.copy_file([fileitem.fileid], target_id)
+        except Exception as err:
+            logger.error("【光鸭云盘助手】【复制终态】复制请求异常: %s", err)
+            return None
+        if not _guangya_response_success(response):
+            logger.error(
+                "【光鸭云盘助手】【复制终态】复制接口失败: %s",
+                _guangya_response_error(response),
+            )
+            return None
+
+        task_id = str((response.get("data", {}) or {}).get("taskId") or "")
+        if task_id and not self._wait_task_done(task_id, allow_missing=True):
+            logger.warning("【光鸭云盘助手】【复制终态】任务状态未确认，继续按远端可见性核验")
+
+        self._invalidate_path_cache(target_current_path)
+        self._invalidate_path_cache(target_final_path)
+        copied_item = self._confirmed_named_item(
+            parent_path=target_parent,
+            target_name=current_name,
+            source_item=fileitem,
+            compare_fileid=False,
+        )
+        if not copied_item:
+            logger.error(
+                "【光鸭云盘助手】【复制终态】接口返回后目标副本不可见: %s",
+                target_current_path,
+            )
+            return None
+
+        final_item = copied_item
+        if target_name != current_name:
+            if not self.rename(copied_item, target_name):
+                return None
+            final_item = self._confirmed_named_item(
+                parent_path=target_parent,
+                target_name=target_name,
+                source_item=fileitem,
+                compare_fileid=False,
+            )
+        if not final_item:
+            logger.error(
+                "【光鸭云盘助手】【复制终态】最终 MoviePilot 目标名未确认: %s",
+                target_final_path,
+            )
+            return None
+        return final_item
+
+    def move(self, fileitem: Any, path: Path, new_name: str) -> bool:
+        """兼容旧 Storage 调用；核心语义统一由 move_item 提供。"""
+        return self.move_item(fileitem, path, new_name) is not None
+
+    def copy(self, fileitem: Any, path: Path, new_name: str) -> bool:
+        """兼容旧 Storage 调用；核心语义统一由 copy_item 提供。"""
+        return self.copy_item(fileitem, path, new_name) is not None
+
+    def delete(self, fileitem: Any) -> bool:
+        """移动状态不确定的 fileId/path 禁止进入回收站。"""
+        protected = self._delete_protection_record(fileitem)
+        if protected:
+            logger.error(
+                "【光鸭云盘助手】【数据保护】阻止删除未确认移动项: %s reason=%s",
+                str(getattr(fileitem, "path", "") or ""),
+                protected.get("reason") or "unknown",
+            )
+            return False
+        return super().delete(fileitem)
+
+    def _schedule_purge_from_recycle(self, fileitem: Any, *args: Any, **kwargs: Any) -> None:
+        """受保护项禁止进入永久删除队列。"""
+        if self._delete_protection_record(fileitem):
+            logger.error(
+                "【光鸭云盘助手】【数据保护】阻止未确认移动项加入永久删除队列: %s",
+                str(getattr(fileitem, "path", "") or ""),
+            )
+            return None
+        return super()._schedule_purge_from_recycle(fileitem, *args, **kwargs)
+
+    def _purge_from_recycle(self, fileitem: Any, *args: Any, **kwargs: Any) -> bool:
+        """永久删除执行前再次检查事务保护。"""
+        if self._delete_protection_record(fileitem):
+            logger.error(
+                "【光鸭云盘助手】【数据保护】阻止永久删除未确认移动项: %s",
+                str(getattr(fileitem, "path", "") or ""),
+            )
+            return False
+        return super()._purge_from_recycle(fileitem, *args, **kwargs)
 
     def _path_to_id(self, path: str) -> str:
         normalized_path = self._normalize_path(path)
@@ -6089,9 +6514,26 @@ class GuangYaOrganizerV4:
                 "next_run": time.time() + min(300, 5 * max(1, int(task.get("attempts") or 1))),
             }
         if not current:
+            # 源路径消失不能自动等价于成功：远端 move 可能已经发生但最终命名/确认失败。
+            try:
+                history = resolve_history(
+                    path,
+                    storage=self._disk_name,
+                    transfer_history_oper=get_transfer_history_repository(),
+                )
+            except Exception as err:
+                return {
+                    "state": "BLOCKED",
+                    "message": f"源文件已消失且 MoviePilot 历史无法确认，拒绝推断成功: {err}",
+                }
+            if history is not None and bool(getattr(history, "status", False)):
+                return {
+                    "state": "COMPLETED",
+                    "message": "源文件已消失，MoviePilot 成功历史已确认",
+                }
             return {
-                "state": "COMPLETED",
-                "message": "源文件已不存在，停止重复提交",
+                "state": "BLOCKED",
+                "message": "源文件已消失但没有 MoviePilot 成功历史；可能是远端移动/重命名终态不确定，已停止自动重试",
             }
 
         gate = self._organizer_history_gate(current)
