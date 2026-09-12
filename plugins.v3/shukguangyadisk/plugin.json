@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
-  "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
-  "version": "3.9.5",
+  "description": "MoviePilot V3 原生接口重构版光鸭云盘助手：登录、存储、上传、WebDAV、Emby 与持久资源自动整理。",
+  "version": "4.0.0-alpha1",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v4.0.0-alpha1": "V4 重构基线：移除单文件 JSON 虚拟模块、Finder/Loader 和历史 monkey-patch 链；统一使用 MoviePilot V3 正式 SDK/运行时接口；基础存储直接集成分页路径解析与实例缓存隔离；自动整理重写为持久 ResourceStore + BFS Scanner + 单线程 Executor，READY 不再被 STABILIZING 队头阻塞，完成后立即续下一个任务；MoviePilot 负责历史门控、目录配置、预览、命名、分类、覆盖和真实整理。",
     "v3.9.5": "v3.9.5 单文件运行态一致性：修复 __init__.py、状态接口与 Federation 残留旧版本号导致热更新版本误判；runtime_version 改为动态读取 plugin_version，并新增内嵌模块总数、已加载虚拟模块数、Finder 数量及热更新围栏状态。整理识别、命名、移动与远端终态确认主链保持不变。",
     "v3.9.4": "v3.9.4 调度自愈与诊断：人工全量/强校验每页完成后立即尝试消费持久资源队列，不再只发现不执行；自动/人工调度在队列非空但未提交时投影并节流记录 handoff、worker_busy、queue_wait、read_error 等真实原因，queue_wait 同时显示距 next_due 的秒数，handoff 暴露旧 owner 当前任务和 Worker 存活状态。MoviePilot 识别、分类、命名、移动规则保持不变。",
     "v3.9.3": "v3.9.3 Worker Handoff：修复热更新时新实例持有进程 owner 锁等待旧 Worker join，导致旧 Worker finally 无法释放 owner、资源队列长期停在 handoff 的交接锁竞争；等待旧线程改到 owner 锁外执行并在退出后立即接管，不再浪费下一次 heartbeat。旧 v3.6.2 全局队列迁移改为 global_vars 进程级串行 once/recheck，多个插件实例不会重复清理同一批 waiting。状态快照补充旧 owner 当前任务与 handoff 标记。",
