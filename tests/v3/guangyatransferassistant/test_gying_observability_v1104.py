@@ -80,3 +80,35 @@ def test_recent_gying_failure_is_promoted_to_operator_attention():
     assert 'recent_failure = bool(viewing.get("enabled")) and recent.get("success") is False' in method
     assert 'overview["attention_count"] = int(overview.get("attention_count") or 0) + 1' in method
     assert 'overview["overall"] = "warning"' in method
+
+
+def test_public_text_redacts_query_and_runtime_secrets():
+    tree = ast.parse(text, filename=str(OBS))
+    cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "GuangYaGyingObservabilityV1104Mixin")
+    method = next(node for node in cls.body if isinstance(node, ast.FunctionDef) and node.name == "_gying_public_text")
+    method.decorator_list = []
+    module = ast.Module(body=[method], type_ignores=[])
+    ast.fix_missing_locations(module)
+    namespace = {"Any": object, "re": __import__("re")}
+    exec(compile(module, str(OBS), "exec"), namespace)
+    redact = namespace["_gying_public_text"]
+
+    raw = (
+        "GET https://example.invalid/search?q=demo&token=SECRET "
+        "password=hunter2 captcha_token=ABC device_id=DEV "
+        "https://pan.xunlei.com/s/PRIVATEID?pwd=7788"
+    )
+    safe = redact(raw)
+    for secret in ("SECRET", "hunter2", "ABC", "DEV", "PRIVATEID", "7788"):
+        assert secret not in safe
+    assert "?<redacted>" in safe
+    assert "password=<redacted>" in safe
+    assert "captcha_token=<redacted>" in safe
+    assert "device_id=<redacted>" in safe
+    assert "/s/<redacted>" in safe
+
+
+def test_observability_sanitizes_persisted_message_and_log_arguments():
+    assert '"message": self._gying_public_text(message, 300)' in text
+    assert "safe_args = tuple(" in text
+    assert "self._gying_public_text(value, 260)" in text
