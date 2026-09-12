@@ -1,0 +1,38 @@
+name: One-time Branch Cleanup
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/cleanup-branches-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Delete merged and obsolete branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          branches=(
+            "codex/guangya-2014-flow-consolidation"
+            "feat/guangya-unified-transfer-pipeline"
+            "feature/project-streamline"
+            "fix/guangya-real-landing-readback"
+            "refactor/guangya-maintenance-foundation"
+            "refactor/guangya-single-file-pipeline"
+            "refactor/shukguangyadisk-single-init-391"
+          )
+          for branch in "${branches[@]}"; do
+            echo "Deleting $branch"
+            git push origin --delete "$branch" || true
+          done
