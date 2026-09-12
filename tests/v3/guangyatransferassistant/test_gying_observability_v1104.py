@@ -112,3 +112,20 @@ def test_observability_sanitizes_persisted_message_and_log_arguments():
     assert '"message": self._gying_public_text(message, 300)' in text
     assert "safe_args = tuple(" in text
     assert "self._gying_public_text(value, 260)" in text
+
+
+
+def test_observability_distinguishes_cache_from_real_network_and_node_failover():
+    for token in (
+        "证据=%s",
+        "HTTP搜索请求=%s",
+        "详情请求=%s",
+        "详情失败=%s",
+        "节点尝试=%s",
+        "搜索节点链",
+        "cache_hit=cache_hit",
+        "network_requested=network_requested",
+        "search_requests=search_requests",
+        "failover_attempts=failover_attempts",
+    ):
+        assert token in text
