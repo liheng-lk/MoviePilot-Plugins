@@ -38,9 +38,9 @@ MoviePilot 订阅
 
 ### 成功闭环
 
-本版统一规定：API 返回 success、迅雷秒传接口成功、cloudcollection task completed 都不能单独视为转存成功。成功必须具备当前任务可归因的真实文件证据，并完成最终文件名确认；预先已经存在的同名/同 fileId 文件不会冒充本次落盘。成功通知只在这一闭环完成后发送，并通过完成状态字段防止重复通知。
+本版统一规定：API 返回 success、迅雷秒传接口成功、cloudcollection task completed 都不能单独视为转存成功。成功必须具备当前任务可归因的真实文件证据，并完成最终文件名确认；预先已经存在的同名/同 fileId 文件不会冒充本次落盘。成功通知只在这一闭环完成后发送；除各来源自身的完成状态外，最终入口还使用持久化成功指纹去重，同一成功回执跨轮询/重启不会重复推送。
 
-Telegram 与 GYING 都使用真实解析结构做四来源矩阵回归，均验证可产出 `xunlei / guangya / magnet / ed2k` 并进入同一优先级。发布收口前完整 CI：**GuangYa contract tests 1076 run / 0 failed**。
+Telegram 与 GYING 都使用真实解析结构做四来源矩阵回归，均验证可产出 `xunlei / guangya / magnet / ed2k` 并进入同一优先级。发布收口前完整 CI：**GuangYa contract tests 1076 run / 0 failed**。 最终 unified provider evidence、最终命名、真实落盘与 exactly-once 通知合同补齐后：**1084 run / 0 failed**。
 
 ### 实机验证边界
 
