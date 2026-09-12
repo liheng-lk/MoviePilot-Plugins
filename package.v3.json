@@ -90,7 +90,8 @@
       "v3.2.0": "新增自动目录监控整理，并统一使用 MoviePilot 内置分类和重命名规则。",
       "v3.1.0": "新增网盘整理预览与执行，支持移动复制和字幕跟随。",
       "v3.0.0": "推出 MoviePilot V3 专用版本，支持双登录、上传、WebDAV 和 Emby。"
-    }
+    },
+    "release": true
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
