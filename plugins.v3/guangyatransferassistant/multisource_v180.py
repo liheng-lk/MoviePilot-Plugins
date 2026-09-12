@@ -435,6 +435,13 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
         """记录“远端已确认后，媒体库此刻看到了什么”；只做观察，不反向伪造来源成功。"""
         source_id = str(source.get("id") or "")
         now_text = self._now_text()
+        base_updated = dict(updated or source or {})
+
+        def merge_persisted(value: Any) -> Dict[str, Any]:
+            merged = dict(base_updated)
+            if isinstance(value, dict):
+                merged.update(value)
+            return merged
         try:
             sync = dict(self._sync_media_library_progress(subscribe) or {})
             target_eps = set()
@@ -456,13 +463,14 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                     existing_eps.add(value)
 
             if not bool(sync.get("success")):
-                return self._update_source(
+                persisted = self._update_source(
                     source_id,
                     remote_confirmed_at=now_text,
                     library_snapshot_state="unknown",
                     library_snapshot_at=now_text,
                     landing_stage="LIBRARY_UNKNOWN",
-                ) or updated
+                )
+                return merge_persisted(persisted)
 
             observed = sorted(target_eps.intersection(existing_eps))
             remaining_target = sorted(target_eps - existing_eps)
@@ -471,7 +479,7 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                 if target_eps and not remaining_target
                 else ("pending" if target_eps else "checked")
             )
-            result = self._update_source(
+            persisted = self._update_source(
                 source_id,
                 remote_confirmed_at=now_text,
                 library_snapshot_state=snapshot_state,
@@ -484,7 +492,8 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                 }.get(snapshot_state, "LIBRARY_UNKNOWN"),
                 library_remaining_target_episodes=remaining_target,
                 library_snapshot_error="",
-            ) or updated
+            )
+            result = merge_persisted(persisted)
             self._plugin_log(
                 "INFO",
                 "【光鸭转存助手】【落盘闭环】source=%s remote=confirmed library=%s observed=%s remaining=%s",
@@ -495,14 +504,15 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
             )
             return result
         except Exception as err:
-            result = self._update_source(
+            persisted = self._update_source(
                 source_id,
                 remote_confirmed_at=now_text,
                 library_snapshot_state="unknown",
                 library_snapshot_at=now_text,
                 library_snapshot_error=str(err)[:260],
                 landing_stage="LIBRARY_UNKNOWN",
-            ) or updated
+            )
+            result = merge_persisted(persisted)
             self._plugin_log(
                 "DEBUG",
                 "【光鸭转存助手】【原生云添加】完成后媒体库进度同步暂未命中：%s",
