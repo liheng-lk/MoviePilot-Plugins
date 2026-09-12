@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import secrets
 import time
 from typing import Any, Dict, Optional
@@ -58,6 +59,21 @@ class GuangYaXunleiHardeningMixin:
     _xunlei_runtime_client_id = ""
     _xunlei_runtime_device_id = ""
     _xunlei_captcha_status: Dict[str, Any] = {}
+
+    @staticmethod
+    def _xunlei_public_message_v193(value: Any, limit: int = 240) -> str:
+        text = str(value or "")
+        if not text:
+            return ""
+        text = re.sub(r"(https?://[^\s?]+)\?[^\s]*", r"\1?<redacted>", text, flags=re.I)
+        text = re.sub(r"(pan\.xunlei\.com/s/)[^\s/?&]+", r"\1<redacted>", text, flags=re.I)
+        text = re.sub(
+            r"(?i)\b(cookie|authorization|bearer|token|access_token|refresh_token|password|passwd|"
+            r"captcha(?:_token)?|passcode|pwd|device(?:_id)?|guid|did)\b\s*[:=]\s*[^\s,;]+",
+            lambda m: f"{m.group(1)}=<redacted>",
+            text,
+        )
+        return text[: max(40, int(limit or 240))]
 
     def init_plugin(self, config: dict = None) -> None:
         config = dict(config or {})
@@ -267,7 +283,7 @@ class GuangYaXunleiHardeningMixin:
                 "captcha_ready": bool(getattr(self, "_xunlei_runtime_captcha_token", "")),
                 "captcha_mode": str(status.get("mode") or "not_initialized"),
                 "captcha_ok": bool(status.get("success")),
-                "message": str(status.get("message") or "")[:240],
+                "message": self._xunlei_public_message_v193(status.get("message"), 240),
                 "device_ready": bool(self._xunlei_runtime_device_id),
                 "circuit_open": bool(getattr(self, "_xunlei_captcha_circuit_open_v1113", False)),
             },
