@@ -319,9 +319,30 @@ class GuangYaGyingObservabilityV1104Mixin:
         raw_links = len(rows or [])
         card_match_text = str(matched_cards) if target_scoped else "未限定"
         message = str(state.get("message") or "")[:240]
+        cache_hit = bool(state.get("cache_hit"))
+        network_requested = bool(state.get("network_requested"))
+        search_requests = int(state.get("search_request_count_total") or state.get("search_request_count_this_call") or 0)
+        detail_requests = int(state.get("detail_request_count_total") or state.get("detail_request_count_this_call") or 0)
+        detail_failed = int(state.get("detail_failure_count_this_call") or 0)
+        failover_attempts = int(state.get("failover_attempts") or 1)
+        attempted_nodes = [
+            self._gying_node_label(value)
+            for value in (state.get("attempted_nodes") or [])
+            if str(value or "").strip()
+        ]
+        modes = ",".join(str(value) for value in (state.get("attempted_search_modes") or [])) or str(state.get("search_mode") or "-")
+        evidence = "缓存" if cache_hit and not network_requested else ("网络" if network_requested else "未发搜索请求")
         self._gying_obs_log(
             "INFO" if ok else "WARNING",
-            "搜索请求完成：接口健康=%s 节点=%s 模糊卡片=%s 当前媒体卡片=%s 已展开=%s 目标卡原始链接（待订阅行核验）=%s 耗时=%.2fs 信息=%s",
+            "搜索请求完成：证据=%s HTTP搜索请求=%s 详情请求=%s 详情失败=%s 节点尝试=%s 模式=%s "
+            "接口健康=%s 节点=%s 模糊卡片=%s 当前媒体卡片=%s 已展开=%s "
+            "目标卡原始链接（待订阅行核验）=%s 耗时=%.2fs 信息=%s",
+            evidence,
+            search_requests,
+            detail_requests,
+            detail_failed,
+            failover_attempts,
+            modes,
             ok,
             self._gying_node_label(node),
             cards,
@@ -331,6 +352,12 @@ class GuangYaGyingObservabilityV1104Mixin:
             time.monotonic() - started,
             message or "-",
         )
+        if attempted_nodes:
+            self._gying_obs_log(
+                "INFO",
+                "搜索节点链：%s",
+                " -> ".join(attempted_nodes[:6]),
+            )
         self._gying_obs_record(
             "search",
             success=ok,
@@ -344,6 +371,14 @@ class GuangYaGyingObservabilityV1104Mixin:
             target_scoped=target_scoped,
             card_target_match=bool(state.get("target_match")) if target_scoped else None,
             mode=str(state.get("login_mode") or ""),
+            cache_hit=cache_hit,
+            network_requested=network_requested,
+            search_requests=search_requests,
+            detail_requests=detail_requests,
+            detail_failed=detail_failed,
+            failover_attempts=failover_attempts,
+            attempted_nodes=len(attempted_nodes),
+            search_mode=str(state.get("search_mode") or ""),
         )
         return rows, state
 
