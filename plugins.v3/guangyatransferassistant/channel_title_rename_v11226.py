@@ -451,19 +451,42 @@ class GuangYaChannelTitleRenameV11226Mixin:
                     response = client.rename(file_id, desired)
                     ok = bool(rename_ok(response)) if callable(rename_ok) else True
                     if ok:
-                        renamed += 1
-                        used_names.discard(old_name)
-                        used_names.add(desired)
-                        self._plugin_log(
-                            "INFO",
-                            "【光鸭转存助手】【命名】分享落盘后重命名：%s -> %s",
-                            old_name[:180],
-                            desired[:220],
-                        )
+                        confirmer = getattr(self, "_confirm_remote_rename_v1113", None)
+                        confirmed = {
+                            "confirmed": True,
+                            "name": desired,
+                            "attempts": 1,
+                        }
+                        if callable(confirmer):
+                            confirmed = dict(confirmer(
+                                api,
+                                target_path=folder_path,
+                                desired_name=desired,
+                                file_id=file_id,
+                            ) or {})
+                        if bool(confirmed.get("confirmed")):
+                            renamed += 1
+                            used_names.discard(old_name)
+                            used_names.add(str(confirmed.get("name") or desired))
+                            self._plugin_log(
+                                "INFO",
+                                "【光鸭转存助手】【命名】分享落盘后远端重命名已读回确认：%s -> %s attempts=%s",
+                                old_name[:180],
+                                str(confirmed.get("name") or desired)[:220],
+                                int(confirmed.get("attempts") or 1),
+                            )
+                        else:
+                            self._plugin_log(
+                                "WARNING",
+                                "【光鸭转存助手】【命名】分享 rename 已接受但远端读回未确认：%s -> %s 原因=%s",
+                                old_name[:160],
+                                desired[:200],
+                                str(confirmed.get("message") or "目标名尚未可见")[:220],
+                            )
                     else:
                         self._plugin_log(
                             "WARNING",
-                            "【光鸭转存助手】【命名】分享已成功但重命名未确认：%s -> %s",
+                            "【光鸭转存助手】【命名】分享已成功但重命名未接受：%s -> %s",
                             old_name[:160],
                             desired[:200],
                         )
