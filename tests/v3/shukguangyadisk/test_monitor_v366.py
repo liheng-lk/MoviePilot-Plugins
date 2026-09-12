@@ -66,6 +66,13 @@ def test_v366_admission_conflict_prefers_durable_retry_then_blocks_unowned_rows(
     assert "return super()._fallback_terminal_state" in fallback
 
 
+def test_v3911_admission_conflict_targets_exact_member_when_available():
+    fallback = PATCH[PATCH.index("def _fallback_terminal_state"):PATCH.index("def organize_monitor_tick")]
+    assert "_admission_conflict_member" in fallback
+    assert "members = [conflict_member] if conflict_member is not None" in fallback
+    assert "list(self._v360_members(item))" in fallback
+
+
 def test_v366_pending_revisit_still_receives_waiting_results():
     finish = PATCH[PATCH.index("def _v366_finish_schedule"):PATCH.index("def _v360_schedule_resource")]
     assert "_v361_register_pending" in finish
