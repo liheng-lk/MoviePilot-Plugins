@@ -124,3 +124,5 @@ jobs:
         env:
           PYTHONPATH: .moviepilot
         run: .moviepilot/.venv/bin/python tests/v3/shukguangyadisk_v4/test_webdav_put.py -v
+
+      # Explicitly touched after the focused WebDAV source patch because bot pushes do not recursively trigger workflows.
