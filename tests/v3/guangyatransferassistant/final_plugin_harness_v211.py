@@ -326,8 +326,8 @@ def make_final_plugin(*, store: Optional[Dict[str, Any]] = None, config: Optiona
     plugin._pending_library_ttl_v210 = 1200
     plugin._library_snapshot_ttl_v210 = 120
     plugin._data_store_v211 = data
-    plugin.plugin_version = "2.1.0"
-    plugin.build_id = "20260912-r98"
+    plugin.plugin_version = "2.0.13"
+    plugin.build_id = "20260911-r97"
     # Defaults normally set by mixin init_plugin — keep instance usable without full init.
     plugin._media_only = True
     plugin._episode_auto_confidence = 0.9
