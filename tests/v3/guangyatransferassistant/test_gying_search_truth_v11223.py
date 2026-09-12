@@ -611,3 +611,56 @@ def test_magnet_fallback_keeps_subscription_scope_for_cache_and_precise_search()
     assert result["success"] is True
     assert probe.precise_scoped is True
     assert probe.promoted_subscribe is subscribe
+
+
+
+def test_real_network_search_state_proves_http_was_sent():
+    probe = _ProtocolHarness([_Response(_search_html([]))])
+    rows, state = probe._gying_raw_results("象行记 2026")
+    assert rows == []
+    assert state["success"] is True
+    assert state["cache_hit"] is False
+    assert state["network_requested"] is True
+    assert state["search_request_count_this_call"] == 1
+    assert state["detail_request_count_this_call"] == 0
+    assert state["attempted_search_modes"] == ["browser"]
+    assert state["search_http_status"] == 200
+    assert len(probe.request_urls) == 1
+
+
+def test_cached_search_is_explicitly_not_a_network_request_this_call():
+    probe = _ProtocolHarness([_Response(_search_html([]))])
+    _rows, first = probe._gying_raw_results("象行记 2026")
+    _rows, cached = probe._gying_raw_results("象行记 2026")
+    assert first["network_requested"] is True
+    assert cached["cache_hit"] is True
+    assert cached["network_requested"] is False
+    assert cached["search_request_count_this_call"] == 0
+    assert cached["detail_request_count_this_call"] == 0
+    assert len(probe.request_urls) == 1
+
+
+def test_browser_parse_failure_records_real_legacy_fallback_requests():
+    probe = _ProtocolHarness([_Response("<html>invalid</html>"), _Response(_search_html([]))])
+    _rows, state = probe._gying_raw_results("象行记 2026")
+    assert state["success"] is True
+    assert state["network_requested"] is True
+    assert state["search_request_count_this_call"] == 2
+    assert state["attempted_search_modes"] == ["browser", "legacy"]
+    assert state["search_mode"] == "legacy"
+
+
+def test_detail_failure_is_counted_without_turning_search_into_false_success_evidence():
+    class DetailFailProbe(_ProtocolHarness):
+        def _gying_detail(self, *_args, **_kwargs):
+            self.detail_ids.append("target")
+            raise RuntimeError("detail unavailable")
+
+    cards = [{"title": "象行记", "year": 2026, "type": "mv", "id": "target"}]
+    probe = DetailFailProbe([_Response(_search_html(cards))])
+    rows, state = probe._gying_raw_results("象行记 2026")
+    assert rows == []
+    assert state["success"] is True
+    assert state["detail_request_count_this_call"] == 1
+    assert state["detail_success_count_this_call"] == 0
+    assert state["detail_failure_count_this_call"] == 1
