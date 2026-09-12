@@ -18,12 +18,13 @@ ROOT = HERE.parents[2]
 PLUGIN_DIR = ROOT / "plugins.v3" / "guangyatransferassistant"
 # Maintenance budget: new features should extend an existing responsibility module or
 # consolidate an older wrapper first. Raise this only with an explicit architecture reason.
-MAX_RUNTIME_PY_FILES = 99
+MAX_RUNTIME_PY_FILES = 98
 REMOVED_WRAPPER_FILES = {
     "resource_filter_v110.py",
     "gying_auth_verified_v1107.py",
     "gying_browser_verified_v1112.py",
     "movie_xunlei_match_v11219.py",
+    "status_hardening_v193.py",
 }
 
 
