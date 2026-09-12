@@ -1,4 +1,4 @@
-"""光鸭转存助手 v2.1.3 运行入口。
+"""光鸭转存助手 v2.1.4 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
@@ -129,6 +129,8 @@ from app.schemas.types import EventType
 from app.sdk.events import Event, eventmanager
 
 from . import legacy as _legacy_module
+from . import channel_sources_v190 as _channel_sources_module
+from . import resource_inbox_v209 as _resource_inbox_module
 from .channel_sources_v190 import install_channel_multisource_compat
 from .channel_title_rename_v11226 import install_channel_title_rename_v11226
 from .channel_ui_v1101 import GuangYaChannelUiV1101Mixin
@@ -187,6 +189,177 @@ from .xunlei_hardening_v193 import GuangYaXunleiHardeningMixin
 install_episode_filename_compat(_legacy_module)
 install_channel_multisource_compat(_legacy_module)
 install_channel_title_rename_v11226(_legacy_module)
+
+# ---------------------------------------------------------------------------
+# v2.1.4 / r102 — Telegram mirror title + episode metadata compatibility
+# ---------------------------------------------------------------------------
+_FORWARDED_GUANGYA_PREFIX_V214 = re.compile(
+    r"^\s*(?:光鸭云盘资源频道[ \t]+)?Forwarded[ \t]+from[ \t]+光鸭云盘资源频道(?:[ \t]+|$)",
+    re.I,
+)
+_FORWARD_EP_RANGE_V214 = re.compile(
+    r"(?i)\bS0*(\d{1,2})\s*[._ -]*E0*(\d{1,4})"
+    r"\s*[-~～—至+]\s*E?0*(\d{1,4})\b"
+)
+_FORWARD_SEASON_EP_V214 = re.compile(
+    r"(?i)\bS0*(\d{1,2})\s*[._ -]*E0*(\d{1,4})\b"
+)
+_FORWARD_UPDATED_TO_V214 = re.compile(
+    r"(?i)(?:更新至|更新到|更至)\s*(?:第\s*)?(?:EP?\s*)?0*(\d{1,4})\s*[集话]?"
+)
+
+
+def _strip_forwarded_guangya_prefix_v214(value: Any) -> str:
+    """Remove only the known Telegram mirror forwarding header; preserve message layout."""
+    text = str(value or "")
+    return _FORWARDED_GUANGYA_PREFIX_V214.sub("", text, count=1)
+
+
+def _normalize_channel_title_v214(value: Any) -> str:
+    """Canonical title used only for channel discovery/matching, never for payload identity."""
+    text = _strip_forwarded_guangya_prefix_v214(value)
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"(?i)\s+(?:NF|NETFLIX)\s*$", "", text).strip()
+    return text[:300]
+
+
+def _install_channel_parse_compat_v214() -> None:
+    """Repair mirror boilerplate without loosening final media identity gates."""
+    original_clean = getattr(_legacy_module, "_clean_channel_display_title", None)
+    original_extract = getattr(_legacy_module, "_extract_channel_display_title", None)
+    if callable(original_clean) and not getattr(original_clean, "_guangya_v214", False):
+        @functools.wraps(original_clean)
+        def clean_title(value: Any) -> str:
+            cleaned = original_clean(_strip_forwarded_guangya_prefix_v214(value))
+            return _normalize_channel_title_v214(cleaned)
+
+        clean_title._guangya_v214 = True
+        _legacy_module._clean_channel_display_title = clean_title
+
+    if callable(original_extract) and not getattr(original_extract, "_guangya_v214", False):
+        @functools.wraps(original_extract)
+        def extract_title(value: Any) -> str:
+            cleaned = original_extract(_strip_forwarded_guangya_prefix_v214(value))
+            return _normalize_channel_title_v214(cleaned)
+
+        extract_title._guangya_v214 = True
+        _legacy_module._extract_channel_display_title = extract_title
+
+    original_parse = getattr(_resource_inbox_module, "parse_message_title_metadata_v209", None)
+    if callable(original_parse) and not getattr(original_parse, "_guangya_v214", False):
+        @functools.wraps(original_parse)
+        def parse_metadata(visible_text: str) -> dict:
+            raw_text = str(visible_text or "")
+            normalized_text = _strip_forwarded_guangya_prefix_v214(raw_text)
+            meta = dict(original_parse(normalized_text) or {})
+
+            raw_title = _normalize_channel_title_v214(meta.get("raw_title") or "")
+            match_title = _normalize_channel_title_v214(meta.get("match_title") or "")
+            candidates = []
+            seen = set()
+            for value in meta.get("title_candidates") or []:
+                candidate = _normalize_channel_title_v214(value)
+                if candidate and candidate not in seen:
+                    seen.add(candidate)
+                    candidates.append(candidate)
+
+            # The mirror's forwarding rows often have no year/label, so the
+            # legacy Inbox parser leaves raw_title empty. Recover only this
+            # exact known template; do not introduce generic fuzzy titles.
+            if not match_title and _FORWARDED_GUANGYA_PREFIX_V214.search(raw_text):
+                first_line = next(
+                    (line.strip() for line in normalized_text.splitlines() if line.strip()),
+                    "",
+                )
+                if first_line:
+                    first_line = _FORWARD_UPDATED_TO_V214.split(first_line, maxsplit=1)[0]
+                    first_line = re.split(r"(?i)\s+https?://", first_line, maxsplit=1)[0]
+                    fallback = _normalize_channel_title_v214(first_line)
+                    if fallback:
+                        raw_title = raw_title or fallback
+                        match_title = fallback
+                        if fallback not in seen:
+                            candidates.insert(0, fallback)
+                            seen.add(fallback)
+
+            if raw_title:
+                meta["raw_title"] = raw_title
+            if match_title:
+                meta["match_title"] = match_title
+            if candidates:
+                if match_title and match_title in candidates:
+                    candidates = [match_title] + [v for v in candidates if v != match_title]
+                meta["title_candidates"] = candidates[:8]
+
+            range_match = _FORWARD_EP_RANGE_V214.search(normalized_text)
+            if range_match:
+                season = int(range_match.group(1))
+                start = int(range_match.group(2))
+                end = int(range_match.group(3))
+                meta["season_hint"] = season
+                meta["episode_hint"] = f"S{season:02d}E{start:02d}-E{end:02d}"
+            else:
+                season_ep = _FORWARD_SEASON_EP_V214.search(normalized_text)
+                if season_ep and not meta.get("season_hint"):
+                    meta["season_hint"] = int(season_ep.group(1))
+                updated = _FORWARD_UPDATED_TO_V214.search(normalized_text)
+                if updated and not meta.get("episode_hint"):
+                    meta["episode_hint"] = f"E{int(updated.group(1))}"
+            return meta
+
+        parse_metadata._guangya_v214 = True
+        _resource_inbox_module.parse_message_title_metadata_v209 = parse_metadata
+
+    # This is field extraction, not subscription matching. Rename the old
+    # misleading diagnostic while keeping resource discovery behavior intact.
+    original_log = getattr(_channel_sources_module, "_log_resource_discovery", None)
+    if callable(original_log) and not getattr(original_log, "_guangya_v214", False):
+        def log_resource_discovery(legacy_module: Any, source_url: str, entry: dict) -> None:
+            logger_obj = getattr(legacy_module, "logger", None)
+            if logger_obj is None:
+                return
+            try:
+                channel = _channel_sources_module._channel_slug_from_url(source_url)
+                message_id = str(entry.get("message_id") or "") or "-"
+                xunlei_n = len(entry.get("xunlei_sources") or [])
+                guangya_n = 1 if str(entry.get("share_url") or "").strip() else 0
+                magnet_n = sum(
+                    1 for item in (entry.get("external_sources") or [])
+                    if str(item.get("type") or "") == "magnet"
+                )
+                ed2k_n = sum(
+                    1 for item in (entry.get("external_sources") or [])
+                    if str(item.get("type") or "") == "ed2k"
+                )
+                logger_obj.info(
+                    "【光鸭转存助手】【频道】channel=%s message_id=%s",
+                    channel,
+                    message_id,
+                )
+                logger_obj.info(
+                    "【光鸭转存助手】【资源发现】xunlei=%s guangya=%s magnet=%s ed2k=%s",
+                    xunlei_n,
+                    guangya_n,
+                    magnet_n,
+                    ed2k_n,
+                )
+                title = str(entry.get("display_title") or entry.get("title") or "")[:120]
+                if title or entry.get("episode_hint"):
+                    logger_obj.info(
+                        "【光鸭转存助手】【媒体解析】title=%s season=%s episodes=%s",
+                        title or "-",
+                        entry.get("season_hint") or entry.get("season") or "-",
+                        entry.get("episode_hint") or "-",
+                    )
+            except Exception:
+                return
+
+        log_resource_discovery._guangya_v214 = True
+        _channel_sources_module._log_resource_discovery = log_resource_discovery
+
+
+_install_channel_parse_compat_v214()
+
 
 
 
@@ -1219,8 +1392,73 @@ class GuangYaTransferAssistant(
             )
         return result
 
-    plugin_version = "2.1.3"
-    build_id = "20260912-r101"
+
+    # ------------------------------------------------------------------
+    # v2.1.4 / r102 — refresh/dispatch observability
+    # ------------------------------------------------------------------
+    def api_refresh(self) -> dict:
+        self._plugin_log(
+            "INFO",
+            "【光鸭转存助手】【调度入口v2.1.4】source=manual_refresh auto=%s selected=%s",
+            bool(getattr(self, "_auto_transfer_on_refresh", False)),
+            len(getattr(self, "_selected_subscriptions", []) or []),
+        )
+        result = dict(super().api_refresh() or {})
+        routes = list(result.get("routes") or [])
+        queued = sum(1 for row in routes if isinstance(row, dict) and bool(row.get("queued")))
+        self._plugin_log(
+            "INFO",
+            "【光鸭转存助手】【调度出口v2.1.4】source=manual_refresh channel_items=%s routes=%s queued=%s",
+            int(result.get("count") or 0),
+            len(routes),
+            queued,
+        )
+        return result
+
+    def _process_selected_subscriptions(
+        self,
+        trigger: str = "后台检查",
+        refresh_channel: bool = False,
+    ):
+        rows = list(super()._process_selected_subscriptions(
+            trigger=trigger,
+            refresh_channel=refresh_channel,
+        ) or [])
+        queued = sum(1 for row in rows if isinstance(row, dict) and bool(row.get("queued")))
+        self._plugin_log(
+            "INFO",
+            "【光鸭转存助手】【订阅调度v2.1.4】trigger=%s selected=%s routes=%s queued=%s",
+            str(trigger or "-")[:80],
+            len(getattr(self, "_selected_subscriptions", []) or []),
+            len(rows),
+            queued,
+        )
+        return rows
+
+    def _tick(self, host_service: bool = True) -> None:
+        self._plugin_log(
+            "INFO",
+            "【光鸭转存助手】【调度入口v2.1.4】source=tick host=%s auto=%s selected=%s",
+            bool(host_service),
+            bool(getattr(self, "_auto_transfer_on_refresh", False)),
+            len(getattr(self, "_selected_subscriptions", []) or []),
+        )
+        result = super()._tick(host_service=host_service)
+        strict_new = len(getattr(self, "_channel_new_entries_v1115", []) or [])
+        pending = len(getattr(self, "_async_route_pending", set()) or set())
+        worker = bool(getattr(self, "_async_route_worker_running", False))
+        self._plugin_log(
+            "INFO",
+            "【光鸭转存助手】【调度出口v2.1.4】source=tick strict_new=%s async_pending=%s worker=%s",
+            strict_new,
+            pending,
+            worker,
+        )
+        return result
+
+    plugin_version = "2.1.4"
+    build_id = "20260913-r102"
+
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
