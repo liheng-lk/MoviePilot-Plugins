@@ -13,16 +13,16 @@ from typing import Any, Dict
 import requests
 
 from .gying_browser_v1112 import (
+    GuangYaGyingBrowserV1112Mixin,
     _GyingBrowserUnavailableV1112,
     _cookie_rows_v1112,
 )
-from .gying_browser_verified_v1112 import GuangYaGyingBrowserVerifiedV1112Mixin
 
 
 _DEFAULT_VIEWPORT_V1112 = {"width": 1280, "height": 720}
 
 
-class GuangYaGyingBrowserProfileV1112Mixin(GuangYaGyingBrowserVerifiedV1112Mixin):
+class GuangYaGyingBrowserProfileV1112Mixin(GuangYaGyingBrowserV1112Mixin):
     """使用 MoviePilot 宿主 CloakBrowser 运行配置建立 GYING 浏览器上下文。"""
 
     build_id = "20260902-r23"
