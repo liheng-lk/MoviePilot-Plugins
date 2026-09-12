@@ -140,11 +140,21 @@ class GuangYaConsoleUiV1100Mixin:
         )
         xunlei_ok = (not xunlei_enabled) or xunlei_ready
 
-        provider_defs = list(self._parse_provider_defs())
-        provider_last = self.get_data("provider_test_last") or {}
+        provider_error = ""
+        try:
+            provider_defs = list(self._parse_provider_defs())
+        except Exception as err:
+            provider_defs = []
+            provider_error = str(err)[:160]
+        try:
+            provider_last = self.get_data("provider_test_last") or {}
+        except Exception:
+            provider_last = {}
         provider_states = list(provider_last.get("providers") or []) if isinstance(provider_last, dict) else []
         configured_api_states = [row for row in provider_states if str(row.get("provider") or "") != "viewing"]
-        if configured_api_states:
+        if provider_error:
+            api_ok = False
+        elif configured_api_states:
             api_ok = all(bool(row.get("success")) for row in configured_api_states)
         else:
             # External Magnet/ED2K API is optional; GYING may already provide those candidates.
@@ -170,7 +180,14 @@ class GuangYaConsoleUiV1100Mixin:
                 ),
                 "mdi-flash-outline",
             ),
-            ("Magnet / ED2K API", api_ok, f"已配置 {len(provider_defs)} 个接口" if provider_defs else "未配置外部 API", "mdi-magnet-on"),
+            (
+                "Magnet / ED2K API",
+                api_ok,
+                ("配置解析失败：" + provider_error)
+                if provider_error
+                else (f"已配置 {len(provider_defs)} 个接口" if provider_defs else "未配置外部 API（可选）"),
+                "mdi-magnet-on",
+            ),
             ("光鸭运行时", guangya_ok, "客户端与存储 API 已就绪" if guangya_ok else "未运行或未登录", "mdi-cloud-check-outline"),
         ]
         return [{
