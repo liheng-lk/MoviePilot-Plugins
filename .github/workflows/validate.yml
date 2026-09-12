@@ -17,8 +17,13 @@ jobs:
           python -m compileall -q plugins.v2 plugins.v3
           find plugins.v2 plugins.v3 -type d -name '__pycache__' -prune -exec rm -rf {} +
           find plugins.v2 plugins.v3 -type f -name '*.pyc' -delete
+      - name: Materialize GuangYa inline modules for legacy unit tests
+        run: python tests/v3/guangyatransferassistant/run_contract_tests.py --materialize-only
       - name: Unit tests
         run: python -m unittest discover -s tests -v
+      - name: Cleanup GuangYa inline test modules
+        if: always()
+        run: python tests/v3/guangyatransferassistant/run_contract_tests.py --cleanup-only
       - name: V3 plugin contract tests
         run: |
           python tests/v3/dailynewdrama/test_plugin_contract.py
