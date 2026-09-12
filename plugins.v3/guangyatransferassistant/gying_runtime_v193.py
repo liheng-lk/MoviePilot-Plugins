@@ -753,7 +753,18 @@ class GuangYaGyingRuntimeMixin:
         result: Dict[str, Any] = {"success": bool(status.get("success")), "node": str(status.get("node") or ""), "mode": str(status.get("mode") or ""), "message": str(status.get("message") or "")}
         if result["success"] and str(keyword or "").strip():
             rows, search_state = self._gying_raw_results(str(keyword).strip(), force=True)
-            result.update({"success": bool(search_state.get("success")), "message": str(search_state.get("message") or ""), "resources": len(rows), "cards": int(search_state.get("cards") or 0)})
+            result.update({
+                "success": bool(search_state.get("success")),
+                "message": str(search_state.get("message") or ""),
+                "resources": len(rows),
+                "cards": int(search_state.get("cards") or 0),
+                "transport": str(search_state.get("transport") or "unknown"),
+                "cache_hit": bool(search_state.get("cache_hit")),
+                "search_http_requests": int(search_state.get("search_http_requests") or 0),
+                "downurl_attempts": int(search_state.get("downurl_attempts") or 0),
+                "downurl_success": int(search_state.get("downurl_success") or 0),
+                "downurl_failures": int(search_state.get("downurl_failures") or 0),
+            })
         return result
 
     def api_provider_test(self) -> Dict[str, Any]:
