@@ -409,6 +409,7 @@ def _safety_helper_ns() -> Dict[str, Any]:
         "is_tmdb_source": ms_mod.is_tmdb_source,
         "normalize_media_source_token": ms_mod.normalize_media_source_token,
         "classify_transfer_message_v209": diag.classify_transfer_message_v209,
+        "aggregate_subscription_diag": diag.aggregate_subscription_diag,
         "batch_summary_buckets": diag.batch_summary_buckets,
         "format_batch_summary": diag.format_batch_summary,
     }
