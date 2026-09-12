@@ -1,0 +1,99 @@
+name: ShukGuangYaDisk V4
+
+on:
+  push:
+    branches:
+      - rebuild/shukguangyadisk-v4
+    paths:
+      - 'plugins.v3/shukguangyadisk/**'
+      - 'tests/v3/shukguangyadisk_v4/**'
+      - '.github/workflows/shukguangyadisk-v4.yml'
+  workflow_dispatch:
+
+jobs:
+  moviepilot-v3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout plugin repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Compile V4 plugin
+        run: python -m py_compile plugins.v3/shukguangyadisk/__init__.py
+
+      - name: Enforce V4 source invariants
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path("plugins.v3/shukguangyadisk/__init__.py").read_text(encoding="utf-8")
+          forbidden = [
+              "_BUNDLED_SOURCES",
+              "MetaPathFinder",
+              "install_organizer_",
+              "from app.log import logger",
+              "from app.core.event",
+              "from app.core.config",
+              "from app.helper.storage",
+              "remove_from_queue(",
+              "TransferPendingOper.discard",
+          ]
+          for token in forbidden:
+              assert token not in source, token
+          assert "class GuangYaOrganizerV4:" in source
+          assert "ThreadPoolExecutor(" in source
+          assert "max_workers=1" in source
+          assert '"background": False' in source
+          assert "app.application.history" in source
+          PY
+
+      - name: Checkout MoviePilot V3
+        uses: actions/checkout@v4
+        with:
+          repository: jxxghp/MoviePilot
+          ref: v3
+          path: .moviepilot
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install MoviePilot V3 runtime
+        working-directory: .moviepilot
+        run: uv sync --frozen --no-dev --group runtime-standard
+
+      - name: Install V4 plugin into real MoviePilot tree
+        run: |
+          rm -rf .moviepilot/app/plugins/shukguangyadisk
+          mkdir -p .moviepilot/app/plugins/shukguangyadisk
+          cp plugins.v3/shukguangyadisk/__init__.py .moviepilot/app/plugins/shukguangyadisk/__init__.py
+          cp plugins.v3/shukguangyadisk/plugin.json .moviepilot/app/plugins/shukguangyadisk/plugin.json
+          if [ -d plugins.v3/shukguangyadisk/dist ]; then
+            cp -R plugins.v3/shukguangyadisk/dist .moviepilot/app/plugins/shukguangyadisk/dist
+          fi
+
+      - name: Real MoviePilot V3 import smoke
+        run: |
+          .moviepilot/.venv/bin/python - <<'PY'
+          import sys
+          sys.path.insert(0, ".moviepilot")
+
+          from app.plugins.shukguangyadisk import GuangYaOrganizerV4, ShukGuangYaDisk
+
+          assert ShukGuangYaDisk.plugin_version == "4.0.0-alpha1"
+          assert issubclass(ShukGuangYaDisk, GuangYaOrganizerV4)
+          assert callable(ShukGuangYaDisk.get_api)
+          assert callable(ShukGuangYaDisk.get_service)
+          print("MoviePilot V3 import smoke: OK")
+          PY
+
+      - name: V4 runtime behavior tests
+        env:
+          PYTHONPATH: .moviepilot
+        run: .moviepilot/.venv/bin/python -m unittest discover -s tests/v3/shukguangyadisk_v4 -p 'test_*.py' -v
