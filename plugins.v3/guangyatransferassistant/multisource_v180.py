@@ -461,6 +461,7 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                     remote_confirmed_at=now_text,
                     library_snapshot_state="unknown",
                     library_snapshot_at=now_text,
+                    landing_stage="LIBRARY_UNKNOWN",
                 ) or updated
 
             observed = sorted(target_eps.intersection(existing_eps))
@@ -476,6 +477,11 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                 library_snapshot_state=snapshot_state,
                 library_snapshot_at=now_text,
                 library_observed_episodes=observed,
+                landing_stage={
+                    "confirmed": "LIBRARY_CONFIRMED",
+                    "pending": "LIBRARY_PENDING",
+                    "checked": "LIBRARY_CHECKED",
+                }.get(snapshot_state, "LIBRARY_UNKNOWN"),
                 library_remaining_target_episodes=remaining_target,
                 library_snapshot_error="",
             ) or updated
@@ -495,6 +501,7 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                 library_snapshot_state="unknown",
                 library_snapshot_at=now_text,
                 library_snapshot_error=str(err)[:260],
+                landing_stage="LIBRARY_UNKNOWN",
             ) or updated
             self._plugin_log(
                 "DEBUG",
