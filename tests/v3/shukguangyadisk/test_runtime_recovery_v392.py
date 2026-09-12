@@ -5,7 +5,7 @@ import unittest
 from source_helper import source_text
 
 
-class RuntimeRecoveryV393ContractTest(unittest.TestCase):
+class RuntimeRecoveryV394ContractTest(unittest.TestCase):
     def test_qr_errors_are_not_swallowed(self):
         client = source_text("guangya_client.py")
         legacy = source_text("_plugin_legacy.py")
@@ -65,6 +65,19 @@ class RuntimeRecoveryV393ContractTest(unittest.TestCase):
         self.assertIn("with _migration_runtime_lock():", cleanup)
         self.assertIn('"v362_process_serialized": True', cleanup)
         self.assertIn('shared["scope"] = scope', cleanup)
+
+    def test_dispatch_wait_reason_is_observable_and_manual_full_wakes_queue(self):
+        final = source_text("organizer_monitor_final_v390.py")
+        watch = source_text("organizer_watch_pipeline_v380.py")
+        self.assertIn("def _v394_manual_full_with_dispatch", final)
+        self.assertIn('self._v390_dispatch_one(trigger=f"{trigger}-full")', final)
+        self.assertIn("resource_dispatch_last_reason", final)
+        self.assertIn("resource_dispatch_wait_seconds", final)
+        self.assertIn("【光鸭云盘助手】【监控】【调度等待】", final)
+        self.assertIn('"reason": "handoff"', watch)
+        self.assertIn('"owner_worker_alive"', watch)
+        self.assertIn('"reason": "queue_wait"', watch)
+        self.assertIn('"wait_seconds": wait_seconds', watch)
 
     def test_missing_source_resource_can_reach_terminal_queue_cleanup(self):
         hardening = source_text("organizer_hardening_v369.py")
