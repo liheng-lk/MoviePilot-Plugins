@@ -116,6 +116,7 @@ _bundle_sys.meta_path.insert(0, _GuangYaBundledModuleFinder())
 
 import functools
 import inspect
+import re
 import time
 import weakref
 from typing import Any, Optional
@@ -185,6 +186,186 @@ install_channel_multisource_compat(_legacy_module)
 install_channel_title_rename_v11226(_legacy_module)
 
 
+
+# ---------------------------------------------------------------------------
+# Unified transfer contract
+# Telegram and GYING are discovery providers only. Every discovered resource
+# is normalized to one of four execution routes before the existing transport
+# implementation handles it.
+# ---------------------------------------------------------------------------
+_UNIFIED_TRANSFER_ROUTES = {
+    "xunlei": "xunlei_json_flash",
+    "guangya": "guangya_share_restore",
+    "magnet": "cloudcollection",
+    "ed2k": "cloudcollection",
+}
+_UNIFIED_SOURCE_PRIORITY = {
+    "xunlei": 0,
+    "guangya": 1,
+    "magnet": 2,
+    "ed2k": 3,
+}
+
+
+def _unified_transfer_route_name(source_type):
+    return _UNIFIED_TRANSFER_ROUTES.get(str(source_type or "").strip().lower(), "")
+
+
+def _normalize_unified_resource_candidate(candidate, *, origin=""):
+    row = dict(candidate or {})
+    explicit = str(
+        row.get("type")
+        or row.get("source_type")
+        or row.get("resource_kind")
+        or ""
+    ).strip().lower()
+    aliases = {
+        "xunlei_share": "xunlei",
+        "thunder": "xunlei",
+        "guangya_share": "guangya",
+        "share": "guangya",
+        "bt": "magnet",
+    }
+    explicit = aliases.get(explicit, explicit)
+    uri = str(
+        row.get("uri")
+        or row.get("url")
+        or row.get("share_url")
+        or row.get("link")
+        or ""
+    ).strip()
+
+    source_type = explicit if explicit in _UNIFIED_TRANSFER_ROUTES else ""
+    lowered = uri.lower()
+    if not source_type:
+        if lowered.startswith("magnet:?"):
+            source_type = "magnet"
+        elif lowered.startswith("ed2k://|file|"):
+            source_type = "ed2k"
+        elif re.search(r"(?i)^https?://pan\.xunlei\.com/s/", uri):
+            source_type = "xunlei"
+        elif re.search(r"(?i)^https?://(?:www\.)?guangyapan\.com/(?:s|share)/", uri):
+            source_type = "guangya"
+
+    row["type"] = source_type
+    row["route"] = _unified_transfer_route_name(source_type)
+    row["priority"] = _UNIFIED_SOURCE_PRIORITY.get(source_type, 99)
+    row["origin"] = str(origin or row.get("origin") or "").strip().lower()
+    if uri and not row.get("uri"):
+        row["uri"] = uri
+    return row
+
+
+def _extract_transfer_technical_tags(original):
+    text = str(original or "").replace("\\", "/").rsplit("/", 1)[-1]
+    stem = re.sub(r"\.[A-Za-z0-9]{1,8}$", "", text)
+    patterns = (
+        r"(?i)(?<![A-Za-z0-9])(?:4320p|2160p|1080p|720p|576p|480p|8K|4K)(?![A-Za-z0-9])",
+        r"(?i)(?<![A-Za-z0-9])(?:WEB[- .]?DL|WEBRip|BluRay|BDRip|REMUX|HDTV|DVDRip)(?![A-Za-z0-9])",
+        r"(?i)(?<![A-Za-z0-9])(?:H[ .]?265|H[ .]?264|x265|x264|HEVC|AVC|AV1)(?![A-Za-z0-9])",
+        r"(?i)(?<![A-Za-z0-9])(?:Dolby[ .]?Vision|HDR10\+?|HDR|DV)(?![A-Za-z0-9])",
+        r"(?i)(?<![A-Za-z0-9])(?:TrueHD(?:[ .]?Atmos)?|DDP(?:[ .]?[257]\.[01])?|EAC3(?:[ .]?[257]\.[01])?|DD(?:[ .]?[257]\.[01])?|DTS[- .]?HD(?:[ .]?MA)?|DTS(?:[ .]?X)?|AAC(?:[ .]?[257]\.[01])?|FLAC|Atmos)(?![A-Za-z0-9])",
+        r"(?i)(?<![A-Za-z0-9])(?:7\.1|5\.1|2\.0)(?![A-Za-z0-9])",
+        r"(?i)(?<![A-Za-z0-9])(?:CHS|CHT|ZH-CN|ZH-TW|ENG|CHI)(?![A-Za-z0-9])",
+    )
+    found = []
+    occupied = []
+    for pattern in patterns:
+        for match in re.finditer(pattern, stem):
+            if any(match.start() < end and match.end() > start for start, end in occupied):
+                continue
+            token = match.group(0)
+            normalized = token
+            upper = token.upper().replace(".", "").replace(" ", "")
+            if re.fullmatch(r"(?i)WEB[- .]?DL", token):
+                normalized = "WEB-DL"
+            elif upper in {"H265", "H264"}:
+                normalized = upper
+            elif token.lower() == "bluray":
+                normalized = "BluRay"
+            elif token.upper() == "REMUX":
+                normalized = "REMUX"
+            elif token.upper() in {"HEVC", "AVC", "AV1", "HDR", "DV", "FLAC", "ATMOS"}:
+                normalized = token.upper()
+            elif re.fullmatch(r"(?i)HDR10\+?", token):
+                normalized = token.upper()
+            elif re.fullmatch(r"(?i)DDP[ .]?[257]\.[01]", token):
+                normalized = re.sub(r"[ .](?=[257]\.)", "", token.upper())
+            elif re.fullmatch(r"(?i)TRUEHD", token):
+                normalized = "TrueHD"
+            found.append((match.start(), normalized))
+            occupied.append((match.start(), match.end()))
+
+    group = re.search(r"-([A-Za-z0-9][A-Za-z0-9._]{2,30})$", stem)
+    if group:
+        value = group.group(1)
+        known = {
+            "WEB", "WEB-DL", "BLURAY", "REMUX", "HEVC", "H265", "H264",
+            "HDR", "HDR10", "DV", "TRUEHD", "ATMOS", "FLAC",
+        }
+        if value.upper() not in known:
+            found.append((group.start(1), value))
+
+    found.sort(key=lambda item: item[0])
+    result = []
+    seen = set()
+    for _, token in found:
+        key = token.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(token)
+    return result
+
+
+def _format_mp_transfer_name(mp_name, mp_year, legacy_name, original, is_movie=False):
+    title = str(mp_name or "").strip()
+    title = re.sub(r"\s*[（(]\s*(?:19\d{2}|20\d{2})\s*[）)]\s*$", "", title).strip()
+    title = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', " ", title)
+    title = re.sub(r"\s+", " ", title).strip(" .-_")
+
+    legacy = str(legacy_name or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
+    source = str(original or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
+    ext_match = re.search(r"(\.[A-Za-z0-9]{1,8})$", legacy) or re.search(
+        r"(\.[A-Za-z0-9]{1,8})$", source
+    )
+    ext = ext_match.group(1) if ext_match else ""
+    legacy_stem = legacy[:-len(ext)] if ext and legacy.endswith(ext) else legacy
+    tags = _extract_transfer_technical_tags(source)
+    technical = " ".join(tags)
+
+    if is_movie:
+        year = ""
+        try:
+            value = int(mp_year or 0)
+            if 1900 <= value <= 2100:
+                year = str(value)
+        except (TypeError, ValueError):
+            pass
+        base = title or legacy_stem
+        if year and not re.search(rf"[（(]{re.escape(year)}[）)]$", base):
+            base = f"{base} ({year})"
+        if technical:
+            base = f"{base} - {technical}"
+        return f"{base}{ext}"
+
+    episode = ""
+    matched = re.search(r"(?i)(S\d{1,2}E\d{1,4}(?:-E?\d{1,4})?|S\d{1,2})\s*$", legacy_stem)
+    if matched:
+        episode = matched.group(1).upper()
+    base = title or re.sub(
+        r"(?i)\s+S\d{1,2}(?:E\d{1,4}(?:-E?\d{1,4})?)?\s*$",
+        "",
+        legacy_stem,
+    ).strip()
+    if episode:
+        base = f"{base} - {episode}"
+    if technical:
+        base = f"{base} - {technical}"
+    return f"{base}{ext}"
+
+
+
 class GuangYaTransferAssistant(
     GuangYaFoundationOpsV209Mixin,
     GuangYaEpisodeRuntimeV211Mixin,
@@ -237,6 +418,41 @@ class GuangYaTransferAssistant(
     _RoutingV170Assistant,
 ):
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
+
+
+    def _normalize_transfer_candidate(self, candidate: dict, *, origin: str = "") -> dict:
+        """Normalize TG/GYING discoveries to the four supported execution routes."""
+        return _normalize_unified_resource_candidate(candidate, origin=origin)
+
+    def _canonical_transfer_name_v11226(self, subscribe: Any, original: Any) -> str:
+        """MP identity first; preserve source technical tags for every transfer path."""
+        legacy_name = super()._canonical_transfer_name_v11226(subscribe, original)
+        checker = getattr(self, "_is_movie_for_naming_v11226", None)
+        is_movie = bool(checker(subscribe)) if callable(checker) else False
+        mp_name = str(getattr(subscribe, "name", "") or "").strip()
+        mp_year = (
+            getattr(subscribe, "year", None)
+            or getattr(subscribe, "media_year", None)
+            or getattr(subscribe, "release_year", None)
+        )
+        desired = _format_mp_transfer_name(
+            mp_name,
+            mp_year,
+            legacy_name,
+            original,
+            is_movie,
+        )
+        if desired and desired != legacy_name:
+            try:
+                self._plugin_log(
+                    "INFO",
+                    "【光鸭转存助手】【统一命名】MP识别优先：%s -> %s",
+                    str(original or "")[-180:],
+                    desired[:240],
+                )
+            except Exception:
+                pass
+        return desired or legacy_name
 
     plugin_version = "2.0.13"
     build_id = "20260911-r97"
