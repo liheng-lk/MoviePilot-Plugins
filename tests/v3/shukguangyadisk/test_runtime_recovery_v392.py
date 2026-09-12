@@ -5,7 +5,7 @@ import unittest
 from source_helper import source_text
 
 
-class RuntimeRecoveryV395ContractTest(unittest.TestCase):
+class RuntimeRecoveryV396ContractTest(unittest.TestCase):
     def test_qr_errors_are_not_swallowed(self):
         client = source_text("guangya_client.py")
         legacy = source_text("_plugin_legacy.py")
@@ -19,7 +19,7 @@ class RuntimeRecoveryV395ContractTest(unittest.TestCase):
     def test_login_and_config_refresh_moviepilot_scheduler(self):
         entry = source_text("__init__.py")
         self.assertIn("def _refresh_host_services", entry)
-        self.assertIn("from app.application.scheduling import update_plugin_job", entry)
+        self.assertIn("from app.sdk.scheduler import update_plugin_job", entry)
         self.assertIn('update_plugin_job("ShukGuangYaDisk")', entry)
         self.assertGreaterEqual(entry.count("self._refresh_host_services()"), 2)
 
