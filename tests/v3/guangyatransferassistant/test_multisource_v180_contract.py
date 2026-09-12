@@ -70,6 +70,17 @@ def test_magnet_and_ed2k_normalization_and_stable_identity():
     assert identity("magnet", magnet["identity"], 7) != identity("magnet", magnet["identity"], 8)
 
 
+def test_every_resource_type_has_one_canonical_executor():
+    ns = runpy.run_path(str(TYPES))
+    assert tuple(ns["RESOURCE_TYPES"]) == ("xunlei", "guangya", "magnet", "ed2k")
+    executor = ns["resource_executor_for"]
+    assert executor("xunlei") == "flash_json"
+    assert executor("guangya") == "share_restore"
+    assert executor("magnet") == "cloudcollection"
+    assert executor("ed2k") == "cloudcollection"
+    assert tuple(ns["RESOURCE_SOURCE_ORIGINS"]) == ("telegram", "viewing")
+
+
 def test_queued_task_is_inflight_not_pending_and_review_is_terminal():
     ns = runpy.run_path(str(TYPES))
     assert "queued" not in ns["SOURCE_PENDING_STATES"]
