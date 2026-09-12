@@ -270,6 +270,27 @@ class GuangYaStatusUiMixin:
                 },
             })
 
+        viewing = dict(overview.get("viewing") or {})
+        if viewing.get("recent_failure"):
+            stage = str(viewing.get("last_stage") or "unknown")
+            message = str(viewing.get("last_message") or "观影最近一次请求失败")[:240]
+            updated = str(viewing.get("last_updated_at") or "-")
+            cards.append({
+                "component": "VAlert",
+                "props": {
+                    "type": "warning",
+                    "variant": "tonal",
+                    "density": "compact",
+                    "class": "mb-2",
+                    "title": "观影 GYING 最近一次执行失败",
+                    "text": (
+                        f"阶段：{stage} · 时间：{updated}\n"
+                        f"{message}\n"
+                        "建议：先点“测试观影”；若仍失败，再刷新观影节点并查看健康诊断。"
+                    ),
+                },
+            })
+
         for row in overview.get("attention_sources") or []:
             state = str(row.get("state") or "")
             error = str(row.get("last_error") or "")
