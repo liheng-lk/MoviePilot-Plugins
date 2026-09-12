@@ -9,6 +9,7 @@ PROVIDER = (PLUGIN / "provider_reliability_v1100.py").read_text(encoding="utf-8"
 XUNLEI = (PLUGIN / "xunlei_reliability_v1100.py").read_text(encoding="utf-8")
 DIAGNOSTICS = (PLUGIN / "diagnostics_v1100.py").read_text(encoding="utf-8")
 CONSOLE = (PLUGIN / "console_ui_v1100.py").read_text(encoding="utf-8")
+CONTROL = (PLUGIN / "console_control_v1116.py").read_text(encoding="utf-8")
 CONFIG = (PLUGIN / "config_ui_v1100.py").read_text(encoding="utf-8")
 
 def test_v1100_files_parse_and_publish_current_release():
@@ -98,3 +99,11 @@ def test_console_health_isolates_provider_config_parse_failure():
     assert 'provider_error = str(err)[:160]' in CONSOLE
     assert '"配置解析失败：" + provider_error' in CONSOLE
     assert "未配置外部 API（可选）" in CONSOLE
+
+
+def test_console_action_receipts_include_viewing_test_and_human_labels():
+    assert '"/viewing/session/test"' in CONTROL
+    assert '"测试观影"' in CONTROL
+    assert '_CONSOLE_ACTION_LABELS_V1116' in CONTROL
+    assert '"action": str(_CONSOLE_ACTION_LABELS_V1116.get(normalized_path)' in CONTROL
+    assert 'text = f"{action} · {row.get(\'message\') or \'-\'} · {row.get(\'updated_at\') or \'-\'}"' in CONTROL
