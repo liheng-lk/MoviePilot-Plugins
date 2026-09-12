@@ -25,7 +25,7 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
 
     def test_final_monitor_is_first_mro_and_release_is_v390(self):
         entry = ENTRY.read_text(encoding="utf-8")
-        self.assertIn('plugin_version = "3.9.5"', entry)
+        self.assertIn('plugin_version = "3.9.6"', entry)
         class_slice = entry.split("class ShukGuangYaDisk(", 1)[1].split("):", 1)[0]
         self.assertLess(class_slice.index("_GuangYaFinalMonitorV390Mixin"), class_slice.index("_GuangYaOrganizerMonitorV366Mixin"))
         self.assertIn("as _GuangYaFinalMonitorV390Mixin", entry)
@@ -99,9 +99,9 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
     def test_federation_uses_fresh_v390_chunk(self):
         remote = REMOTE.read_text(encoding="utf-8")
         page = PAGE.read_text(encoding="utf-8")
-        self.assertIn("__federation_expose_AssistantPage-v390.js?v=3.9.5", remote)
+        self.assertIn("__federation_expose_AssistantPage-v390.js?v=3.9.6", remote)
         self.assertNotIn("AssistantPage-v381.js?v=3.8.1", remote)
-        self.assertIn("整理监控控制 · v3.9.5", page)
+        self.assertIn("整理监控控制 · v3.9.6", page)
         self.assertIn("install_registration_safe", page)
 
     def test_manual_full_scan_dispatches_and_wait_reason_is_visible(self):
@@ -114,8 +114,8 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
 
     def test_plugin_json_is_v390(self):
         data = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], "3.9.5")
-        self.assertIn("v3.9.5", data.get("history") or {})
+        self.assertEqual(data["version"], "3.9.6")
+        self.assertIn("v3.9.6", data.get("history") or {})
 
 
 if __name__ == "__main__":
