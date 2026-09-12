@@ -417,8 +417,9 @@ def _safety_helper_ns() -> Dict[str, Any]:
 
 def test_external_recall_enqueue_production():
     tree = ast.parse(SAFETY)
+    helper = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_dedupe_summary_diags_v208")
     cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "GuangYaProductionSafetyV208Mixin")
-    module = ast.Module(body=[cls], type_ignores=[])
+    module = ast.Module(body=[helper, cls], type_ignores=[])
     ast.fix_missing_locations(module)
     ns: Dict[str, Any] = _safety_helper_ns()
     ns["MediaChain"] = MagicMock()
@@ -456,8 +457,9 @@ def test_external_recall_enqueue_production():
 
 def test_tombstone_and_recognition_cache_production():
     tree = ast.parse(SAFETY)
+    helper = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_dedupe_summary_diags_v208")
     cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "GuangYaProductionSafetyV208Mixin")
-    module = ast.Module(body=[cls], type_ignores=[])
+    module = ast.Module(body=[helper, cls], type_ignores=[])
     ast.fix_missing_locations(module)
     calls = {"n": 0}
 
