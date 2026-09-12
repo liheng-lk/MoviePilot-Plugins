@@ -70,3 +70,13 @@ def test_observability_is_non_destructive():
     for forbidden in ("create_transfer", "flash_upload", "create_task", "add_download", "downloadchain(", "qbittorrent", "transmission", "aria2"):
         assert forbidden not in lowered
 
+
+
+def test_recent_gying_failure_is_promoted_to_operator_attention():
+    method = text.split("    def _status_overview_v191(", 1)[1].split(
+        "    @staticmethod\n    def _inject_viewing_test_button",
+        1,
+    )[0]
+    assert 'recent_failure = bool(viewing.get("enabled")) and recent.get("success") is False' in method
+    assert 'overview["attention_count"] = int(overview.get("attention_count") or 0) + 1' in method
+    assert 'overview["overall"] = "warning"' in method
