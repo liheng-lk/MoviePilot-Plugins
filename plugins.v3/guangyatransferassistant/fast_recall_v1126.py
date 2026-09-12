@@ -36,7 +36,6 @@ from .channel_title_rename_v11226 import GuangYaChannelTitleRenameV11226Mixin
 from .share_leaf_compat_v11225 import GuangYaShareLeafCompatV11225Mixin
 from .auto_recovery_v11224 import GuangYaAutoRecoveryV11224Mixin
 from .media_match_v11219 import GuangYaMediaMatchV11219Mixin
-from .movie_xunlei_match_v11219 import GuangYaMovieXunleiMatchV11219Mixin
 
 
 class GuangYaFastRecallV1126Mixin(
@@ -44,7 +43,6 @@ class GuangYaFastRecallV1126Mixin(
     GuangYaShareLeafCompatV11225Mixin,
     GuangYaAutoRecoveryV11224Mixin,
     GuangYaMediaMatchV11219Mixin,
-    GuangYaMovieXunleiMatchV11219Mixin,
 ):
     """把当天应播 TV 的最坏主动发现延迟从约 60 分钟降到约 10 分钟。"""
 
