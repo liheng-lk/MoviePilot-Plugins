@@ -5356,6 +5356,7 @@ class V3StorageContractMixin:
 # Organizer V4 (MoviePilot V3 native)
 # =============================================================================
 
+import datetime as _organizer_datetime
 import re
 import threading
 import time
@@ -5411,6 +5412,7 @@ class GuangYaOrganizerV4:
     _organizer_future: Optional[Future] = None
     _organizer_lock: Optional[threading.RLock] = None
     _organizer_owner_id: str = ""
+    _organizer_stopping: bool = False
 
     @staticmethod
     def _organizer_normalize_path(value: Any) -> str:
@@ -5481,7 +5483,9 @@ class GuangYaOrganizerV4:
         self._organizer_batch_size = config["batch_size"]
         self._organizer_recursive = config["recursive"]
         self._organizer_lock = self._organizer_lock or threading.RLock()
-        self._organizer_owner_id = uuid.uuid4().hex
+        if not self._organizer_owner_id:
+            self._organizer_owner_id = uuid.uuid4().hex
+        self._organizer_stopping = False
         if self._organizer_executor is None:
             self._organizer_executor = ThreadPoolExecutor(
                 max_workers=1,
@@ -5500,9 +5504,9 @@ class GuangYaOrganizerV4:
 
     def _organizer_stop(self) -> None:
         """停止接收新任务；已运行任务保留租约并允许自然收尾。"""
+        self._organizer_stopping = True
         executor = self._organizer_executor
         self._organizer_executor = None
-        self._organizer_future = None
         if executor is not None:
             try:
                 executor.shutdown(wait=False, cancel_futures=True)
@@ -5516,8 +5520,8 @@ class GuangYaOrganizerV4:
                 "id": "ShukGuangYaDiskV4Bootstrap",
                 "name": "光鸭云盘 V4 自动整理启动自检",
                 "trigger": DateTrigger(
-                    run_date=datetime.datetime.now()
-                    + datetime.timedelta(seconds=5)
+                    run_date=_organizer_datetime.datetime.now()
+                    + _organizer_datetime.timedelta(seconds=5)
                 ),
                 "func": self.organizer_tick,
                 "kwargs": {},
@@ -5734,6 +5738,7 @@ class GuangYaOrganizerV4:
                         state["candidates"] = int(state.get("candidates") or 0) + 1
             except Exception as err:
                 state["errors"] = int(state.get("errors") or 0) + 1
+                queue.append(directory_path)
                 logger.warning(
                     "【光鸭云盘助手】【V4整理】【扫描】目录读取失败，保留游标下轮继续: %s - %s",
                     directory_path,
@@ -5838,9 +5843,13 @@ class GuangYaOrganizerV4:
 
     def _organizer_dispatch_next(self) -> Dict[str, Any]:
         """若执行器空闲，立即选择并提交下一个 READY/RETRY/VERIFYING 任务。"""
+        if self._organizer_stopping:
+            return {"scheduled": False, "reason": "stopping"}
         lock = self._organizer_lock or threading.RLock()
         self._organizer_lock = lock
         with lock:
+            if self._organizer_stopping:
+                return {"scheduled": False, "reason": "stopping"}
             if self._organizer_future is not None and not self._organizer_future.done():
                 return {"scheduled": False, "reason": "worker_busy"}
             task = self._organizer_next_task()
