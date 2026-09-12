@@ -60,6 +60,7 @@ def _load_helpers():
         "_safe_name_v11226",
         "_show_name_v11226",
         "_split_name_ext_v11226",
+        "_release_tail_v11226",
         "_episode_tag_v11226",
         "_canonical_transfer_name_v11226",
         "_clean_channel_title_v11226",
@@ -116,11 +117,35 @@ def test_v11226_channel_titles_strip_template_noise():
     assert extract("[剧集·光鸭] 灵境行者 (2026)\nTMDB: 297923", lambda _: "") == "灵境行者"
 
 
-def test_v11226_transfer_name_is_show_plus_season_episode():
+def test_v11226_transfer_name_is_mp_title_plus_episode_plus_release_tail():
     helpers = _load_helpers()
     name = helpers["_canonical_transfer_name_v11226"]
     tv = SimpleNamespace(name="幸运女神", season=1, year=2026)
     movie = SimpleNamespace(name="沙丘 (2021)", season=None, year=2021)
-    assert name(tv, "Show.S01E07.2160p.mkv", is_movie=False) == "幸运女神 S01E07.mkv"
-    assert name(tv, "Show.S01E01-E07.mkv", is_movie=False) == "幸运女神 S01E01-E07.mkv"
-    assert name(movie, "Dune.2021.2160p.mkv", is_movie=True) == "沙丘.mkv"
+    assert (
+        name(tv, "Show.S01E07.2160p.WEB-DL.H.265.DDP5.1-GROUP.mkv", is_movie=False)
+        == "幸运女神 S01E07 - 2160p WEB-DL H.265 DDP5.1-GROUP.mkv"
+    )
+    assert (
+        name(tv, "Show.S01E01-E07.1080p.WEBRip.HEVC.mkv", is_movie=False)
+        == "幸运女神 S01E01-E07 - 1080p WEBRip HEVC.mkv"
+    )
+    assert (
+        name(movie, "Dune.2021.2160p.BluRay.REMUX.DV.TrueHD.Atmos-GROUP.mkv", is_movie=True)
+        == "沙丘 - 2160p BluRay REMUX DV TrueHD Atmos-GROUP.mkv"
+    )
+
+
+def test_v11226_release_tail_can_use_real_filename_while_episode_comes_from_hint():
+    helpers = _load_helpers()
+    name = helpers["_canonical_transfer_name_v11226"]
+    tv = SimpleNamespace(name="幸运女神", season=1, year=2026)
+    assert (
+        name(
+            tv,
+            "hint S01E08",
+            is_movie=False,
+            release_source="Lucky.Goddess.2160p.WEB-DL.HEVC.DDP5.1.mkv",
+        )
+        == "幸运女神 S01E08 - 2160p WEB-DL HEVC DDP5.1.mkv"
+    )
