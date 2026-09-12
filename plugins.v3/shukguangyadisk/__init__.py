@@ -159,6 +159,14 @@ def _single_init_get_organizer_api(self) -> _BundleList[_BundleDict[str, _Bundle
             "response_model": _OrganizerResponse,
         },
         {
+            "path": "/organize/monitor/graceful-stop",
+            "endpoint": self.api_organize_monitor_graceful_stop,
+            "auth": "bear",
+            "methods": ["POST"],
+            "summary": "安全停止自动整理并清理未开始任务",
+            "response_model": _OrganizerResponse,
+        },
+        {
             "path": "/organize/monitor/status",
             "endpoint": self.api_organize_monitor_status,
             "auth": "bear",
@@ -193,7 +201,25 @@ def _single_init_get_organizer_api(self) -> _BundleList[_BundleDict[str, _Bundle
     ]
 
 
+# 单文件运行态投影：不改变原监控状态语义，只增加可观测字段。
+_single_init_previous_status = ShukGuangYaDisk.api_organize_monitor_status
+
+
+def _single_init_api_organize_monitor_status(self):
+    response = _single_init_previous_status(self)
+    if isinstance(response, dict):
+        data = response.setdefault("data", {})
+        status = data.setdefault("status", {})
+        status.update({
+            "single_file_runtime": True,
+            "runtime_layout": "single-init-bundled",
+            "runtime_version": "3.9.1",
+        })
+    return response
+
+
 # 覆盖入口类 API 注册路径；运行期其它 MRO/补丁行为保持 3.9.0 原样。
+ShukGuangYaDisk.api_organize_monitor_status = _single_init_api_organize_monitor_status
 ShukGuangYaDisk.get_organizer_api = _single_init_get_organizer_api
 ShukGuangYaDisk.plugin_version = "3.9.1"
 ShukGuangYaDisk.single_file_runtime = True
