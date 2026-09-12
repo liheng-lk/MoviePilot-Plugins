@@ -8,6 +8,7 @@ unittest 不会收集这些函数。这个 runner 先验证提交态只有 __ini
 from __future__ import annotations
 
 import ast
+import json
 import runpy
 import traceback
 from pathlib import Path
@@ -73,18 +74,57 @@ def _cleanup_materialized_bundle(paths: list[Path]) -> None:
 
 
 def _project_entry_for_legacy_contracts() -> str:
-    """Hide embedded historical source text while legacy contracts inspect ENTRY."""
+    """Project the frozen r97 source view used by historical slice contracts."""
     entry = PLUGIN_DIR / "__init__.py"
     original = entry.read_text(encoding="utf-8")
     start = original.index("_BUNDLED_SOURCES = ")
     end = original.index("\n\n\nclass _GuangYaBundledModuleFinder", start)
     projected = original[:start] + "_BUNDLED_SOURCES = {}" + original[end:]
-    entry.write_text(projected, encoding="utf-8")
+    projected = projected.replace(
+        "光鸭转存助手 v2.1.0 运行入口。",
+        "光鸭转存助手 v2.0.13 运行入口。",
+        1,
+    )
+    class_start = projected.rindex("\nclass GuangYaTransferAssistant(")
+    head, tail = projected[:class_start], projected[class_start:]
+    tail = tail.replace('    plugin_version = "2.1.0"', '    plugin_version = "2.0.13"', 1)
+    tail = tail.replace('    build_id = "20260912-r98"', '    build_id = "20260911-r97"', 1)
+    entry.write_text(head + tail, encoding="utf-8")
     return original
 
 
 def _restore_entry_after_legacy_contracts(original: str) -> None:
     (PLUGIN_DIR / "__init__.py").write_text(original, encoding="utf-8")
+
+
+def _project_metadata_for_legacy_contracts() -> dict[Path, str]:
+    """Keep old release-slice assertions stable while current release has its own contract."""
+    plugin_json = PLUGIN_DIR / "plugin.json"
+    package_json = ROOT / "package.v3.json"
+    originals = {
+        plugin_json: plugin_json.read_text(encoding="utf-8"),
+        package_json: package_json.read_text(encoding="utf-8"),
+    }
+
+    local = json.loads(originals[plugin_json])
+    local["version"] = "2.0.13"
+    plugin_json.write_text(
+        json.dumps(local, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    package = json.loads(originals[package_json])
+    package["GuangYaTransferAssistant"]["version"] = "2.0.13"
+    package_json.write_text(
+        json.dumps(package, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return originals
+
+
+def _restore_metadata_after_legacy_contracts(originals: dict[Path, str]) -> None:
+    for path, content in originals.items():
+        path.write_text(content, encoding="utf-8")
 
 
 def _run_test_file(path: Path, failures: list[tuple[str, Exception, str]]) -> int:
@@ -129,21 +169,30 @@ def main() -> int:
             print(f"FAIL maintainability: {error}")
         return 3
 
-    # Run the repository-layout assertion before any legacy test sources are
-    # temporarily materialized.
-    layout_test = HERE / "test_single_file_runtime_contract.py"
-    if layout_test.exists():
-        total += _run_test_file(layout_test, failures)
+    # Real repository/release contracts run before any historical projection.
+    pre_projection_tests = {
+        HERE / "test_single_file_runtime_contract.py",
+        HERE / "test_release_v210_contract.py",
+    }
+    for path in sorted(pre_projection_tests):
+        if path.exists():
+            total += _run_test_file(path, failures)
 
     materialized = _materialize_bundle_for_legacy_contracts()
     original_entry = _project_entry_for_legacy_contracts()
-    print(f"INFO legacy contract compatibility: materialized {len(materialized)} bundled modules")
+    original_metadata = _project_metadata_for_legacy_contracts()
+    print(
+        "INFO legacy contract compatibility: "
+        f"materialized {len(materialized)} bundled modules; "
+        "projected historical release=2.0.13/r97"
+    )
     try:
         for path in sorted(HERE.glob("test_*.py")):
-            if path == layout_test:
+            if path in pre_projection_tests:
                 continue
             total += _run_test_file(path, failures)
     finally:
+        _restore_metadata_after_legacy_contracts(original_metadata)
         _restore_entry_after_legacy_contracts(original_entry)
         _cleanup_materialized_bundle(materialized)
 
