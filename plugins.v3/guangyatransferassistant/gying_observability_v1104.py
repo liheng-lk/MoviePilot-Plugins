@@ -73,6 +73,8 @@ class GuangYaGyingObservabilityV1104Mixin:
             for key in (
                 "mode", "cards", "detail_cards", "resources", "pan", "magnet", "ed2k", "xunlei", "nodes",
                 "matched", "direct_cover", "missing", "query_fallback", "shares", "successful_files", "episodes",
+                "transport", "cache_hit", "cache_age_seconds", "search_http_requests",
+                "downurl_attempts", "downurl_success", "downurl_failures",
             ):
                 if key in extra:
                     value = extra.get(key)
@@ -295,15 +297,38 @@ class GuangYaGyingObservabilityV1104Mixin:
         raw_links = len(rows or [])
         card_match_text = str(matched_cards) if target_scoped else "未限定"
         message = str(state.get("message") or "")[:240]
+        transport = str(state.get("transport") or "unknown")
+        cache_hit = bool(state.get("cache_hit"))
+        search_http_requests = int(state.get("search_http_requests") or 0)
+        downurl_attempts = int(state.get("downurl_attempts") or 0)
+        downurl_success = int(state.get("downurl_success") or 0)
+        downurl_failures = int(state.get("downurl_failures") or 0)
+        cache_age_seconds = float(state.get("cache_age_seconds") or 0.0)
+        transport_label = (
+            "真实网络"
+            if transport == "network" and search_http_requests > 0
+            else "缓存复用"
+            if transport == "cache"
+            else transport
+        )
         self._gying_obs_log(
             "INFO" if ok else "WARNING",
-            "搜索请求完成：接口健康=%s 节点=%s 模糊卡片=%s 当前媒体卡片=%s 已展开=%s 目标卡原始链接（待订阅行核验）=%s 耗时=%.2fs 信息=%s",
+            "搜索请求完成：传输=%s cache_hit=%s /search真实请求=%s downurl尝试=%s 成功=%s 失败=%s "
+            "接口健康=%s 节点=%s 模糊卡片=%s 当前媒体卡片=%s 已展开=%s 目标卡原始链接（待订阅行核验）=%s "
+            "缓存年龄=%.1fs 耗时=%.2fs 信息=%s",
+            transport_label,
+            cache_hit,
+            search_http_requests,
+            downurl_attempts,
+            downurl_success,
+            downurl_failures,
             ok,
             self._gying_node_label(node),
             cards,
             card_match_text,
             detail_cards,
             raw_links,
+            cache_age_seconds,
             time.monotonic() - started,
             message or "-",
         )
@@ -320,6 +345,13 @@ class GuangYaGyingObservabilityV1104Mixin:
             target_scoped=target_scoped,
             card_target_match=bool(state.get("target_match")) if target_scoped else None,
             mode=str(state.get("login_mode") or ""),
+            transport=transport,
+            cache_hit=cache_hit,
+            cache_age_seconds=cache_age_seconds,
+            search_http_requests=search_http_requests,
+            downurl_attempts=downurl_attempts,
+            downurl_success=downurl_success,
+            downurl_failures=downurl_failures,
         )
         return rows, state
 
