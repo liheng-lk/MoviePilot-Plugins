@@ -1,3 +1,51 @@
+## v2.1.0-r98 — 单文件统一转存主链（Controlled Real-World Beta）
+
+本版把“功能存在”收口为一条可验证的真实业务链，同时按项目维护要求将插件运行时代码全部集中到唯一的 `__init__.py`。插件目录内出现其它 `*.py` 会直接触发 CI 失败。
+
+### 统一业务主链
+
+```text
+MoviePilot 订阅
+→ Telegram / GYING 资源发现
+→ MoviePilot 媒体身份、年份、Season 与权威缺集匹配
+→ 迅雷秒传 > 光鸭分享直转 > Magnet > ED2K
+→ 光鸭目标目录真实落盘确认
+→ MoviePilot 识别结果优先的最终文件名确认
+→ 成功通知
+```
+
+四种资源执行方式固定为：
+
+- 迅雷分享：解析分享真实文件 → 生成秒传 JSON → 只选择当前权威缺集 → 光鸭秒传；服务端返回成功不算完成，必须在目标目录确认本次新增文件。
+- 光鸭分享：调用光鸭原生分享恢复接口做文件级增量转存；落盘后远端 rename 必须确认，最终文件名没有确认时保持 `pending_verification`，不提前发送成功通知。
+- Magnet：使用光鸭原生 `cloudcollection`；任务 completed 后继续确认真实正片和最终文件名。
+- ED2K：使用光鸭原生 `cloudcollection`；单文件仍经过真实文件名、缺集与最终落盘门禁。
+- 不引入 MoviePilot 普通下载器、qBittorrent、Transmission、Aria2 或本地整文件下载再上传兜底。
+
+### MoviePilot 优先命名
+
+媒体身份以 MoviePilot 识别结果为第一优先级，原资源名只提供技术参数。
+
+电视剧示例：
+
+`幸运女神 - S01E07 - 2160p WEB-DL H265 DDP5.1 HDR10 GROUP.mkv`
+
+电影示例：
+
+`沙丘2 (2024) - 2160p BluRay REMUX DV HEVC TrueHD 7.1 GROUP.mkv`
+
+会尽量保留分辨率、WEB-DL/BluRay/REMUX、H.264/H.265/HEVC/AV1、HDR/DV、音轨及发布组等有效技术标签；标题、年份、Season、Episode 不再接受来源文件名覆盖 MoviePilot 识别结果。
+
+### 成功闭环
+
+本版统一规定：API 返回 success、迅雷秒传接口成功、cloudcollection task completed 都不能单独视为转存成功。成功必须具备当前任务可归因的真实文件证据，并完成最终文件名确认；预先已经存在的同名/同 fileId 文件不会冒充本次落盘。成功通知只在这一闭环完成后发送，并通过完成状态字段防止重复通知。
+
+Telegram 与 GYING 都使用真实解析结构做四来源矩阵回归，均验证可产出 `xunlei / guangya / magnet / ed2k` 并进入同一优先级。发布收口前完整 CI：**GuangYa contract tests 1076 run / 0 failed**。
+
+### 实机验证边界
+
+上述结果证明代码合同、解析器、状态机和最终插件 harness 均通过自动回归，但不等于已经替代真实 MoviePilot + GYING + 迅雷 + 光鸭账号环境的网络烟测。发布后仍应先用少量真实订阅验证实际 Cookie/PoW、站点节点、迅雷 captcha、光鸭接口和 Emby 扫描延迟；真实日志确认后再扩大订阅范围。
+
 ## v2.0.13-r97 — Usability Hardening（Controlled Real-World Beta）
 
 本版本继续作为 **Controlled Real-World Beta** 发布，重点从“功能齐全”转向“真实运行状态可闭环、异常可恢复、用户能看懂”。
