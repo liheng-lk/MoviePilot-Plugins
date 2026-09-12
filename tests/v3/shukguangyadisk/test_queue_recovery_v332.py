@@ -98,6 +98,23 @@ def test_private_worker_restart_reopens_inflight_instead_of_mp_replay():
         assert token in RECOVERY, token
 
 
+def test_admission_conflict_repairs_only_exact_member_with_guarded_manual_retry():
+    for token in (
+        "def _admission_conflict_member",
+        "def _retry_inactive_admission_once",
+        '"manual": True',
+        "inactive replacement",
+        "if not success:",
+        "repaired = self._retry_inactive_admission_once(item, message)",
+    ):
+        assert token in RECOVERY, token
+    helper = RECOVERY.split("def _admission_conflict_member", 1)[1].split("def _retry_inactive_admission_once", 1)[0]
+    assert "member_path == conflict_path" in helper
+    repair = RECOVERY.split("def _retry_inactive_admission_once", 1)[1].split("def _execute_isolated_transfer", 1)[0]
+    assert "_request_moviepilot_durable_retry(member, event_path)" in repair
+    assert '"background": False' in repair
+
+
 def test_failed_durable_history_reuses_moviepilot_frozen_plan():
     for token in (
         "_DURABLE_RETRY_PREFIX",

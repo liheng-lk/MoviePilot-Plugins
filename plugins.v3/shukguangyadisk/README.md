@@ -1,6 +1,16 @@
-# 光鸭云盘助手 3.9.10
+# 光鸭云盘助手 3.9.11
 
 MoviePilot V3 光鸭云盘存储与自动整理插件，Python 运行时保持唯一 `__init__.py`。
+
+## 3.9.11 旧 admission 单成员自愈
+
+针对真实资源仍出现 `整理源文件已按不同输入准入`，但没有可复用 `transfer_task_id` 的情况：
+
+- 首次自动整理保持 `manual=False`，不改变正常任务语义。
+- 仅在明确命中不同输入准入冲突时，解析 MoviePilot 返回的具体源文件路径。
+- 仅对冲突成员执行一次 `manual=True` 的宿主 inactive replacement，借用 MoviePilot 自身 CAS 保护清理失效旧 admission。
+- 有有效租约或真实历史绑定时，MoviePilot 数据库层仍会拒绝 replacement，插件随后正常 blocked，不强行覆盖。
+- 目录/整季任务发生单文件冲突时，不再把整个 envelope 的其它成员一起 blocked。
 
 ## 3.9.10 blocked 状态自动复核修复
 
