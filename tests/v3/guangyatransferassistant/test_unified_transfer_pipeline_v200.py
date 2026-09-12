@@ -324,6 +324,8 @@ def test_telegram_real_parser_produces_all_four_resource_types():
     # legacy imports NotificationType from app.schemas directly on older MP paths.
     schemas = sys.modules.get("app.schemas")
     schema_types = sys.modules.get("app.schemas.types")
+    if schema_types is not None and not hasattr(schema_types, "NotificationType"):
+        schema_types.NotificationType = type("NotificationType", (), {})
     if schemas is not None and schema_types is not None and not hasattr(schemas, "NotificationType"):
         schemas.NotificationType = schema_types.NotificationType
     legacy_name = "plugins.v3.guangyatransferassistant.legacy"
