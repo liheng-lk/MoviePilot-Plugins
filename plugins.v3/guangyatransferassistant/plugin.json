@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "Controlled Real-World Beta：r99 跨季物理文件栅栏修复。真实文件/目录中的显式 Sxx/Season xx 优先于订阅 season hint；Direct/Magnet/ED2K 最终写盘前再次校验实际 Season，阻止其它季同集号误入当前订阅。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
-  "version": "2.1.1",
+  "description": "Controlled Real-World Beta：r100 Emby实际缺集恢复。Emby-first final_target 可覆盖旧 note/media_facts/transfer_inventory 的陈旧“已完成”结论，直接光鸭分享会重新补回库内真实缺失集；reservation、claim、pending-library、未来集和最终物理门禁继续生效。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+  "version": "2.1.2",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
