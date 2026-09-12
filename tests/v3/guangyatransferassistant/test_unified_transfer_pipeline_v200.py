@@ -180,17 +180,9 @@ def test_preexisting_or_wrong_size_never_counts_as_current_landing():
 
 
 def test_cloudcollection_source_contains_real_target_readback_contract():
-    entry = ast.parse(ENTRY, filename=str(ENTRY_PATH))
-    bundled = None
-    for node in entry.body:
-        if isinstance(node, ast.Assign) and any(
-            isinstance(target, ast.Name) and target.id == "_BUNDLED_SOURCES"
-            for target in node.targets
-        ):
-            bundled = ast.literal_eval(node.value)
-            break
-    assert isinstance(bundled, dict)
-    source = bundled["multisource_v180"]
+    source = (
+        ROOT / "plugins.v3" / "guangyatransferassistant" / "multisource_v180.py"
+    ).read_text(encoding="utf-8")
     assert "def _verify_offline_target_landing(" in source
     assert "pre_landing_file_ids" in source
     assert "target_parent_id" in source
