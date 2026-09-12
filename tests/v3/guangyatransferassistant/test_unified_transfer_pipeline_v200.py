@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import re
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,6 +19,7 @@ _REQUIRED_FUNCTIONS = {
     "_extract_transfer_technical_tags",
     "_format_mp_transfer_name",
     "_select_verified_new_landing",
+    "_success_notice_fingerprint",
 }
 _REQUIRED_CONSTANTS = {
     "_UNIFIED_TRANSFER_ROUTES",
@@ -47,7 +49,7 @@ def _load_helpers():
     assert found_constants == _REQUIRED_CONSTANTS
     module = ast.Module(body=body, type_ignores=[])
     ast.fix_missing_locations(module)
-    namespace = {"re": re}
+    namespace = {"re": re, "hashlib": hashlib}
     exec(compile(module, str(ENTRY_PATH), "exec"), namespace)
     return namespace
 
@@ -437,3 +439,76 @@ def test_gying_real_protocol_payload_produces_all_four_resource_types():
         "magnet",
         "ed2k",
     ]
+
+
+
+def test_success_notice_fingerprint_is_stable_and_final_name_sensitive():
+    ns = _load_helpers()
+    fingerprint = ns["_success_notice_fingerprint"]
+    first = fingerprint(
+        "⚡ 光鸭秒传成功",
+        "媒体：示例剧\n覆盖集数：E01\n最终文件：示例剧 - S01E01 - 2160p WEB-DL H265.mkv",
+    )
+    repeat = fingerprint(
+        "⚡ 光鸭秒传成功",
+        "媒体：示例剧\n覆盖集数：E01\n最终文件：示例剧 - S01E01 - 2160p WEB-DL H265.mkv",
+    )
+    another = fingerprint(
+        "⚡ 光鸭秒传成功",
+        "媒体：示例剧\n覆盖集数：E02\n最终文件：示例剧 - S01E02 - 2160p WEB-DL H265.mkv",
+    )
+    assert first == repeat
+    assert first != another
+    assert len(first) == 24
+
+
+def test_final_runtime_persists_success_notification_dedupe():
+    final_class = ENTRY[ENTRY.rindex("class GuangYaTransferAssistant("):]
+    post = final_class.split("    def post_message(", 1)[1].split(
+        "    @eventmanager.register", 1
+    )[0]
+    assert "_success_notice_fingerprint(" in post
+    assert '"success_notice_receipts_v200"' in post
+    assert "already_notified" in post
+    assert "self.save_data(" in post
+
+
+def test_cloud_completion_notification_requires_verified_remote_and_final_name():
+    final_class = ENTRY[ENTRY.rindex("class GuangYaTransferAssistant("):]
+    method = final_class.split("    def _notify_cloud_completed_v1113(", 1)[1].split(
+        "    def ", 1
+    )[0]
+    assert 'current.get("remote_video_confirmed")' in method
+    assert "landing_file_name" in method
+    assert "final_name" in method
+    assert "return super()._notify_cloud_completed_v1113" in method
+
+
+def test_share_completion_requires_final_name_confirmation():
+    final_class = ENTRY[ENTRY.rindex("class GuangYaTransferAssistant("):]
+    rename = final_class.split("    def _rename_restored_media_v11224(", 1)[1].split(
+        "    def _restore_items(", 1
+    )[0]
+    restore = final_class.split("    def _restore_items(", 1)[1].split(
+        "    def ", 1
+    )[0]
+    assert "_share_naming_receipt_v200" in rename
+    assert '"naming_verified"' in restore
+    assert '"pending_verification": True' in restore
+    assert "最终文件名尚未确认" in restore
+
+
+def test_tg_and_gying_provider_outputs_carry_unified_route_evidence():
+    final_class = ENTRY[ENTRY.rindex("class GuangYaTransferAssistant("):]
+    gying = final_class.split("    def _gying_raw_results(", 1)[1].split(
+        "    def ", 1
+    )[0]
+    channel = final_class.split("    def refresh_channels(", 1)[1].split(
+        "    def ", 1
+    )[0]
+    assert 'origin="gying"' in gying
+    assert "_normalize_transfer_candidate" in gying
+    assert '"unified_route_counts"' in gying
+    assert 'origin="telegram"' in channel
+    assert '"unified_candidates"' in channel
+    assert "_UNIFIED_SOURCE_PRIORITY" in channel
