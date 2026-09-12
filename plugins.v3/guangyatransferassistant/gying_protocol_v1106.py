@@ -470,17 +470,50 @@ class GuangYaGyingProtocolV1106Mixin:
     def _gying_raw_results(self, keyword: str, force: bool = False) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         keyword = " ".join(str(keyword or "").split())
         if not keyword:
-            return [], {"provider": "viewing", "success": False, "message": "观影搜索关键词为空"}
+            return [], {
+                "provider": "viewing",
+                "success": False,
+                "search_complete": False,
+                "cache_hit": False,
+                "network_requested": False,
+                "message": "观影搜索关键词为空",
+            }
 
         cache_key_getter = getattr(self, "_gying_search_cache_key_v11223", None)
         cache_key = cache_key_getter(keyword) if callable(cache_key_getter) else keyword
         cached = dict(self._gying_search_cache.get(cache_key) or {})
         if cached and not force and time.time() - _safe_float(cached.get("ts"), 0.0) < 120:
-            return list(cached.get("rows") or []), dict(cached.get("state") or {})
+            cached_state = dict(cached.get("state") or {})
+            cached_state.update({
+                "cache_hit": True,
+                "network_requested": False,
+                "search_request_count_this_call": 0,
+                "detail_request_count_this_call": 0,
+                "served_at": self._now_text(),
+            })
+            return list(cached.get("rows") or []), cached_state
+
+        started_at = self._now_text()
+        search_request_count = 0
+        detail_request_count = 0
+        detail_success_count = 0
+        detail_failure_count = 0
+        attempted_modes: List[str] = []
+        last_http_status = 0
 
         session, login = self._viewing_session()
         if not login.get("success"):
-            return [], {"provider": "viewing", **dict(login or {})}
+            return [], {
+                "provider": "viewing",
+                **dict(login or {}),
+                "search_complete": False,
+                "cache_hit": False,
+                "network_requested": False,
+                "search_request_count_this_call": 0,
+                "detail_request_count_this_call": 0,
+                "search_started_at": started_at,
+                "search_finished_at": self._now_text(),
+            }
         node = str(
             login.get("node")
             or getattr(self, "_gying_active_node", "")
@@ -488,7 +521,18 @@ class GuangYaGyingProtocolV1106Mixin:
             or ""
         ).rstrip("/")
         if not node:
-            return [], {"provider": "viewing", "success": False, "message": "观影没有可用内容节点"}
+            return [], {
+                "provider": "viewing",
+                "success": False,
+                "search_complete": False,
+                "cache_hit": False,
+                "network_requested": False,
+                "search_request_count_this_call": 0,
+                "detail_request_count_this_call": 0,
+                "search_started_at": started_at,
+                "search_finished_at": self._now_text(),
+                "message": "观影没有可用内容节点",
+            }
 
         try:
             query = quote(keyword, safe="")
@@ -500,6 +544,8 @@ class GuangYaGyingProtocolV1106Mixin:
             response: requests.Response | None = None
             search_mode = "browser"
             for mode, search_url in search_variants:
+                attempted_modes.append(mode)
+                search_request_count += 1
                 current = self._gying_request(
                     session,
                     node,
@@ -507,10 +553,12 @@ class GuangYaGyingProtocolV1106Mixin:
                     search_url,
                     headers={"Referer": node + "/"},
                 )
+                last_http_status = int(getattr(current, "status_code", 0) or 0)
                 if self._gying_login_required(current):
                     relogin = self._gying_login_password(session, node)
                     if not relogin.get("success"):
                         raise RuntimeError(str(relogin.get("message") or "观影登录失效"))
+                    search_request_count += 1
                     current = self._gying_request(
                         session,
                         node,
@@ -518,6 +566,7 @@ class GuangYaGyingProtocolV1106Mixin:
                         search_url,
                         headers={"Referer": node + "/"},
                     )
+                    last_http_status = int(getattr(current, "status_code", 0) or 0)
                 if current.status_code >= 400:
                     if mode == "browser":
                         continue
@@ -545,6 +594,7 @@ class GuangYaGyingProtocolV1106Mixin:
                 if not resource_type or not resource_id:
                     continue
                 detail_referer = f"{node}/{quote(resource_type)}/{quote(resource_id)}"
+                detail_request_count += 1
                 try:
                     payload = self._gying_detail(
                         session,
@@ -553,7 +603,9 @@ class GuangYaGyingProtocolV1106Mixin:
                         resource_id,
                         detail_referer,
                     )
+                    detail_success_count += 1
                 except Exception as err:
+                    detail_failure_count += 1
                     logger = getattr(self, "_gying_obs_log", None)
                     if callable(logger):
                         logger(
@@ -605,6 +657,16 @@ class GuangYaGyingProtocolV1106Mixin:
                 "ed2k_resources": ed2k_count,
                 "xunlei_resources": xunlei_count,
                 "search_mode": search_mode,
+                "attempted_search_modes": list(attempted_modes),
+                "search_http_status": last_http_status,
+                "cache_hit": False,
+                "network_requested": bool(search_request_count or detail_request_count),
+                "search_request_count_this_call": search_request_count,
+                "detail_request_count_this_call": detail_request_count,
+                "detail_success_count_this_call": detail_success_count,
+                "detail_failure_count_this_call": detail_failure_count,
+                "search_started_at": started_at,
+                "search_finished_at": self._now_text(),
                 "message": (
                     f"观影搜索请求完成：模糊卡片 {len(cards)} · 当前媒体卡片 "
                     f"{len(detail_cards) if target_scoped else '未限定'} · 已展开 {len(detail_cards)} · "
@@ -622,6 +684,16 @@ class GuangYaGyingProtocolV1106Mixin:
                 "search_complete": False,
                 "node": node,
                 "login_mode": login.get("mode"),
+                "cache_hit": False,
+                "network_requested": bool(search_request_count or detail_request_count),
+                "search_request_count_this_call": search_request_count,
+                "detail_request_count_this_call": detail_request_count,
+                "detail_success_count_this_call": detail_success_count,
+                "detail_failure_count_this_call": detail_failure_count,
+                "attempted_search_modes": list(attempted_modes),
+                "search_http_status": last_http_status,
+                "search_started_at": started_at,
+                "search_finished_at": self._now_text(),
                 "message": str(err)[:400],
             }
 
