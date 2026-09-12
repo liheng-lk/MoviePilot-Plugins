@@ -66,7 +66,7 @@ V4 使用一套持久资源状态：
 1. `STABILIZING` / 未到期 `RETRY` 永远不能阻塞后面的 `READY`。
 2. 执行器固定 `max_workers=1`，同一时刻最多一个真实整理任务。
 3. 一个任务 callback 收口后立即调用下一次 dispatch，不依赖下一次 heartbeat 提升吞吐。
-4. 热更新时旧实例停止接新任务；正在运行的任务保留 lease 自然收尾。新实例只有在 lease 过期后才恢复任务，避免重复整理。
+4. 热更新时旧实例停止接新任务；正在运行的任务保留 lease 自然收尾。新实例只有在 lease 过期后才恢复任务，避免重复整理。用户“安全暂停”同样不强杀当前任务，并保留全部持久待处理状态。
 5. 插件绝不调用 MoviePilot 的 `remove_from_queue`、`TransferPendingOper.discard` 或全局 stop 来清理未知任务。
 6. MoviePilot 同步执行返回成功但历史尚未可见时进入 `VERIFYING`，只做历史确认，不重复执行。
 7. 安全预览要求当前源必须成功映射到目标，且多个源不能映射同一个目标。
@@ -102,7 +102,7 @@ V4 直接集成而不是 patch：
 - 整理后旧源路径只读检查：`any_files=False`、`list_files=[]`；
 - Token 日志不打印 access/refresh token 片段。
 
-移动事务的远端终态确认和失败回滚保护仍需要在 V4 分支继续直接并入 `GuangYaApi`，完成后才进入实机发布阶段。
+移动/复制/重命名事务已经直接并入 `GuangYaApi`：MoviePilot 只有在真实目标 FileItem 可见且身份校验通过后才能得到成功返回；远端状态不确定时按 fileId/path 冻结 delete 与永久回收站清理。源路径消失但没有 MoviePilot 成功历史时 Organizer 进入 `BLOCKED`，禁止把“源消失”误判为整理成功。
 
 ## 发布门槛
 
