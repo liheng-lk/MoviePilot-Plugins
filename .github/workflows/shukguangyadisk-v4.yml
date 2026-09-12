@@ -69,9 +69,11 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Install MoviePilot V3 runtime
+      - name: Install MoviePilot V3 runtime and test runner
         working-directory: .moviepilot
-        run: uv sync --frozen --no-dev --group runtime-standard
+        run: |
+          uv sync --frozen --no-dev --group runtime-standard
+          uv pip install --python .venv/bin/python pytest
 
       - name: Install V4 plugin into real MoviePilot tree
         run: |
