@@ -622,6 +622,7 @@ class GuangYaGyingBrowserV1112Mixin(GuangYaGyingPowV1111Mixin):
         row: Dict[str, Any],
         response: requests.Response,
     ) -> requests.Response:
+        """等待挑战 DOM 刷新；browser_verified Cookie 比旧 challenge DOM 更可信。"""
         kind = _challenge_kind_v1110(response)
         if not kind:
             return response
@@ -644,7 +645,20 @@ class GuangYaGyingBrowserV1112Mixin(GuangYaGyingPowV1111Mixin):
                 break
             if not _challenge_kind_v1110(latest):
                 break
-        return latest
+
+        if not self._gying_browser_has_cookie_v1112(row, "browser_verified"):
+            return latest
+
+        # Cookie 已由同一个 CloakBrowser context 写入，旧 DOM 只是尚未刷新。
+        # 返回“非 challenge”影子响应让 bootstrap 继续；紧接着的真实业务 fetch
+        # 仍会由 _gying_request 再次判定 challenge，形成最终验真。
+        current_url = str(getattr(page, "url", "") or getattr(latest, "url", "") or "")
+        return _response_v1112(
+            current_url,
+            int(getattr(latest, "status_code", 200) or 200),
+            "",
+            dict(getattr(latest, "headers", {}) or {}),
+        )
 
     def _gying_browser_solve_v1112(
         self,
