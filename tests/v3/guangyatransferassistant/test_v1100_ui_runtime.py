@@ -90,3 +90,11 @@ def test_runtime_health_does_not_mark_intentionally_disabled_sources_as_failures
     assert 'and not xunlei_status.get("circuit_open")' in CONSOLE
     assert 'api_ok = True' in CONSOLE
     assert "Captcha 熔断中，建议执行秒传预检" in CONSOLE
+
+
+def test_console_health_isolates_provider_config_parse_failure():
+    assert 'provider_error = ""' in CONSOLE
+    assert 'except Exception as err:' in CONSOLE
+    assert 'provider_error = str(err)[:160]' in CONSOLE
+    assert '"配置解析失败：" + provider_error' in CONSOLE
+    assert "未配置外部 API（可选）" in CONSOLE
