@@ -49,11 +49,14 @@ def test_xunlei_sampling_is_streamed_and_bounded():
 def test_full_diagnostics_is_non_destructive_and_exposed_on_console():
     assert '"/diagnostics/full"' in DIAGNOSTICS
     assert "api_provider_test" in DIAGNOSTICS
-    assert "api_provider_search_selected" in DIAGNOSTICS
+    assert "api_provider_search_selected" not in DIAGNOSTICS
+    assert "selected_search_ready" in DIAGNOSTICS
+    assert "provider_search_last" in DIAGNOSTICS
     assert "api_xunlei_preflight" in DIAGNOSTICS
     for forbidden in ("create_transfer", "flash_upload", "download_task", "add_download"):
         assert forbidden not in DIAGNOSTICS
-    assert "一键完整诊断" in CONSOLE and "/diagnostics/full" in CONSOLE
+    assert "运行健康诊断" in CONSOLE and "/diagnostics/full" in CONSOLE
+    assert "健康诊断只检查来源/会话/秒传前置条件" in CONSOLE
     assert "full_diagnostics_last" in CONSOLE
 
 def test_console_is_responsive_and_has_real_actions():
