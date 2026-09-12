@@ -102,9 +102,12 @@ def test_v1113_name_keeps_original_and_appends_search_identity_before_extension(
     assert 'return f"{stem}{marker}{suffix}"[:limit]' in helper
     assert "source[\"label\"] = desired" in resolve
     assert "requested_name=desired" in resolve
-    assert "client, _ = self._get_guangya_runtime()" in poll
+    assert "client, api = self._get_guangya_runtime()" in poll
     assert 'getattr(client, "rename", None)' in poll
     assert "/nd.bizuserres.s/v1/file/rename" in poll
+    assert "_confirm_remote_rename_v1113(" in poll
+    assert 'rename_state="confirmed"' in poll
+    assert 'rename_state="pending"' in poll
 
 
 def test_v1113_partial_success_does_not_hide_remaining_missing_episodes():
