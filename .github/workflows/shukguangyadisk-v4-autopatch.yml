@@ -28,33 +28,28 @@ jobs:
           path = Path('plugins.v3/shukguangyadisk/__init__.py')
           source = path.read_text(encoding='utf-8')
 
-          anchor = '''        parent_item = self._api.get_item(PathLib(parent_path))
-          if not parent_item:
-              return Response(status_code=409, content="Parent not found")
+          method_start = source.index('    def _handle_put(self, request: Request, path: str) -> Response:')
+          method_end = source.index('    def _handle_move(self, request: Request, path: str) -> Response:', method_start)
+          block = source[method_start:method_end]
 
-          # 将上传内容写入临时文件（同步环境下从 _body 缓存读取）
-          '''
-          replacement = '''        parent_item = self._api.get_item(PathLib(parent_path))
-          if not parent_item:
-              return Response(status_code=409, content="Parent not found")
+          marker = '        # 将上传内容写入临时文件（同步环境下从 _body 缓存读取）\n'
+          if block.count(marker) != 1:
+              raise SystemExit(f'WebDAV PUT body marker count={block.count(marker)}; refusing ambiguous patch')
+          block = block.replace(
+              marker,
+              '        # PUT 响应区分新建(201)与覆盖(204)，并避免旧实现引用未定义的 item。\n'
+              '        existing_item = self._api.get_item(PathLib(path))\n\n'
+              + marker,
+              1,
+          )
 
-          # PUT 响应需要区分新建(201)与覆盖(204)；旧实现错误引用了未定义的 item。
-          existing_item = self._api.get_item(PathLib(path))
-
-          # 将上传内容写入临时文件（同步环境下从 _body 缓存读取）
-          '''
-
-          if anchor not in source:
-              raise SystemExit('WebDAV PUT anchor not found; refusing broad patch')
-          if source.count(anchor) != 1:
-              raise SystemExit(f'WebDAV PUT anchor count={source.count(anchor)}; refusing ambiguous patch')
-
-          source = source.replace(anchor, replacement, 1)
           old = 'return Response(status_code=201 if not item else 204)'
           new = 'return Response(status_code=201 if not existing_item else 204)'
-          if source.count(old) != 1:
-              raise SystemExit(f'WebDAV PUT response marker count={source.count(old)}; refusing ambiguous patch')
-          source = source.replace(old, new, 1)
+          if block.count(old) != 1:
+              raise SystemExit(f'WebDAV PUT response marker count={block.count(old)}; refusing ambiguous patch')
+          block = block.replace(old, new, 1)
+
+          source = source[:method_start] + block + source[method_end:]
           path.write_text(source, encoding='utf-8')
           PY
 
