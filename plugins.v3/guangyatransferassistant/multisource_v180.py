@@ -426,6 +426,83 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
         rows = data.get("list") or data.get("items") or []
         return [dict(row) for row in rows if isinstance(row, dict)]
 
+    def _record_library_landing_snapshot_v180(
+        self,
+        source: Dict[str, Any],
+        subscribe: Any,
+        updated: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """记录“远端已确认后，媒体库此刻看到了什么”；只做观察，不反向伪造来源成功。"""
+        source_id = str(source.get("id") or "")
+        now_text = self._now_text()
+        try:
+            sync = dict(self._sync_media_library_progress(subscribe) or {})
+            target_eps = set()
+            for raw in source.get("resolved_episodes") or source.get("target_episodes") or []:
+                try:
+                    value = int(raw)
+                except (TypeError, ValueError):
+                    continue
+                if value > 0:
+                    target_eps.add(value)
+
+            existing_eps = set()
+            for raw in sync.get("existing") or []:
+                try:
+                    value = int(raw)
+                except (TypeError, ValueError):
+                    continue
+                if value > 0:
+                    existing_eps.add(value)
+
+            if not bool(sync.get("success")):
+                return self._update_source(
+                    source_id,
+                    remote_confirmed_at=now_text,
+                    library_snapshot_state="unknown",
+                    library_snapshot_at=now_text,
+                ) or updated
+
+            observed = sorted(target_eps.intersection(existing_eps))
+            remaining_target = sorted(target_eps - existing_eps)
+            snapshot_state = (
+                "confirmed"
+                if target_eps and not remaining_target
+                else ("pending" if target_eps else "checked")
+            )
+            result = self._update_source(
+                source_id,
+                remote_confirmed_at=now_text,
+                library_snapshot_state=snapshot_state,
+                library_snapshot_at=now_text,
+                library_observed_episodes=observed,
+                library_remaining_target_episodes=remaining_target,
+                library_snapshot_error="",
+            ) or updated
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【落盘闭环】source=%s remote=confirmed library=%s observed=%s remaining=%s",
+                source_id[:60],
+                snapshot_state,
+                ",".join(str(v) for v in observed) or "-",
+                ",".join(str(v) for v in remaining_target) or "-",
+            )
+            return result
+        except Exception as err:
+            result = self._update_source(
+                source_id,
+                remote_confirmed_at=now_text,
+                library_snapshot_state="unknown",
+                library_snapshot_at=now_text,
+                library_snapshot_error=str(err)[:260],
+            ) or updated
+            self._plugin_log(
+                "DEBUG",
+                "【光鸭转存助手】【原生云添加】完成后媒体库进度同步暂未命中：%s",
+                err,
+            )
+            return result
+
     def _poll_offline_source_base_v180(self, source: Dict[str, Any]) -> Dict[str, Any]:
         task_id = str(source.get("task_id") or "").strip()
         if not task_id:
@@ -730,65 +807,11 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                         last_offline_pending_verify_task_id=task_id,
                     )
                 if subscribe and verified:
-                    try:
-                        sync = dict(self._sync_media_library_progress(subscribe) or {})
-                        target_eps = set()
-                        for raw in source.get("resolved_episodes") or source.get("target_episodes") or []:
-                            try:
-                                value = int(raw)
-                            except (TypeError, ValueError):
-                                continue
-                            if value > 0:
-                                target_eps.add(value)
-
-                        existing_eps = set()
-                        for raw in sync.get("existing") or []:
-                            try:
-                                value = int(raw)
-                            except (TypeError, ValueError):
-                                continue
-                            if value > 0:
-                                existing_eps.add(value)
-
-                        if bool(sync.get("success")):
-                            remaining_target = sorted(target_eps - existing_eps)
-                            snapshot_state = (
-                                "confirmed"
-                                if target_eps and not remaining_target
-                                else ("pending" if target_eps else "checked")
-                            )
-                            updated = self._update_source(
-                                str(source.get("id") or ""),
-                                remote_confirmed_at=self._now_text(),
-                                library_snapshot_state=snapshot_state,
-                                library_snapshot_at=self._now_text(),
-                                library_observed_episodes=sorted(target_eps.intersection(existing_eps)),
-                                library_remaining_target_episodes=remaining_target,
-                            ) or updated
-                            self._plugin_log(
-                                "INFO",
-                                "【光鸭转存助手】【落盘闭环】source=%s remote=confirmed library=%s observed=%s remaining=%s",
-                                str(source.get("id") or "")[:60],
-                                snapshot_state,
-                                ",".join(str(v) for v in sorted(target_eps.intersection(existing_eps))) or "-",
-                                ",".join(str(v) for v in remaining_target) or "-",
-                            )
-                        else:
-                            updated = self._update_source(
-                                str(source.get("id") or ""),
-                                remote_confirmed_at=self._now_text(),
-                                library_snapshot_state="unknown",
-                                library_snapshot_at=self._now_text(),
-                            ) or updated
-                    except Exception as err:
-                        updated = self._update_source(
-                            str(source.get("id") or ""),
-                            remote_confirmed_at=self._now_text(),
-                            library_snapshot_state="unknown",
-                            library_snapshot_at=self._now_text(),
-                            library_snapshot_error=str(err)[:260],
-                        ) or updated
-                        self._plugin_log("DEBUG", "【光鸭转存助手】【原生云添加】完成后媒体库进度同步暂未命中：%s", err)
+                    updated = self._record_library_landing_snapshot_v180(
+                        source,
+                        subscribe,
+                        dict(updated or source),
+                    )
                 self._plugin_log(
                     "INFO",
                     "【云添加终态】task_id=%s status=completed manifest_present=%s "
