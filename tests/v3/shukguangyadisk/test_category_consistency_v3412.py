@@ -14,11 +14,11 @@ ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 REMOTE = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf-8")
 
 
-def test_category_reconciliation_uses_moviepilot_category_helper_only():
+def test_category_reconciliation_uses_moviepilot_v3_classification_sdk_only():
     for token in (
-        "CategoryHelper",
-        "get_tv_category",
-        "get_movie_category",
+        "from app.sdk.classification import classify_media",
+        "classified = classify_media(media)",
+        'getattr(classified, "category", None)',
         "tmdb_info",
         "deepcopy(media)",
         "corrected.category = expected",
@@ -29,6 +29,9 @@ def test_category_reconciliation_uses_moviepilot_category_helper_only():
     ):
         assert token in CATEGORY, token
     for forbidden in (
+        "CategoryHelper",
+        "get_tv_category",
+        "get_movie_category",
         'expected = "国产剧"',
         'expected = "欧美剧"',
         'expected = "日韩剧"',
@@ -49,7 +52,7 @@ def test_category_consistency_is_installed_after_episode_compatibility():
 def test_category_verification_fails_closed_when_moviepilot_rules_cannot_be_checked():
     for token in (
         "识别结果缺少 TMDB 原始详情，无法核对 MoviePilot 分类规则",
-        "MoviePilot CategoryHelper 分类核验异常",
+        "MoviePilot V3 分类 SDK 核验异常",
         "已阻止真实整理",
         "return transfer_chain, directory_item, kwargs, category_error",
     ):
@@ -62,7 +65,7 @@ def test_category_diagnostics_expose_moviepilot_facts():
         "origin_country=%s",
         "production_countries=%s",
         "original_language=%s",
-        "识别上下文分类与 MoviePilot 当前 category.yaml 不一致",
+        "识别上下文分类与 MoviePilot 当前活动分类策略不一致",
     ):
         assert token in CATEGORY, token
 
