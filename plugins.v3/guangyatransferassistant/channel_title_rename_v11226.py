@@ -4,7 +4,9 @@
    - `名称：标题(2026） 4K 更新至11集`
    - `[剧集·光鸭] 标题 (2022)`
    清理画质/更新尾巴与频道标签前缀，避免强标题匹配失败后直接跳过转存。
-2. 转存落盘命名改为：`剧集名 SxxExx.ext`（多集 `SxxExx-Eyy`）；电影仅用剧名。
+2. 转存落盘命名以 MoviePilot 识别标题为第一位：
+   `剧集名 SxxExx - 2160p WEB-DL HEVC DDP5.1-GROUP.ext`。
+   季集号之后保留原资源画质/来源/编码/音频/HDR/发布组等发布参数；
    覆盖迅雷秒传、Magnet/ED2K 云添加提交名，以及光鸭分享落盘后的远端 rename。
 """
 from __future__ import annotations
@@ -40,6 +42,20 @@ _HDHIVE_LINE_V11226 = re.compile(
     r"(?im)^\s*\[\s*(?:剧集|电影|动漫|动画|综艺)[^\]]{0,40}\]\s*([^\n]{2,240})\s*$"
 )
 
+_EPISODE_RELEASE_ANCHOR_V11226 = re.compile(
+    r"(?i)(?:S\d{1,2}[ ._\-]*E\d{1,4}(?:\s*[-~]\s*E?\d{1,4})?|"
+    r"(?:EP?|第)\s*\d{1,4}\s*(?:集)?)"
+)
+_RELEASE_MARKER_V11226 = re.compile(
+    r"(?i)(?:8K|4K|2160p|1080p|1080i|720p|480p|UHD|"
+    r"WEB[ ._\-]?DL|WEBRip|BluRay|BDRip|REMUX|HDTV|"
+    r"H\.?26[45]|x26[45]|HEVC|AVC|AV1|10bit|"
+    r"HDR10\+?|HDR|DV|Dolby[ ._\-]?Vision|"
+    r"DDP?\d(?:\.\d)?|EAC3|AC3|AAC(?:\d(?:\.\d)?)?|"
+    r"DTS(?:[ ._\-]?HD)?|TrueHD|Atmos|FLAC)"
+)
+_YEAR_RELEASE_ANCHOR_V11226 = re.compile(r"(?<!\d)(?:19\d{2}|20\d{2})(?!\d)")
+
 
 def _safe_name_v11226(value: Any, limit: int = 120) -> str:
     text = _FORBIDDEN_NAME_V11226.sub(" ", str(value or ""))
@@ -62,6 +78,40 @@ def _split_name_ext_v11226(name: Any) -> Tuple[str, str]:
     if suffix and len(suffix) <= 8:
         return path.stem, suffix
     return text, ""
+
+
+def _release_tail_v11226(original: Any) -> str:
+    """保留原发布名中季集之后的编码参数，不把原作品标题带回最终文件名。"""
+    stem, _ = _split_name_ext_v11226(original)
+    if not stem:
+        return ""
+
+    tail = ""
+    episode = _EPISODE_RELEASE_ANCHOR_V11226.search(stem)
+    if episode:
+        tail = stem[episode.end():]
+    else:
+        marker = _RELEASE_MARKER_V11226.search(stem)
+        if marker:
+            tail = stem[marker.start():]
+        else:
+            year = _YEAR_RELEASE_ANCHOR_V11226.search(stem)
+            if year:
+                tail = stem[year.end():]
+
+    tail = str(tail or "").strip(" ._-")
+    if not tail:
+        return ""
+
+    # 点号大多是发布名分隔符，但 H.265 / DDP5.1 等数字语义必须保留。
+    tail = tail.replace("_", " ")
+    tail = re.sub(r"(?<!\d)\.(?!\d)", " ", tail)
+    tail = re.sub(r"(?<=\d)\.(?=[A-Za-z])", " ", tail)
+    tail = re.sub(r"(?<=[A-Za-z])\.(?=[A-Za-z])", " ", tail)
+    tail = re.sub(r"\s+", " ", tail).strip(" ._-")
+    # 防止拼接 hint 时把另一份季集号重新带进编码尾巴。
+    tail = re.sub(r"(?i)^S\d{1,2}E\d{1,4}(?:\s*[-~]\s*E?\d{1,4})?\s*", "", tail).strip(" ._-")
+    return _safe_name_v11226(tail, 140)
 
 
 def _episode_tag_v11226(subscribe: Any, path: Any) -> str:
@@ -92,19 +142,27 @@ def _canonical_transfer_name_v11226(
     original: Any,
     *,
     is_movie: bool = False,
+    release_source: Any = None,
 ) -> str:
-    """剧集名 + 季集号 + 原扩展名；无法解析集号时仅用剧集名。"""
+    """MP识别标题优先，季集号其次，最后保留原资源发布参数。"""
     show = _show_name_v11226(subscribe)
-    _, ext = _split_name_ext_v11226(original)
+    _, ext = _split_name_ext_v11226(release_source if release_source is not None else original)
+    if not ext:
+        _, ext = _split_name_ext_v11226(original)
     if not show:
         base = str(original or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
         return _safe_name_v11226(base, 240)
-    if is_movie:
-        return f"{show}{ext}"
-    tag = _episode_tag_v11226(subscribe, original)
-    if tag:
-        return f"{show} {tag}{ext}"
-    return f"{show}{ext}"
+
+    tail = _release_tail_v11226(release_source if release_source is not None else original)
+    parts = [show]
+    if not is_movie:
+        tag = _episode_tag_v11226(subscribe, original)
+        if tag:
+            parts.append(tag)
+    base = " ".join(part for part in parts if part).strip()
+    if tail:
+        base = f"{base} - {tail}"
+    return _safe_name_v11226(base, 230) + ext
 
 
 def _clean_channel_title_v11226(value: Any) -> str:
@@ -185,11 +243,18 @@ class GuangYaChannelTitleRenameV11226Mixin:
         media_type = str(getattr(subscribe, "type", "") or getattr(subscribe, "media_type", "") or "").lower()
         return media_type in {"movie", "movies", "电影"}
 
-    def _canonical_transfer_name_v11226(self, subscribe: Any, original: Any) -> str:
+    def _canonical_transfer_name_v11226(
+        self,
+        subscribe: Any,
+        original: Any,
+        *,
+        release_source: Any = None,
+    ) -> str:
         return _canonical_transfer_name_v11226(
             subscribe,
             original,
             is_movie=self._is_movie_for_naming_v11226(subscribe),
+            release_source=release_source,
         )
 
     def _resolve_offline_source(self, source: Dict[str, Any], subscribe: Any) -> Dict[str, Any]:
@@ -212,7 +277,11 @@ class GuangYaChannelTitleRenameV11226Mixin:
                 ",".join(str(v) for v in (source.get("transfer_episodes") or [])),
             )
         )
-        desired = self._canonical_transfer_name_v11226(subscribe, hint or original)
+        desired = self._canonical_transfer_name_v11226(
+            subscribe,
+            hint or original,
+            release_source=original,
+        )
         if desired and desired != str(source.get("label") or ""):
             source["label"] = desired
             source_id = str(source.get("id") or "")
@@ -343,5 +412,6 @@ __all__ = [
     "GuangYaChannelTitleRenameV11226Mixin",
     "install_channel_title_rename_v11226",
     "_canonical_transfer_name_v11226",
+    "_release_tail_v11226",
     "_clean_channel_title_v11226",
 ]
