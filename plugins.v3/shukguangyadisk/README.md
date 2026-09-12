@@ -1,6 +1,15 @@
-# 光鸭云盘助手 3.9.7
+# 光鸭云盘助手 3.9.8
 
 MoviePilot V3 光鸭云盘存储与自动整理插件，Python 运行时保持唯一 `__init__.py`。
+
+## 3.9.8 自动整理调度公平性修复
+
+本版针对实机日志中“持久队列已有多个资源，但一个 `member_wait/stabilizing` 项挡住后续资源”的问题：
+
+- loose 泛化目录（如“剧集”“电影”散放目录）不再固定只检查 `primary[:1]`；会跳过 completed、blocked、ignored、stabilizing、history_wait、retry_wait、inflight 等成员，寻找第一个真正 ready 的成员。
+- 同一 heartbeat 中，某个资源只是 `member_wait/resource_wait/state_changed` 时，会把该项 `next_due` 后移并继续尝试其它已到期资源；仍然最多只提交一个真实 Worker，不改变单任务流水。
+- 监控日志把“队列新增”和“已有队列刷新”拆开显示，避免资源变化已被刷新但日志仍显示“新增/刷新=0”的误解。
+- MoviePilot 原生识别、分类、命名、移动、远端终态确认和失败保护逻辑不变。
 
 ## 3.9.7 WebDAV PUT 修复重点
 
