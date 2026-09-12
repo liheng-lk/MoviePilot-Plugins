@@ -1,3 +1,15 @@
+## v2.1.1-r99 — 跨季物理文件栅栏修复（Controlled Real-World Beta）
+
+本版修复统一 Episode Resolver 的 Season 优先级错误：真实文件/目录中显式的 `Sxx` / `Season xx` 现在优先于订阅传入的 `season_hint`。例如 S03 订阅遇到 `S06E04` 时，必须识别为 S06E04，而不能再降成 S03E04。
+
+### 最终写盘门禁
+
+- 显式季号优先：`S06E04`、`Season 06/04.mp4` 按真实 S06 处理。
+- 弱命名仍可使用订阅上下文：`04.mp4` 没有显式季号时，仍允许由当前订阅 Season 提供上下文。
+- Direct / Magnet / ED2K 在最终物理文件阶段再次执行 `actual_season == expected_season` 校验；跨季文件返回空命中并记录 `【季范围门禁】`，不得进入提交/落盘。
+- 多季资源不是整包拒绝：只过滤其它 Season，当前 Season 的合法文件仍可继续。
+- 迅雷现有跨季 share 栅栏、权威缺集、reservation/source claim、真实落盘、MP 优先命名与来源优先级保持不变。
+
 ## v2.1.0-r98 — 单文件统一转存主链（Controlled Real-World Beta）
 
 本版把“功能存在”收口为一条可验证的真实业务链，同时按项目维护要求将插件运行时代码全部集中到唯一的 `__init__.py`。插件目录内出现其它 `*.py` 会直接触发 CI 失败。
