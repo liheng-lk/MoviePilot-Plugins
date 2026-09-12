@@ -239,6 +239,14 @@ class OrganizerV4BehaviorTest(unittest.TestCase):
         self.assertEqual(result["state"], "BLOCKED")
         self.assertIn("没有 MoviePilot 成功历史", result["message"])
 
+    def test_graceful_pause_does_not_dispatch_next(self):
+        """用户安全暂停后，当前任务可收尾，但不得继续派发下一任务。"""
+        organizer = self.new_organizer()
+        organizer._organizer_stopping = False
+        organizer._organizer_graceful_paused = True
+        result = organizer._organizer_dispatch_next()
+        self.assertEqual(result["reason"], "graceful_paused")
+
     def test_stopping_instance_does_not_restart_executor(self):
         """热重载旧实例 stopping 后不能继续提交任务。"""
         organizer = self.new_organizer()
