@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, Iterable, List, Set
+from typing import Any, Dict, Iterable, List, Set, Tuple
 
 from .episode_resolver_v190 import AUTO_SELECT_CONFIDENCE, reliable_episode_set, resolve_episode
 from .legacy import _is_video
@@ -409,6 +409,75 @@ class GuangYaMediaMatchV11219Mixin:
         result["transfer_episodes_v11219"] = sorted(physical)
         result["media_match_verified_v11219"] = True
         return result
+
+    def _xunlei_json_identity_matches_v1123(
+        self,
+        subscribe: Any,
+        candidate: Dict[str, Any],
+        info: Dict[str, Any],
+        template: Dict[str, Any],
+    ) -> Tuple[bool, str]:
+        """迅雷电影最终执行前按真实分享标题与视频路径再次验真。"""
+        accepted, reason = super()._xunlei_json_identity_matches_v1123(
+            subscribe,
+            candidate,
+            info,
+            template,
+        )
+        if not accepted or not self._is_movie_subscription(subscribe):
+            return bool(accepted), str(reason or "")
+
+        search_title = str(candidate.get("search_title") or "").strip()
+        resource_name = str(candidate.get("name") or "").strip()
+        # panlist 缺 name 时会把 search_title 回填到 candidate.name；它仍只是 discovery。
+        if resource_name and search_title and resource_name.casefold() == search_title.casefold():
+            resource_name = ""
+
+        video_files = [
+            str(row.get("path") or row.get("name") or "").strip()
+            for row in (template.get("files") or [])
+            if isinstance(row, dict)
+            and _is_video(str(row.get("path") or row.get("name") or ""))
+        ]
+        if not video_files:
+            return False, "迅雷电影真实 payload 未发现可验证的视频文件"
+
+        aliases_fn = getattr(self, "_identity_aliases_v1111", None)
+        aliases = list(
+            aliases_fn(subscribe)
+            if callable(aliases_fn)
+            else [str(getattr(subscribe, "name", "") or "")]
+        )
+        primary = [
+            str(info.get("title") or "").strip(),
+            resource_name,
+        ]
+        assessment = movie_actual_match_v11219(
+            aliases=aliases,
+            expected_year=getattr(subscribe, "year", None),
+            primary_evidences=primary,
+            file_evidences=video_files,
+        )
+        if bool(assessment.get("ok")):
+            return True, (
+                "迅雷电影真实 payload 通过："
+                + str(assessment.get("reason") or f"score={assessment.get('score', 0)}")[:300]
+            )
+
+        # 保留 v1.12.16 已证明安全的严格双语真实资源桥；不做其它模糊救回。
+        bridge = getattr(self, "_bilingual_bridge_v11216", None)
+        if callable(bridge):
+            try:
+                rescued, bridge_reason = bridge(subscribe, candidate, info, template)
+            except Exception:
+                rescued, bridge_reason = False, ""
+            if rescued:
+                return True, f"迅雷电影真实 payload 双语闭环通过：{str(bridge_reason or '')[:300]}"
+
+        return False, (
+            "迅雷电影真实 payload 身份拒绝："
+            + str(assessment.get("reason") or "实际标题未命中 MoviePilot/TMDB 官方别名")[:320]
+        )
 
 
 __all__ = [
