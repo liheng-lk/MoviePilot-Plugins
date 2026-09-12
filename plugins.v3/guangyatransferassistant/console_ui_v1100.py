@@ -225,7 +225,7 @@ class GuangYaConsoleUiV1100Mixin:
 
         actions = self._surface(
             "资源搜索与秒传",
-            "先看运行时是否就绪，再对已选择订阅统一搜索观影迅雷、Magnet 与 ED2K；所有动作都使用同一套后端决策逻辑。",
+            "健康诊断只检查来源/会话/秒传前置条件，不主动搜索具体媒体；需要真实资源检索时单独使用“搜索缺失资源”。",
             [
                 {"component": "VRow", "content": self._runtime_health_rows(overview)},
                 {"component": "VDivider", "props": {"class": "my-4"}},
@@ -236,7 +236,7 @@ class GuangYaConsoleUiV1100Mixin:
                     self._action("刷新观影节点", "mdi-server-network", "/viewing/nodes/refresh", color="info"),
                     self._action("刷新频道", "mdi-refresh", "/refresh", color="primary", variant="outlined"),
                     self._action("运行自检", "mdi-stethoscope", "/selfcheck", color="secondary", variant="text"),
-                    self._action("一键完整诊断", "mdi-clipboard-pulse-outline", "/diagnostics/full", color="warning", variant="tonal"),
+                    self._action("运行健康诊断", "mdi-clipboard-pulse-outline", "/diagnostics/full", color="warning", variant="tonal"),
                 ]},
             ],
             icon="mdi-radar",
@@ -302,7 +302,7 @@ class GuangYaConsoleUiV1100Mixin:
                 "density": "compact",
                 "class": "mt-3",
                 "style": "border-radius:14px;",
-                "text": f"完整诊断：{diagnostics_last.get('message') or '-'} · 问题 {issue_count} · {diagnostics_last.get('updated_at')}",
+                "text": f"健康诊断：{diagnostics_last.get('message') or '-'} · 问题 {issue_count} · {diagnostics_last.get('updated_at')}",
             }})
 
         search_report = self._surface(
