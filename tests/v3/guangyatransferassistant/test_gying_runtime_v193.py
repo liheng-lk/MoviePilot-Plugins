@@ -230,3 +230,125 @@ def test_complete_gying_config_survives_async_route_persistence():
         "viewing_node_cache_minutes",
     ):
         assert f'"{key}"' in save
+
+
+
+def _failover_probe_class():
+    tree = ast.parse(failover_text, filename=str(FAILOVER))
+    source_class = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "GuangYaGyingFailoverMixin"
+    )
+    method = next(
+        node for node in source_class.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_gying_raw_results"
+    )
+    method.returns = None
+    for arg in method.args.args:
+        arg.annotation = None
+
+    class_node = ast.ClassDef(
+        name="FailoverProbe",
+        bases=[ast.Name(id="Base", ctx=ast.Load())],
+        keywords=[],
+        body=[method],
+        decorator_list=[],
+    )
+    module = ast.Module(body=[class_node], type_ignores=[])
+    ast.fix_missing_locations(module)
+
+    class Base:
+        def _gying_raw_results(self, keyword, force=False):
+            self.base_calls.append((keyword, bool(force)))
+            return self.base_results.pop(0)
+
+    ns = {
+        "Any": Any,
+        "Dict": Dict,
+        "List": List,
+        "Base": Base,
+        "_normalize_node_url": _pure_namespace()["_normalize_node_url"],
+    }
+    exec(compile(module, str(FAILOVER), "exec"), ns)
+    return ns["FailoverProbe"]
+
+
+def test_same_business_search_fails_over_from_node_a_to_b_and_aggregates_network_evidence():
+    Probe = _failover_probe_class()
+    probe = Probe()
+    probe._viewing_auto_switch = True
+    probe.base_calls = []
+    probe.base_results = [
+        (
+            [],
+            {
+                "success": False,
+                "node": "https://a.example",
+                "message": "search failed",
+                "network_requested": True,
+                "search_request_count_this_call": 1,
+                "detail_request_count_this_call": 0,
+            },
+        ),
+        (
+            [{"url": "magnet:?xt=urn:btih:ABC"}],
+            {
+                "success": True,
+                "node": "https://b.example",
+                "message": "ok",
+                "network_requested": True,
+                "search_request_count_this_call": 1,
+                "detail_request_count_this_call": 2,
+            },
+        ),
+    ]
+    probe.store = {"active_node": "https://a.example", "nodes": {}}
+    probe._gying_search_cache = {"demo": {"ts": 1}}
+
+    def mark_node(node, status, message):
+        probe.store.setdefault("nodes", {})[node] = {
+            "status": status,
+            "message": message,
+        }
+
+    probe._gying_mark_node = mark_node
+    probe._gying_state = lambda: probe.store
+    probe._save_gying_state = lambda value: setattr(probe, "store", dict(value))
+    probe._gying_search_cache_key_v11223 = lambda keyword: keyword
+
+    rows, state = probe._gying_raw_results("demo")
+
+    assert rows == [{"url": "magnet:?xt=urn:btih:ABC"}]
+    assert probe.base_calls == [("demo", False), ("demo", True)]
+    assert state["attempted_nodes"] == ["https://a.example", "https://b.example"]
+    assert state["failover_attempts"] == 2
+    assert state["search_request_count_total"] == 2
+    assert state["detail_request_count_total"] == 2
+    assert probe.store["nodes"]["https://a.example"]["status"] == "search_error"
+    assert probe.store["active_node"] == ""
+    assert "demo" not in probe._gying_search_cache
+
+
+def test_auto_switch_disabled_records_single_node_without_hidden_retry():
+    Probe = _failover_probe_class()
+    probe = Probe()
+    probe._viewing_auto_switch = False
+    probe.base_calls = []
+    probe.base_results = [
+        (
+            [],
+            {
+                "success": False,
+                "node": "https://only.example",
+                "network_requested": True,
+                "search_request_count_this_call": 1,
+                "detail_request_count_this_call": 0,
+            },
+        ),
+    ]
+    rows, state = probe._gying_raw_results("demo")
+    assert rows == []
+    assert probe.base_calls == [("demo", False)]
+    assert state["attempted_nodes"] == ["https://only.example"]
+    assert state["failover_attempts"] == 1
+    assert state["search_request_count_total"] == 1
