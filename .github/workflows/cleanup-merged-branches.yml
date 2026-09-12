@@ -1,0 +1,31 @@
+name: Cleanup Merged Branches
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref != 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Delete merged source branch
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          echo "Deleting merged branch: $BRANCH"
+          git push origin --delete "$BRANCH" || true
