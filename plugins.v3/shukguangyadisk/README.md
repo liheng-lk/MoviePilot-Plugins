@@ -1,6 +1,16 @@
-# 光鸭云盘助手 3.9.5
+# 光鸭云盘助手 3.9.6
 
 MoviePilot V3 光鸭云盘存储与自动整理插件，Python 运行时保持唯一 `__init__.py`。
+
+## 3.9.6 V3 SDK 迁移重点
+
+本版不改变光鸭存储协议和 MoviePilot 整理主链，重点把插件与宿主的边界收敛到 MoviePilot V3 官方稳定接口：
+
+- 日志、配置、事件、存储服务、媒体模型和调度刷新分别切换到 `app.sdk.logging/config/events/services/media/scheduler`。
+- 分类一致性校验停止直接调用旧 TMDB `CategoryHelper`，改用 `app.sdk.classification.classify_media()`，始终跟随 MoviePilot 当前活动分类策略。
+- 旧全局整理队列迁移仍保留 `app.db.transferpending_oper`：这是 MoviePilot V3 为旧无 Session ABI 保留的兼容门面，仅用于清理历史 pending，不进入当前整理热路径。
+- Python 运行时继续保持唯一 `__init__.py`，现有识别、命名、move/copy/rename 远端终态确认和监控状态机保持不变。
+- 新增 SDK 合同测试，禁止后续重新引入 `app.log`、`app.core.*`、`app.helper.storage`、旧 TMDB 分类门面等兼容路径。
 
 ## 3.9.5 修复重点
 

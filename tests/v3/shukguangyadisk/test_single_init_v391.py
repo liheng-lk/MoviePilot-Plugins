@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
 
 
-class SingleInitV395ContractTest(unittest.TestCase):
+class SingleInitV396ContractTest(unittest.TestCase):
     def test_runtime_has_exactly_one_physical_python_file(self):
         python_files = sorted(path.name for path in PLUGIN.glob("*.py"))
         self.assertEqual(python_files, ["__init__.py"])
@@ -72,9 +72,40 @@ class SingleInitV395ContractTest(unittest.TestCase):
         self.assertIn('"runtime_hot_reload_fence_ok": finder_count == 1', physical)
         self.assertNotIn('"runtime_version": "3.9.2"', physical)
 
+    def test_v3_sdk_boundaries_do_not_regress_to_legacy_imports(self):
+        sources = bundled_sources()
+        forbidden = (
+            "from app.log import logger",
+            "from app.core.config import",
+            "from app.core.event import",
+            "from app.helper.storage import",
+            "from app.runtime.config import global_vars",
+            "from app.runtime.events import",
+            "from app.domain.meta.metabase import MetaBase",
+            "from app.domain.metainfo import MetaInfo",
+            "from app.application.scheduling import update_plugin_job",
+            "from app.modules.themoviedb.category import CategoryHelper",
+        )
+        combined = "\n".join(sources.values())
+        for marker in forbidden:
+            self.assertNotIn(marker, combined)
+        category = sources["organizer_category_consistency_v3412"]
+        self.assertIn("from app.sdk.classification import classify_media", category)
+        self.assertIn("classified = classify_media(media)", category)
+
+        legacy_pending = [
+            name
+            for name, source in sources.items()
+            if "from app.db.transferpending_oper import TransferPendingOper" in source
+        ]
+        self.assertEqual(
+            legacy_pending,
+            ["organizer_legacy_queue_cleanup_v343", "organizer_queue_recovery"],
+        )
+
     def test_legacy_entry_mro_and_final_monitor_are_preserved(self):
         entry = source_text("__init__.py")
-        self.assertIn('plugin_version = "3.9.5"', entry)
+        self.assertIn('plugin_version = "3.9.6"', entry)
         class_slice = entry.split("class ShukGuangYaDisk(", 1)[1].split("):", 1)[0]
         self.assertLess(
             class_slice.index("_GuangYaFinalMonitorV390Mixin"),
@@ -88,10 +119,10 @@ class SingleInitV395ContractTest(unittest.TestCase):
         local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
         package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
         remote = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf-8")
-        self.assertEqual(local["version"], "3.9.5")
-        self.assertEqual(package["version"], "3.9.5")
-        self.assertIn("v3.9.5", local["history"])
-        self.assertIn("?v=3.9.5", remote)
+        self.assertEqual(local["version"], "3.9.6")
+        self.assertEqual(package["version"], "3.9.6")
+        self.assertIn("v3.9.6", local["history"])
+        self.assertIn("?v=3.9.6", remote)
 
 
 if __name__ == "__main__":
