@@ -321,7 +321,10 @@ def test_telegram_real_parser_produces_all_four_resource_types():
     from final_plugin_harness_v211 import make_final_plugin
 
     plugin = make_final_plugin()
-    legacy = importlib.import_module("plugins.v3.guangyatransferassistant.legacy")
+    legacy_name = "plugins.v3.guangyatransferassistant.legacy"
+    sys.modules.pop(legacy_name, None)
+    legacy = importlib.import_module(legacy_name)
+    assert hasattr(legacy, "_extract_channel_entries")
     page = """
     <div class="tgme_widget_message" data-post="demo/100">
       <div class="tgme_widget_message_text">
