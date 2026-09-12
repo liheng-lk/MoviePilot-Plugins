@@ -1,25 +1,23 @@
 from __future__ import annotations
 
-import importlib.util
 import json
 import unittest
 from pathlib import Path
 
+from guangya_bundle_test_utils import bundle_source, entry_class_bases, exec_bundled_module
+
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugins.v3/guangyatransferassistant"
-spec = importlib.util.spec_from_file_location("guangya_media_identity_v1111", PLUGIN / "media_identity_v1111.py")
-mod = importlib.util.module_from_spec(spec)
-assert spec.loader is not None
-spec.loader.exec_module(mod)
+mod = exec_bundled_module("media_identity_v1111")
 
 
 class GuangYaMediaIdentityV1111Tests(unittest.TestCase):
     def test_release_layer_is_outermost_and_versioned(self):
         entry = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
-        start = entry.index("class GuangYaTransferAssistant(")
+        bases = entry_class_bases()
         self.assertLess(
-            entry.index("GuangYaMediaIdentityGuardV1111Mixin,", start),
-            entry.index("GuangYaReleaseV1110Mixin,", start),
+            bases.index("GuangYaMediaIdentityGuardV1111Mixin"),
+            bases.index("GuangYaReleaseV1110Mixin"),
         )
         self.assertIn("GuangYaMediaIdentityGuardV1111Mixin", entry)
         self.assertIn("plugin_version = ", entry)
@@ -94,7 +92,7 @@ class GuangYaMediaIdentityV1111Tests(unittest.TestCase):
         self.assertGreaterEqual(weak_but_safe["score"], 50)
 
     def test_xunlei_gate_uses_real_payload_plus_weak_discovery_evidence(self):
-        guard = (PLUGIN / "media_identity_guard_v1111.py").read_text(encoding="utf-8")
+        guard = bundle_source("media_identity_guard_v1111")
         method = guard.split("    def _xunlei_json_identity_matches_v1123(", 1)[1].split("    def _resolve_offline_source", 1)[0]
         self.assertIn('resource_name.casefold() == search_title.casefold()', method)
         self.assertIn("assess_media_identity_v1111", method)
@@ -113,7 +111,7 @@ class GuangYaMediaIdentityV1111Tests(unittest.TestCase):
         self.assertIn("EPISODE_AMBIGUOUS:", guard)
 
     def test_channel_match_is_strong_but_missing_season_is_not_automatic_failure(self):
-        legacy = (PLUGIN / "legacy.py").read_text(encoding="utf-8")
+        legacy = bundle_source("legacy")
         method = legacy.split("def _entry_matches_subscription(", 1)[1].split("def _subscription_aliases", 1)[0]
         self.assertIn("strong_title_match_v1111", method)
         self.assertNotIn("wanted_season > 1 and not seasons", method)
