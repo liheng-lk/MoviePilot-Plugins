@@ -253,3 +253,18 @@ def test_cloudcollection_rename_only_persists_renamed_name_after_readback_confir
         1,
     )[0]
     assert "renamed_name=" not in accepted_block
+
+
+def test_viewing_poll_log_exposes_remote_rename_library_landing_stages():
+    combined = logging_text
+    for token in (
+        "remote=%s",
+        "rename=%s",
+        "library=%s",
+        "landing=%s",
+        'data.get("remote_video_confirmed")',
+        'data.get("rename_state")',
+        'data.get("library_snapshot_state")',
+        'data.get("landing_stage")',
+    ):
+        assert token in combined
