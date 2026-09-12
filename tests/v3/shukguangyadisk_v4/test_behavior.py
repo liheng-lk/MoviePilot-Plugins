@@ -14,7 +14,13 @@ from app.testing.bootstrap import prepare_backend
 
 prepare_backend()
 
-from app.plugins.shukguangyadisk import GuangYaOrganizerV4, ShukGuangYaDisk
+from unittest.mock import patch
+
+from app.plugins.shukguangyadisk import (
+    GuangYaApi,
+    GuangYaOrganizerV4,
+    ShukGuangYaDisk,
+)
 
 
 class OrganizerV4BehaviorTest(unittest.TestCase):
@@ -186,6 +192,52 @@ class OrganizerV4BehaviorTest(unittest.TestCase):
         organizer._organizer_done_callback(future)
         self.assertEqual(tasks["/A.mkv"]["state"], "COMPLETED")
         self.assertEqual(calls["dispatch"], 1)
+
+
+    def test_uncertain_move_freezes_delete_by_fileid(self):
+        """移动终态不确定时，同 fileId 的后续删除必须被保护。"""
+        api = object.__new__(GuangYaApi)
+        api._move_delete_protection = {}
+        api._move_delete_lock = threading.RLock()
+        item = SimpleNamespace(
+            fileid="same-file-id",
+            path="/src/movie.mkv",
+        )
+        api._protect_from_delete(
+            item,
+            reason="move_visibility_uncertain",
+            extra_paths=["/target/movie.mkv"],
+        )
+        alias = SimpleNamespace(
+            fileid="same-file-id",
+            path="/some/other/path.mkv",
+        )
+        record = api._delete_protection_record(alias)
+        self.assertIsNotNone(record)
+        self.assertEqual(record["reason"], "move_visibility_uncertain")
+
+    def test_missing_source_without_success_history_is_blocked(self):
+        """源消失但无成功历史时严禁误判 COMPLETED。"""
+        organizer = self.new_organizer()
+        organizer._disk_name = "光鸭云盘助手"
+        organizer._guangya_api = SimpleNamespace(
+            refresh_item=lambda _path: None,
+        )
+        with (
+            patch(
+                "app.plugins.shukguangyadisk.resolve_history",
+                return_value=None,
+            ),
+            patch(
+                "app.plugins.shukguangyadisk.get_transfer_history_repository",
+                return_value=object(),
+            ),
+        ):
+            result = organizer._organizer_execute_task(
+                {"path": "/src/vanished.mkv", "attempts": 1}
+            )
+        self.assertEqual(result["state"], "BLOCKED")
+        self.assertIn("没有 MoviePilot 成功历史", result["message"])
 
     def test_stopping_instance_does_not_restart_executor(self):
         """热重载旧实例 stopping 后不能继续提交任务。"""
