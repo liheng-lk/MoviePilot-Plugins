@@ -188,3 +188,17 @@ def test_cloudcollection_source_contains_real_target_readback_contract():
     assert "target_parent_id" in source
     assert "target_directory_readback" in source
     assert '"preexisting_only"' in source
+
+
+def test_xunlei_runtime_requires_verified_landing_before_success():
+    text = ENTRY
+    marker = "class GuangYaTransferAssistant("
+    start = text.rindex(marker)
+    final_class = text[start:]
+    assert "def _rapid_transfer_xunlei_file(" in final_class
+    assert "_select_verified_new_landing(" in final_class
+    assert '"landing_verified": True' in final_class
+    assert '"pending_verification": True' in final_class
+    assert "def _dispatch_xunlei_flash(" in final_class
+    assert "_xunlei_pending_landing_v200" in final_class
+    assert 'result["handled"] = True' in final_class
