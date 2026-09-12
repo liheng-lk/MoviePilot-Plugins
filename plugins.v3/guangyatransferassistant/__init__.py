@@ -1,4 +1,4 @@
-"""光鸭转存助手 v2.1.1 运行入口。
+"""光鸭转存助手 v2.1.2 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
@@ -1146,8 +1146,8 @@ class GuangYaTransferAssistant(
             )
         return result
 
-    plugin_version = "2.1.1"
-    build_id = "20260912-r99"
+    plugin_version = "2.1.2"
+    build_id = "20260912-r100"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
