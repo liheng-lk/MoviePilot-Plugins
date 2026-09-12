@@ -1,9 +1,7 @@
-// v3.9.5 single-init runtime; v390 page chunk remains the current UI implementation.
-const legacyPageCompat = './__federation_expose_AssistantPage-v352.js?v=3.9.5';
-
+// V4 MoviePilot V3 native runtime.
 const moduleMap = {
-  './Page': () => import('./__federation_expose_AssistantPage-v390.js?v=3.9.5').then((mod) => () => mod.default),
-  './Config': () => import('./__federation_expose_AssistantConfig-v300.js?v=3.0.0').then((mod) => () => mod.default),
+  './Page': () => import('./__federation_expose_AssistantPage-v400.js?v=4.0.0-alpha1').then((mod) => () => mod.default),
+  './Config': () => import('./__federation_expose_AssistantConfig-v300.js?v=4.0.0-alpha1').then((mod) => () => mod.default),
 };
 
 const seenCss = new Set();
@@ -45,5 +43,4 @@ const init = (shareScope) => {
   });
 };
 
-void legacyPageCompat;
 export { dynamicLoadingCss, get, init };
