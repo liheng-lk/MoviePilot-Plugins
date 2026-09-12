@@ -118,3 +118,32 @@ def test_hardening_does_not_add_downloader_or_full_file_upload_path():
     ):
         assert forbidden not in lowered
 
+
+
+def test_xunlei_public_runtime_message_redacts_query_and_secret_values():
+    tree = ast.parse(text, filename=str(HARDENING))
+    cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "GuangYaXunleiHardeningMixin")
+    method = next(node for node in cls.body if isinstance(node, ast.FunctionDef) and node.name == "_xunlei_public_message_v193")
+    method.decorator_list = []
+    module = ast.Module(body=[method], type_ignores=[])
+    ast.fix_missing_locations(module)
+    namespace = {"Any": object, "re": __import__("re")}
+    exec(compile(module, str(HARDENING), "exec"), namespace)
+    redact = namespace["_xunlei_public_message_v193"]
+
+    raw = (
+        "share https://pan.xunlei.com/s/PRIVATE?pwd=7788 "
+        "captcha_token=SECRET device_id=DEVICE password=hunter2"
+    )
+    safe = redact(raw)
+    for secret in ("PRIVATE", "7788", "SECRET", "DEVICE", "hunter2"):
+        assert secret not in safe
+    assert "/s/<redacted>" in safe
+    assert "captcha_token=<redacted>" in safe
+    assert "device_id=<redacted>" in safe
+    assert "password=<redacted>" in safe
+
+
+def test_xunlei_runtime_status_uses_public_message_redactor():
+    public = text.split("    def api_xunlei_runtime_status", 1)[1].split("    def get_api", 1)[0]
+    assert "self._xunlei_public_message_v193(status.get(\"message\"), 240)" in public
