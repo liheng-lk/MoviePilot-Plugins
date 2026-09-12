@@ -566,17 +566,45 @@ class GuangYaGyingObservabilityV1104Mixin:
                     return True
         return False
 
+    @staticmethod
+    def _inject_viewing_live_probe_button(node: Any, action: Dict[str, Any]) -> bool:
+        if isinstance(node, list):
+            if any(isinstance(item, dict) and item.get("text") == "实时搜观影" for item in node):
+                return True
+            for index, item in enumerate(list(node)):
+                if (
+                    isinstance(item, dict)
+                    and item.get("component") == "VBtn"
+                    and item.get("text") == "测试观影"
+                ):
+                    node.insert(index + 1, action)
+                    return True
+                if GuangYaGyingObservabilityV1104Mixin._inject_viewing_live_probe_button(item, action):
+                    return True
+        elif isinstance(node, dict):
+            for value in node.values():
+                if GuangYaGyingObservabilityV1104Mixin._inject_viewing_live_probe_button(value, action):
+                    return True
+        return False
+
     def get_page(self):
         pages = super().get_page() or []
         maker = getattr(self, "_action", None)
         if callable(maker):
-            action = maker(
+            session_action = maker(
                 "测试观影",
                 "mdi-movie-check-outline",
                 "/viewing/session/test",
                 color="info",
             )
-            self._inject_viewing_test_button(pages, action)
+            self._inject_viewing_test_button(pages, session_action)
+            live_action = maker(
+                "实时搜观影",
+                "mdi-movie-search-outline",
+                "/viewing/search/probe",
+                color="primary",
+            )
+            self._inject_viewing_live_probe_button(pages, live_action)
         return pages
 
     def api_viewing_nodes_refresh(self) -> Dict[str, Any]:
@@ -625,6 +653,229 @@ class GuangYaGyingObservabilityV1104Mixin:
             resources=int(result.get("resources") or 0),
         )
         return result
+
+
+    def _viewing_probe_subscription_v1104(self, subscribe_id: int = 0):
+        ids: List[int] = []
+        try:
+            explicit = int(subscribe_id or 0)
+        except (TypeError, ValueError):
+            explicit = 0
+        if explicit > 0:
+            ids.append(explicit)
+        for raw in (getattr(self, "_selected_subscriptions", []) or []):
+            try:
+                sid = int(raw or 0)
+            except (TypeError, ValueError):
+                continue
+            if sid > 0 and sid not in ids:
+                ids.append(sid)
+
+        first = None
+        for sid in ids:
+            subscribe = self._find_subscription(sid)
+            if not subscribe:
+                continue
+            if first is None:
+                first = subscribe
+            try:
+                if self._is_movie_subscription(subscribe):
+                    checker = getattr(self, "_movie_needs_pull_v1125", None)
+                    if not callable(checker) or bool(checker(subscribe)):
+                        return subscribe
+                    continue
+                missing = {
+                    int(value)
+                    for value in (self._subscription_missing_episodes(subscribe) or [])
+                    if int(value or 0) > 0
+                }
+                if missing:
+                    return subscribe
+            except Exception:
+                return subscribe
+        return first
+
+    def api_viewing_live_search_probe(self, subscribe_id: int = 0) -> Dict[str, Any]:
+        """强制真实 GYING /search，只返回脱敏统计证据，不创建候选 source 或转存任务。"""
+        if not bool(getattr(self, "_viewing_enabled", False)):
+            return {
+                "success": False,
+                "network_requested": False,
+                "message": "观影未启用",
+            }
+
+        subscribe = self._viewing_probe_subscription_v1104(subscribe_id)
+        if not subscribe:
+            return {
+                "success": False,
+                "network_requested": False,
+                "message": "没有可用于实时搜索测试的固定转存订阅",
+            }
+
+        sid = int(getattr(subscribe, "id", 0) or 0)
+        name = str(getattr(subscribe, "name", "") or "").strip()
+        keyword_getter = getattr(self, "_provider_keyword", None)
+        keyword = (
+            str(keyword_getter(subscribe) or "").strip()
+            if callable(keyword_getter)
+            else name
+        )
+        if not keyword:
+            return {
+                "success": False,
+                "subscribe_id": sid,
+                "name": name,
+                "network_requested": False,
+                "message": "无法生成观影搜索关键词",
+            }
+
+        self._gying_obs_log(
+            "INFO",
+            "人工操作：实时搜索观影 订阅=#%s %s 关键词=%s",
+            sid,
+            name[:100] or "-",
+            keyword[:120],
+        )
+
+        scope = getattr(self, "_gying_alias_scope_v11212", None)
+        try:
+            if callable(scope):
+                with scope(subscribe):
+                    rows, state = self._gying_raw_results(keyword, force=True)
+            else:
+                rows, state = self._gying_raw_results(keyword, force=True)
+        except Exception as err:
+            message = self._gying_public_text(err, 300)
+            self._gying_obs_record(
+                "live_search_probe",
+                success=False,
+                message=message,
+                subscribe_id=sid,
+            )
+            return {
+                "success": False,
+                "subscribe_id": sid,
+                "name": name,
+                "keyword": keyword[:160],
+                "network_requested": False,
+                "message": message,
+            }
+
+        state = dict(state or {})
+        network_requested = bool(state.get("network_requested"))
+        search_requests = int(
+            state.get("search_request_count_total")
+            or state.get("search_request_count_this_call")
+            or 0
+        )
+        detail_requests = int(
+            state.get("detail_request_count_total")
+            or state.get("detail_request_count_this_call")
+            or 0
+        )
+        xunlei = sum(
+            1 for row in rows or []
+            if "pan.xunlei.com/s/" in str((row or {}).get("url") or "").lower()
+        )
+        magnet = sum(
+            1 for row in rows or []
+            if str((row or {}).get("url") or "").lower().startswith("magnet:?")
+        )
+        ed2k = sum(
+            1 for row in rows or []
+            if str((row or {}).get("url") or "").lower().startswith("ed2k://|file|")
+        )
+        pan = sum(
+            1 for row in rows or []
+            if str((row or {}).get("resource_kind") or "") == "pan"
+        )
+
+        nodes = [
+            self._gying_node_label(value)
+            for value in (state.get("attempted_nodes") or [])
+            if str(value or "").strip()
+        ]
+        node = self._gying_node_label(state.get("node"))
+        ok = bool(state.get("success")) and network_requested and search_requests > 0
+        message = self._gying_public_text(
+            state.get("message")
+            or (
+                "真实观影搜索完成"
+                if ok
+                else "观影调用返回，但本轮没有真实 /search 请求证据"
+            ),
+            300,
+        )
+        result = {
+            "success": ok,
+            "subscribe_id": sid,
+            "name": name,
+            "keyword": keyword[:160],
+            "node": node,
+            "attempted_nodes": nodes[:6],
+            "failover_attempts": int(state.get("failover_attempts") or 1),
+            "cache_hit": bool(state.get("cache_hit")),
+            "network_requested": network_requested,
+            "search_requests": search_requests,
+            "detail_requests": detail_requests,
+            "detail_failures": int(state.get("detail_failure_count_this_call") or 0),
+            "search_mode": str(state.get("search_mode") or ""),
+            "cards": int(state.get("raw_cards") or state.get("cards") or 0),
+            "matched_cards": int(state.get("matched_cards") or 0),
+            "detail_cards": int(state.get("detail_cards") or 0),
+            "resources": len(rows or []),
+            "xunlei": xunlei,
+            "magnet": magnet,
+            "ed2k": ed2k,
+            "pan": pan,
+            "message": message,
+        }
+        self._gying_obs_log(
+            "INFO" if ok else "WARNING",
+            "实时搜索结果：订阅=#%s success=%s network=%s search_http=%s detail=%s "
+            "cards=%s matched=%s resources=%s 迅雷=%s Magnet=%s ED2K=%s 节点=%s",
+            sid,
+            ok,
+            network_requested,
+            search_requests,
+            detail_requests,
+            result["cards"],
+            result["matched_cards"],
+            result["resources"],
+            xunlei,
+            magnet,
+            ed2k,
+            node,
+        )
+        self._gying_obs_record(
+            "live_search_probe",
+            success=ok,
+            node=str(state.get("node") or ""),
+            message=message,
+            subscribe_id=sid,
+            network_requested=network_requested,
+            search_requests=search_requests,
+            detail_requests=detail_requests,
+            cards=result["cards"],
+            matched_cards=result["matched_cards"],
+            resources=result["resources"],
+            xunlei=xunlei,
+            magnet=magnet,
+            ed2k=ed2k,
+        )
+        return result
+
+    def get_api(self) -> List[Dict[str, Any]]:
+        apis = list(super().get_api() or [])
+        paths = {str(item.get("path") or "") for item in apis if isinstance(item, dict)}
+        if "/viewing/search/probe" not in paths:
+            apis.append({
+                "path": "/viewing/search/probe",
+                "endpoint": self.api_viewing_live_search_probe,
+                "methods": ["POST"],
+                "summary": "强制实时搜索一个固定订阅，仅返回脱敏搜索证据",
+            })
+        return apis
 
 
 __all__ = ["GuangYaGyingObservabilityV1104Mixin"]
