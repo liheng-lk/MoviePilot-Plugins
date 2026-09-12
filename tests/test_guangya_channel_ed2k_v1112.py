@@ -4,13 +4,15 @@ import json
 import unittest
 from pathlib import Path
 
+from guangya_bundle_test_utils import bundle_source
+
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugins.v3/guangyatransferassistant"
 
 
 class GuangYaChannelEd2kV1112Tests(unittest.TestCase):
     def test_ed2k_channel_candidate_gets_resolve_first_chance(self):
-        text = (PLUGIN / "resource_planner_v190.py").read_text(encoding="utf-8")
+        text = bundle_source("resource_planner_v190")
         method = text.split("    def _candidate_target_episodes(", 1)[1].split("    def _save_resource_plan", 1)[0]
         self.assertIn('{"magnet", "ed2k"}', method)
         self.assertIn('return set(uncovered)', method)
