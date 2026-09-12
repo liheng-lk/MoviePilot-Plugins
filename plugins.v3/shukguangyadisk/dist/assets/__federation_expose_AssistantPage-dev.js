@@ -69,7 +69,22 @@ export default defineComponent({
     const pct=computed(()=>status.total_space?Math.min(100,Math.max(0,Math.round(status.used_space/status.total_space*1000)/10)):0);
     const clearMsg=()=>{message.value='';messageType.value='';};
     async function refresh(){refreshing.value=true;try{const d=await getApi(props,'/config');Object.assign(status,{enabled:Boolean(d?.enabled),logged_in:Boolean(d?.logged_in),user_name:d?.user_name||'',user_id:d?.user_id||'',phone:d?.phone||d?.mobile||'',email:d?.email||'',vip_level:d?.vip_level||'',total_space:Number(d?.total_space||0),used_space:Number(d?.used_space||0),free_space:Number(d?.free_space||0),file_count:Number(d?.file_count||0)});}catch{}finally{refreshing.value=false;}}
-    function scanQr(){const root=engineHost.value;if(!root)return;const img=root.querySelector('img.gy-qrcode-image,img[alt*="二维码"],.gy-qrcode-box img,img');if(img?.src&&img.src!==qr.value)qr.value=img.src;}
+    function scanQr(){
+      const root=engineHost.value;
+      if(!root)return;
+      const img=root.querySelector('img.gy-qrcode-image,img[alt*="二维码"],.gy-qrcode-box img,img');
+      if(img?.src){
+        if(img.src!==qr.value)qr.value=img.src;
+        if(messageType.value==='error'&&message.value.includes('二维码'))clearMsg();
+        return;
+      }
+      const text=String(root.textContent||'').replace(/\s+/g,' ').trim();
+      const hit=text.match(/(?:二维码登录暂不可用|获取二维码失败)[^。！]{0,180}/);
+      if(hit){
+        messageType.value='error';
+        message.value=hit[0]+'；可切换短信登录';
+      }
+    }
     function bind(){if(observer)observer.disconnect();if(!engineHost.value)return;observer=new MutationObserver(scanQr);observer.observe(engineHost.value,{subtree:true,childList:true,attributes:true,attributeFilter:['src']});scanQr();}
     async function reloadQr(){qr.value='';engineKey.value+=1;await nextTick();bind();}
     async function sendCode(){if(!phone.value.trim()){messageType.value='error';message.value='请输入手机号';return;}sending.value=true;clearMsg();try{const r=await postApi(props,'/login/sms/send',{phone_number:phone.value.trim()});if(!r?.success)throw new Error(r?.message||'发送失败');verificationId.value=r.verification_id||'';messageType.value='success';message.value='验证码已发送';}catch(e){messageType.value='error';message.value=e?.message||'发送失败';}finally{sending.value=false;}}
@@ -82,7 +97,7 @@ export default defineComponent({
       h('div',{class:'gy-check'},'✓'),h('div',[h('strong','已登录'),h('p','光鸭云盘授权有效，目录浏览与整理上传可直接使用。')]),h('button',{class:'gy-btn danger',onClick:logout},'退出登录')
     ]):h('div',[
       h('select',{class:'gy-select',value:mode.value,onChange:e=>{mode.value=e.target.value;clearMsg();}},[h('option',{value:'qr'},'扫码登录'),h('option',{value:'sms'},'短信登录')]),
-      mode.value==='qr'?h('div',[h('div',{class:'gy-qr'},[qr.value?h('img',{src:qr.value,alt:'光鸭云盘登录二维码'}):h('div',{class:'gy-qr-placeholder'},'二维码加载中…'),h('div',{class:'gy-hint'},'打开光鸭云盘 App → 扫一扫 → 确认登录'),h('div',{class:'gy-buttons'},[h('button',{class:'gy-btn',onClick:reloadQr},'刷新二维码')])]),h('div',{class:'gy-note',style:{marginTop:'9px'}},'扫码确认后页面会自动刷新账号与空间信息。')]):h('div',{class:'gy-form'},[
+      mode.value==='qr'?h('div',[h('div',{class:'gy-qr'},[qr.value?h('img',{src:qr.value,alt:'光鸭云盘登录二维码'}):h('div',{class:'gy-qr-placeholder'},'二维码加载中…'),h('div',{class:'gy-hint'},'打开光鸭云盘 App → 扫一扫 → 确认登录'),h('div',{class:'gy-buttons'},[h('button',{class:'gy-btn',onClick:reloadQr},'刷新二维码')])]),h('div',{class:'gy-note',style:{marginTop:'9px'}},'扫码确认后页面会自动刷新账号与空间信息；若二维码接口暂不可用，可切换短信登录。'),message.value?h('div',{class:'gy-msg error',style:{marginTop:'9px'}},message.value):null]):h('div',{class:'gy-form'},[
         h('div',{class:'gy-field'},[h('label','手机号'),h('input',{class:'gy-input',value:phone.value,onInput:e=>phone.value=e.target.value,inputmode:'tel',placeholder:'请输入绑定手机号'})]),
         h('div',{class:'gy-field'},[h('label','验证码'),h('div',{class:'gy-code'},[h('input',{class:'gy-input',value:code.value,onInput:e=>code.value=e.target.value,inputmode:'numeric',placeholder:'请输入验证码'}),h('button',{class:'gy-btn',disabled:sending.value,onClick:sendCode},sending.value?'发送中…':'获取验证码')])]),
         message.value?h('div',{class:`gy-msg ${messageType.value==='error'?'error':''}`},message.value):null,

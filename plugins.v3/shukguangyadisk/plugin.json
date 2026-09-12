@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
   "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
-  "version": "3.9.1",
+  "version": "3.9.2",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v3.9.2": "运行态恢复与残留收口：修复自定义登录/配置接口绕过 MoviePilot 插件服务刷新导致自动监控任务未注册；登录后主动刷新宿主定时服务，并增加 5 秒启动自检与 heartbeat 可观测状态。二维码设备码/令牌接口不再吞掉上游错误，失败时明确返回原因并提示短信/token 后备；MP 整理历史终态严格限制为当前光鸭存储且位于当前监控根，禁止 115/本地/目标 STRM 历史污染光鸭日志；首次升级清理旧跨存储历史投影计数。",
     "v3.9.1": "单文件运行时收敛：全部 Python 运行逻辑物理集中到唯一 __init__.py，保留 3.9.0 已验证的存储、上传、WebDAV、自动整理、状态机、远端终态确认和监控能力；增加热更新旧虚拟模块清理；修复 Organizer API 注册仍会通过 super() 提前初始化 monitor 的安装期副作用，注册阶段不再访问远端或启动监控；前端缓存版本同步更新。",
     "v3.9.0": "最终架构收口：针对 MoviePilot V3 安装事务在 COMMIT 前执行 runtime reload/registration refresh 的机制，移除 get_service→init_organizer_monitor 阶段的 v376/v380/v382 动态监控补丁栈，改为 MRO 第一层静态 FinalMonitor；安装注册只声明 heartbeat，不初始化监控、不访问远端、不改写类方法，真正 heartbeat 后再惰性恢复状态。持续目录快照、持久 resource queue、Worker 忙时继续发现、独立全量巡检、部分 ready 先行和异常冷却全部保留；插件入口 Mixin 改为私有别名，降低 Loader 误选风险；前端使用全新 v390 Federation chunk。",
     "v3.8.1": "修复 v3.8.0 更新后前端提示‘无法加载组件’：不再复用 v376 chunk 仅依赖 query-string 刷新，改为全新 AssistantPage-v381 Federation 资源文件，并让 remoteEntry 直接引用新 chunk；监控后端、持久 resource queue、部分-ready 和独立全量逻辑保持不变。",
