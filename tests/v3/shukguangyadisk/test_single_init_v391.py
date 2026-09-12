@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
 
 
-class SingleInitV396ContractTest(unittest.TestCase):
+class SingleInitV397ContractTest(unittest.TestCase):
     def test_runtime_has_exactly_one_physical_python_file(self):
         python_files = sorted(path.name for path in PLUGIN.glob("*.py"))
         self.assertEqual(python_files, ["__init__.py"])
@@ -103,9 +103,16 @@ class SingleInitV396ContractTest(unittest.TestCase):
             ["organizer_legacy_queue_cleanup_v343", "organizer_queue_recovery"],
         )
 
+    def test_webdav_put_uses_defined_existing_item_for_status(self):
+        source = source_text("webdav_provider.py")
+        put = source.split("def _handle_put", 1)[1].split("def _handle_move", 1)[0]
+        self.assertIn("existing_item = self._api.get_item(PathLib(path))", put)
+        self.assertIn("status_code=201 if existing_item is None else 204", put)
+        self.assertNotIn("if not item else 204", put)
+
     def test_legacy_entry_mro_and_final_monitor_are_preserved(self):
         entry = source_text("__init__.py")
-        self.assertIn('plugin_version = "3.9.6"', entry)
+        self.assertIn('plugin_version = "3.9.7"', entry)
         class_slice = entry.split("class ShukGuangYaDisk(", 1)[1].split("):", 1)[0]
         self.assertLess(
             class_slice.index("_GuangYaFinalMonitorV390Mixin"),
@@ -119,10 +126,10 @@ class SingleInitV396ContractTest(unittest.TestCase):
         local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
         package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
         remote = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf-8")
-        self.assertEqual(local["version"], "3.9.6")
-        self.assertEqual(package["version"], "3.9.6")
-        self.assertIn("v3.9.6", local["history"])
-        self.assertIn("?v=3.9.6", remote)
+        self.assertEqual(local["version"], "3.9.7")
+        self.assertEqual(package["version"], "3.9.7")
+        self.assertIn("v3.9.7", local["history"])
+        self.assertIn("?v=3.9.7", remote)
 
 
 if __name__ == "__main__":
