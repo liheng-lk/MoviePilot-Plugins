@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import runpy
+import sys
 import traceback
 from pathlib import Path
 
@@ -104,6 +105,24 @@ def _cleanup_contract_modules(paths: list[Path]) -> None:
 
 
 
+def _materialize_only() -> int:
+    errors = _maintenance_guard()
+    if errors:
+        for error in errors:
+            print(f"FAIL maintainability: {error}")
+        return 3
+    paths = _materialize_contract_modules()
+    print(f"Materialized {len(paths)} GuangYa inline modules for repository-level tests")
+    return 0
+
+
+def _cleanup_only() -> int:
+    paths = [PLUGIN_DIR / f"{name}.py" for name in _inline_module_sources()]
+    _cleanup_contract_modules(paths)
+    print(f"Cleaned {len(paths)} temporary GuangYa contract modules")
+    return 0
+
+
 def main() -> int:
     total = 0
     failures = []
@@ -158,4 +177,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if "--materialize-only" in sys.argv:
+        raise SystemExit(_materialize_only())
+    if "--cleanup-only" in sys.argv:
+        raise SystemExit(_cleanup_only())
     raise SystemExit(main())
