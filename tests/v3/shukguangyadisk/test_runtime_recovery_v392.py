@@ -5,7 +5,7 @@ import unittest
 from source_helper import source_text
 
 
-class RuntimeRecoveryV394ContractTest(unittest.TestCase):
+class RuntimeRecoveryV395ContractTest(unittest.TestCase):
     def test_qr_errors_are_not_swallowed(self):
         client = source_text("guangya_client.py")
         legacy = source_text("_plugin_legacy.py")

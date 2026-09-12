@@ -1,4 +1,4 @@
-import BasePage from './__federation_expose_AssistantPage-v352.js?v=3.9.4';
+import BasePage from './__federation_expose_AssistantPage-v352.js?v=3.9.5';
 import { importShared } from './__federation_fn_import-054b33c3.js';
 
 const { defineComponent, h, ref, computed, onMounted, onUnmounted } = await importShared('vue');
@@ -94,7 +94,7 @@ export default defineComponent({
       h('div',{class:'gya390-card'},[
         h('div',{class:'gya390-head'},[
           h('div',[
-            h('div',{class:'gya390-title'},'整理监控控制 · v3.9.4'),
+            h('div',{class:'gya390-title'},'整理监控控制 · v3.9.5'),
             h('div',{class:'gya390-sub'},'安装期零副作用；持续目录观察负责发现，持久待整理队列负责排队，单 Worker 串行执行；全量巡检独立补漏。')
           ]),
           h('div',{class:'gya390-actions'},[
@@ -116,6 +116,7 @@ export default defineComponent({
           h('div',`监控引擎：${status.value?.monitor_pipeline||'-'} ｜ 安装注册安全：${status.value?.install_registration_safe?'是':'-'}`),
           h('div',`全量 ID：${status.value?.full_scan_id||'-'} ｜ 已扫描目录：${status.value?.full_scan_dirs||0} ｜ 待整理队列：${status.value?.resource_queue_depth||0}`),
           h('div','心跳：'+(status.value?.heartbeat_last_reason||'-')+' ｜ 最近：'+fmtTime(status.value?.heartbeat_last_at)+' ｜ 存储：'+(status.value?.heartbeat_storage_ready?'就绪':'未就绪')),
+          h('div',`运行时：v${status.value?.runtime_version||'-'} ｜ 单文件模块：${status.value?.runtime_loaded_bundle_module_count||0}/${status.value?.runtime_bundle_module_count||0} ｜ Finder：${status.value?.runtime_finder_count||0} (${status.value?.runtime_hot_reload_fence_ok?'正常':'需检查'})`),
           h('div',`最近全量完成：${fmtTime(status.value?.full_scan_last_completed_at)} ｜ 自动全量：${Math.round(Number(status.value?.full_scan_interval||3600)/60)} 分钟`)
         ]),
         message.value?h('div',{class:`gya390-msg ${messageKind.value==='warn'?'warn':messageKind.value==='error'?'error':''}`},message.value):null

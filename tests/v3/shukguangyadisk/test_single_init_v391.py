@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "shukguangyadisk"
 
 
-class SingleInitV394ContractTest(unittest.TestCase):
+class SingleInitV395ContractTest(unittest.TestCase):
     def test_runtime_has_exactly_one_physical_python_file(self):
         python_files = sorted(path.name for path in PLUGIN.glob("*.py"))
         self.assertEqual(python_files, ["__init__.py"])
@@ -63,9 +63,18 @@ class SingleInitV394ContractTest(unittest.TestCase):
         self.assertIn('"/organize/monitor/full-scan"', source)
         self.assertIn('"/organize/monitor/graceful-stop"', source)
 
+    def test_runtime_version_projection_is_dynamic_and_hot_reload_is_observable(self):
+        physical = physical_init_text()
+        self.assertIn('"runtime_version": str(getattr(self, "plugin_version", "") or "")', physical)
+        self.assertIn('"runtime_bundle_module_count": len(_BUNDLED_SOURCES)', physical)
+        self.assertIn('"runtime_loaded_bundle_module_count": loaded_bundle_modules', physical)
+        self.assertIn('"runtime_finder_count": finder_count', physical)
+        self.assertIn('"runtime_hot_reload_fence_ok": finder_count == 1', physical)
+        self.assertNotIn('"runtime_version": "3.9.2"', physical)
+
     def test_legacy_entry_mro_and_final_monitor_are_preserved(self):
         entry = source_text("__init__.py")
-        self.assertIn('plugin_version = "3.9.4"', entry)
+        self.assertIn('plugin_version = "3.9.5"', entry)
         class_slice = entry.split("class ShukGuangYaDisk(", 1)[1].split("):", 1)[0]
         self.assertLess(
             class_slice.index("_GuangYaFinalMonitorV390Mixin"),
@@ -79,10 +88,10 @@ class SingleInitV394ContractTest(unittest.TestCase):
         local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
         package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
         remote = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf-8")
-        self.assertEqual(local["version"], "3.9.4")
-        self.assertEqual(package["version"], "3.9.4")
-        self.assertIn("v3.9.4", local["history"])
-        self.assertIn("?v=3.9.4", remote)
+        self.assertEqual(local["version"], "3.9.5")
+        self.assertEqual(package["version"], "3.9.5")
+        self.assertIn("v3.9.5", local["history"])
+        self.assertIn("?v=3.9.5", remote)
 
 
 if __name__ == "__main__":

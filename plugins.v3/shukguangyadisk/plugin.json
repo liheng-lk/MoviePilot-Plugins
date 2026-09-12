@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
   "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
-  "version": "3.9.4",
+  "version": "3.9.5",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v3.9.5": "v3.9.5 单文件运行态一致性：修复 __init__.py、状态接口与 Federation 残留旧版本号导致热更新版本误判；runtime_version 改为动态读取 plugin_version，并新增内嵌模块总数、已加载虚拟模块数、Finder 数量及热更新围栏状态。整理识别、命名、移动与远端终态确认主链保持不变。",
     "v3.9.4": "v3.9.4 调度自愈与诊断：人工全量/强校验每页完成后立即尝试消费持久资源队列，不再只发现不执行；自动/人工调度在队列非空但未提交时投影并节流记录 handoff、worker_busy、queue_wait、read_error 等真实原因，queue_wait 同时显示距 next_due 的秒数，handoff 暴露旧 owner 当前任务和 Worker 存活状态。MoviePilot 识别、分类、命名、移动规则保持不变。",
     "v3.9.3": "v3.9.3 Worker Handoff：修复热更新时新实例持有进程 owner 锁等待旧 Worker join，导致旧 Worker finally 无法释放 owner、资源队列长期停在 handoff 的交接锁竞争；等待旧线程改到 owner 锁外执行并在退出后立即接管，不再浪费下一次 heartbeat。旧 v3.6.2 全局队列迁移改为 global_vars 进程级串行 once/recheck，多个插件实例不会重复清理同一批 waiting。状态快照补充旧 owner 当前任务与 handoff 标记。",
     "v3.9.2": "运行态恢复与残留收口：修复自定义登录/配置接口绕过 MoviePilot 插件服务刷新导致自动监控任务未注册；登录后主动刷新宿主定时服务，并增加 5 秒启动自检与 heartbeat 可观测状态。二维码设备码/令牌接口不再吞掉上游错误，失败时明确返回原因并提示短信/token 后备；MP 整理历史终态严格限制为当前光鸭存储且位于当前监控根，禁止 115/本地/目标 STRM 历史污染光鸭日志；首次升级清理旧跨存储历史投影计数。",
