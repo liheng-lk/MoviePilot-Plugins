@@ -2,7 +2,11 @@
 
 import ast
 import json
+import re
+import time
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, Dict
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -137,3 +141,115 @@ def test_v1113_xunlei_summary_log_does_not_warn_for_expected_no_share_fallback()
     assert 'int(result.get("attempted_files") or 0) <= 0' in dispatch
     assert '"INFO" if bool(result.get("success")) or expected_fallback else "WARNING"' in dispatch
 
+
+
+
+def _rename_confirm_probe():
+    tree = ast.parse(dispatch_text, filename=str(DISPATCH))
+    cls = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "GuangYaViewingDispatchV1113Mixin"
+    )
+    method = next(
+        node for node in cls.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_confirm_remote_rename_v1113"
+    )
+    method.returns = None
+    for arg in method.args.args:
+        arg.annotation = None
+    probe = ast.ClassDef(
+        name="RenameConfirmProbe",
+        bases=[],
+        keywords=[],
+        body=[method],
+        decorator_list=[],
+    )
+    module = ast.Module(body=[probe], type_ignores=[])
+    ast.fix_missing_locations(module)
+    ns = {
+        "Any": Any,
+        "Dict": Dict,
+        "Path": Path,
+        "time": time,
+        "_norm_name_v1113": lambda value: re.sub(
+            r"[^0-9a-z\u4e00-\u9fff]+",
+            "",
+            str(value or "").strip().lower(),
+        ),
+    }
+    exec(compile(module, str(DISPATCH), "exec"), ns)
+    return ns["RenameConfirmProbe"]
+
+
+def test_remote_rename_confirmation_requires_readback_name_and_identity():
+    Probe = _rename_confirm_probe()
+    probe = Probe()
+
+    class Api:
+        def __init__(self):
+            self.calls = 0
+
+        def _find_item_in_parent(self, *, parent_path, name, expected_type):
+            self.calls += 1
+            assert parent_path == "/media/Demo (2026)"
+            assert name == "Demo - S01E05 - 2160p.WEB-DL.mkv"
+            assert expected_type == "file"
+            if self.calls == 1:
+                return None
+            return SimpleNamespace(name=name, fileid="file-5")
+
+        def _invalidate_path_cache(self, _path):
+            return None
+
+    result = probe._confirm_remote_rename_v1113(
+        Api(),
+        target_path="/media/Demo (2026)",
+        desired_name="Demo - S01E05 - 2160p.WEB-DL.mkv",
+        file_id="file-5",
+        attempts=2,
+        interval=0,
+    )
+    assert result["confirmed"] is True
+    assert result["file_id"] == "file-5"
+    assert result["attempts"] == 2
+
+
+def test_remote_rename_confirmation_fails_closed_on_wrong_file_identity():
+    Probe = _rename_confirm_probe()
+    probe = Probe()
+
+    class Api:
+        @staticmethod
+        def _find_item_in_parent(*, parent_path, name, expected_type):
+            return SimpleNamespace(name=name, fileid="another-file")
+
+    result = probe._confirm_remote_rename_v1113(
+        Api(),
+        target_path="/media/Demo (2026)",
+        desired_name="Demo - S01E05 - 2160p.WEB-DL.mkv",
+        file_id="file-5",
+        attempts=1,
+        interval=0,
+    )
+    assert result["confirmed"] is False
+    assert "mismatch" in result["message"]
+
+
+def test_cloudcollection_rename_only_persists_renamed_name_after_readback_confirmation():
+    poll = dispatch_text.split("    def _poll_offline_source(", 1)[1].split(
+        "    # ------------------------------------------------------------------\n    # 迅雷",
+        1,
+    )[0]
+    assert 'rename_state="accepted"' in poll
+    assert 'landing_stage="RENAME_ACCEPTED"' in poll
+    assert "_confirm_remote_rename_v1113(" in poll
+    assert 'rename_state="confirmed"' in poll
+    assert 'rename_confirmed=True' in poll
+    assert 'landing_stage="RENAME_CONFIRMED"' in poll
+    assert 'rename_state="pending"' in poll
+    assert 'landing_stage="RENAME_PENDING"' in poll
+    accepted_block = poll.split('rename_state="accepted"', 1)[1].split(
+        "if bool(confirm.get(\"confirmed\")):",
+        1,
+    )[0]
+    assert "renamed_name=" not in accepted_block
