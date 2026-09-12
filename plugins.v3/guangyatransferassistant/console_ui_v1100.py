@@ -112,7 +112,9 @@ class GuangYaConsoleUiV1100Mixin:
     def _runtime_health_rows(self, overview: Dict[str, Any]) -> List[Dict[str, Any]]:
         viewing = dict(overview.get("viewing") or {})
         viewing_enabled = bool(viewing.get("enabled"))
-        viewing_ok = viewing_enabled and str(viewing.get("status") or "") == "ok" and not bool(viewing.get("recent_failure"))
+        viewing_ok = (not viewing_enabled) or (
+            str(viewing.get("status") or "") == "ok" and not bool(viewing.get("recent_failure"))
+        )
         viewing_node = str(viewing.get("active_node") or "未选择")
         viewing_stage = str(viewing.get("last_stage") or "")
         viewing_message = str(viewing.get("last_message") or "")[:120]
@@ -131,7 +133,12 @@ class GuangYaConsoleUiV1100Mixin:
         except Exception:
             pass
         xunlei_enabled = bool(getattr(self, "_xunlei_flash_enabled", True))
-        xunlei_ready = bool(xunlei_status.get("captcha_ready") and xunlei_status.get("device_ready"))
+        xunlei_ready = bool(
+            xunlei_status.get("captcha_ready")
+            and xunlei_status.get("device_ready")
+            and not xunlei_status.get("circuit_open")
+        )
+        xunlei_ok = (not xunlei_enabled) or xunlei_ready
 
         provider_defs = list(self._parse_provider_defs())
         provider_last = self.get_data("provider_test_last") or {}
@@ -140,7 +147,8 @@ class GuangYaConsoleUiV1100Mixin:
         if configured_api_states:
             api_ok = all(bool(row.get("success")) for row in configured_api_states)
         else:
-            api_ok = bool(provider_defs)
+            # External Magnet/ED2K API is optional; GYING may already provide those candidates.
+            api_ok = True
 
         try:
             client, api = self._get_guangya_runtime()
@@ -150,7 +158,18 @@ class GuangYaConsoleUiV1100Mixin:
 
         rows = [
             ("观影 GYING", viewing_ok, viewing_detail, "mdi-movie-search-outline"),
-            ("迅雷秒传", xunlei_ready and xunlei_enabled, "已关闭" if not xunlei_enabled else str(xunlei_status.get("message") or "等待预检"), "mdi-flash-outline"),
+            (
+                "迅雷秒传",
+                xunlei_ok,
+                "已关闭"
+                if not xunlei_enabled
+                else (
+                    "Captcha 熔断中，建议执行秒传预检"
+                    if xunlei_status.get("circuit_open")
+                    else str(xunlei_status.get("message") or ("运行时已就绪" if xunlei_ready else "等待预检"))
+                ),
+                "mdi-flash-outline",
+            ),
             ("Magnet / ED2K API", api_ok, f"已配置 {len(provider_defs)} 个接口" if provider_defs else "未配置外部 API", "mdi-magnet-on"),
             ("光鸭运行时", guangya_ok, "客户端与存储 API 已就绪" if guangya_ok else "未运行或未登录", "mdi-cloud-check-outline"),
         ]
