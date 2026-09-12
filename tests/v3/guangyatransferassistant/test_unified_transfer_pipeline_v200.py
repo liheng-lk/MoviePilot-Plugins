@@ -263,3 +263,49 @@ def test_final_plugin_runtime_uses_unified_matrix_and_mp_naming():
         "Some.Show.2026.S01E07.2160p.WEB-DL.H265.DDP5.1.HDR10-GROUP.mkv",
     )
     assert result == "幸运女神 - S01E07 - 2160p WEB-DL H265 DDP5.1 HDR10 GROUP.mkv"
+
+
+def test_cloud_success_notification_requires_verified_video_and_final_name():
+    plugin = ROOT / "plugins.v3" / "guangyatransferassistant"
+    runtime = (plugin / "runtime_fix_v1113.py").read_text(encoding="utf-8")
+    notify = runtime.split("    def _notify_cloud_completed_v1113(", 1)[1].split(
+        "    def _notify_cloud_failed_v1119(", 1
+    )[0]
+    assert 'if not bool(current.get("remote_video_confirmed")):' in notify
+    assert 'current.get("landing_file_name")' in notify
+    assert '"☁️ 光鸭云添加完成"' in notify
+    assert "云添加任务完成" not in notify
+    assert 'current.get("completion_notified_at")' in notify
+    assert "completion_notified_at=self._now_text()" in notify
+
+
+def test_cloudcollection_final_name_is_confirmed_before_completed_state():
+    plugin = ROOT / "plugins.v3" / "guangyatransferassistant"
+    source = (plugin / "multisource_v180.py").read_text(encoding="utf-8")
+    assert "def _finalize_offline_remote_name_v200(" in source
+    poll = source.split("    def _poll_offline_source(", 1)[1].split(
+        "    # ------------------------------------------------------------------\n    # 调度与 API", 1
+    )[0]
+    assert "_finalize_offline_remote_name_v200(" in poll
+    assert 'verify_source = "final_name_confirmed"' in poll
+    assert 'verify_source = "final_name_pending"' in poll
+    assert poll.index("_finalize_offline_remote_name_v200(") < poll.index(
+        'completed_state = "completed" if verified else "waiting"'
+    )
+
+
+def test_guangya_share_waits_for_final_rename_before_success():
+    plugin = ROOT / "plugins.v3" / "guangyatransferassistant"
+    source = (plugin / "channel_title_rename_v11226.py").read_text(encoding="utf-8")
+    rename = source.split("    def _rename_restored_media_v11224(", 1)[1].split(
+        "    def _restore_items(", 1
+    )[0]
+    restore = source.split("    def _restore_items(", 1)[1].split(
+        "\n\n__all__", 1
+    )[0]
+    assert 'item["rename_verified_v200"] = True' in rename
+    assert 'item["final_name_v200"] = desired' in rename
+    assert 'result["pending_verification"] = True' in restore
+    assert 'result["success"] = False' in restore
+    assert '"RENAME_VERIFY_PENDING"' in restore
+    assert 'result["final_names"] = final_names' in restore
