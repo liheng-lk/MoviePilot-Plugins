@@ -1,4 +1,4 @@
-"""光鸭转存助手 v2.1.2 运行入口。
+"""光鸭转存助手 v2.1.3 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
@@ -759,6 +759,79 @@ class GuangYaTransferAssistant(
             return
 
 
+    def _claim_external_search_round_v1114(self, subscribe: Any, force: bool = False) -> bool:
+        """Make external-search cooldown target-aware for TV subscriptions.
+
+        A negative search for an old target set must not suppress a newly aired
+        episode or an Emby-reopened gap. Shrinking targets keep the existing
+        cooldown; only newly added/reopened targets get one immediate round.
+        """
+        if force or subscribe is None or self._is_movie_subscription(subscribe):
+            return bool(super()._claim_external_search_round_v1114(subscribe, force=force))
+
+        sid = int(getattr(subscribe, "id", 0) or 0)
+        if sid <= 0:
+            return False
+
+        try:
+            current = {
+                int(value) for value in (self._subscription_missing_episodes(subscribe) or [])
+                if int(value or 0) > 0
+            }
+        except Exception:
+            current = set(self._emby_repair_targets_v212(subscribe) or set())
+
+        try:
+            state = dict(self._external_search_state_v1114() or {})
+        except Exception:
+            state = {}
+        row = dict(state.get(str(sid)) or {})
+        previous = {
+            int(value) for value in (row.get("target_episodes_v213") or [])
+            if str(value).isdigit() and int(value) > 0
+        }
+        has_target_snapshot = "target_episodes_v213" in row
+        expanded = set(current) - previous
+
+        if current and expanded and (has_target_snapshot or not previous):
+            now = time.time()
+            allowed_state = getattr(self, "_external_round_allowed_v1114", None)
+            if not isinstance(allowed_state, dict):
+                allowed_state = {}
+                self._external_round_allowed_v1114 = allowed_state
+            allowed_state[sid] = True
+            state[str(sid)] = {
+                **row,
+                "last_at": now,
+                "last_time": self._now_text() if callable(getattr(self, "_now_text", None)) else str(now),
+                "target_episodes_v213": sorted(current),
+                "origin": "target_changed_v213",
+            }
+            self.save_data("external_search_guard", state)
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【检索冷却重开v2.1.3】#%s %s 新增/恢复真实缺集=%s；旧空结果冷却仅对旧目标有效，本轮立即允许外部检索",
+                sid,
+                str(getattr(subscribe, "name", "") or ""),
+                ",".join(f"E{value:02d}" for value in sorted(expanded)),
+            )
+            return True
+
+        allowed = bool(super()._claim_external_search_round_v1114(subscribe, force=False))
+
+        # Always remember the target snapshot, even when the parent cooldown blocks.
+        # If a currently absent target comes back later, it is then a real expansion.
+        try:
+            latest_state = dict(self._external_search_state_v1114() or {})
+            latest = dict(latest_state.get(str(sid)) or {})
+            latest["target_episodes_v213"] = sorted(current)
+            latest_state[str(sid)] = latest
+            self.save_data("external_search_guard", latest_state)
+        except Exception:
+            pass
+        return allowed
+
+
     def _normalize_transfer_candidate(self, candidate: dict, *, origin: str = "") -> dict:
         """Normalize TG/GYING discoveries to the four supported execution routes."""
         return _normalize_unified_resource_candidate(candidate, origin=origin)
@@ -1146,8 +1219,8 @@ class GuangYaTransferAssistant(
             )
         return result
 
-    plugin_version = "2.1.2"
-    build_id = "20260912-r100"
+    plugin_version = "2.1.3"
+    build_id = "20260912-r101"
 
     def get_api(self):
         """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
