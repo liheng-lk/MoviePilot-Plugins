@@ -381,33 +381,50 @@ class GuangYaGyingAuthV1107Mixin:
         }
 
     def _gying_login(self, session: requests.Session, node: str) -> Dict[str, Any]:
+        """任何 Cookie 都先通过受限搜索验真；失败后再进入账号/匿名路径。"""
         try:
-            row = dict(((self._gying_state().get("nodes") or {}).get(node) or {}))
+            state = self._gying_state()
+            row = dict(((state.get("nodes") or {}).get(node) or {}))
         except Exception:
-            row = {}
+            state, row = {}, {}
+
         login_mode = str(row.get("login_mode") or "")
-        if (
-            len(session.cookies)
-            and bool(row.get("authenticated"))
-            and login_mode in _AUTH_COOKIE_MODES_V1107
-        ):
-            if self._gying_authenticated_probe(session, node):
-                return {
-                    "success": True,
-                    "mode": "cookie_reuse" if login_mode == "manual_captcha" else login_mode,
-                    "message": "复用已验证的观影登录会话",
-                }
+        has_cookie = bool(len(session.cookies))
+        if has_cookie and self._gying_authenticated_probe(session, node):
+            mode = login_mode if login_mode in _AUTH_COOKIE_MODES_V1107 else "cookie_reuse"
+            self._gying_persist_session(
+                node,
+                session,
+                status="ok",
+                login_mode=mode,
+                authenticated=True,
+                verified=bool(
+                    session.cookies.get("browser_verified")
+                    or session.cookies.get("browser_pow")
+                ),
+            )
+            return {
+                "success": True,
+                "mode": "cookie_reuse" if mode == "manual_captcha" else mode,
+                "message": "观影 Cookie 已通过受限搜索验真并复用",
+            }
+
+        if has_cookie:
             row["authenticated"] = False
             row["status"] = "login_expired"
-            state = self._gying_state()
-            state.setdefault("nodes", {})[node] = row
-            self._save_gying_state(state)
+            if isinstance(state, dict):
+                state.setdefault("nodes", {})[node] = row
+                self._save_gying_state(state)
 
-        result = dict(super()._gying_login(session, node) or {})
-        if not result.get("success") and str(result.get("mode") or "") == "captcha_required":
-            result["manual_login_required"] = True
-            result["message"] = "观影账号需要汉字点击验证码；请在插件页“观影人工认证”中按提示点击"
-        return result
+        username = str(getattr(self, "_viewing_username", "") or "").strip()
+        password = str(getattr(self, "_viewing_password", "") or "")
+        if username and password:
+            return self._gying_login_password(session, node)
+        return {
+            "success": True,
+            "mode": "anonymous",
+            "message": "未配置观影账号；仅尝试公开访问",
+        }
 
     # ------------------------------------------------------------------
     # 验证码 / 人工登录
