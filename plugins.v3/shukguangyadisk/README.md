@@ -1,6 +1,18 @@
-# 光鸭云盘助手 3.9.8
+# 光鸭云盘助手 3.9.9
 
 MoviePilot V3 光鸭云盘存储与自动整理插件，Python 运行时保持唯一 `__init__.py`。
+
+## 3.9.9 MoviePilot durable 失败重试修复
+
+实机日志出现两类关联问题：Redis `transfer_failed_retry/progress` 暂时不可用，以及 MoviePilot 报 `整理源文件已按不同输入准入`。
+
+本版按 MoviePilot 当前持久执行模型修复：
+
+- 历史预检显式使用数据库历史中的 `retry_count`，与 MoviePilot 原生 workflow 一致；Redis/TTLCache 只是缓存层，断连时不会把已经累计的失败次数误判回 `0/3`。
+- 对带 `transfer_task_id` 的失败历史，不再重新构造一份 fresh `do_transfer()` 输入，而是调用 MoviePilot `TransferExecutionCommand.request_retry()`，复用宿主已经冻结的原整理计划。
+- 这样插件版本升级、目录识别上下文变化或技术元数据变化时，不会因为 planning input 指纹变化再次撞上同一路径 durable admission。
+- 若极端竞态下仍出现准入冲突，会先尝试转回 durable retry；只有找不到可复用 durable task 时才进入 blocked，继续防止分钟级刷屏。
+- 光鸭插件自己的状态对 durable retry 标记为 deferred，只等待 MoviePilot 最终历史变成成功/失败，不会提前写假 completed。
 
 ## 3.9.8 自动整理调度公平性修复
 
