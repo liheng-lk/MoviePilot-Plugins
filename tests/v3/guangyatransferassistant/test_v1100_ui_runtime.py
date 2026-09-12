@@ -74,3 +74,11 @@ def test_config_ui_keeps_models_and_folds_protocol_details():
     for model in ("selected_subscriptions", "save_path", "channel_urls", "magnet_api_sources", "viewing_username", "viewing_password", "xunlei_flash_enabled"):
         assert model in CONFIG
 
+
+
+def test_console_runtime_health_shows_recent_gying_stage_without_extra_request():
+    assert 'viewing.get("last_stage")' in CONSOLE
+    assert 'viewing.get("last_message")' in CONSOLE
+    assert 'viewing.get("last_updated_at")' in CONSOLE
+    assert 'viewing.get("recent_failure")' in CONSOLE
+    assert "viewing_detail" in CONSOLE
