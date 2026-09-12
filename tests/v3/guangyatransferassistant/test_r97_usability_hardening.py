@@ -57,12 +57,38 @@ class _Sub:
     name = "测试剧"
 
 
-def _poll_harness(*, existing, pending_verify_since=0.0, grace=1200):
+def _poll_harness(
+    *,
+    existing,
+    pending_verify_since=0.0,
+    grace=1200,
+    remote_rows=None,
+    landing_snapshot_ready=False,
+    pre_landing_file_ids=None,
+):
     mixin = _mixin_class()
+
+    class _Client:
+        def __init__(self, rows):
+            self.rows = [dict(row) for row in (rows or [])]
+
+        def get_file_list(
+            self,
+            parent_id="",
+            page_size=100,
+            order_by=3,
+            sort_type=1,
+            file_types=None,
+            page=0,
+            **_kwargs,
+        ):
+            rows = list(self.rows) if str(parent_id or "") == "PARENT-1" and int(page or 0) == 0 else []
+            return {"msg": "success", "data": {"list": rows, "total": len(rows)}}
 
     class Harness(mixin):
         def __init__(self):
             self._offline_remote_verify_grace_seconds = grace
+            self.client = _Client(remote_rows)
             self.source = {
                 "id": "src-1",
                 "subscribe_id": 77,
@@ -71,7 +97,10 @@ def _poll_harness(*, existing, pending_verify_since=0.0, grace=1200):
                 "task_id": "TASK-1",
                 "target_episodes": [5],
                 "resolved_episodes": [5],
-                "selected_manifest": [{"name": "S01E05.mkv", "type": "video"}],
+                "selected_manifest": [{"name": "S01E05.mkv", "size": 12345, "type": "video"}],
+                "target_parent_id": "PARENT-1",
+                "landing_snapshot_ready": bool(landing_snapshot_ready),
+                "pre_landing_file_ids": list(pre_landing_file_ids or []),
                 "pending_verify_since": pending_verify_since,
                 "enabled": True,
                 "auto_dispatch": True,
@@ -79,6 +108,9 @@ def _poll_harness(*, existing, pending_verify_since=0.0, grace=1200):
             self.diags = []
             self.health = {}
             self.logs = []
+
+        def _get_guangya_runtime(self):
+            return self.client, None
 
         def _offline_request(self, _endpoint, _payload):
             return {}
@@ -124,6 +156,60 @@ def _poll_harness(*, existing, pending_verify_since=0.0, grace=1200):
             return dict(self.source)
 
     return Harness()
+
+
+def test_remote_completed_without_filename_is_verified_by_new_target_directory_video():
+    h = _poll_harness(
+        existing=[],
+        landing_snapshot_ready=True,
+        pre_landing_file_ids=[],
+        remote_rows=[
+            {
+                "fileId": "LANDED-NEW-1",
+                "fileName": "S01E05.mkv",
+                "fileSize": 12345,
+                "resType": 1,
+            }
+        ],
+    )
+    out = h._poll_offline_source(dict(h.source))
+
+    assert out["success"] is True
+    assert h.source["state"] == "completed"
+    assert h.source["remote_video_confirmed"] is True
+    assert h.source["remote_verify_source"] == "target_directory_readback"
+    assert h.source["landing_file_id"] == "LANDED-NEW-1"
+    assert h.source["landing_file_name"] == "S01E05.mkv"
+    assert h.source["landing_file_size"] == 12345
+    assert h.source["remote_landing_probe_reason"] == "new_video_found"
+    assert "last_offline_completed_at" in h.health
+    assert any(row.get("reason_code") == "REMOTE_VERIFY_CONFIRMED" for row in h.diags)
+
+
+def test_remote_completed_does_not_attribute_preexisting_target_file_to_current_task():
+    h = _poll_harness(
+        existing=[],
+        pending_verify_since=time.time() - 30,
+        grace=300,
+        landing_snapshot_ready=True,
+        pre_landing_file_ids=["LANDED-OLD-1"],
+        remote_rows=[
+            {
+                "fileId": "LANDED-OLD-1",
+                "fileName": "S01E05.mkv",
+                "fileSize": 12345,
+                "resType": 1,
+            }
+        ],
+    )
+    out = h._poll_offline_source(dict(h.source))
+
+    assert out["success"] is False
+    assert h.source["state"] == "waiting"
+    assert h.source["remote_video_confirmed"] is False
+    assert h.source["remote_verify_source"] == "planned_manifest"
+    assert h.source["remote_landing_probe_reason"] == "preexisting_only"
+    assert "last_offline_completed_at" not in h.health
 
 
 def test_remote_completed_without_filename_releases_claim_when_library_already_satisfied():
@@ -281,6 +367,9 @@ def test_r97_source_contracts_present():
     assert "REMOTE_VERIFY_TIMEOUT" in SOURCE
     assert "release_claim_for_fallback" in SOURCE
     assert "后台来源执行异常，已进入恢复路径" in SOURCE
+    assert "target_directory_readback" in SOURCE
+    assert "pre_landing_file_ids" in SOURCE
+    assert "【真实落盘核验】" in SOURCE
 
 
 def test_r97_status_ui_explains_pending_verify_instead_of_fake_100_percent_progress():
