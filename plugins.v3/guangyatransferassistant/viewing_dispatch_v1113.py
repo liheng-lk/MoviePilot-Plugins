@@ -14,6 +14,8 @@
 from __future__ import annotations
 
 import re
+import time
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .source_types_v180 import SOURCE_INFLIGHT_STATES, normalize_source_uri
@@ -182,6 +184,77 @@ class GuangYaViewingDispatchV1113Mixin:
             )
         return resolved
 
+    def _confirm_remote_rename_v1113(
+        self,
+        api: Any,
+        *,
+        target_path: str,
+        desired_name: str,
+        file_id: str = "",
+        attempts: int = 3,
+        interval: float = 0.4,
+    ) -> Dict[str, Any]:
+        """rename accepted 后读回远端目标；只有真实目标名可见才算 confirmed。"""
+        parent = str(target_path or "/").replace("\\", "/").rstrip("/") or "/"
+        desired = str(desired_name or "").strip()
+        expected_id = str(file_id or "").strip()
+        if not api or not desired:
+            return {"confirmed": False, "message": "缺少光鸭存储 API 或目标文件名"}
+
+        full_path = (parent.rstrip("/") + "/" + desired) if parent != "/" else "/" + desired
+        finder = getattr(api, "_find_item_in_parent", None)
+        get_item = getattr(api, "get_item", None)
+        invalidate = getattr(api, "_invalidate_path_cache", None)
+        last_error = ""
+
+        for index in range(max(1, int(attempts or 1))):
+            item = None
+            try:
+                if callable(invalidate):
+                    try:
+                        invalidate(full_path)
+                    except Exception:
+                        pass
+                if callable(finder):
+                    item = finder(
+                        parent_path=parent,
+                        name=desired,
+                        expected_type="file",
+                    )
+                if item is None and callable(get_item):
+                    item = get_item(Path(full_path))
+            except Exception as err:
+                last_error = str(err)[:240]
+                item = None
+
+            if item is not None:
+                actual_name = str(getattr(item, "name", "") or desired).strip()
+                actual_id = str(getattr(item, "fileid", "") or "").strip()
+                same_name = _norm_name_v1113(actual_name) == _norm_name_v1113(desired)
+                same_id = not expected_id or not actual_id or actual_id == expected_id
+                if same_name and same_id:
+                    return {
+                        "confirmed": True,
+                        "name": actual_name,
+                        "file_id": actual_id or expected_id,
+                        "path": full_path,
+                        "attempts": index + 1,
+                    }
+                last_error = (
+                    f"远端读回不一致 name={actual_name or '-'} "
+                    f"fileId={'match' if same_id else 'mismatch'}"
+                )[:240]
+
+            if index < max(1, int(attempts or 1)) - 1:
+                time.sleep(max(0.0, float(interval or 0.0)))
+
+        return {
+            "confirmed": False,
+            "path": full_path,
+            "attempts": max(1, int(attempts or 1)),
+            "message": last_error or "rename API 已接受，但目标文件名尚未在远端读回确认",
+        }
+
     @staticmethod
     def _rename_result_ok_v1113(value: Any) -> bool:
         if value is True:
@@ -203,13 +276,39 @@ class GuangYaViewingDispatchV1113Mixin:
         latest = dict(self._source_store()["items"].get(str(source.get("id") or "")) or data)
         if not str(latest.get("origin") or "").startswith("viewing"):
             return result
+
         desired = str(latest.get("requested_name") or "").strip()
         file_id = str(latest.get("file_id") or "").strip()
         current = str(latest.get("resolved_name") or "").strip()
-        if not desired or not file_id or _norm_name_v1113(desired) == _norm_name_v1113(current):
+        source_id = str(latest.get("id") or "")
+        target_path = str(latest.get("target_path") or "").strip()
+
+        if not desired or not file_id:
+            updated = self._update_source(
+                source_id,
+                rename_state="not_applicable",
+                rename_confirmed=False,
+                landing_stage="REMOTE_CONFIRMED",
+            ) or latest
+            if isinstance(result, dict):
+                result["data"] = updated
             return result
 
-        client, _ = self._get_guangya_runtime()
+        if _norm_name_v1113(desired) == _norm_name_v1113(current):
+            updated = self._update_source(
+                source_id,
+                renamed_name=current or desired,
+                rename_state="not_needed",
+                rename_confirmed=True,
+                rename_confirmed_at=self._now_text(),
+                rename_error="",
+                landing_stage="RENAME_CONFIRMED",
+            ) or latest
+            if isinstance(result, dict):
+                result["data"] = updated
+            return result
+
+        client, api = self._get_guangya_runtime()
         rename = getattr(client, "rename", None) if client else None
         response: Any = None
         try:
@@ -225,36 +324,93 @@ class GuangYaViewingDispatchV1113Mixin:
                     url=f"{base_url}/nd.bizuserres.s/v1/file/rename",
                     data={"fileId": file_id, "newName": desired},
                 )
+
             if self._rename_result_ok_v1113(response):
-                updated = self._update_source(
-                    str(latest.get("id") or ""),
-                    resolved_name=desired,
-                    renamed_name=desired,
-                    rename_at=self._now_text(),
+                accepted = self._update_source(
+                    source_id,
+                    rename_state="accepted",
+                    rename_confirmed=False,
+                    rename_accepted_at=self._now_text(),
                     rename_error="",
+                    landing_stage="RENAME_ACCEPTED",
+                ) or latest
+                confirm = self._confirm_remote_rename_v1113(
+                    api,
+                    target_path=target_path,
+                    desired_name=desired,
+                    file_id=file_id,
                 )
-                if isinstance(result, dict) and isinstance(updated, dict):
-                    result["data"] = updated
-                self._plugin_log(
-                    "INFO",
-                    "【光鸭转存助手】【命名】云添加完成后远端名称确认：fileId=%s %s -> %s",
-                    file_id,
-                    current[:180] or "-",
-                    desired[:220],
-                )
+                if bool(confirm.get("confirmed")):
+                    updated = self._update_source(
+                        source_id,
+                        resolved_name=str(confirm.get("name") or desired),
+                        renamed_name=str(confirm.get("name") or desired),
+                        rename_state="confirmed",
+                        rename_confirmed=True,
+                        rename_confirmed_at=self._now_text(),
+                        rename_error="",
+                        rename_readback_attempts=int(confirm.get("attempts") or 1),
+                        landing_stage="RENAME_CONFIRMED",
+                    ) or accepted
+                    if isinstance(result, dict):
+                        result["data"] = updated
+                    self._plugin_log(
+                        "INFO",
+                        "【光鸭转存助手】【命名】远端重命名已读回确认：fileId=%s %s -> %s attempts=%s",
+                        file_id,
+                        current[:180] or "-",
+                        str(confirm.get("name") or desired)[:220],
+                        int(confirm.get("attempts") or 1),
+                    )
+                else:
+                    message = str(confirm.get("message") or "rename 已接受但远端目标名未确认")[:300]
+                    updated = self._update_source(
+                        source_id,
+                        rename_state="pending",
+                        rename_confirmed=False,
+                        rename_error=message,
+                        rename_readback_attempts=int(confirm.get("attempts") or 0),
+                        landing_stage="RENAME_PENDING",
+                    ) or accepted
+                    if isinstance(result, dict):
+                        result["data"] = updated
+                    self._plugin_log(
+                        "WARNING",
+                        "【光鸭转存助手】【命名】rename API 已接受但远端读回未确认：fileId=%s 当前=%s 目标=%s 原因=%s",
+                        file_id,
+                        current[:160] or "-",
+                        desired[:180],
+                        message,
+                    )
             else:
                 message = str((response or {}).get("msg") or (response or {}).get("message") or response or "rename 未确认")[:240] if isinstance(response, dict) else str(response or "rename 未确认")[:240]
-                self._update_source(str(latest.get("id") or ""), rename_error=message)
+                updated = self._update_source(
+                    source_id,
+                    rename_state="failed",
+                    rename_confirmed=False,
+                    rename_error=message,
+                    landing_stage="RENAME_FAILED",
+                ) or latest
+                if isinstance(result, dict):
+                    result["data"] = updated
                 self._plugin_log(
                     "WARNING",
-                    "【光鸭转存助手】【命名】云添加已完成但远端重命名未确认：fileId=%s 当前=%s 目标=%s 原因=%s",
+                    "【光鸭转存助手】【命名】云添加已完成但远端重命名未接受：fileId=%s 当前=%s 目标=%s 原因=%s",
                     file_id,
                     current[:160] or "-",
                     desired[:180],
                     message,
                 )
         except Exception as err:
-            self._update_source(str(latest.get("id") or ""), rename_error=str(err)[:300])
+            updated = self._update_source(
+                source_id,
+                rename_state="failed",
+                rename_confirmed=False,
+                rename_error=str(err)[:300],
+                landing_stage="RENAME_FAILED",
+            ) or latest
+            if isinstance(result, dict):
+                result["data"] = updated
             self._plugin_log(
                 "WARNING",
                 "【光鸭转存助手】【命名】云添加已完成但重命名异常：fileId=%s 目标=%s 错误=%s",
