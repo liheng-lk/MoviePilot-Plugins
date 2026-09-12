@@ -39,7 +39,7 @@ class GuangYaChannelEd2kV1112Tests(unittest.TestCase):
         self.assertIn("build_id = ", entry)
         self.assertIn("v1.11.2", package.get("history") or {})
         self.assertIn("ED2K", package.get("labels") or package.get("description") or "")
-        planner = (PLUGIN / "resource_planner_v190.py").read_text(encoding="utf-8")
+        planner = bundle_source("resource_planner_v190")
         self.assertIn('source_type == "ed2k"', planner)
 
 
