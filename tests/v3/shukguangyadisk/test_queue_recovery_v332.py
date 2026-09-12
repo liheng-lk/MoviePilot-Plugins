@@ -98,6 +98,22 @@ def test_private_worker_restart_reopens_inflight_instead_of_mp_replay():
         assert token in RECOVERY, token
 
 
+def test_failed_durable_history_reuses_moviepilot_frozen_plan():
+    for token in (
+        "_DURABLE_RETRY_PREFIX",
+        "def _request_moviepilot_durable_retry",
+        "TransferExecutionCommand(repository).request_retry",
+        'requested_by="shukguangyadisk_auto"',
+        "durable_retry_recommended",
+        '"deferred" if durable_message',
+        "state_store.mark_deferred",
+    ):
+        assert token in RECOVERY, token
+    # durable retry 命中后必须提前返回，不能继续 fresh do_transfer 造成不同输入准入冲突。
+    durable_block = RECOVERY.split("durable_retry = self._request_moviepilot_durable_retry", 1)[1].split("contextual_builder =", 1)[0]
+    assert "return False" in durable_block
+
+
 def test_terminal_result_prefers_moviepilot_event_with_return_value_fallback():
     for token in (
         "_fallback_terminal_state",
