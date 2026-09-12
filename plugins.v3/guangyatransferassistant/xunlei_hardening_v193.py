@@ -269,6 +269,7 @@ class GuangYaXunleiHardeningMixin:
                 "captcha_ok": bool(status.get("success")),
                 "message": str(status.get("message") or "")[:240],
                 "device_ready": bool(self._xunlei_runtime_device_id),
+                "circuit_open": bool(getattr(self, "_xunlei_captcha_circuit_open_v1113", False)),
             },
         }
 
