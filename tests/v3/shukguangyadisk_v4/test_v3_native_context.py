@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -11,31 +10,14 @@ from app.testing.bootstrap import prepare_backend
 
 prepare_backend()
 
-from app.domain.metainfo import MetaInfoPath
 from app.plugins.shukguangyadisk import GuangYaOrganizerV4
 
 
 class MoviePilotNativeContextTest(unittest.TestCase):
-    """弱命名资源必须交给 MoviePilot V3 的 MetaInfoPath，而不是插件自造识别结果。"""
-
-    def test_moviepilot_metainfo_path_merges_series_parent_for_weak_episode_name(self):
-        """MoviePilot V3 自身能从 文件/Season/剧名 三层路径合并媒体上下文。"""
-        meta = MetaInfoPath(
-            Path("/source/炼气十万年 (2023)/Season 1/E200.mp4"),
-            force_video=True,
-        )
-        self.assertIsNotNone(meta)
-        # 不要求插件猜 TMDB；只要求原生路径解析没有把弱文件名 E200 当成作品标题。
-        title_fields = " ".join(
-            str(getattr(meta, name, "") or "")
-            for name in ("name", "cn_name", "en_name", "org_string")
-        )
-        self.assertIn("炼气十万年", title_fields)
-        self.assertEqual(getattr(meta, "begin_season", None), 1)
-        self.assertEqual(getattr(meta, "begin_episode", None), 200)
+    """弱命名资源必须把完整路径交给 MoviePilot，而不是插件自造识别结果。"""
 
     def test_organizer_does_not_override_moviepilot_path_meta(self):
-        """V4 do_transfer 调用不得主动传 meta，保留 MoviePilot _build_path_meta/MetaInfoPath。"""
+        """V4 do_transfer 不主动传 meta，保留 V3 _build_path_meta/MetaInfoPath 识别链。"""
         organizer = object.__new__(GuangYaOrganizerV4)
         organizer._disk_name = "光鸭云盘助手"
         current = SimpleNamespace(
@@ -83,9 +65,14 @@ class MoviePilotNativeContextTest(unittest.TestCase):
         self.assertEqual(result["state"], "COMPLETED")
         self.assertEqual(len(calls), 2)
         for kwargs in calls:
+            # MoviePilot V3 在 meta 缺省时，会使用 fileitem.path 构建 MetaInfoPath；
+            # 因此必须保留完整的 剧名/Season/文件名 路径，且不得抢先塞自造 meta。
             self.assertNotIn("meta", kwargs)
             self.assertIs(kwargs["fileitem"], current)
-            self.assertEqual(kwargs["fileitem"].path, current.path)
+            self.assertEqual(
+                kwargs["fileitem"].path,
+                "/source/炼气十万年 (2023)/Season 1/E200.mp4",
+            )
 
 
 if __name__ == "__main__":
