@@ -5838,6 +5838,7 @@ class GuangYaOrganizerV4:
     _organizer_lock: Optional[threading.RLock] = None
     _organizer_owner_id: str = ""
     _organizer_stopping: bool = False
+    _organizer_graceful_paused: bool = False
 
     @staticmethod
     def _organizer_normalize_path(value: Any) -> str:
@@ -5911,6 +5912,8 @@ class GuangYaOrganizerV4:
         if not self._organizer_owner_id:
             self._organizer_owner_id = uuid.uuid4().hex
         self._organizer_stopping = False
+        if self._organizer_enabled:
+            self._organizer_graceful_paused = False
         if self._organizer_executor is None:
             self._organizer_executor = ThreadPoolExecutor(
                 max_workers=1,
@@ -6270,11 +6273,15 @@ class GuangYaOrganizerV4:
         """若执行器空闲，立即选择并提交下一个 READY/RETRY/VERIFYING 任务。"""
         if self._organizer_stopping:
             return {"scheduled": False, "reason": "stopping"}
+        if self._organizer_graceful_paused:
+            return {"scheduled": False, "reason": "graceful_paused"}
         lock = self._organizer_lock or threading.RLock()
         self._organizer_lock = lock
         with lock:
             if self._organizer_stopping:
                 return {"scheduled": False, "reason": "stopping"}
+            if self._organizer_graceful_paused:
+                return {"scheduled": False, "reason": "graceful_paused"}
             if self._organizer_future is not None and not self._organizer_future.done():
                 return {"scheduled": False, "reason": "worker_busy"}
             task = self._organizer_next_task()
@@ -6829,6 +6836,8 @@ class GuangYaOrganizerV4:
             old_path = self._organizer_path
             self.save_data(self._organizer_config_key, config)
             self._organizer_enabled = config["enabled"]
+            if self._organizer_enabled:
+                self._organizer_graceful_paused = False
             self._organizer_path = config["path"]
             self._organizer_interval = config["interval"]
             self._organizer_stability = config["stability"]
@@ -6903,6 +6912,46 @@ class GuangYaOrganizerV4:
             "data": {"unblocked": count},
         }
 
+    def api_organize_monitor_graceful_stop(self, payload: dict = None) -> Dict[str, Any]:
+        """暂停自动监控；当前 RUNNING 自然收尾，持久待处理任务全部保留。"""
+        self._organizer_graceful_paused = True
+        self._organizer_enabled = False
+
+        config = self._organizer_load_config()
+        config["enabled"] = False
+        self.save_data(self._organizer_config_key, config)
+
+        scan = self.get_data(self._organizer_scan_key) or {}
+        if not isinstance(scan, dict):
+            scan = {}
+        scan["active"] = False
+        scan["queue"] = []
+        scan["graceful_stopped_at"] = time.time()
+        self.save_data(self._organizer_scan_key, scan)
+
+        busy = bool(self._organizer_future and not self._organizer_future.done())
+        self._organizer_status_update(
+            runtime_phase="finishing_current" if busy else "paused",
+            graceful_stop_state="finishing_current" if busy else "paused",
+            graceful_stop_message=(
+                "当前任务完成后暂停；READY/RETRY/VERIFYING 任务全部保留，不会清空或误删"
+                if busy
+                else "自动监控已暂停；持久待处理任务全部保留"
+            ),
+        )
+        return {
+            "success": True,
+            "message": (
+                "已停止继续派发；当前任务将自然收尾"
+                if busy
+                else "自动监控已暂停"
+            ),
+            "data": {
+                "state": "finishing_current" if busy else "paused",
+                "pending_preserved": True,
+            },
+        }
+
     def api_organize_monitor_status(self) -> Dict[str, Any]:
         """返回 V4 自动整理配置、状态和最近结果。"""
         status = self.get_data(self._organizer_status_key) or {}
@@ -6941,6 +6990,24 @@ class GuangYaOrganizerV4:
                     ),
                     "scan_active": bool(scan.get("active")),
                     "scan_remaining": len(scan.get("queue") or []),
+                    "graceful_stop_state": (
+                        "finishing_current"
+                        if self._organizer_graceful_paused
+                        and self._organizer_future
+                        and not self._organizer_future.done()
+                        else "paused"
+                        if self._organizer_graceful_paused
+                        else ""
+                    ),
+                    "graceful_stop_message": (
+                        "当前任务完成后暂停；持久待处理任务全部保留"
+                        if self._organizer_graceful_paused
+                        and self._organizer_future
+                        and not self._organizer_future.done()
+                        else "自动监控已暂停；持久待处理任务全部保留"
+                        if self._organizer_graceful_paused
+                        else ""
+                    ),
                 },
                 "history": history,
                 "pending_sample": samples,
@@ -7022,6 +7089,7 @@ class GuangYaOrganizerV4:
             {"path": "/organize/monitor/incremental-scan", "endpoint": self.api_organize_monitor_incremental_scan, "auth": "bear", "methods": ["POST"], "summary": "继续增量扫描", "response_model": response_model},
             {"path": "/organize/monitor/full-scan", "endpoint": self.api_organize_monitor_full_scan, "auth": "bear", "methods": ["POST"], "summary": "启动强制全量扫描", "response_model": response_model},
             {"path": "/organize/monitor/full-scan/stop", "endpoint": self.api_organize_monitor_full_scan_stop, "auth": "bear", "methods": ["POST"], "summary": "停止当前扫描", "response_model": response_model},
+            {"path": "/organize/monitor/graceful-stop", "endpoint": self.api_organize_monitor_graceful_stop, "auth": "bear", "methods": ["POST"], "summary": "安全暂停自动整理", "response_model": response_model},
             {"path": "/organize/monitor/status", "endpoint": self.api_organize_monitor_status, "auth": "bear", "methods": ["GET"], "summary": "自动整理状态", "response_model": response_model},
             {"path": "/organize/monitor/diagnostics", "endpoint": self.api_organize_monitor_diagnostics, "auth": "bear", "methods": ["GET"], "summary": "自动整理诊断", "response_model": response_model},
             {"path": "/organize/monitor/selfcheck", "endpoint": self.api_organize_monitor_selfcheck, "auth": "bear", "methods": ["GET"], "summary": "自动整理自检", "response_model": response_model},
