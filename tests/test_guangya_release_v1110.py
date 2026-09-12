@@ -3,11 +3,13 @@ import json
 import unittest
 from pathlib import Path
 
+from guangya_bundle_test_utils import bundle_source, entry_class_bases
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
-RELEASE = (PLUGIN / "release_v1110.py").read_text(encoding="utf-8")
+RELEASE = bundle_source("release_v1110")
 PLUGIN_JSON = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
 
 
@@ -18,8 +20,7 @@ class GuangYaReleaseV1110Tests(unittest.TestCase):
         self.assertIn("from .release_v1110 import GuangYaReleaseV1110Mixin", ENTRY)
         self.assertIn("from .dispatch_policy_v1125 import GuangYaDispatchPolicyV1125Mixin", ENTRY)
         self.assertIn("from .dispatch_policy_final_v1125 import GuangYaDispatchPolicyFinalV1125Mixin", ENTRY)
-        head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
-        mixins = [line.strip().rstrip(",") for line in head.splitlines() if line.strip()]
+        mixins = entry_class_bases()
         self.assertEqual(mixins[:17], [
             "GuangYaFoundationOpsV209Mixin",
             "GuangYaEpisodeRuntimeV211Mixin",
@@ -42,7 +43,7 @@ class GuangYaReleaseV1110Tests(unittest.TestCase):
         self.assertIn("GuangYaReleaseV1110Mixin", ENTRY)
         self.assertIn("plugin_version = ", ENTRY)
         self.assertIn("build_id = ", ENTRY)
-        cal = (PLUGIN / "calendar_driven_v209.py").read_text(encoding="utf-8")
+        cal = bundle_source("calendar_driven_v209")
         self.assertIn("GuangYaTransferAssistantDailyReconcile", cal)
         self.assertIn("0 21 * * *", cal)
 

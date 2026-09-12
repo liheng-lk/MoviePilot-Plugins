@@ -157,9 +157,9 @@ def test_movie_actual_match_accepts_real_primary_or_file_title_match():
 
 def test_runtime_wiring_places_match_layers_before_dispatch_and_episode_fence():
     assert "from .media_match_v11219 import GuangYaMediaMatchV11219Mixin" in FAST_SOURCE
-    assert "from .movie_xunlei_match_v11219 import GuangYaMovieXunleiMatchV11219Mixin" in FAST_SOURCE
-    declaration = FAST_SOURCE.split("class GuangYaFastRecallV1126Mixin(", 1)[1].split("):", 1)[0]
-    assert declaration.index("GuangYaMediaMatchV11219Mixin") < declaration.index("GuangYaMovieXunleiMatchV11219Mixin")
+    assert "GuangYaMovieXunleiMatchV11219Mixin" not in FAST_SOURCE
+    assert not (PLUGIN / "movie_xunlei_match_v11219.py").exists()
+    assert "def _xunlei_json_identity_matches_v1123(" in SOURCE
 
 
 def test_source_schema_separates_intent_candidate_resolved_and_transfer():

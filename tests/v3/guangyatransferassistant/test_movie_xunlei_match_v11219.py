@@ -5,7 +5,7 @@ from typing import Any, Dict, Tuple
 
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
-SOURCE_PATH = PLUGIN / "movie_xunlei_match_v11219.py"
+SOURCE_PATH = PLUGIN / "media_match_v11219.py"
 FAST_PATH = PLUGIN / "fast_recall_v1126.py"
 ENTRY_PATH = PLUGIN / "__init__.py"
 SOURCE = SOURCE_PATH.read_text(encoding="utf-8")
@@ -15,8 +15,22 @@ ENTRY = ENTRY_PATH.read_text(encoding="utf-8")
 
 def _mixin_class(movie_match):
     tree = ast.parse(SOURCE)
-    nodes = [node for node in tree.body if isinstance(node, ast.ClassDef)]
-    module = ast.Module(body=nodes, type_ignores=[])
+    source_class = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "GuangYaMediaMatchV11219Mixin"
+    )
+    method = next(
+        node for node in source_class.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_xunlei_json_identity_matches_v1123"
+    )
+    probe_class = ast.ClassDef(
+        name="GuangYaMovieXunleiMatchProbeMixin",
+        bases=[],
+        keywords=[],
+        body=[method],
+        decorator_list=[],
+    )
+    module = ast.Module(body=[probe_class], type_ignores=[])
     ast.fix_missing_locations(module)
     ns = {
         "Any": Any,
@@ -26,7 +40,7 @@ def _mixin_class(movie_match):
         "movie_actual_match_v11219": movie_match,
     }
     exec(compile(module, str(SOURCE_PATH), "exec"), ns)
-    return ns["GuangYaMovieXunleiMatchV11219Mixin"]
+    return ns["GuangYaMovieXunleiMatchProbeMixin"]
 
 
 class _Base:
@@ -55,9 +69,9 @@ def _probe(movie_match):
 
 
 def test_xunlei_movie_match_is_wired_after_general_media_match():
-    assert "from .movie_xunlei_match_v11219 import GuangYaMovieXunleiMatchV11219Mixin" in FAST
-    head = FAST.split("class GuangYaFastRecallV1126Mixin(", 1)[1].split("):", 1)[0]
-    assert head.index("GuangYaMediaMatchV11219Mixin") < head.index("GuangYaMovieXunleiMatchV11219Mixin")
+    assert "from .media_match_v11219 import GuangYaMediaMatchV11219Mixin" in FAST
+    assert "GuangYaMovieXunleiMatchV11219Mixin" not in FAST
+    assert not (PLUGIN / "movie_xunlei_match_v11219.py").exists()
     assert 'plugin_version = "2.0.13"' in ENTRY
 
 

@@ -1,3 +1,51 @@
+## v2.1.0-r98 — 单文件统一转存主链（Controlled Real-World Beta）
+
+本版把“功能存在”收口为一条可验证的真实业务链，同时按项目维护要求将插件运行时代码全部集中到唯一的 `__init__.py`。插件目录内出现其它 `*.py` 会直接触发 CI 失败。
+
+### 统一业务主链
+
+```text
+MoviePilot 订阅
+→ Telegram / GYING 资源发现
+→ MoviePilot 媒体身份、年份、Season 与权威缺集匹配
+→ 迅雷秒传 > 光鸭分享直转 > Magnet > ED2K
+→ 光鸭目标目录真实落盘确认
+→ MoviePilot 识别结果优先的最终文件名确认
+→ 成功通知
+```
+
+四种资源执行方式固定为：
+
+- 迅雷分享：解析分享真实文件 → 生成秒传 JSON → 只选择当前权威缺集 → 光鸭秒传；服务端返回成功不算完成，必须在目标目录确认本次新增文件。
+- 光鸭分享：调用光鸭原生分享恢复接口做文件级增量转存；落盘后远端 rename 必须确认，最终文件名没有确认时保持 `pending_verification`，不提前发送成功通知。
+- Magnet：使用光鸭原生 `cloudcollection`；任务 completed 后继续确认真实正片和最终文件名。
+- ED2K：使用光鸭原生 `cloudcollection`；单文件仍经过真实文件名、缺集与最终落盘门禁。
+- 不引入 MoviePilot 普通下载器、qBittorrent、Transmission、Aria2 或本地整文件下载再上传兜底。
+
+### MoviePilot 优先命名
+
+媒体身份以 MoviePilot 识别结果为第一优先级，原资源名只提供技术参数。
+
+电视剧示例：
+
+`幸运女神 - S01E07 - 2160p WEB-DL H265 DDP5.1 HDR10 GROUP.mkv`
+
+电影示例：
+
+`沙丘2 (2024) - 2160p BluRay REMUX DV HEVC TrueHD 7.1 GROUP.mkv`
+
+会尽量保留分辨率、WEB-DL/BluRay/REMUX、H.264/H.265/HEVC/AV1、HDR/DV、音轨及发布组等有效技术标签；标题、年份、Season、Episode 不再接受来源文件名覆盖 MoviePilot 识别结果。
+
+### 成功闭环
+
+本版统一规定：API 返回 success、迅雷秒传接口成功、cloudcollection task completed 都不能单独视为转存成功。成功必须具备当前任务可归因的真实文件证据，并完成最终文件名确认；预先已经存在的同名/同 fileId 文件不会冒充本次落盘。成功通知只在这一闭环完成后发送；除各来源自身的完成状态外，最终入口还使用持久化成功指纹去重，同一成功回执跨轮询/重启不会重复推送。
+
+Telegram 与 GYING 都使用真实解析结构做四来源矩阵回归，均验证可产出 `xunlei / guangya / magnet / ed2k` 并进入同一优先级。发布收口前完整 CI：**GuangYa contract tests 1076 run / 0 failed**。 最终 unified provider evidence、最终命名、真实落盘与 exactly-once 通知合同补齐后：**1084 run / 0 failed**。
+
+### 实机验证边界
+
+上述结果证明代码合同、解析器、状态机和最终插件 harness 均通过自动回归，但不等于已经替代真实 MoviePilot + GYING + 迅雷 + 光鸭账号环境的网络烟测。发布后仍应先用少量真实订阅验证实际 Cookie/PoW、站点节点、迅雷 captcha、光鸭接口和 Emby 扫描延迟；真实日志确认后再扩大订阅范围。
+
 ## v2.0.13-r97 — Usability Hardening（Controlled Real-World Beta）
 
 本版本继续作为 **Controlled Real-World Beta** 发布，重点从“功能齐全”转向“真实运行状态可闭环、异常可恢复、用户能看懂”。
@@ -418,4 +466,36 @@ CI 可以覆盖协议解析、PoW 算法、节点切换、隐私边界、缺集�
 - 光鸭直接分享、迅雷、Magnet、ED2K 的不可分割视频统一要求 `actual episodes ⊆ allowed missing`。例如只缺 E11 时，单集 E11 可以写入，`E09-E11` 或 `E09-E12` 整文件必须拒绝。
 - 搜索卡片/频道标题只作为发现证据；真正提交前重新检查实际分享/resolve 文件。真实标题、年份或 Season 明确冲突时拒绝；`S01E11.mkv` 这类没有作品标题的弱文件名不会被伪造为冲突证据。
 - 保持 `观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K`，一旦当前真实缺口被覆盖就停止后续来源。Magnet/ED2K 继续走光鸭原生 `cloudcollection`，不引入 MoviePilot 下载器。
+
+## 维护约束与代码职责
+
+当前插件采用**单文件运行时**：`plugins.v3/guangyatransferassistant/` 目录中只允许 `__init__.py` 一个 Python 运行时代码文件。测试仍保留在 `tests/v3/guangyatransferassistant/`，README、图片、`plugin.json` 等非 Python 资源可正常保留。CI 会在插件目录重新出现其它 `*.py` 时直接失败。
+
+单文件不等于无结构。后续维护统一在 `__init__.py` 内按职责区组织：订阅同步与固定分流、Telegram/GYING 资源发现、统一候选模型、媒体/年份/季集门禁、四类资源执行、真实落盘确认、MP 优先命名、通知与状态页。禁止继续新增 `*_vxxxx.py`、`*_final.py`、`*_verified.py` 等运行时补丁文件。
+
+统一业务主链固定为：
+
+```text
+MoviePilot 订阅
+→ Telegram / GYING 资源发现
+→ MoviePilot 媒体身份 + 权威缺集匹配
+→ 来源优先级：迅雷秒传 > 光鸭分享直转 > Magnet > ED2K
+→ 真实目标目录落盘确认
+→ MoviePilot 识别结果优先重命名
+→ 成功通知
+```
+
+四种资源执行方式固定为：
+
+- 迅雷分享：解析真实分享文件 → 生成 JSON 秒传数据 → 只导入当前权威缺集 → 光鸭秒传。
+- 光鸭分享：调用光鸭原生分享恢复接口，文件级增量转存。
+- Magnet：调用光鸭原生 `cloudcollection` 云添加。
+- ED2K：调用光鸭原生 `cloudcollection` 云添加。
+- 不接 MoviePilot 普通下载器，不接 qBittorrent、Transmission、Aria2，也不做本地整文件下载再上传兜底。
+
+“成功”不以 API 返回 success 或 task status=completed 为准。光鸭分享必须通过目标文件可见性与大小确认；Magnet/ED2K 必须通过提交前快照与提交后目标目录新 fileId 回读；迅雷秒传必须确认新 fileId、最终文件名和大小一致。预先存在的同名文件不能归因成当前任务成功。
+
+最终文件名以 MoviePilot 识别身份为最高优先级。电视剧采用 `剧名 - SxxExx - 技术参数.ext`；电影采用 `片名 (年份) - 技术参数.ext`。原资源中的分辨率、WEB-DL/BluRay/REMUX、H264/H265/HEVC/AV1、HDR/DV、音轨及发布组等有效技术信息尽量保留，但来源标题、错误年份、错误季集号不能覆盖 MoviePilot 身份。
+
+所有结构或业务修改必须继续通过完整 GuangYa contract suite。当前单文件迁移完成后，历史模块源码仅以内存 bundle 兼容旧 MRO/合同测试，后续维护逐步把这些历史内部边界继续收敛到清晰职责方法，但不再恢复多文件运行时结构。
 

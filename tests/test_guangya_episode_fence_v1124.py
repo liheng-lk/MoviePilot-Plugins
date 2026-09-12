@@ -2,27 +2,29 @@ import ast
 import pathlib
 import unittest
 
+from guangya_bundle_test_utils import bundle_source, entry_text
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
-FENCE = PLUGIN / "episode_fence_v1124.py"
-FINAL = PLUGIN / "episode_fence_final_v1124.py"
-RECEIPT = PLUGIN / "receipt_completion_v1124.py"
+FENCE = "episode_fence_v1124"
+FINAL = "episode_fence_final_v1124"
+RECEIPT = "receipt_completion_v1124"
 ENTRY = PLUGIN / "__init__.py"
 
 
 class GuangYaEpisodeFenceV1124Tests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.fence = FENCE.read_text(encoding="utf-8")
-        cls.final = FINAL.read_text(encoding="utf-8")
-        cls.receipt = RECEIPT.read_text(encoding="utf-8")
-        cls.entry = ENTRY.read_text(encoding="utf-8")
+        cls.fence = bundle_source(FENCE)
+        cls.final = bundle_source(FINAL)
+        cls.receipt = bundle_source(RECEIPT)
+        cls.entry = entry_text()
 
     def test_sources_parse_and_fence_is_in_runtime_mro(self):
-        ast.parse(self.fence, filename=str(FENCE))
-        ast.parse(self.final, filename=str(FINAL))
-        ast.parse(self.receipt, filename=str(RECEIPT))
+        ast.parse(self.fence, filename=FENCE)
+        ast.parse(self.final, filename=FINAL)
+        ast.parse(self.receipt, filename=RECEIPT)
         ast.parse(self.entry, filename=str(ENTRY))
         self.assertIn("from .episode_fence_v1124 import GuangYaEpisodeFenceV1124Mixin", self.receipt)
         self.assertIn("class GuangYaReceiptCompletionV1124Mixin(GuangYaEpisodeFenceV1124Mixin):", self.receipt)

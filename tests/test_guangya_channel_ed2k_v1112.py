@@ -4,19 +4,21 @@ import json
 import unittest
 from pathlib import Path
 
+from guangya_bundle_test_utils import bundle_source
+
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugins.v3/guangyatransferassistant"
 
 
 class GuangYaChannelEd2kV1112Tests(unittest.TestCase):
     def test_ed2k_channel_candidate_gets_resolve_first_chance(self):
-        text = (PLUGIN / "resource_planner_v190.py").read_text(encoding="utf-8")
+        text = bundle_source("resource_planner_v190")
         method = text.split("    def _candidate_target_episodes(", 1)[1].split("    def _save_resource_plan", 1)[0]
         self.assertIn('{"magnet", "ed2k"}', method)
         self.assertIn('return set(uncovered)', method)
 
     def test_single_file_ed2k_backfills_real_episode_before_cloud_create(self):
-        text = (PLUGIN / "resource_planner_v190.py").read_text(encoding="utf-8")
+        text = bundle_source("resource_planner_v190")
         method = text.split("    def _resolve_offline_source(", 1)[1].split("    def _mark_offline_failure", 1)[0]
         self.assertIn('source_type == "ed2k"', method)
         self.assertIn('no_subfiles', method)
@@ -37,7 +39,7 @@ class GuangYaChannelEd2kV1112Tests(unittest.TestCase):
         self.assertIn("build_id = ", entry)
         self.assertIn("v1.11.2", package.get("history") or {})
         self.assertIn("ED2K", package.get("labels") or package.get("description") or "")
-        planner = (PLUGIN / "resource_planner_v190.py").read_text(encoding="utf-8")
+        planner = bundle_source("resource_planner_v190")
         self.assertIn('source_type == "ed2k"', planner)
 
 

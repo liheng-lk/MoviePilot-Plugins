@@ -7,7 +7,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 BROWSER = PLUGIN / "gying_browser_v1112.py"
-VERIFIED = PLUGIN / "gying_browser_verified_v1112.py"
 PROFILE = PLUGIN / "gying_browser_profile_v1112.py"
 FALLBACK = PLUGIN / "gying_fallback_reuse_v1113.py"
 RUNTIME_FIX = PLUGIN / "runtime_fix_v1113.py"
@@ -20,7 +19,6 @@ UI = PLUGIN / "gying_ui_v1109.py"
 
 
 browser_text = BROWSER.read_text(encoding="utf-8")
-verified_text = VERIFIED.read_text(encoding="utf-8")
 profile_text = PROFILE.read_text(encoding="utf-8")
 fallback_text = FALLBACK.read_text(encoding="utf-8")
 runtime_fix_text = RUNTIME_FIX.read_text(encoding="utf-8")
@@ -35,7 +33,6 @@ ui_text = UI.read_text(encoding="utf-8")
 def test_v1112_browser_files_parse():
     for path, text in (
         (BROWSER, browser_text),
-        (VERIFIED, verified_text),
         (PROFILE, profile_text),
         (FALLBACK, fallback_text),
         (RUNTIME_FIX, runtime_fix_text),
@@ -119,9 +116,10 @@ def test_v1112_only_sdk_or_launch_unavailability_falls_back_to_requests_chain():
 
 
 def test_v1112_browser_verified_wins_over_stale_challenge_dom():
-    assert 'self._gying_browser_has_cookie_v1112(row, "browser_verified")' in verified_text
-    assert "旧 DOM" in verified_text
-    assert "_response_v1112(" in verified_text
+    assert 'self._gying_browser_has_cookie_v1112(row, "browser_verified")' in browser_text
+    assert "旧 DOM" in browser_text
+    assert "_response_v1112(" in browser_text
+    assert not (PLUGIN / "gying_browser_verified_v1112.py").exists()
 
 
 def test_ui_chain_retains_current_channel_console_and_gying_layers():
@@ -133,4 +131,4 @@ def test_ui_chain_retains_current_channel_console_and_gying_layers():
     assert "class GuangYaGovernanceV1114Mixin(GuangYaRuntimeFixV1113Mixin):" in gov_text
     assert "class GuangYaRuntimeFixV1113Mixin(GuangYaGyingFallbackReuseV1113Mixin):" in runtime_fix_text
     assert "class GuangYaGyingFallbackReuseV1113Mixin(GuangYaGyingBrowserProfileV1112Mixin):" in fallback_text
-    assert "class GuangYaGyingBrowserProfileV1112Mixin(GuangYaGyingBrowserVerifiedV1112Mixin):" in profile_text
+    assert "class GuangYaGyingBrowserProfileV1112Mixin(GuangYaGyingBrowserV1112Mixin):" in profile_text
