@@ -114,10 +114,12 @@ for _finder in list(_bundle_sys.meta_path):
 _bundle_sys.meta_path.insert(0, _GuangYaBundledModuleFinder())
 
 
+import copy
 import functools
 import hashlib
 import inspect
 import re
+import threading
 import time
 import weakref
 from typing import Any, Optional
@@ -482,6 +484,279 @@ class GuangYaTransferAssistant(
     _RoutingV170Assistant,
 ):
     """固定分流 + CloakBrowser 观影验证 + 观影自动云添加 + 迅雷秒传 + 原生云添加。"""
+
+    # ------------------------------------------------------------------
+    # v2.1.2 / r100 — Emby authoritative gap recovery
+    # ------------------------------------------------------------------
+    def _emby_repair_targets_v212(self, subscribe: Any) -> set[int]:
+        """Return only targets already proven missing by the cached Emby-first snapshot.
+
+        This helper is intentionally network-free. If no same-run authoritative
+        snapshot exists, legacy dedupe remains in force.
+        """
+        if subscribe is None or self._is_movie_subscription(subscribe):
+            return set()
+        try:
+            snap = dict(self._episode_target_snapshot_v210(
+                subscribe,
+                force_library=False,
+                log=False,
+                allow_network=False,
+            ) or {})
+        except TypeError:
+            try:
+                snap = dict(self._episode_target_snapshot_v210(
+                    subscribe,
+                    force_library=False,
+                    log=False,
+                ) or {})
+            except Exception:
+                return set()
+        except Exception:
+            return set()
+        if str(snap.get("library_state") or "") != "OK":
+            return set()
+        out = set()
+        for raw in snap.get("final_target") or []:
+            try:
+                value = int(raw or 0)
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                out.add(value)
+        return out
+
+    def _item_episode_set_v212(self, subscribe: Any, item: dict) -> set[int]:
+        """Resolve item episodes using the exact semantic-fact identity when possible."""
+        episodes = set()
+        key_builder = getattr(self, "_media_fact_keys_for_item", None)
+        if callable(key_builder):
+            try:
+                for key in key_builder(subscribe, item) or []:
+                    text = str(key or "")
+                    if ":e" not in text:
+                        continue
+                    suffix = text.rsplit(":e", 1)[-1]
+                    if suffix.isdigit() and int(suffix) > 0:
+                        episodes.add(int(suffix))
+            except Exception:
+                pass
+        if episodes:
+            return episodes
+        path = str(
+            (item or {}).get("effective_path")
+            or (item or {}).get("relative_path")
+            or (item or {}).get("path")
+            or (item or {}).get("name")
+            or ""
+        )
+        try:
+            _, values = _legacy_module._episode_numbers(path)
+        except Exception:
+            values = []
+        for raw in values or []:
+            try:
+                value = int(raw or 0)
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                episodes.add(value)
+        return episodes
+
+    def _emby_repair_tls_v212(self):
+        local = getattr(self, "_emby_repair_local_v212", None)
+        if local is None:
+            local = threading.local()
+            self._emby_repair_local_v212 = local
+        return local
+
+    def _semantic_fact_exists(self, subscribe: Any, item: dict) -> bool:
+        """A historical transfer fact is soft when Emby proves that episode is absent."""
+        local = self._emby_repair_tls_v212()
+        scope = getattr(local, "scope", None)
+        if isinstance(scope, dict):
+            try:
+                sid = int(getattr(subscribe, "id", 0) or 0)
+            except (TypeError, ValueError):
+                sid = 0
+            if sid and sid == int(scope.get("subscribe_id") or 0):
+                targets = {
+                    int(value) for value in (scope.get("targets") or [])
+                    if str(value).isdigit() and int(value) > 0
+                }
+                episodes = self._item_episode_set_v212(subscribe, item)
+                if episodes.intersection(targets):
+                    scope["bypassed_facts"] = int(scope.get("bypassed_facts") or 0) + 1
+                    return False
+        return bool(super()._semantic_fact_exists(subscribe, item))
+
+    def _acquired_episode_facts_v1124(self, subscribe: Any) -> set[int]:
+        """Receipts cannot permanently hide an episode that Emby currently proves missing."""
+        acquired = set(super()._acquired_episode_facts_v1124(subscribe) or set())
+        repair = self._emby_repair_targets_v212(subscribe)
+        return acquired - repair if repair else acquired
+
+    def _plan_incremental_files(
+        self,
+        probe: dict,
+        assets: dict,
+        subscribe: Any = None,
+        target_path: str = "",
+        stats: Optional[dict] = None,
+    ):
+        """Let current Emby gaps bypass stale note/fact/inventory dedupe, then keep all later hard gates."""
+        repair = self._emby_repair_targets_v212(subscribe)
+        if not repair:
+            return super()._plan_incremental_files(
+                probe,
+                assets,
+                subscribe=subscribe,
+                target_path=target_path,
+                stats=stats,
+            )
+
+        shadow = copy.copy(subscribe)
+        original_note = list(getattr(subscribe, "note", None) or [])
+        shadow_note = []
+        stale_note = 0
+        for raw in original_note:
+            try:
+                value = int(raw or 0)
+            except (TypeError, ValueError):
+                shadow_note.append(raw)
+                continue
+            if value in repair:
+                stale_note += 1
+                continue
+            shadow_note.append(raw)
+        try:
+            setattr(shadow, "note", shadow_note)
+        except Exception:
+            shadow = subscribe
+
+        scoped_assets = {}
+        stale_inventory = 0
+        for key, row in dict(assets or {}).items():
+            payload = dict(row or {}) if isinstance(row, dict) else {}
+            path = str(payload.get("path") or "")
+            episodes = self._item_episode_set_v212(
+                subscribe,
+                {
+                    "effective_path": path,
+                    "relative_path": path,
+                    "path": path,
+                    "name": path,
+                },
+            ) if path else set()
+            if episodes.intersection(repair):
+                stale_inventory += 1
+                continue
+            scoped_assets[key] = row
+
+        local = self._emby_repair_tls_v212()
+        previous = getattr(local, "scope", None)
+        scope = {
+            "subscribe_id": int(getattr(subscribe, "id", 0) or 0),
+            "targets": sorted(repair),
+            "bypassed_facts": 0,
+        }
+        local.scope = scope
+        try:
+            planned = list(super()._plan_incremental_files(
+                probe,
+                scoped_assets,
+                subscribe=shadow,
+                target_path=target_path,
+                stats=stats,
+            ) or [])
+        finally:
+            if previous is None:
+                try:
+                    delattr(local, "scope")
+                except AttributeError:
+                    pass
+            else:
+                local.scope = previous
+
+        bypassed_facts = int(scope.get("bypassed_facts") or 0)
+        if stats is not None:
+            stats["emby_repair_targets_v212"] = sorted(repair)
+            stats["emby_repair_note_bypass_v212"] = stale_note
+            stats["emby_repair_fact_bypass_v212"] = bypassed_facts
+            stats["emby_repair_inventory_bypass_v212"] = stale_inventory
+
+        if stale_note or stale_inventory or bypassed_facts:
+            try:
+                self._plugin_log(
+                    "INFO",
+                    "【光鸭转存助手】【Emby缺集恢复v2.1.2】#%s %s authoritative=%s bypass_note=%s bypass_fact=%s bypass_inventory=%s planned=%s",
+                    int(getattr(subscribe, "id", 0) or 0),
+                    str(getattr(subscribe, "name", "") or ""),
+                    ",".join(f"E{value:02d}" for value in sorted(repair)),
+                    stale_note,
+                    bypassed_facts,
+                    stale_inventory,
+                    len(planned),
+                )
+            except Exception:
+                pass
+        return planned
+
+    def _entry_processed(self, entry: dict, subscribe: Any = None) -> bool:
+        """Re-open a processed share immediately when the authoritative repair target changes."""
+        processed = bool(super()._entry_processed(entry, subscribe))
+        if not processed or subscribe is None or self._is_movie_subscription(subscribe):
+            return processed
+        repair = self._emby_repair_targets_v212(subscribe)
+        if not repair:
+            return processed
+        try:
+            key = self._processed_entry_key(entry, subscribe)
+            row = dict((self.get_data("processed_entries") or {}).get(key) or {})
+        except Exception:
+            return processed
+        stored = {
+            int(value) for value in (row.get("emby_repair_targets_v212") or [])
+            if str(value).isdigit() and int(value) > 0
+        }
+        if stored == repair:
+            return processed
+        try:
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【Emby缺集恢复v2.1.2】#%s %s processed分享立即重开：old=%s new=%s",
+                int(getattr(subscribe, "id", 0) or 0),
+                str(getattr(subscribe, "name", "") or ""),
+                sorted(stored),
+                sorted(repair),
+            )
+        except Exception:
+            pass
+        return False
+
+    def _mark_entry_processed(
+        self,
+        entry: dict,
+        status: str,
+        message: str = "",
+        subscribe: Any = None,
+    ) -> None:
+        super()._mark_entry_processed(entry, status, message, subscribe)
+        if subscribe is None or self._is_movie_subscription(subscribe):
+            return
+        repair = self._emby_repair_targets_v212(subscribe)
+        try:
+            key = self._processed_entry_key(entry, subscribe)
+            records = self.get_data("processed_entries") or {}
+            row = dict(records.get(key) or {})
+            if not key or not row:
+                return
+            row["emby_repair_targets_v212"] = sorted(repair)
+            row["emby_repair_checked_at_v212"] = time.time()
+            records[key] = row
+            self.save_data("processed_entries", records)
+        except Exception:
+            return
 
 
     def _normalize_transfer_candidate(self, candidate: dict, *, origin: str = "") -> dict:
