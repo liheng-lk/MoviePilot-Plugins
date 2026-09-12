@@ -231,3 +231,11 @@ def test_status_ui_directly_surfaces_viewing_and_xunlei_summary_without_tree_pat
     assert "观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K" in text
     assert "观影：ok" in text
     assert "迅雷秒传：完成 2 / 失败 1" in text
+
+
+def test_status_attention_has_actionable_gying_failure_card():
+    status = STATUS.read_text(encoding="utf-8")
+    assert 'viewing.get("recent_failure")' in status
+    assert "观影 GYING 最近一次执行失败" in status
+    assert "先点“测试观影”" in status
+    assert "刷新观影节点并查看健康诊断" in status
