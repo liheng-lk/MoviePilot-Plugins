@@ -309,3 +309,109 @@ def test_guangya_share_waits_for_final_rename_before_success():
     assert 'result["success"] = False' in restore
     assert '"RENAME_VERIFY_PENDING"' in restore
     assert 'result["final_names"] = final_names' in restore
+
+
+def test_telegram_real_parser_produces_all_four_resource_types():
+    import importlib
+    import sys
+
+    here = Path(__file__).resolve().parent if "__file__" in globals() else ROOT / "tests" / "v3" / "guangyatransferassistant"
+    if str(here) not in sys.path:
+        sys.path.insert(0, str(here))
+    from final_plugin_harness_v211 import make_final_plugin
+
+    plugin = make_final_plugin()
+    legacy = importlib.import_module("plugins.v3.guangyatransferassistant.legacy")
+    page = """
+    <div class="tgme_widget_message" data-post="demo/100">
+      <div class="tgme_widget_message_text">
+        名称：示例剧 (2026)
+        S01E01
+        https://www.guangyapan.com/s/GYDEMO?code=1234
+        https://pan.xunlei.com/s/XLDEMO?pwd=abcd
+        magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=Demo.S01E01
+        ed2k://|file|Demo.S01E01.1080p.WEB-DL.mkv|123456|0123456789abcdef0123456789abcdef|/
+      </div>
+    </div>
+    """
+    entries = legacy._extract_channel_entries(
+        page,
+        "https://tgm.li668.asia/demo",
+        "TG-DEMO",
+    )
+    assert entries
+    entry = entries[0]
+    candidates = []
+    if entry.get("share_url"):
+        candidates.append({"share_url": entry["share_url"]})
+    candidates.extend(entry.get("xunlei_sources") or [])
+    candidates.extend(entry.get("external_sources") or [])
+    normalized = [
+        plugin._normalize_transfer_candidate(row, origin="telegram")
+        for row in candidates
+    ]
+    types = {row["type"] for row in normalized if row.get("type")}
+    assert types == {"xunlei", "guangya", "magnet", "ed2k"}
+    assert entry.get("candidate_types") == ["xunlei", "guangya", "magnet", "ed2k"]
+
+
+def test_gying_real_protocol_payload_produces_all_four_resource_types():
+    import importlib
+    import sys
+
+    here = Path(__file__).resolve().parent if "__file__" in globals() else ROOT / "tests" / "v3" / "guangyatransferassistant"
+    if str(here) not in sys.path:
+        sys.path.insert(0, str(here))
+    from final_plugin_harness_v211 import make_final_plugin
+
+    plugin = make_final_plugin()
+    protocol = importlib.import_module(
+        "plugins.v3.guangyatransferassistant.gying_protocol_v1106"
+    )
+    payload = {
+        "data": {
+            "panlist": {
+                "url": [
+                    "https://www.guangyapan.com/s/GYDEMO?code=1234",
+                    "https://pan.xunlei.com/s/XLDEMO?pwd=abcd",
+                ],
+                "name": ["示例剧 S01E01", "示例剧 S01E01"],
+                "type": ["guangya", "xunlei"],
+                "p": ["1234", "abcd"],
+                "id": ["gy-1", "xl-1"],
+            },
+            "downlist": {
+                "list": {
+                    "t": ["示例剧 S01E01"],
+                    "m": ["0123456789abcdef0123456789abcdef01234567"],
+                    "k": [0],
+                    "u": ["bt-1"],
+                    "s": ["1.2GB"],
+                    "e": [10],
+                    "p": ["GYING"],
+                    "n": [1],
+                }
+            },
+            "raw": (
+                "ed2k://|file|Demo.S01E01.1080p.WEB-DL.mkv|123456|"
+                "0123456789abcdef0123456789abcdef|/"
+            ),
+        }
+    }
+    rows = protocol.extract_resource_rows_v1106(
+        payload,
+        {"title": "示例剧", "year": 2026, "type": "tv", "id": "100"},
+    )
+    normalized = [
+        plugin._normalize_transfer_candidate(row, origin="gying")
+        for row in rows
+    ]
+    types = {row["type"] for row in normalized if row.get("type")}
+    assert types == {"xunlei", "guangya", "magnet", "ed2k"}
+    ordered = sorted(normalized, key=lambda row: row.get("priority", 99))
+    assert [row["type"] for row in ordered[:4]] == [
+        "xunlei",
+        "guangya",
+        "magnet",
+        "ed2k",
+    ]
