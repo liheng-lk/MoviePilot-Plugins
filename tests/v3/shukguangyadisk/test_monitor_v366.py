@@ -54,12 +54,15 @@ def test_v366_empty_known_resource_is_removed_instead_of_scanned_forever():
     assert "known_resource_removed" in scan
 
 
-def test_v366_admission_conflict_is_blocked_not_normal_retry():
+def test_v366_admission_conflict_prefers_durable_retry_then_blocks_unowned_rows():
     fallback = PATCH[PATCH.index("def _fallback_terminal_state"):PATCH.index("def organize_monitor_tick")]
     assert "整理源文件已按不同输入准入" in PATCH
     assert "TransferAdmissionConflictError" in PATCH
+    assert "_request_moviepilot_durable_retry" in fallback
+    assert "store.mark_deferred(" in fallback
+    assert "admission_conflict_recovered=recovered" in fallback
     assert "store.mark_blocked(" in fallback
-    assert "停止分钟级重复提交" in fallback
+    assert "无可复用 durable 任务的成员进入 blocked" in fallback
     assert "return super()._fallback_terminal_state" in fallback
 
 
