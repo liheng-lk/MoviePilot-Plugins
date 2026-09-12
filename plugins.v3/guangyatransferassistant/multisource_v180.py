@@ -731,8 +731,63 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                     )
                 if subscribe and verified:
                     try:
-                        self._sync_media_library_progress(subscribe)
+                        sync = dict(self._sync_media_library_progress(subscribe) or {})
+                        target_eps = set()
+                        for raw in source.get("resolved_episodes") or source.get("target_episodes") or []:
+                            try:
+                                value = int(raw)
+                            except (TypeError, ValueError):
+                                continue
+                            if value > 0:
+                                target_eps.add(value)
+
+                        existing_eps = set()
+                        for raw in sync.get("existing") or []:
+                            try:
+                                value = int(raw)
+                            except (TypeError, ValueError):
+                                continue
+                            if value > 0:
+                                existing_eps.add(value)
+
+                        if bool(sync.get("success")):
+                            remaining_target = sorted(target_eps - existing_eps)
+                            snapshot_state = (
+                                "confirmed"
+                                if target_eps and not remaining_target
+                                else ("pending" if target_eps else "checked")
+                            )
+                            updated = self._update_source(
+                                str(source.get("id") or ""),
+                                remote_confirmed_at=self._now_text(),
+                                library_snapshot_state=snapshot_state,
+                                library_snapshot_at=self._now_text(),
+                                library_observed_episodes=sorted(target_eps.intersection(existing_eps)),
+                                library_remaining_target_episodes=remaining_target,
+                            ) or updated
+                            self._plugin_log(
+                                "INFO",
+                                "【光鸭转存助手】【落盘闭环】source=%s remote=confirmed library=%s observed=%s remaining=%s",
+                                str(source.get("id") or "")[:60],
+                                snapshot_state,
+                                ",".join(str(v) for v in sorted(target_eps.intersection(existing_eps))) or "-",
+                                ",".join(str(v) for v in remaining_target) or "-",
+                            )
+                        else:
+                            updated = self._update_source(
+                                str(source.get("id") or ""),
+                                remote_confirmed_at=self._now_text(),
+                                library_snapshot_state="unknown",
+                                library_snapshot_at=self._now_text(),
+                            ) or updated
                     except Exception as err:
+                        updated = self._update_source(
+                            str(source.get("id") or ""),
+                            remote_confirmed_at=self._now_text(),
+                            library_snapshot_state="unknown",
+                            library_snapshot_at=self._now_text(),
+                            library_snapshot_error=str(err)[:260],
+                        ) or updated
                         self._plugin_log("DEBUG", "【光鸭转存助手】【原生云添加】完成后媒体库进度同步暂未命中：%s", err)
                 self._plugin_log(
                     "INFO",
