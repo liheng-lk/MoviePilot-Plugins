@@ -332,6 +332,18 @@ def test_telegram_real_parser_produces_all_four_resource_types():
     sys.modules.pop(legacy_name, None)
     legacy = importlib.import_module(legacy_name)
     assert hasattr(legacy, "_extract_channel_entries")
+    source_v190 = importlib.import_module(
+        "plugins.v3.guangyatransferassistant.channel_sources_v190"
+    )
+    source_v11214 = importlib.import_module(
+        "plugins.v3.guangyatransferassistant.channel_sources_v11214"
+    )
+    title_v11226 = importlib.import_module(
+        "plugins.v3.guangyatransferassistant.channel_title_rename_v11226"
+    )
+    source_v190.install_channel_multisource_compat(legacy)
+    source_v11214.install_channel_source_matrix_v11214(legacy)
+    title_v11226.install_channel_title_rename_v11226(legacy)
     page = """
     <div class="tgme_widget_message" data-post="demo/100">
       <div class="tgme_widget_message_text">
