@@ -23,6 +23,7 @@ _CONSOLE_ACTION_PATHS_V1116 = {
     "/providers/test",
     "/xunlei/flash/preflight",
     "/viewing/nodes/refresh",
+    "/viewing/session/test",
     "/refresh",
     "/selfcheck",
     "/diagnostics/full",
@@ -33,6 +34,26 @@ _CONSOLE_ACTION_PATHS_V1116 = {
     "/source/disable",
     "/check_missing",
     "/recheck_pending",
+}
+
+
+_CONSOLE_ACTION_LABELS_V1116 = {
+    "/console/process": "立即处理缺失",
+    "/providers/search/selected": "搜索缺失资源",
+    "/providers/test": "检测资源来源",
+    "/xunlei/flash/preflight": "秒传预检",
+    "/viewing/nodes/refresh": "刷新观影节点",
+    "/viewing/session/test": "测试观影",
+    "/refresh": "刷新频道",
+    "/selfcheck": "运行自检",
+    "/diagnostics/full": "运行健康诊断",
+    "/offline/refresh": "刷新云任务",
+    "/source/dispatch": "提交来源",
+    "/source/retry": "重试来源",
+    "/source/replan": "重新规划来源",
+    "/source/disable": "停用来源",
+    "/check_missing": "立即检查缺集",
+    "/recheck_pending": "复查待落盘",
 }
 
 
@@ -61,8 +82,10 @@ class GuangYaConsoleControlV1116Mixin(GuangYaChannelCursorEventV1115Mixin):
         if isinstance(result, dict):
             success = bool(result.get("success", True))
             message = str(result.get("message") or ("操作完成" if success else "操作失败"))[:500]
+        normalized_path = str(path or "")
         row = {
-            "path": str(path or ""),
+            "path": normalized_path,
+            "action": str(_CONSOLE_ACTION_LABELS_V1116.get(normalized_path) or normalized_path or "操作"),
             "success": success,
             "message": message,
             "updated_at": self._now_text(),
@@ -338,10 +361,8 @@ class GuangYaConsoleControlV1116Mixin(GuangYaChannelCursorEventV1115Mixin):
         row = dict(self.get_data("console_action_last_v1116") or {})
         if row:
             ok = bool(row.get("success"))
-            text = f"{row.get('message') or '-'} · {row.get('updated_at') or '-'}"
-            path = str(row.get("path") or "")
-            if path:
-                text += f" · {path}"
+            action = str(row.get("action") or _CONSOLE_ACTION_LABELS_V1116.get(str(row.get("path") or "")) or "操作")
+            text = f"{action} · {row.get('message') or '-'} · {row.get('updated_at') or '-'}"
         else:
             ok = True
             text = "尚未执行控制台动作。点击任一操作后，这里会显示后端真实返回结果。"
