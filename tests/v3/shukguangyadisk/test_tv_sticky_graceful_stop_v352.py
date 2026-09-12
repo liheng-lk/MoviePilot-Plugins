@@ -54,14 +54,14 @@ def test_graceful_stop_finishes_current_without_force_killing_transfer():
         assert forbidden not in V352, forbidden
 
 
-def test_safe_stop_also_cleans_legacy_waiting_but_retains_running_boundary():
-    for token in (
-        "_cleanup_legacy_global_tasks",
-        'legacy_running = int(legacy_after.get("running") or 0)',
-        "preserve_private_one = legacy_running <= 0",
-        "graceful_stop_removed_legacy_waiting",
-    ):
-        assert token in V352, token
+def test_v3100_safe_stop_only_manages_private_worker_ownership():
+    safe_stop = V352[V352.index("def _safe_stop"):V352.index("def _graceful_runtime_state")]
+    assert "preserve_one=True" in safe_stop
+    assert "graceful_stop_removed_legacy_waiting=0" in safe_stop
+    assert "graceful_stop_host_queue_observer_only=True" in safe_stop
+    assert "observed_host_queue" in safe_stop
+    assert "_cleanup_legacy_global_tasks(plugin)" not in safe_stop
+    assert "legacy_running =" not in safe_stop
 
 
 def test_graceful_stop_api_and_ui_are_exposed():

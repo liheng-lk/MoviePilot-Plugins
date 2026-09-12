@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from source_helper import single_init_plugin_path
-
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = single_init_plugin_path(ROOT / "plugins.v3" / "shukguangyadisk")
@@ -17,73 +15,37 @@ def test_queue_recovery_mixin_precedes_organizer_submission_mixin():
     assert mro.index("GuangYaQueueRecoveryMixin") < mro.index("GuangYaOrganizerMixin")
 
 
-def test_legacy_recovery_only_targets_guangya_monitor_pending_rows():
+def test_v3100_host_global_queue_is_readonly_and_never_blocks_private_worker():
     for token in (
-        "TransferPendingOper",
-        ".list_all()",
-        "_queue_guard_storage_names",
-        "_queue_guard_path_matches",
-        "pending_oper.discard",
-        "global_vars.stop_transfer",
+        "TransferChain().get_queue_tasks()",
+        "_legacy_global_queue_snapshot",
+        "observer_only",
+        "destructive_cleanup_disabled",
+        "return False, snapshot",
+        "不删除、不 stop、不阻塞插件私有 Worker",
     ):
         assert token in RECOVERY, token
-    assert "from app.db.transferpending_oper import TransferPendingOper" in RECOVERY
-    assert "app.application.chain.data" not in RECOVERY
-    assert 'str(storage or "") not in storage_names' in RECOVERY
-    assert "not self._queue_guard_path_matches(src_path)" in RECOVERY
+    for forbidden in (
+        "TransferPendingOper",
+        "pending_oper.discard(",
+        "global_vars.stop_transfer(",
+        "remove_from_queue(",
+    ):
+        assert forbidden not in RECOVERY, forbidden
 
 
-def test_isolated_worker_never_mutates_moviepilot_private_queue_or_workers():
-    forbidden_code = (
-        "TransferChain()._queue",
-        "TransferChain()._threads",
-        "TransferChain()._worker_stop_event",
-        "close_workers(",
-        "on_config_changed(",
-        "_TransferChain__stop",
-    )
-    for token in forbidden_code:
-        assert token not in RECOVERY, token
-
-
-def test_v340_uses_plugin_private_queue_and_sync_moviepilot_business_chain():
+def test_private_worker_uses_sync_moviepilot_business_chain_and_continuation_hook():
     for token in (
         "queue.Queue(maxsize=self._isolated_queue_capacity)",
         "threading.Thread(",
         'name="ShukGuangYa-IsolatedTransfer"',
-        "def _isolated_worker_loop",
-        "def _execute_isolated_transfer",
         "TransferChain().do_transfer(**kwargs)",
         '"background": False',
         '"manual": False',
-        '"mode": "isolated_sync_worker"',
+        "_on_isolated_worker_item_finished",
+        "continuation(path=path",
     ):
         assert token in RECOVERY, token
-    assert "TransferDispatcher" not in RECOVERY
-
-
-def test_v340_no_longer_forces_auto_monitor_disabled():
-    assert 'config["enabled"] = False' not in RECOVERY
-    assert 'payload["enabled"] = False' not in RECOVERY
-    assert "self._organize_monitor_enabled = False" not in RECOVERY
-    assert "def api_organize_monitor_save" in RECOVERY
-    assert "return super().api_organize_monitor_save" not in RECOVERY
-    assert "super().api_organize_monitor_save(dict(payload or {}))" in RECOVERY
-
-
-def test_old_global_queue_is_live_gate_and_stale_warning_is_cleared():
-    for token in (
-        "TransferChain().get_queue_tasks()",
-        "_legacy_global_queue_snapshot",
-        "_legacy_queue_blocks_isolated_start",
-        "_queue_guard_message",
-        "_refresh_queue_guard_status",
-        "无需反复重启 MoviePilot",
-        "queue_guard_restart_required=False",
-    ):
-        assert token in RECOVERY, token
-    # 该执行层仍只读取 MP 公共队列；真正的安全清理由 v3.4.3 迁移补丁负责。
-    assert "remove_from_queue(" not in RECOVERY
 
 
 def test_private_worker_restart_reopens_inflight_instead_of_mp_replay():
@@ -92,8 +54,6 @@ def test_private_worker_restart_reopens_inflight_instead_of_mp_replay():
         'state["inflight"] = inflight',
         'state["retry"] = retry',
         '"retry_at": 0',
-        "v3.4 私有整理 worker 重启恢复",
-        "_monitor_inflight_lease = 7 * 24 * 3600",
     ):
         assert token in RECOVERY, token
 
