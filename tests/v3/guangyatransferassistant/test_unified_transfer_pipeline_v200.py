@@ -16,6 +16,7 @@ _REQUIRED_FUNCTIONS = {
     "_unified_transfer_route_name",
     "_extract_transfer_technical_tags",
     "_format_mp_transfer_name",
+    "_select_verified_new_landing",
 }
 _REQUIRED_CONSTANTS = {
     "_UNIFIED_TRANSFER_ROUTES",
@@ -138,3 +139,60 @@ def test_name_without_technical_tags_stays_clean():
         False,
     )
     assert result == "示例剧 - S01E02.mkv"
+
+
+def test_new_landing_requires_fresh_file_id_name_and_size():
+    ns = _load_helpers()
+    verify = ns["_select_verified_new_landing"]
+    rows = [
+        {"file_id": "old-1", "name": "示例剧 - S01E02 - 2160p WEB-DL H265.mkv", "size": 1000},
+        {"file_id": "new-2", "name": "示例剧 - S01E02 - 2160p WEB-DL H265.mkv", "size": 1000},
+    ]
+    receipt = verify(
+        {"old-1"},
+        rows,
+        "示例剧 - S01E02 - 2160p WEB-DL H265.mkv",
+        1000,
+    )
+    assert receipt["verified"] is True
+    assert receipt["file_id"] == "new-2"
+    assert receipt["reason"] == "new_file_confirmed"
+
+
+def test_preexisting_or_wrong_size_never_counts_as_current_landing():
+    ns = _load_helpers()
+    verify = ns["_select_verified_new_landing"]
+    existing = verify(
+        {"same-id"},
+        [{"file_id": "same-id", "name": "示例剧 - S01E02.mkv", "size": 1000}],
+        "示例剧 - S01E02.mkv",
+        1000,
+    )
+    assert existing == {"verified": False, "reason": "preexisting_only"}
+
+    wrong_size = verify(
+        set(),
+        [{"file_id": "new-id", "name": "示例剧 - S01E02.mkv", "size": 999}],
+        "示例剧 - S01E02.mkv",
+        1000,
+    )
+    assert wrong_size == {"verified": False, "reason": "expected_file_not_found"}
+
+
+def test_cloudcollection_source_contains_real_target_readback_contract():
+    entry = ast.parse(ENTRY, filename=str(ENTRY_PATH))
+    bundled = None
+    for node in entry.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "_BUNDLED_SOURCES"
+            for target in node.targets
+        ):
+            bundled = ast.literal_eval(node.value)
+            break
+    assert isinstance(bundled, dict)
+    source = bundled["multisource_v180"]
+    assert "def _verify_offline_target_landing(" in source
+    assert "pre_landing_file_ids" in source
+    assert "target_parent_id" in source
+    assert "target_directory_readback" in source
+    assert '"preexisting_only"' in source
