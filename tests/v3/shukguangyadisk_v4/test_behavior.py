@@ -99,6 +99,42 @@ class OrganizerV4BehaviorTest(unittest.TestCase):
         organizer._organizer_observe(item, "/剧集/Season 1")
         self.assertEqual(tasks[item.path]["state"], "READY")
 
+    def test_season_ready_episode_runs_while_newer_episode_is_stabilizing(self):
+        """同一 Season 中 E03 READY、E04 上传中时，E03 必须仍可被领取。"""
+        organizer = self.new_organizer()
+        organizer._organizer_stability = 30
+        organizer._disk_name = "光鸭云盘助手"
+        now = time.time()
+        tasks = {}
+        organizer._organizer_tasks = lambda: tasks
+        organizer._organizer_save_tasks = lambda value: tasks.update(value)
+
+        ready_episode = SimpleNamespace(
+            path="/炼气十万年 (2023)/Season 1/E03.mkv",
+            name="E03.mkv",
+            type="file",
+            fileid="e03",
+            size=300,
+            modify_time=now - 180,
+        )
+        uploading_episode = SimpleNamespace(
+            path="/炼气十万年 (2023)/Season 1/E04.mkv",
+            name="E04.mkv",
+            type="file",
+            fileid="e04",
+            size=120,
+            modify_time=now,
+        )
+
+        organizer._organizer_observe(ready_episode, "/炼气十万年 (2023)/Season 1")
+        organizer._organizer_observe(uploading_episode, "/炼气十万年 (2023)/Season 1")
+
+        self.assertEqual(tasks[ready_episode.path]["state"], "READY")
+        self.assertEqual(tasks[uploading_episode.path]["state"], "STABILIZING")
+        selected = organizer._organizer_next_task()
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected["path"], ready_episode.path)
+
     def test_fingerprint_change_restarts_stability_window(self):
         """同路径文件版本变化时必须重新进入 STABILIZING。"""
         organizer = self.new_organizer()
@@ -192,7 +228,6 @@ class OrganizerV4BehaviorTest(unittest.TestCase):
         organizer._organizer_done_callback(future)
         self.assertEqual(tasks["/A.mkv"]["state"], "COMPLETED")
         self.assertEqual(calls["dispatch"], 1)
-
 
     def test_uncertain_move_freezes_delete_by_fileid(self):
         """移动终态不确定时，同 fileId 的后续删除必须被保护。"""
