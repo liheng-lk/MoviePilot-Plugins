@@ -14,10 +14,57 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 
+ROOT = HERE.parents[2]
+PLUGIN_DIR = ROOT / "plugins.v3" / "guangyatransferassistant"
+# Maintenance budget: new features should extend an existing responsibility module or
+# consolidate an older wrapper first. Raise this only with an explicit architecture reason.
+MAX_RUNTIME_PY_FILES = 99
+REMOVED_WRAPPER_FILES = {
+    "resource_filter_v110.py",
+    "gying_auth_verified_v1107.py",
+    "gying_browser_verified_v1112.py",
+    "movie_xunlei_match_v11219.py",
+}
+
+
+def _maintenance_guard() -> list[str]:
+    errors = []
+    runtime_files = sorted(PLUGIN_DIR.rglob("*.py"))
+    if len(runtime_files) > MAX_RUNTIME_PY_FILES:
+        errors.append(
+            f"runtime Python module budget exceeded: {len(runtime_files)} > {MAX_RUNTIME_PY_FILES}; "
+            "consolidate an existing responsibility before adding another module"
+        )
+    resurrected = sorted(
+        path.name for path in runtime_files if path.name in REMOVED_WRAPPER_FILES
+    )
+    if resurrected:
+        errors.append(
+            "merged/dead wrapper modules must not be reintroduced: " + ", ".join(resurrected)
+        )
+    oversized = [
+        path.relative_to(ROOT).as_posix()
+        for path in runtime_files
+        if path.stat().st_size > 250 * 1024
+    ]
+    if oversized:
+        errors.append(
+            "runtime module exceeds 250 KiB maintenance ceiling: " + ", ".join(oversized)
+        )
+    return errors
+
+
 
 def main() -> int:
     total = 0
     failures = []
+
+    maintenance_errors = _maintenance_guard()
+    if maintenance_errors:
+        for error in maintenance_errors:
+            print(f"FAIL maintainability: {error}")
+        return 3
+
     for path in sorted(HERE.glob("test_*.py")):
         try:
             namespace = runpy.run_path(str(path))
