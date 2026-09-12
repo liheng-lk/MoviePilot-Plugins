@@ -89,8 +89,6 @@ jobs:
           import sys
           sys.path.insert(0, ".moviepilot")
 
-          # MoviePilot 官方 source-only 测试引导：补独立下发的 sites 动态资源，
-          # 隔离配置和数据库。插件依赖的 SDK/Chain/History 均仍来自真实 V3 源码。
           from app.testing.bootstrap import prepare_backend
           prepare_backend()
 
@@ -110,7 +108,17 @@ jobs:
           cd .moviepilot
           .venv/bin/python -m pytest tests/test_shukguangyadisk_v4_lifecycle.py -q
 
-      - name: V4 runtime behavior tests
+      - name: V4 organizer behavior tests
         env:
           PYTHONPATH: .moviepilot
         run: .moviepilot/.venv/bin/python -m unittest discover -s tests/v3/shukguangyadisk_v4 -p 'test_behavior.py' -v
+
+      - name: MoviePilot V3 native path context tests
+        env:
+          PYTHONPATH: .moviepilot
+        run: .moviepilot/.venv/bin/python tests/v3/shukguangyadisk_v4/test_v3_native_context.py -v
+
+      - name: WebDAV PUT regression tests
+        env:
+          PYTHONPATH: .moviepilot
+        run: .moviepilot/.venv/bin/python tests/v3/shukguangyadisk_v4/test_webdav_put.py -v
