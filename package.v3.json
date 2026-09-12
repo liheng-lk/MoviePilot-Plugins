@@ -104,7 +104,7 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "Controlled Real-World Beta：r102 修复 Telegram 镜像 Forwarded 标题污染与季集元数据缺口，并补齐手动刷新、定时 tick、订阅入队的调度证据日志；不改变四来源执行协议、最终媒体身份门禁和来源优先级。r101 目标感知外部检索冷却、r100 Emby 缺集恢复继续保留。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+    "description": "Controlled Real-World Beta：r102 修复 Telegram 镜像 Forwarded 标题污染与季集元数据缺口，并补齐手动刷新/定时 tick/订阅入队的调度证据日志；不改变四来源执行协议、最终媒体身份门禁和来源优先级。r101 目标感知外部检索冷却、r100 Emby 缺集恢复继续保留。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
     "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,缺集,追更,单文件运行时,真实落盘,MP优先命名,最终命名确认,跨季保护,Season门禁,Emby缺集恢复,陈旧回执恢复,目标感知冷却,缺集重开",
     "version": "2.1.4",
     "icon": "Guangyadisk_A.png",
