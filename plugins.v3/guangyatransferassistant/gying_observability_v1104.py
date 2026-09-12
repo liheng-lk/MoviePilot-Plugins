@@ -15,6 +15,7 @@ v1.12.5 追加“当前订阅召回”诊断：在不记录分享 ID、提取码
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any, Dict, List, Tuple
 from urllib.parse import urlparse
@@ -26,6 +27,25 @@ class GuangYaGyingObservabilityV1104Mixin:
     """给最终 GYING 调用链补齐可判断的过程日志与最近运行状态。"""
 
     build_id = "20260904-r51"
+
+    @staticmethod
+    def _gying_public_text(value: Any, limit: int = 300) -> str:
+        """Redact secrets from errors/status before they reach plugin logs or public UI."""
+        text = str(value or "")
+        if not text:
+            return ""
+        # Query strings may carry pwd/token/passcode/device identifiers.
+        text = re.sub(r"(https?://[^\s?]+)\?[^\s]*", r"\1?<redacted>", text, flags=re.I)
+        # Xunlei share IDs are not useful for public diagnostics.
+        text = re.sub(r"(pan\.xunlei\.com/s/)[^\s/?&]+", r"\1<redacted>", text, flags=re.I)
+        # Common key=value / key:value secret forms in API errors.
+        text = re.sub(
+            r"(?i)\b(cookie|authorization|bearer|token|access_token|refresh_token|password|passwd|"
+            r"captcha(?:_token)?|passcode|pwd|device(?:_id)?|guid|did)\b\s*[:=]\s*[^\s,;]+",
+            lambda m: f"{m.group(1)}=<redacted>",
+            text,
+        )
+        return text[: max(40, int(limit or 300))]
 
     @staticmethod
     def _gying_node_label(value: Any) -> str:
@@ -46,7 +66,11 @@ class GuangYaGyingObservabilityV1104Mixin:
         if not callable(writer):
             return
         try:
-            writer(level, "【光鸭转存助手】【观影】" + message, *args)
+            safe_args = tuple(
+                self._gying_public_text(value, 260) if isinstance(value, str) else value
+                for value in args
+            )
+            writer(level, "【光鸭转存助手】【观影】" + message, *safe_args)
         except Exception:
             pass
 
@@ -66,7 +90,7 @@ class GuangYaGyingObservabilityV1104Mixin:
                 "stage": str(stage or "")[:40],
                 "success": success,
                 "node": self._gying_node_label(node),
-                "message": str(message or "")[:300],
+                "message": self._gying_public_text(message, 300),
                 "updated_at": self._now_text(),
                 "updated_ts": time.time(),
             })
