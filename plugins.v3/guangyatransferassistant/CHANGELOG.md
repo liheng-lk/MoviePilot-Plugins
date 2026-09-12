@@ -2,6 +2,18 @@
 
 > 本文件由旧版 README 中的详细发布记录迁移而来。README 现在只负责安装、使用和开发入口，避免新贡献者打开仓库先看到数千行版本历史。
 
+## Unreleased — Operator UX / Diagnostics Hardening
+
+- 健康诊断不再自动对全部固定订阅执行具体媒体搜索；真实资源检索继续由“搜索缺失资源”显式触发。
+- 最近一次 GYING 失败进入“需要处理”，首页显示阶段、时间、摘要与“测试观影 / 刷新节点”下一步。
+- GYING 可观测日志与公开状态统一脱敏 URL 查询参数、Xunlei share id、Cookie/Token/Password/Captcha/DeviceId 等敏感值。
+- 迅雷公开 runtime status 新增 `circuit_open`，captcha/device 已存在但本轮熔断时不再误显示就绪。
+- 主运行健康卡采用“正常 / 未启用(中性) / 真异常”语义；关闭观影/迅雷或未配置可选 Magnet/ED2K API 不再制造假 warning。
+- Provider 配置解析异常只影响对应健康卡，不再拖垮整个控制台首页。
+- “测试观影”纳入统一 Console 动作回执；所有主要人工操作显示可读动作名 + 真实返回结果 + 时间，不再直接展示内部 API 路径。
+- Xunlei runtime status 的公开 message 同样执行敏感信息脱敏。
+- 本轮完整契约持续通过；最新计数以 PR CI 为准。
+
 ## v2.0.13-r97 — Usability Hardening（Controlled Real-World Beta）
 
 本版本继续作为 **Controlled Real-World Beta** 发布，重点从“功能齐全”转向“真实运行状态可闭环、异常可恢复、用户能看懂”。
