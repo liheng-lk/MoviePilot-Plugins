@@ -421,9 +421,33 @@ CI 可以覆盖协议解析、PoW 算法、节点切换、隐私边界、缺集�
 
 ## 维护约束与代码职责
 
-转存助手进入维护阶段后，不再采用“每个修复新建一个版本补丁模块”的默认方式。当前运行时代码以职责域维护：入口与调度放在 `__init__.py / routing / foundation`；剧集与媒体身份放在 `episode_* / media_*`；GYING 搜索、登录与浏览器链放在 `gying_*`；迅雷真实分享与秒传放在 `xunlei_*`；Magnet/ED2K 与光鸭 cloudcollection 放在 `multisource / offline_safety / resource_planner`；频道发现放在 `channel_*`；状态与配置界面放在 `status / config / console / page_*`。
+当前插件采用**单文件运行时**：`plugins.v3/guangyatransferassistant/` 目录中只允许 `__init__.py` 一个 Python 运行时代码文件。测试仍保留在 `tests/v3/guangyatransferassistant/`，README、图片、`plugin.json` 等非 Python 资源可正常保留。CI 会在插件目录重新出现其它 `*.py` 时直接失败。
 
-新增功能应优先进入已有职责模块。只有出现独立生命周期、独立状态机或可单独测试的边界时才新增 Python 模块；单方法补丁、单纯 MRO 转接、`*_verified`/额外 `*_final` 薄壳应优先合并回所属职责模块。现有契约 runner 会限制运行时 Python 模块总量不超过维护基线，并阻止已经合并的历史薄壳重新出现。
+单文件不等于无结构。后续维护统一在 `__init__.py` 内按职责区组织：订阅同步与固定分流、Telegram/GYING 资源发现、统一候选模型、媒体/年份/季集门禁、四类资源执行、真实落盘确认、MP 优先命名、通知与状态页。禁止继续新增 `*_vxxxx.py`、`*_final.py`、`*_verified.py` 等运行时补丁文件。
 
-维护提交必须把“业务行为修改”和“结构整理”分开。结构整理不改来源优先级、订阅语义、真实文件身份门禁、Episode Fence、cloudcollection 回执合同或通知语义；每个小批次完成后必须通过完整 GuangYa contract suite，再进入下一批。大型 `legacy.py` 暂不做一次性拆分，后续按调用边界逐段迁移，确保每次迁移都能独立回退。
+统一业务主链固定为：
+
+```text
+MoviePilot 订阅
+→ Telegram / GYING 资源发现
+→ MoviePilot 媒体身份 + 权威缺集匹配
+→ 来源优先级：迅雷秒传 > 光鸭分享直转 > Magnet > ED2K
+→ 真实目标目录落盘确认
+→ MoviePilot 识别结果优先重命名
+→ 成功通知
+```
+
+四种资源执行方式固定为：
+
+- 迅雷分享：解析真实分享文件 → 生成 JSON 秒传数据 → 只导入当前权威缺集 → 光鸭秒传。
+- 光鸭分享：调用光鸭原生分享恢复接口，文件级增量转存。
+- Magnet：调用光鸭原生 `cloudcollection` 云添加。
+- ED2K：调用光鸭原生 `cloudcollection` 云添加。
+- 不接 MoviePilot 普通下载器，不接 qBittorrent、Transmission、Aria2，也不做本地整文件下载再上传兜底。
+
+“成功”不以 API 返回 success 或 task status=completed 为准。光鸭分享必须通过目标文件可见性与大小确认；Magnet/ED2K 必须通过提交前快照与提交后目标目录新 fileId 回读；迅雷秒传必须确认新 fileId、最终文件名和大小一致。预先存在的同名文件不能归因成当前任务成功。
+
+最终文件名以 MoviePilot 识别身份为最高优先级。电视剧采用 `剧名 - SxxExx - 技术参数.ext`；电影采用 `片名 (年份) - 技术参数.ext`。原资源中的分辨率、WEB-DL/BluRay/REMUX、H264/H265/HEVC/AV1、HDR/DV、音轨及发布组等有效技术信息尽量保留，但来源标题、错误年份、错误季集号不能覆盖 MoviePilot 身份。
+
+所有结构或业务修改必须继续通过完整 GuangYa contract suite。当前单文件迁移完成后，历史模块源码仅以内存 bundle 兼容旧 MRO/合同测试，后续维护逐步把这些历史内部边界继续收敛到清晰职责方法，但不再恢复多文件运行时结构。
 
