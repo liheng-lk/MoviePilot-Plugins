@@ -451,7 +451,7 @@ def test_live_session_probe_returns_transport_and_request_evidence():
     assert '"transport": str(search_state.get("transport") or "unknown")' in runtime
     assert '"search_http_requests": int(search_state.get("search_http_requests") or 0)' in runtime
     assert '"downurl_success": int(search_state.get("downurl_success") or 0)' in runtime
-    assert "搜索完成：传输=%s cache_hit=%s /search真实请求=%s" in observability
+    assert "搜索请求完成：传输=%s cache_hit=%s /search真实请求=%s" in observability
     assert '"transport", "cache_hit", "cache_age_seconds", "search_http_requests"' in observability
 
 
