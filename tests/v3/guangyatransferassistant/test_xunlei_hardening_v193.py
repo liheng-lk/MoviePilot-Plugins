@@ -99,6 +99,7 @@ def test_xunlei_runtime_status_exposes_only_booleans_and_mode_not_secrets():
     assert '"captcha_ready"' in public
     assert '"device_ready"' in public
     assert '"captcha_mode"' in public
+    assert '"circuit_open"' in public
     assert '"captcha_token"' not in public
     assert '"device_id"' not in public
     assert '"/xunlei/runtime/status"' in text
