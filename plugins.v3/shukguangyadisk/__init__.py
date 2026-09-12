@@ -3989,6 +3989,9 @@ class GuangyaWebDAVProvider:
         if not parent_item:
             return Response(status_code=409, content="Parent not found")
 
+        # PUT 响应区分新建(201)与覆盖(204)，并避免旧实现引用未定义的 item。
+        existing_item = self._api.get_item(PathLib(path))
+
         # 将上传内容写入临时文件（同步环境下从 _body 缓存读取）
         body = getattr(request, '_body', None) or b""
         if not body:
@@ -4002,7 +4005,7 @@ class GuangyaWebDAVProvider:
             local_path = PathLib(tmp_path)
             result = self._api.upload(parent_item, local_path, new_name=file_name)
             if result:
-                return Response(status_code=201 if not item else 204)
+                return Response(status_code=201 if not existing_item else 204)
             return Response(status_code=500, content="Upload failed")
         finally:
             try:
