@@ -11,7 +11,6 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[3]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 STATUS = PLUGIN / "status_ui_v191.py"
-STATUS_HARDENING = PLUGIN / "status_hardening_v193.py"
 PLANNER_SAFETY = PLUGIN / "planner_safety_v190.py"
 ENTRY = PLUGIN / "__init__.py"
 
@@ -169,18 +168,16 @@ def test_status_ui_primary_actions_are_only_three_clear_operations():
 
 def test_status_ui_exposes_overview_api_and_r7_keeps_single_display_owner():
     status = STATUS.read_text(encoding="utf-8")
-    hardening = STATUS_HARDENING.read_text(encoding="utf-8")
     safety = PLANNER_SAFETY.read_text(encoding="utf-8")
     entry = ENTRY.read_text(encoding="utf-8")
     assert '"/status/overview"' in status
     assert "class GuangYaPlannerSafetyMixin(GuangYaStatusUiMixin)" in safety
     assert "return GuangYaStatusUiMixin.get_page(self)" in safety
-    assert "GuangYaStatusHardeningMixin" in hardening
-    start = entry.index("class GuangYaTransferAssistant")
-    assert entry.index("GuangYaStatusHardeningMixin,", start) < entry.index("GuangYaPlannerSafetyMixin,", start)
-    assert "资源策略：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K" in hardening
-    assert "viewing_session_state" in hardening
-    assert "xunlei_flash_state" in hardening
+    assert not (PLUGIN / "status_hardening_v193.py").exists()
+    assert "GuangYaStatusHardeningMixin" not in entry
+    assert "资源策略：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K" in status
+    assert "viewing_session_state" in status
+    assert "xunlei_flash_state" in status
 
 
 def test_status_ui_v191_is_retained_by_current_release():
