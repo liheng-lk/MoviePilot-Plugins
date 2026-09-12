@@ -21,17 +21,17 @@ PACKAGE = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))[
 README = (PLUGIN / "README.md").read_text(encoding="utf-8")
 
 
-def test_public_release_is_212_r100():
-    assert LOCAL["version"] == PACKAGE["version"] == "2.1.2"
-    assert "r100" in str(LOCAL.get("description") or "")
-    assert "v2.1.2" in (PACKAGE.get("history") or {})
-    assert README.startswith("## v2.1.2-r100")
+def test_public_release_is_213_r101():
+    assert LOCAL["version"] == PACKAGE["version"] == "2.1.3"
+    assert "r101" in str(LOCAL.get("description") or "")
+    assert "v2.1.3" in (PACKAGE.get("history") or {})
+    assert README.startswith("## v2.1.3-r101")
 
     start = ENTRY.rindex("\nclass GuangYaTransferAssistant(")
     final_class = ENTRY[start:]
-    assert 'plugin_version = "2.1.2"' in final_class
-    assert 'build_id = "20260912-r100"' in final_class
-    assert "光鸭转存助手 v2.1.2 运行入口。" in ENTRY[:1000]
+    assert 'plugin_version = "2.1.3"' in final_class
+    assert 'build_id = "20260912-r101"' in final_class
+    assert "光鸭转存助手 v2.1.3 运行入口。" in ENTRY[:1000]
 
 
 def test_public_release_keeps_single_file_runtime():
@@ -42,15 +42,15 @@ def test_public_release_keeps_single_file_runtime():
     assert runtime == ["__init__.py"]
 
 
-def test_212_history_documents_emby_gap_recovery():
-    history = str((PACKAGE.get("history") or {}).get("v2.1.2") or "")
+def test_213_history_documents_target_aware_cooldown():
+    history = str((PACKAGE.get("history") or {}).get("v2.1.3") or "")
     for marker in (
         "final_target",
-        "subscribe.note",
-        "media_facts",
-        "transfer_inventory",
-        "processed",
-        "fail-closed",
+        "target_episodes_v213",
+        "180",
+        "10",
+        "新增",
+        "r100 Emby authoritative gap recovery",
         "观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K",
     ):
         assert marker in history

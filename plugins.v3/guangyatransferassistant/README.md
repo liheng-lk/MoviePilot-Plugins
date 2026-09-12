@@ -1,3 +1,15 @@
+## v2.1.3-r101 — 目标感知外部检索冷却（Controlled Real-World Beta）
+
+本版修复“真实缺集已经出现，但上一轮空结果仍把自动检索锁住”的实机问题。外部观影检索冷却现在不仅记录时间，还记录上一次真正搜索的目标剧集集合。
+
+### 行为
+
+- 新订阅/旧版本升级后首次出现真实目标集：允许立即搜索一次，不继承旧的无目标快照冷却。
+- 新一集到期，或 Emby 将历史完成集重新确认成真实缺集：只对新增/恢复的目标集立即重开一次。
+- 当前目标没有增加，或只是因为成功/入库而缩小：继续遵守原有冷却，不增加站点访问频率。
+- `airing_pull` 的 10 分钟快追和其它自动入口的 180 分钟治理规则都保留。
+- r100 的 Emby note/media_facts/transfer_inventory 缺集恢复、Season、媒体身份、reservation/source claim/pending-library 与最终物理缺集门禁全部保留。
+
 ## v2.1.2-r100 — Emby 实际缺集恢复（Controlled Real-World Beta）
 
 本版修复“目标计算正确，但直接分享仍被旧完成事实拦截”的实机问题。只要同一轮已经取得 `library_state=OK`，且 Emby-first `final_target` 明确某集当前真实缺失，该集就允许绕过陈旧的 `subscribe.note`、`media_facts` 和 `transfer_inventory` 去重，再交给后续硬门禁重新验证。
