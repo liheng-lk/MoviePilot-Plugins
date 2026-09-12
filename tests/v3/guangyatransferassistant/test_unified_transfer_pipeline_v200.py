@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -232,3 +233,33 @@ def test_gying_observability_distinguishes_cache_from_real_network():
     assert "downurl_success" in protocol
     assert "downurl_failures" in protocol
     assert '"transport", "cache_hit", "cache_age_seconds", "search_http_requests"' in observability
+
+
+def test_final_plugin_runtime_uses_unified_matrix_and_mp_naming():
+    import sys
+
+    here = Path(__file__).resolve().parent if "__file__" in globals() else ROOT / "tests" / "v3" / "guangyatransferassistant"
+    if str(here) not in sys.path:
+        sys.path.insert(0, str(here))
+    from final_plugin_harness_v211 import make_final_plugin
+
+    plugin = make_final_plugin()
+    resources = [
+        ({"url": "https://pan.xunlei.com/s/demo?pwd=1234"}, "xunlei", "xunlei_json_flash"),
+        ({"share_url": "https://www.guangyapan.com/share/demo"}, "guangya", "guangya_share_restore"),
+        ({"uri": "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"}, "magnet", "cloudcollection"),
+        ({"uri": "ed2k://|file|Demo.mkv|123|0123456789abcdef0123456789abcdef|/"}, "ed2k", "cloudcollection"),
+    ]
+    for origin in ("telegram", "gying"):
+        for raw, expected_type, expected_route in resources:
+            row = plugin._normalize_transfer_candidate(raw, origin=origin)
+            assert row["type"] == expected_type
+            assert row["route"] == expected_route
+            assert row["origin"] == origin
+
+    subscribe = SimpleNamespace(name="幸运女神", year=2026, season=1, type="TV")
+    result = plugin._canonical_transfer_name_v11226(
+        subscribe,
+        "Some.Show.2026.S01E07.2160p.WEB-DL.H265.DDP5.1.HDR10-GROUP.mkv",
+    )
+    assert result == "幸运女神 - S01E07 - 2160p WEB-DL H265 DDP5.1 HDR10 GROUP.mkv"
