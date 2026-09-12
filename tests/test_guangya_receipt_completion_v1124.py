@@ -2,11 +2,13 @@ import ast
 import unittest
 from pathlib import Path
 
+from guangya_bundle_test_utils import bundle_source, entry_class_bases
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugins.v3" / "guangyatransferassistant"
 ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
-RECEIPT = (PLUGIN / "receipt_completion_v1124.py").read_text(encoding="utf-8")
+RECEIPT = bundle_source("receipt_completion_v1124")
 
 
 class GuangYaReceiptCompletionV1124Tests(unittest.TestCase):
@@ -17,8 +19,7 @@ class GuangYaReceiptCompletionV1124Tests(unittest.TestCase):
         self.assertIn("from .episode_fence_final_v1124 import GuangYaEpisodeFenceFinalV1124Mixin", ENTRY)
         self.assertIn("from .dispatch_policy_v1125 import GuangYaDispatchPolicyV1125Mixin", ENTRY)
         self.assertIn("from .dispatch_policy_final_v1125 import GuangYaDispatchPolicyFinalV1125Mixin", ENTRY)
-        class_head = ENTRY.split("class GuangYaTransferAssistant(", 1)[1].split("):", 1)[0]
-        mixins = [line.strip().rstrip(",") for line in class_head.splitlines() if line.strip()]
+        mixins = entry_class_bases()
         self.assertEqual(mixins[:17], [
             "GuangYaFoundationOpsV209Mixin",
             "GuangYaEpisodeRuntimeV211Mixin",
