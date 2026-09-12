@@ -144,6 +144,204 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
         return target_path, parent_id
 
     @staticmethod
+    def _offline_remote_entry_meta(row: Dict[str, Any]) -> Tuple[str, str, int, bool]:
+        file_id = str(row.get("fileId") or row.get("fileid") or row.get("file_id") or "").strip()
+        name = str(row.get("fileName") or row.get("name") or row.get("file_name") or "").replace("\\", "/").strip()
+        try:
+            size = max(0, int(row.get("fileSize") or row.get("size") or row.get("file_size") or 0))
+        except (TypeError, ValueError):
+            size = 0
+        is_dir = (
+            str(row.get("resType") or "").strip() == "2"
+            or str(row.get("type") or row.get("kind") or "").strip().lower()
+            in {"dir", "folder", "drive#folder", "directory"}
+        )
+        return file_id, name, size, is_dir
+
+    def _offline_parent_rows_readback(self, parent_id: str) -> Tuple[bool, List[Dict[str, Any]]]:
+        """只读枚举光鸭目标目录；失败与空目录必须严格区分。"""
+        client, _ = self._get_guangya_runtime()
+        getter = getattr(client, "get_file_list", None) if client else None
+        if not callable(getter):
+            return False, []
+
+        rows: List[Dict[str, Any]] = []
+        for page in range(3):
+            try:
+                try:
+                    body = getter(
+                        parent_id=str(parent_id or ""),
+                        page_size=100,
+                        order_by=3,
+                        sort_type=1,
+                        file_types=[],
+                        page=page,
+                    )
+                except TypeError:
+                    body = getter(parent_id=str(parent_id or ""), page_size=100, page=page)
+            except Exception as err:
+                self._plugin_log(
+                    "DEBUG",
+                    "【真实落盘核验】目标目录读取失败 parent=%s page=%s error=%s",
+                    str(parent_id or "")[:80],
+                    page,
+                    str(err)[:260],
+                )
+                return False, []
+
+            if not isinstance(body, dict):
+                return False, []
+            code = body.get("code")
+            msg = str(body.get("msg") or body.get("message") or "").strip().lower()
+            ok = (
+                not body.get("error")
+                and (code in (None, 0, "0", 200, "200") or msg in {"success", "ok"})
+            )
+            if not ok:
+                self._plugin_log(
+                    "DEBUG",
+                    "【真实落盘核验】目标目录接口返回失败 parent=%s page=%s code=%s msg=%s",
+                    str(parent_id or "")[:80],
+                    page,
+                    str(code)[:40],
+                    msg[:160],
+                )
+                return False, []
+
+            data = body.get("data") or {}
+            if not isinstance(data, dict):
+                return False, []
+            listing = data.get("list") or data.get("items") or []
+            page_rows = [dict(row) for row in listing if isinstance(row, dict)]
+            rows.extend(page_rows)
+            try:
+                total = max(0, int(data.get("total") or 0))
+            except (TypeError, ValueError):
+                total = 0
+            if not page_rows or len(page_rows) < 100 or (total and len(rows) >= total):
+                break
+        return True, rows
+
+    def _offline_landing_snapshot(
+        self,
+        parent_id: str,
+        manifest: Iterable[Dict[str, Any]],
+        *,
+        max_depth: int = 2,
+    ) -> Dict[str, Any]:
+        """对本次计划中的正片做有界只读快照，用于 completed 后证明“新文件真实出现”."""
+        expected: Dict[str, int] = {}
+        for raw in manifest or []:
+            row = dict(raw or {})
+            name = str(row.get("name") or "").replace("\\", "/").strip()
+            if str(row.get("type") or "") != "video" and not _is_video(name):
+                continue
+            base = name.rsplit("/", 1)[-1].strip().casefold()
+            if not base:
+                continue
+            try:
+                size = max(0, int(row.get("size") or 0))
+            except (TypeError, ValueError):
+                size = 0
+            expected[base] = max(expected.get(base, 0), size)
+
+        if not expected:
+            return {
+                "ready": False,
+                "reason": "no_expected_video_manifest",
+                "file_ids": [],
+                "matches": [],
+            }
+
+        queue: List[Tuple[str, int]] = [(str(parent_id or ""), 0)]
+        visited = set()
+        matches: List[Dict[str, Any]] = []
+        while queue and len(visited) < 24:
+            current_parent, depth = queue.pop(0)
+            visit_key = str(current_parent or "")
+            if visit_key in visited:
+                continue
+            visited.add(visit_key)
+            ok, rows = self._offline_parent_rows_readback(current_parent)
+            if not ok:
+                return {
+                    "ready": False,
+                    "reason": "directory_read_failed",
+                    "file_ids": [],
+                    "matches": [],
+                }
+            for raw in rows:
+                file_id, name, size, is_dir = self._offline_remote_entry_meta(raw)
+                if is_dir:
+                    if file_id and depth < max(0, int(max_depth or 0)):
+                        queue.append((file_id, depth + 1))
+                    continue
+                if not file_id or size <= 0 or not _is_video(name):
+                    continue
+                base = name.rsplit("/", 1)[-1].strip().casefold()
+                expected_size = expected.get(base)
+                if expected_size is None:
+                    continue
+                if expected_size > 0 and size != expected_size:
+                    continue
+                matches.append({
+                    "file_id": file_id,
+                    "name": name,
+                    "size": size,
+                    "parent_id": current_parent,
+                })
+
+        return {
+            "ready": True,
+            "reason": "ok",
+            "file_ids": sorted({str(row.get("file_id") or "") for row in matches if row.get("file_id")}),
+            "matches": matches,
+        }
+
+    def _verify_offline_target_landing(self, source: Dict[str, Any]) -> Dict[str, Any]:
+        """只把“提交前不存在、提交后真实出现”的目标视频当作本来源落盘回执。"""
+        if not bool(source.get("landing_snapshot_ready")):
+            return {"verified": False, "reason": "pre_snapshot_unavailable"}
+        if "target_parent_id" not in source:
+            return {"verified": False, "reason": "target_parent_unknown"}
+
+        manifest = list(source.get("selected_manifest") or [])
+        snapshot = self._offline_landing_snapshot(str(source.get("target_parent_id") or ""), manifest)
+        if not bool(snapshot.get("ready")):
+            return {
+                "verified": False,
+                "reason": str(snapshot.get("reason") or "directory_read_failed"),
+            }
+
+        before_ids = {
+            str(value or "").strip()
+            for value in (source.get("pre_landing_file_ids") or [])
+            if str(value or "").strip()
+        }
+        matches = [dict(row) for row in (snapshot.get("matches") or []) if isinstance(row, dict)]
+        fresh = [
+            row
+            for row in matches
+            if str(row.get("file_id") or "").strip()
+            and str(row.get("file_id") or "").strip() not in before_ids
+        ]
+        if not fresh:
+            return {
+                "verified": False,
+                "reason": "preexisting_only" if matches else "expected_video_not_found",
+            }
+
+        landed = fresh[0]
+        return {
+            "verified": True,
+            "reason": "new_video_found",
+            "file_id": str(landed.get("file_id") or ""),
+            "name": str(landed.get("name") or ""),
+            "size": int(landed.get("size") or 0),
+            "parent_id": str(landed.get("parent_id") or ""),
+        }
+
+    @staticmethod
     def _offline_resolved_data(response: Dict[str, Any]) -> Dict[str, Any]:
         data = response.get("data") or {}
         return dict(data) if isinstance(data, dict) else {}
@@ -324,6 +522,16 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                 for row in manifest
                 if str(row.get("type") or "") == "subtitle" and str(row.get("file_index") or "").lstrip("-").isdigit()
             ]
+            landing_snapshot = self._offline_landing_snapshot(parent_id, manifest)
+            self._plugin_log(
+                "INFO",
+                "【真实落盘预快照】source=%s target=%s ready=%s matching_existing=%s reason=%s",
+                str(source.get("type") or "").upper(),
+                target_path,
+                bool(landing_snapshot.get("ready")),
+                len(landing_snapshot.get("file_ids") or []),
+                str(landing_snapshot.get("reason") or "-"),
+            )
             self._plugin_log(
                 "INFO",
                 "【云添加提交摘要】source=%s fileIndexes=%s selected_video_indexes=%s selected_subtitle_indexes=%s",
@@ -354,6 +562,10 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                 selected_indexes=resolved["selected_indexes"],
                 selected_manifest=list(resolved.get("selected_manifest") or [])[:80],
                 target_path=target_path,
+                target_parent_id=parent_id,
+                landing_snapshot_ready=bool(landing_snapshot.get("ready")),
+                landing_snapshot_reason=str(landing_snapshot.get("reason") or "")[:120],
+                pre_landing_file_ids=list(landing_snapshot.get("file_ids") or [])[:200],
                 last_error="",
                 next_retry_at=0,
                 submitted_at=self._now_text(),
@@ -542,6 +754,7 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                 # - task_result filename is a real video extension → confirmed via task_result_filename
                 # - otherwise planned_manifest only proves selection intent, not remote landing
                 # - empty/missing manifest without video filename → UNKNOWN (no auto-confirm)
+                landing_receipt: Dict[str, Any] = {}
                 if file_name and _is_video(file_name):
                     verified = True
                     verify_source = "task_result_filename"
@@ -551,6 +764,33 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                 else:
                     verified = False
                     verify_source = "legacy_compat" if not manifest else "selected_manifest"
+
+                if not verified and planned_video:
+                    landing_receipt = self._verify_offline_target_landing(source)
+                    if bool(landing_receipt.get("verified")):
+                        verified = True
+                        verify_source = "target_directory_readback"
+                        if not file_name:
+                            file_name = str(landing_receipt.get("name") or "").strip()
+                            base_name = file_name.rsplit("/", 1)[-1] if file_name else ""
+                        self._plugin_log(
+                            "INFO",
+                            "【真实落盘核验】task_id=%s source=%s verified=True "
+                            "verify_source=target_directory_readback file_id=%s file=%s size=%s",
+                            task_id,
+                            str(source.get("id") or "")[:60],
+                            str(landing_receipt.get("file_id") or "")[:80],
+                            str(landing_receipt.get("name") or "")[:180],
+                            int(landing_receipt.get("size") or 0),
+                        )
+                    else:
+                        self._plugin_log(
+                            "DEBUG",
+                            "【真实落盘核验】task_id=%s source=%s verified=False reason=%s",
+                            task_id,
+                            str(source.get("id") or "")[:60],
+                            str(landing_receipt.get("reason") or "unavailable")[:120],
+                        )
 
                 now_ts = time.time()
                 try:
@@ -611,6 +851,7 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                                 next_retry_at=0,
                                 remote_video_confirmed=False,
                                 remote_verify_source="library_satisfied_unattributed",
+                                remote_landing_probe_reason=str(landing_receipt.get("reason") or "")[:120],
                                 pending_verify_since=pending_verify_since,
                                 library_observed_episodes=sorted(target_eps),
                             ) or source
@@ -666,6 +907,7 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                             next_retry_at=0,
                             remote_video_confirmed=False,
                             remote_verify_source="timeout_unverified",
+                            remote_landing_probe_reason=str(landing_receipt.get("reason") or "")[:120],
                             pending_verify_since=pending_verify_since,
                             pending_verify_expired_at=now_ts,
                         ) or source
@@ -715,6 +957,10 @@ class GuangYaMultiSourceMixin(GuangYaSourceStoreMixin):
                     next_retry_at=0,
                     remote_video_confirmed=bool(verified),
                     remote_verify_source=verify_source,
+                    remote_landing_probe_reason=str(landing_receipt.get("reason") or "")[:120],
+                    landing_file_id=str(landing_receipt.get("file_id") or "")[:120],
+                    landing_file_name=str(landing_receipt.get("name") or "")[:300],
+                    landing_file_size=int(landing_receipt.get("size") or 0),
                     pending_verify_since=0 if verified else pending_verify_since,
                 ) or source
                 if verified:
