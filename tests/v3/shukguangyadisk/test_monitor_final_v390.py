@@ -25,7 +25,7 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
 
     def test_final_monitor_is_first_mro_and_release_is_v390(self):
         entry = ENTRY.read_text(encoding="utf-8")
-        self.assertIn('plugin_version = "3.9.11"', entry)
+        self.assertIn('plugin_version = "3.9.12"', entry)
         class_slice = entry.split("class ShukGuangYaDisk(", 1)[1].split("):", 1)[0]
         self.assertLess(class_slice.index("_GuangYaFinalMonitorV390Mixin"), class_slice.index("_GuangYaOrganizerMonitorV366Mixin"))
         self.assertIn("as _GuangYaFinalMonitorV390Mixin", entry)
@@ -99,9 +99,9 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
     def test_federation_uses_fresh_v390_chunk(self):
         remote = REMOTE.read_text(encoding="utf-8")
         page = PAGE.read_text(encoding="utf-8")
-        self.assertIn("__federation_expose_AssistantPage-v390.js?v=3.9.11", remote)
+        self.assertIn("__federation_expose_AssistantPage-v390.js?v=3.9.12", remote)
         self.assertNotIn("AssistantPage-v381.js?v=3.8.1", remote)
-        self.assertIn("整理监控控制 · v3.9.11", page)
+        self.assertIn("整理监控控制 · v3.9.12", page)
         self.assertIn("install_registration_safe", page)
 
     def test_loose_container_skips_waiting_or_terminal_members(self):
@@ -119,6 +119,74 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
         self.assertIn("if reason in _DEFERRED_RESOURCE_REASONS:", dispatch)
         self.assertIn("continue", dispatch)
         self.assertIn('"worker_not_accept"', dispatch)
+
+    def test_deep_unscanned_directory_cannot_be_starved_by_shallow_budget(self):
+        core = CORE.read_text(encoding="utf-8")
+        tree = ast.parse(core)
+        selector = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_select_watch_paths"
+        )
+        module = ast.Module(body=[selector], type_ignores=[])
+        ast.fix_missing_locations(module)
+
+        def ensure_watch_row(rows, path, root):
+            rows.setdefault(path, {
+                "path": path,
+                "depth": 0,
+                "last_checked": 0,
+                "first_seen": 0,
+                "hot_until": 0,
+            })
+
+        namespace = {
+            "Dict": dict,
+            "List": list,
+            "Any": object,
+            "_ensure_watch_row": ensure_watch_row,
+            "_depth": lambda path, root: 0,
+        }
+        exec(compile(module, "<deep-watch-selector>", "exec"), namespace)
+        select = namespace["_select_watch_paths"]
+
+        now = 1000.0
+        rows = {
+            "/root": {
+                "path": "/root", "depth": 0, "last_checked": now - 120,
+                "first_seen": 1, "hot_until": 0,
+            }
+        }
+        for index in range(12):
+            path = f"/root/shallow-{index:02d}"
+            rows[path] = {
+                "path": path, "depth": 1, "last_checked": now - 120,
+                "first_seen": index + 2, "hot_until": 0,
+            }
+        deep = "/root/a/b/c/d/Season 01"
+        rows[deep] = {
+            "path": deep, "depth": 6, "last_checked": 0,
+            "first_seen": 99, "hot_until": 0,
+        }
+
+        selected = select(rows, root="/root", now=now, interval=60, budget=4)
+        self.assertIn(deep, selected)
+        self.assertLessEqual(len(selected), 4)
+
+        # 已经扫描过的深层目录也应按用户 interval 参与公平轮转，
+        # 不能再固定等待旧版 15 分钟 cold recheck。
+        deep_known = "/root/a/b/c/d/e/Season 02"
+        rows2 = {
+            "/root": {
+                "path": "/root", "depth": 0, "last_checked": now,
+                "first_seen": 1, "hot_until": 0,
+            },
+            deep_known: {
+                "path": deep_known, "depth": 7, "last_checked": now - 61,
+                "first_seen": 2, "hot_until": 0,
+            },
+        }
+        selected2 = select(rows2, root="/root", now=now, interval=60, budget=2)
+        self.assertIn(deep_known, selected2)
 
     def test_watch_log_separates_created_refreshed_and_state_rechecks(self):
         core = CORE.read_text(encoding="utf-8")
@@ -157,8 +225,8 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
 
     def test_plugin_json_is_v390(self):
         data = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], "3.9.11")
-        self.assertIn("v3.9.11", data.get("history") or {})
+        self.assertEqual(data["version"], "3.9.12")
+        self.assertIn("v3.9.12", data.get("history") or {})
 
 
 if __name__ == "__main__":
