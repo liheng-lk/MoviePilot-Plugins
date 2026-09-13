@@ -89,7 +89,7 @@ def test_numbered_sequel_can_bridge_publisher_base_title_plus_real_season():
 def test_gying_r104_uses_one_live_in_memory_session_and_transaction_lock():
     assert 'build_id = "20260913-r104"' in ENTRY
     assert "_gying_transaction_lock_r104 = threading.RLock()" in ENTRY
-    assert "def _gying_new_session(self, node: str, saved_cookie: str = "")" in ENTRY
+    assert 'def _gying_new_session(self, node: str, saved_cookie: str = "")' in ENTRY
     assert "self._gying_live_sessions_r104" in ENTRY
     assert "PanSou PoW：复用当前活 Session" in ENTRY
     assert "def _gying_raw_results(self, keyword: str, force: bool = False)" in ENTRY
