@@ -126,6 +126,9 @@ def test_worker_shutdown_only_finishes_current_task_and_returns_waiting_queue():
     recovery_block = GUARD.split("def _recover_isolated_inflight_once", 1)[1]
     assert '== id(self)' not in recovery_block
     assert '"process_token"' not in recovery_block
+    assert "foreign_owner_alive" in recovery_block
+    assert "owner is not self" in recovery_block
+    assert recovery_block.index("if foreign_owner_alive:") < recovery_block.index("self._isolated_recovery_done = True")
 
 
 def test_v340_has_no_shared_queue_backpressure_module_in_active_mro():
