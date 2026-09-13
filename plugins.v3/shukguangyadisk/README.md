@@ -1,6 +1,17 @@
-# 光鸭云盘助手 3.9.12
+# 光鸭云盘助手 3.9.13
 
 MoviePilot V3 光鸭云盘存储与自动整理插件，Python 运行时保持唯一 `__init__.py`。
+
+## 3.9.13 热更新旧任务 handoff 根因修复
+
+针对“已经整理过的旧 Season/目录仍反复显示为当前任务，并持续输出 `旧插件实例正在交接` / `reason=handoff`”的问题：
+
+- 新实例在未取得私有 Worker owner 前，禁止执行 `inflight -> retry` 恢复。
+- owner 接管前重新核验旧实例当前路径下的持久状态；仍有真实 `inflight` 时继续等待，不误抢活跃任务。
+- 若旧实例已请求交接，但当前路径已无真实 `inflight`，只剩 retry/终态证据，或源目录已无主媒体，则撤销陈旧 owner 并立即接管。
+- 对上一版本可能已经错误恢复成 retry 的成员，先发送 MoviePilot stop 信号，再让新实例接管，避免旧同步调用晚返回造成重复执行。
+- 旧线程之后退出时因为已不是全局 owner，不会再清掉新实例 owner。
+- 状态快照新增 `handoff_requested_at` 与 `stale_owner_reclaims` 便于排查。
 
 ## 3.9.12 深层目录监控修复
 
