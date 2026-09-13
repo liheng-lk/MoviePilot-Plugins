@@ -1443,7 +1443,8 @@ class GuangYaTransferAssistant(
             bool(getattr(self, "_auto_transfer_on_refresh", False)),
             len(getattr(self, "_selected_subscriptions", []) or []),
         )
-        result = super()._tick(host_service=host_service)
+        with self._pipeline_phase_lock_dev:
+            result = super()._tick(host_service=host_service)
         strict_new = len(getattr(self, "_channel_new_entries_v1115", []) or [])
         pending = len(getattr(self, "_async_route_pending", set()) or set())
         worker = bool(getattr(self, "_async_route_worker_running", False))
@@ -1463,9 +1464,13 @@ class GuangYaTransferAssistant(
     _gying_live_session_ttl_r104 = 15 * 60
 
     def init_plugin(self, config: dict = None) -> None:
+        # One lock owns the whole discovery -> execution phase boundary.
+        # Channel HTML/index refresh and any active GYING/source execution may not overlap.
+        self._pipeline_phase_lock_dev = threading.RLock()
         # Challenge cookies are valid only inside the same live Session. Never
         # persist them, but keep that Session alive while the plugin instance is alive.
         self._gying_live_sessions_r104 = {}
+        self._gying_transport_reported_dev = set()
         # Same top-level run should not immediately repeat the same failed
         # GYING keyword through Xunlei first and Magnet/ED2K fallback second.
         self._gying_run_failures_dev = {}
@@ -1529,7 +1534,29 @@ class GuangYaTransferAssistant(
                 self._gying_drop_live_session_r104(node, expected_session=session)
 
             session = super()._gying_new_session(node, saved_cookie=saved_cookie)
-            rows[key] = {"session": session, "last_used": now}
+            transport = "requests"
+            try:
+                import cloudscraper as _cloudscraper
+                maker = getattr(_cloudscraper, "create_scraper", None)
+                if callable(maker):
+                    upgraded = maker(sess=session)
+                    if upgraded is not None:
+                        session = upgraded
+                        transport = "cloudscraper"
+            except Exception:
+                transport = "requests"
+            reported = getattr(self, "_gying_transport_reported_dev", None)
+            if isinstance(reported, set) and transport not in reported:
+                reported.add(transport)
+                try:
+                    self._gying_auth_log(
+                        "INFO",
+                        "PanSou transport：%s；challenge/verify/retry 复用同一活会话",
+                        transport,
+                    )
+                except Exception:
+                    pass
+            rows[key] = {"session": session, "last_used": now, "transport": transport}
             return session
 
     def _gying_request(
@@ -1656,6 +1683,298 @@ class GuangYaTransferAssistant(
                     except Exception:
                         pass
         return dict(super().api_viewing_auth_start(force=force) or {})
+
+
+    # ------------------------------------------------------------------
+    # Real-log phase correction — development only, public build stays r103.
+    # Discovery order != source priority:
+    #   complete channel discovery/index -> execute one source priority chain
+    #   GYING Xunlei -> GuangYa native share -> Magnet -> ED2K.
+    # ------------------------------------------------------------------
+    _gying_primary_node_dev = "https://www.xn--wcv59z.com"
+
+    def refresh_channels(self, force: bool = False):
+        lock = getattr(self, "_pipeline_phase_lock_dev", None)
+        if lock is None:
+            self._pipeline_phase_lock_dev = threading.RLock()
+            lock = self._pipeline_phase_lock_dev
+        with lock:
+            return super().refresh_channels(force=force)
+
+    def _run_v1115_mode_batch(
+        self,
+        batch: List[int],
+        trigger: str,
+        mode: str,
+        force: bool = False,
+    ) -> None:
+        lock = getattr(self, "_pipeline_phase_lock_dev", None)
+        if lock is None:
+            self._pipeline_phase_lock_dev = threading.RLock()
+            lock = self._pipeline_phase_lock_dev
+        with lock:
+            return super()._run_v1115_mode_batch(batch, trigger, mode, force=force)
+
+    def _run_channel_then_due_gying_v103(self, batch: List[int], trigger: str) -> None:
+        """Compatibility entry: channel is discovery evidence, never source priority."""
+        ids = sorted(self._positive_ids_v1125(batch or []))
+        if not ids:
+            return None
+        lock = getattr(self, "_pipeline_phase_lock_dev", None)
+        if lock is None:
+            self._pipeline_phase_lock_dev = threading.RLock()
+            lock = self._pipeline_phase_lock_dev
+        with lock:
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【阶段机】trigger=%s discovery=channel_complete execute=%s；"
+                "priority=观影迅雷>光鸭分享>Magnet>ED2K",
+                str(trigger or "-")[:80],
+                len(ids),
+            )
+            # Legacy channel_event explicitly blocks active GYING, which inverts the
+            # declared priority. channel_priority keeps calendar and external cooldown:
+            # GYING is tried first only when allowed; otherwise cached GuangYa still runs.
+            return self._run_v1115_mode_batch(
+                ids,
+                f"{str(trigger or '频道触发')}·完整优先级链",
+                "channel_priority",
+                force=False,
+            )
+
+    def _run_reliability_route_batch(self, batch: List[int], trigger: str) -> None:
+        lock = getattr(self, "_pipeline_phase_lock_dev", None)
+        if lock is None:
+            self._pipeline_phase_lock_dev = threading.RLock()
+            lock = self._pipeline_phase_lock_dev
+        with lock:
+            normalized = sorted(self._positive_ids_v1125(batch or []))
+            if "频道新增资源" in str(trigger or ""):
+                return self._run_channel_then_due_gying_v103(normalized, trigger)
+            return super()._run_reliability_route_batch(normalized, trigger)
+
+    def _calendar_due_check_v1110(self) -> Dict[str, Any]:
+        lock = getattr(self, "_pipeline_phase_lock_dev", None)
+        if lock is None:
+            self._pipeline_phase_lock_dev = threading.RLock()
+            lock = self._pipeline_phase_lock_dev
+        with lock:
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【阶段机】AiringDue phase=DISCOVERY_CHANNEL；完成后才允许主动来源执行",
+            )
+            try:
+                self.refresh_channels(force=False)
+            except Exception as err:
+                self._plugin_log(
+                    "WARNING",
+                    "【光鸭转存助手】【阶段机】AiringDue 频道发现失败，使用缓存继续：%s",
+                    str(err)[:240],
+                )
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【阶段机】AiringDue phase=EXECUTE_PRIORITY_CHAIN",
+            )
+            return dict(super()._calendar_due_check_v1110() or {})
+
+    def _run_dispatch_trigger_v1125(self, ids: List[int], trigger: str) -> None:
+        if not self._manual_full_chain_trigger_v11211(trigger):
+            return super()._run_dispatch_trigger_v1125(ids, trigger)
+
+        normalizer = getattr(self, "_positive_ids_v1125", None)
+        batch = (
+            sorted(normalizer(ids or []))
+            if callable(normalizer)
+            else sorted({int(value) for value in (ids or []) if str(value).isdigit() and int(value) > 0})
+        )
+        if not batch:
+            return None
+        lock = getattr(self, "_pipeline_phase_lock_dev", None)
+        if lock is None:
+            self._pipeline_phase_lock_dev = threading.RLock()
+            lock = self._pipeline_phase_lock_dev
+        with lock:
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【人工完整检查】phase=DISCOVERY_CHANNEL subscriptions=%s",
+                len(batch),
+            )
+            try:
+                self.refresh_channels(force=True)
+            except Exception as err:
+                self._plugin_log(
+                    "WARNING",
+                    "【光鸭转存助手】【人工完整检查】频道强刷失败，使用缓存继续：%s",
+                    str(err)[:240],
+                )
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【人工完整检查】phase=EXECUTE_PRIORITY_CHAIN "
+                "priority=观影迅雷>光鸭分享>Magnet>ED2K subscriptions=%s",
+                len(batch),
+            )
+            return self._run_v1115_mode_batch(
+                batch,
+                "人工立即检查·完整优先级链",
+                "manual_priority",
+                force=True,
+            )
+
+    def _daily_full_catchup_v1110(self) -> Dict[str, Any]:
+        lock = getattr(self, "_pipeline_phase_lock_dev", None)
+        if lock is None:
+            self._pipeline_phase_lock_dev = threading.RLock()
+            lock = self._pipeline_phase_lock_dev
+        with lock:
+            started = datetime.datetime.now()
+            try:
+                self.refresh_channels(force=True)
+            except Exception as err:
+                self._plugin_log(
+                    "WARNING",
+                    "【光鸭转存助手】【每日全员复核】频道发现失败，使用缓存继续：%s",
+                    str(err)[:240],
+                )
+            try:
+                self._refresh_airing_calendar_v1120(force=True)
+            except Exception as err:
+                self._plugin_log(
+                    "WARNING",
+                    "【光鸭转存助手】【每日全员复核】更新日历刷新失败，继续按真实媒体库缺口修复：%s",
+                    str(err)[:240],
+                )
+
+            rows = list(self._active_selected_subscriptions_v1125() or [])
+            ids: List[int] = []
+            before: Dict[int, Tuple[Any, ...]] = {}
+            names: Dict[int, str] = {}
+            for subscribe in rows:
+                sid = int(getattr(subscribe, "id", 0) or 0)
+                if sid <= 0:
+                    continue
+                names[sid] = str(getattr(subscribe, "name", "") or "")
+                try:
+                    sync = getattr(self, "_sync_media_library_progress", None)
+                    if callable(sync):
+                        sync(subscribe)
+                except Exception:
+                    pass
+                fresh = self._find_subscription(sid) or subscribe
+                before[sid] = tuple(self._repair_signature_v1125(fresh))
+                try:
+                    needs = (
+                        self._movie_needs_pull_v1125(fresh)
+                        if self._is_movie_subscription(fresh)
+                        else bool(self._uncovered_missing_v1125(fresh))
+                    )
+                except Exception:
+                    needs = bool(before[sid])
+                if needs:
+                    ids.append(sid)
+
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【每日全员复核】phase=EXECUTE_PRIORITY_CHAIN "
+                "priority=观影迅雷>光鸭分享>Magnet>ED2K subscriptions=%s",
+                len(ids),
+            )
+            if ids:
+                self._run_v1115_mode_batch(
+                    sorted(set(ids)),
+                    "每日全员复核·完整优先级链",
+                    "daily_repair_pull",
+                    force=True,
+                )
+
+            final_rows = {
+                int(getattr(subscribe, "id", 0) or 0): subscribe
+                for subscribe in (self._active_selected_subscriptions_v1125() or [])
+            }
+            ids_set = set(ids)
+            results: List[Dict[str, Any]] = []
+            changed = 0
+            failed = 0
+            for sid in sorted(before):
+                subscribe = final_rows.get(sid) or self._find_subscription(sid)
+                if subscribe:
+                    final_signature = tuple(self._repair_signature_v1125(subscribe))
+                    try:
+                        still_needs = (
+                            self._movie_needs_pull_v1125(subscribe)
+                            if self._is_movie_subscription(subscribe)
+                            else bool(self._uncovered_missing_v1125(subscribe))
+                        )
+                    except Exception:
+                        still_needs = bool(final_signature)
+                else:
+                    final_signature = tuple()
+                    still_needs = False
+                if before.get(sid, tuple()) != final_signature:
+                    changed += 1
+                if still_needs:
+                    failed += 1
+                results.append({
+                    "subscribe_id": sid,
+                    "name": names.get(sid, ""),
+                    "missing_before": list(before.get(sid, tuple())),
+                    "missing_after": list(final_signature),
+                    "priority_chain_attempted": sid in ids_set,
+                    "success": not still_needs,
+                })
+
+            payload = {
+                "started_at": started.isoformat(timespec="seconds"),
+                "finished_at": datetime.datetime.now().isoformat(timespec="seconds"),
+                "checked": len(before),
+                "discovery_phase": "channel_complete",
+                "priority_chain": len(ids),
+                "changed": changed,
+                "failed": failed,
+                "results": results[-200:],
+                "strategy": "channel_discovery_then_priority_chain",
+            }
+            self.save_data("daily_catchup_v1110", payload)
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【每日全员复核】完成：订阅=%s 完整优先级链=%s 仍需补漏=%s",
+                payload["checked"],
+                payload["priority_chain"],
+                payload["failed"],
+            )
+            return {
+                "success": True,
+                "data": payload,
+                "message": (
+                    f"已复核 {payload['checked']} 个订阅；"
+                    f"{payload['priority_chain']} 个按观影迅雷>光鸭分享>Magnet>ED2K执行"
+                ),
+            }
+
+    def _gying_node_order(self) -> List[str]:
+        """Prefer PanSou current primary when auto-switch is enabled, unless cooling."""
+        rows = list(super()._gying_node_order() or [])
+        if not bool(getattr(self, "_viewing_auto_switch", True)):
+            return rows
+
+        primary = str(self._gying_primary_node_dev).rstrip("/")
+        if primary not in rows:
+            rows.insert(0, primary)
+        try:
+            state = dict(self._gying_state() or {})
+            node_state = dict((state.get("nodes") or {}).get(primary) or {})
+            status = str(node_state.get("status") or "")
+            checked = float(node_state.get("last_checked_ts") or 0)
+            cooldown = float(getattr(self, "_gying_node_cooldown_seconds", 600) or 600)
+            cooling = (
+                status in {"maintenance", "landing", "blocked", "error", "search_error"}
+                and checked > 0
+                and time.time() - checked < cooldown
+            )
+        except Exception:
+            cooling = False
+        if cooling:
+            return rows
+        return [primary] + [node for node in rows if str(node).rstrip("/") != primary]
 
     plugin_version = "2.1.5"
     build_id = "20260913-r103"
