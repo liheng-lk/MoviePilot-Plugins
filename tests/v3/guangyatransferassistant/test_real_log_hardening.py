@@ -137,11 +137,17 @@ def test_channel_discovery_and_source_execution_are_globally_phase_serialized():
     assert "def refresh_channels(self, force: bool = False)" in final
     assert "def _run_v1115_mode_batch(" in final
     assert "with self._pipeline_phase_lock_dev:" in final
-    # AiringDue must refresh/index first and only then enter active execution.
-    due = final[final.index("    def _calendar_due_check_v1110("):]
+    # AiringDue keeps EpisodeRuntime as the owner/ready/singleflight authority.
+    runtime = _bundle("episode_runtime_v211")
+    assert 'def _calendar_due_check_v1110(self, minutes: Any = None, owner: str = "host", **kwargs)' in runtime
+    due = runtime[runtime.index("    def _calendar_due_check_v1110("):]
+    due = due[:due.index("    def _runtime_worker_loop(", 1)]
+    assert due.index("phase_lock.acquire()") < due.index("phase=DISCOVERY_CHANNEL")
     assert due.index("phase=DISCOVERY_CHANNEL") < due.index("self.refresh_channels(force=False)")
     assert due.index("self.refresh_channels(force=False)") < due.index("phase=EXECUTE_PRIORITY_CHAIN")
     assert due.index("phase=EXECUTE_PRIORITY_CHAIN") < due.index("super()._calendar_due_check_v1110()")
+    assert due.index("super()._calendar_due_check_v1110()") < due.index("phase_lock.release()")
+    assert "def _calendar_due_check_v1110(self)" not in final
 
 
 def test_channel_event_is_discovery_trigger_not_higher_priority_transfer_stage():
@@ -192,9 +198,9 @@ def test_gying_auto_switch_prefers_current_pansou_primary_and_keeps_manual_pin_s
     assert "return rows" in order
     assert "return [primary] +" in order
     # Current PanSou primary is preferred; the old 星际穿越 mirror remains only in the bundled fallback pool.
-    transport = _bundle("gying_transport_v1108")
-    assert "https://www.xn--wcv59z.com" in transport
-    assert "https://www.xn--kivn76b41nnhi.com" in transport
+    mirror_pool = "\n".join(_bundles().values())
+    assert "https://www.教父.com" in mirror_pool
+    assert "https://www.星际穿越.com" in mirror_pool
 
 
 def test_gying_transport_can_upgrade_to_cloudscraper_without_making_it_a_dependency():
