@@ -1,6 +1,6 @@
 {
   "name": "光鸭转存助手",
-  "description": "Controlled Real-World Beta：r104 基于 2.1.5-r103 实机日志继续收口。观影 GYING 对同节点不同关键词的挑战事务改为串行，并只复用当前进程内的活 Session，PoW/浏览器挑战 Cookie 不持久化；连续挑战失败会丢弃失效会话后干净重建。编号续作兼容扩展为“MoviePilot 将续作作为 S01、发布方使用基础标题 + 同号 S0N”的严格桥接，普通跨季仍硬拒绝。迅雷缺集拆包不降低 0.90 自动识别阈值，仅增加文件级 Episode Resolver 诊断，避免猜集误导入。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+  "description": "Controlled Real-World Beta：r103 修复频道/手动刷新只看 Telegram、观影 GYING 被饿死，以及批次汇总重复标题/重复订阅计数。频道仍先执行；仅对频道后仍真实缺失且满足更新日历与外部检索冷却的订阅继续观影完整来源链，避免 158 个订阅无脑全搜。汇总改为每订阅一个最终结果。编号续作仅在“标题明确以 2~9 结尾 + MoviePilot S1 + 发布方同号 Sxx + 真实标题强匹配”时兼容季号，普通跨季继续硬拒绝。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
   "version": "2.1.5",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
