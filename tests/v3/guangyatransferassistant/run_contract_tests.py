@@ -183,7 +183,7 @@ def main() -> int:
         HERE / "test_release_v210_contract.py",
         HERE / "test_channel_parse_r102.py",
         HERE / "test_r103_summary_gying_fallback.py",
-        HERE / "test_r104_real_log_regressions.py",
+        HERE / "test_real_log_hardening.py",
     }
     for path in sorted(pre_projection_tests):
         if path.exists():
