@@ -130,3 +130,81 @@ def test_xunlei_ambiguous_planner_keeps_hard_gate_but_logs_file_diagnostics():
     assert "message=%s diag=%s" in source
     resolver = _bundle("episode_resolver_v190")
     assert "AUTO_SELECT_CONFIDENCE = 0.90" in resolver
+
+def test_channel_discovery_and_source_execution_are_globally_phase_serialized():
+    final = ENTRY[ENTRY.rindex("\nclass GuangYaTransferAssistant"):]
+    assert "self._pipeline_phase_lock_dev = threading.RLock()" in final
+    assert "def refresh_channels(self, force: bool = False)" in final
+    assert "def _run_v1115_mode_batch(" in final
+    assert "with self._pipeline_phase_lock_dev:" in final
+    # AiringDue must refresh/index first and only then enter active execution.
+    due = final[final.index("    def _calendar_due_check_v1110("):]
+    assert due.index("phase=DISCOVERY_CHANNEL") < due.index("self.refresh_channels(force=False)")
+    assert due.index("self.refresh_channels(force=False)") < due.index("phase=EXECUTE_PRIORITY_CHAIN")
+    assert due.index("phase=EXECUTE_PRIORITY_CHAIN") < due.index("super()._calendar_due_check_v1110()")
+
+
+def test_channel_event_is_discovery_trigger_not_higher_priority_transfer_stage():
+    final = ENTRY[ENTRY.rindex("\nclass GuangYaTransferAssistant"):]
+    method = final[final.index("    def _run_channel_then_due_gying_v103("):]
+    method = method[:method.index("    def _run_reliability_route_batch(", 1)]
+    assert '"channel_priority"' in method
+    assert '"channel_event"' not in method
+    assert "priority=观影迅雷>光鸭分享>Magnet>ED2K" in method
+
+    # The actual full chain still implements Xunlei before the lower chain,
+    # and Magnet/ED2K only after the lower/direct-share chain leaves a real gap.
+    xunlei = _bundle("xunlei_flash_v193")
+    xmethod = xunlei[xunlei.index("    def _try_transfer_subscription_inner("):]
+    assert xmethod.index("flash = self._dispatch_xunlei_flash(subscribe)") < xmethod.index(
+        "super()._try_transfer_subscription_inner"
+    )
+    viewing = _bundle("viewing_logging_v1113")
+    vmethod = viewing[viewing.index("    def _try_transfer_subscription_inner("):]
+    assert vmethod.index("super()._try_transfer_subscription_inner") < vmethod.index(
+        "self._dispatch_viewing_external_v1113(subscribe)"
+    )
+
+
+def test_manual_and_daily_repair_use_one_priority_chain_after_channel_discovery():
+    final = ENTRY[ENTRY.rindex("\nclass GuangYaTransferAssistant"):]
+    manual = final[final.index("    def _run_dispatch_trigger_v1125("):]
+    manual = manual[:manual.index("    def _daily_full_catchup_v1110(", 1)]
+    assert "self.refresh_channels(force=True)" in manual
+    assert '"manual_priority"' in manual
+    assert '"channel_event"' not in manual
+    assert "priority=观影迅雷>光鸭分享>Magnet>ED2K" in manual
+
+    daily = final[final.index("    def _daily_full_catchup_v1110("):]
+    daily = daily[:daily.index("    def _gying_node_order(", 1)]
+    assert "self.refresh_channels(force=True)" in daily
+    assert '"daily_repair_pull"' in daily
+    assert '"channel_event"' not in daily
+    assert '"strategy": "channel_discovery_then_priority_chain"' in daily
+
+
+def test_gying_auto_switch_prefers_current_pansou_primary_and_keeps_manual_pin_semantics():
+    final = ENTRY[ENTRY.rindex("\nclass GuangYaTransferAssistant"):]
+    assert '_gying_primary_node_dev = "https://www.xn--wcv59z.com"' in final
+    order = final[final.index("    def _gying_node_order("):]
+    order = order[:order.index('    plugin_version = "2.1.5"', 1)]
+    assert 'if not bool(getattr(self, "_viewing_auto_switch", True)):' in order
+    assert "return rows" in order
+    assert "return [primary] +" in order
+    # Current PanSou primary is preferred; the old 星际穿越 mirror remains only in the bundled fallback pool.
+    transport = _bundle("gying_transport_v1108")
+    assert "https://www.xn--wcv59z.com" in transport
+    assert "https://www.xn--kivn76b41nnhi.com" in transport
+
+
+def test_gying_transport_can_upgrade_to_cloudscraper_without_making_it_a_dependency():
+    final = ENTRY[ENTRY.rindex("\nclass GuangYaTransferAssistant"):]
+    session = final[final.index('    def _gying_new_session(self, node: str, saved_cookie: str = "")'):]
+    session = session[:session.index("    def _gying_request(", 1)]
+    assert "import cloudscraper as _cloudscraper" in session
+    assert 'transport = "requests"' in session
+    assert "if callable(maker):" in session
+    assert "maker(sess=session)" in session
+    assert "except Exception:" in session
+    assert "challenge/verify/retry 复用同一活会话" in session
+
