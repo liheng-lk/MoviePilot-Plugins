@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
   "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
-  "version": "3.9.11",
+  "version": "3.9.12",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v3.9.12": "修复深层目录视频漏整理：增量 watch 调度为从未扫描的目录保留固定预算并优先继续最深 frontier，避免大量根目录/一级目录长期占满 64 个扫描名额；已登记的所有目录按用户 monitor interval 进入最久未检查的公平轮转，不再让深层目录固定等待 15 分钟冷扫描。每轮远端目录读取仍受 64（全量期间 12）预算限制，独立全量巡检继续兜底；新增深层目录饥饿回归测试和 watch 未扫描/最大深度诊断字段。",
     "v3.9.11": "修复真实资源无 durable task 时被旧 MoviePilot admission 阻断：普通自动整理仍以 manual=False 执行；仅在明确命中“整理源文件已按不同输入准入”且历史中没有可复用 durable task 时，解析冲突消息中的具体源路径，只对该成员单次调用 MoviePilot 受保护的 inactive replacement。宿主数据库仍会拒绝有效租约或真实历史绑定，因此不会越过活动任务；目录/整季任务不再因单个成员冲突而把整组 inflight 一起 blocked。",
     "v3.9.10": "修复 blocked 资源静默丢失复核：watch pipeline 不再只依赖目录内容变化触发资源入队；即使目录签名完全不变，只要直属主媒体存在匹配 fingerprint 的 blocked 状态，也会按 OrganizerStateStore.recheck_at 自动重新挂回持久 resource queue。未到期仅 queue_wait，不占用 Worker；到期后重新执行 MoviePilot 历史/状态预检；新资源仍可正常调度。监控日志新增“状态复核”计数，解决 blocked>0 但当前持久队列=0 导致永不再检查的问题。",
     "v3.9.9": "修复 MoviePilot 持久失败任务的自动重试链：历史预检与原生 workflow 一致，优先使用数据库持久化 retry_count，Redis/TTLCache 断连不再让失败预算回退为 0/3；命中带 transfer_task_id 的失败历史时不再 fresh do_transfer 重新准入，而是调用 MoviePilot durable retry 复用冻结计划，避免插件升级或识别上下文变化后触发“整理源文件已按不同输入准入”；竞态下若仍撞准入冲突也优先切回 durable retry，只有无可复用任务时才 blocked。",
