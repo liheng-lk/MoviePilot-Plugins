@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 import runpy
 import traceback
 from pathlib import Path
@@ -88,7 +89,14 @@ def _project_entry_for_legacy_contracts() -> str:
     class_start = projected.rindex("\nclass GuangYaTransferAssistant(")
     head, tail = projected[:class_start], projected[class_start:]
     tail = tail.replace('    plugin_version = "2.1.5"', '    plugin_version = "2.0.13"', 1)
-    tail = tail.replace('    build_id = "20260913-r103"', '    build_id = "20260911-r97"', 1)
+    tail, build_count = re.subn(
+        r'    build_id = "20260913-r\d+"',
+        '    build_id = "20260911-r97"',
+        tail,
+        count=1,
+    )
+    if build_count != 1:
+        raise RuntimeError("current GuangYa build marker missing before legacy projection")
     entry.write_text(head + tail, encoding="utf-8")
     return original
 
@@ -175,6 +183,7 @@ def main() -> int:
         HERE / "test_release_v210_contract.py",
         HERE / "test_channel_parse_r102.py",
         HERE / "test_r103_summary_gying_fallback.py",
+        HERE / "test_r104_real_log_regressions.py",
     }
     for path in sorted(pre_projection_tests):
         if path.exists():
