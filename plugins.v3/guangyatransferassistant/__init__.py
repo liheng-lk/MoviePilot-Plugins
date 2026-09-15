@@ -1448,7 +1448,7 @@ class GuangYaTransferAssistant(
                 pass
             self._plugin_log(
                 "INFO",
-                "【光鸭转存助手】【调度出口v2.1.7】source=manual_refresh "
+                "【光鸭转存助手】【调度出口v2.1.8】source=manual_refresh "
                 "channel_items=%s active=%s routes=%s queued=%s",
                 len(items),
                 active_items,
@@ -1476,7 +1476,7 @@ class GuangYaTransferAssistant(
                 pass
             self._plugin_log(
                 "EXCEPTION",
-                "【光鸭转存助手】【调度出口v2.1.7】source=manual_refresh failed=%s",
+                "【光鸭转存助手】【调度出口v2.1.8】source=manual_refresh failed=%s",
                 failed["error"],
             )
         finally:
@@ -1489,7 +1489,7 @@ class GuangYaTransferAssistant(
         """MoviePilot V3 页面刷新：立即返回标准三段式响应，真实刷新后台执行。"""
         self._plugin_log(
             "INFO",
-            "【光鸭转存助手】【调度入口v2.1.7】source=manual_refresh auto=%s selected=%s",
+            "【光鸭转存助手】【调度入口v2.1.8】source=manual_refresh auto=%s selected=%s",
             bool(getattr(self, "_auto_transfer_on_refresh", False)),
             len(getattr(self, "_selected_subscriptions", []) or []),
         )
@@ -1571,7 +1571,7 @@ class GuangYaTransferAssistant(
         queued = sum(1 for row in rows if isinstance(row, dict) and bool(row.get("queued")))
         self._plugin_log(
             "INFO",
-            "【光鸭转存助手】【订阅调度v2.1.7】trigger=%s selected=%s routes=%s queued=%s",
+            "【光鸭转存助手】【订阅调度v2.1.8】trigger=%s selected=%s routes=%s queued=%s",
             str(trigger or "-")[:80],
             len(getattr(self, "_selected_subscriptions", []) or []),
             len(rows),
@@ -1582,7 +1582,7 @@ class GuangYaTransferAssistant(
     def _tick(self, host_service: bool = True) -> None:
         self._plugin_log(
             "INFO",
-            "【光鸭转存助手】【调度入口v2.1.7】source=tick host=%s auto=%s selected=%s",
+            "【光鸭转存助手】【调度入口v2.1.8】source=tick host=%s auto=%s selected=%s",
             bool(host_service),
             bool(getattr(self, "_auto_transfer_on_refresh", False)),
             len(getattr(self, "_selected_subscriptions", []) or []),
@@ -1593,7 +1593,7 @@ class GuangYaTransferAssistant(
         worker = bool(getattr(self, "_async_route_worker_running", False))
         self._plugin_log(
             "INFO",
-            "【光鸭转存助手】【调度出口v2.1.7】source=tick strict_new=%s async_pending=%s worker=%s",
+            "【光鸭转存助手】【调度出口v2.1.8】source=tick strict_new=%s async_pending=%s worker=%s",
             strict_new,
             pending,
             worker,
@@ -1859,9 +1859,13 @@ class GuangYaTransferAssistant(
             hardened.append(item)
         return hardened
 
+    def _bear_routes_v218(self):
+        """保留既有 MoviePilot V3 Bearer 路由合同，再叠加按钮保护。"""
+        return force_bear_auth(super().get_api())
+
     def get_api(self):
         """统一 Bearer 鉴权、POST 三段式响应，以及高耗时按钮后台化。"""
-        routes = force_bear_auth(super().get_api())
+        routes = self._bear_routes_v218()
         return self._harden_button_routes_v218(routes)
 
     @staticmethod
