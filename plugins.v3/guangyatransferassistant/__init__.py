@@ -1635,104 +1635,54 @@ class GuangYaTransferAssistant(
             self._route_fix_state_v219 = local
         return local
 
-    def _final_target_allows_submit_v211(
-        self,
-        subscribe: Any,
-        episodes: Any,
-    ):
-        """Final submit gate with current-source self-claim excluded.
-
-        A Magnet/ED2K source is persisted as state=new before its worker calls
-        cloudcollection.  That row is a valid claim for *other* candidates, but
-        it must not subtract itself from its own final_target.
-        """
-        def _positive_v219(values: Any) -> set[int]:
-            output = set()
-            for raw in values or []:
-                try:
-                    value = int(raw or 0)
-                except (TypeError, ValueError):
-                    continue
-                if value > 0:
-                    output.add(value)
-            return output
-
-        if self._is_movie_subscription(subscribe):
-            return True, set(), "movie"
-
-        wanted = _positive_v219(episodes)
-        snap_fn = getattr(self, "_episode_target_snapshot_v210", None)
-        if not callable(snap_fn):
-            return True, wanted, "no_snapshot"
-
-        route_local = self._route_fix_local_v219()
-        source_id = str(getattr(route_local, "submit_source_id", "") or "").strip()
-
-        episode_local = getattr(self, "_episode_snapshot_tls_v211", None)
-        if episode_local is None:
-            episode_local = threading.local()
-            self._episode_snapshot_tls_v211 = episode_local
-        previous_exclude = getattr(episode_local, "planner_exclude_source_id", None)
+    def _current_submit_source_v219(self) -> str:
+        local = self._route_fix_local_v219()
+        source_id = str(getattr(local, "submit_source_id", "") or "").strip()
         if source_id:
-            episode_local.planner_exclude_source_id = source_id
-
-        cache_key = None
-        if source_id:
+            return source_id
+        getter = getattr(self, "_episode_fence_current_source_v1124", None)
+        if callable(getter):
             try:
-                cache_key = self._target_cache_key_v210(subscribe)
+                return str(getter() or "").strip()
             except Exception:
-                cache_key = None
+                return ""
+        return ""
 
+    def _active_inflight_claims_v211(
+        self,
+        subscribe_id: int,
+        current_source_id: str = "",
+    ) -> set[int]:
+        """Never let the worker's own persisted source claim block that same worker."""
+        effective_source_id = str(current_source_id or "").strip()
+        if not effective_source_id:
+            effective_source_id = self._current_submit_source_v219()
+        return set(super()._active_inflight_claims_v211(
+            subscribe_id,
+            current_source_id=effective_source_id,
+        ) or set())
+
+    def _invalidate_submit_target_cache_v219(self, subscribe: Any) -> None:
+        if subscribe is None:
+            return
         try:
-            try:
-                snap = dict(snap_fn(
-                    subscribe,
-                    current_source_id=source_id,
-                    # Real submission must not reuse a generic snapshot which
-                    # may already contain this just-created source as a claim.
-                    force_library=bool(source_id),
-                    log=False,
-                ) or {})
-            except TypeError:
-                snap = dict(snap_fn(
-                    subscribe,
-                    force_library=bool(source_id),
-                    log=False,
-                ) or {})
-        finally:
-            if previous_exclude is None:
-                try:
-                    delattr(episode_local, "planner_exclude_source_id")
-                except AttributeError:
-                    pass
-            else:
-                episode_local.planner_exclude_source_id = previous_exclude
-
-            # A source-specific snapshot must never poison the generic target
-            # cache because it deliberately excludes one active claim.
-            if source_id and cache_key is not None:
-                try:
-                    lock = getattr(self, "_episode_target_lock_v210", None)
-                    if lock is None:
-                        lock = threading.RLock()
-                        self._episode_target_lock_v210 = lock
-                    with lock:
-                        cache = getattr(self, "_episode_target_cache_v210", None)
-                        if isinstance(cache, dict):
-                            cache.pop(cache_key, None)
-                except Exception:
-                    pass
-
-        final = _positive_v219(snap.get("final_target") or [])
-        if not final:
-            return False, set(), "empty_final_target"
-        allowed = wanted.intersection(final) if wanted else final
-        if wanted and not allowed:
-            return False, set(), "episodes_outside_final_target"
-        return True, allowed, "ok"
+            key = self._target_cache_key_v210(subscribe)
+        except Exception:
+            return
+        try:
+            lock = getattr(self, "_episode_target_lock_v210", None)
+            if lock is None:
+                lock = threading.RLock()
+                self._episode_target_lock_v210 = lock
+            with lock:
+                cache = getattr(self, "_episode_target_cache_v210", None)
+                if isinstance(cache, dict):
+                    cache.pop(key, None)
+        except Exception:
+            pass
 
     def _submit_offline_source(self, source_id: str) -> dict:
-        """Bind the current source while all existing safety gates and cloudcollection code run."""
+        """Bind current source across the existing gate/planner/cloudcollection chain."""
         source_id = str(source_id or "").strip()
         local = self._route_fix_local_v219()
         previous = getattr(local, "submit_source_id", None)
@@ -1745,6 +1695,16 @@ class GuangYaTransferAssistant(
                 source = {}
             source_type = str(source.get("type") or "").strip().lower()
             sid = int(source.get("subscribe_id") or 0)
+            try:
+                subscribe = self._find_subscription(sid) if sid > 0 else None
+            except Exception:
+                subscribe = None
+
+            # A generic snapshot may have been calculated after this source row
+            # was persisted as state=new. Drop it once so the existing target
+            # resolver recomputes while _active_inflight_claims_v211 excludes
+            # only this worker's source.
+            self._invalidate_submit_target_cache_v219(subscribe)
 
             if source_type in {"magnet", "ed2k"}:
                 try:
@@ -1752,7 +1712,7 @@ class GuangYaTransferAssistant(
                         "INFO",
                         "【光鸭转存助手】【来源执行路由v2.1.9】sid=%s source=%s "
                         "type=%s message_id=%s executor=guangya_cloudcollection "
-                        "api=resolve_res->create_task target=%s",
+                        "api=resolve_res->create_task target=%s self_claim=excluded",
                         sid,
                         source_id[:60] or "-",
                         source_type.upper(),
@@ -1789,6 +1749,17 @@ class GuangYaTransferAssistant(
                     pass
             return result
         finally:
+            # During the worker the cache may intentionally contain a snapshot
+            # that excludes this source. Never expose that snapshot to another
+            # worker after the current submit finishes.
+            try:
+                source = dict((self._source_store().get("items") or {}).get(source_id) or {})
+                sid = int(source.get("subscribe_id") or 0)
+                subscribe = self._find_subscription(sid) if sid > 0 else None
+            except Exception:
+                subscribe = None
+            self._invalidate_submit_target_cache_v219(subscribe)
+
             if previous is None:
                 try:
                     delattr(local, "submit_source_id")
