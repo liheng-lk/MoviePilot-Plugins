@@ -1,3 +1,22 @@
+## v2.1.7-r105 — 光鸭原生分享访问闭环（Controlled Real-World Beta）
+
+本版承接 r104 六频道入口，只处理 **光鸭分享链接已经识别后，能否真正读到分享目录与文件**。GYING、迅雷、Magnet、ED2K 执行链本轮不改。
+
+### 修复的真实断点
+
+- legacy 列目录如果返回 `code=0` 但 `0 节点 / 0 叶子`，不再当成“分享确实为空”。
+- 这类结果属于“目录事实未确认”，必须继续用 `shareId + accessToken` 协议复核。
+- 带下划线的 shareId 会同时兼容基础 ID 和完整 ID；每个 ID 都先独立获取自己的 accessToken，再用同一个 ID/token 对列目录。
+- 基础 ID 请求成功但目录为空时，不提前结束，会继续尝试完整 ID。
+- 两种 ID 都无法确认目录时返回 `retryable=true`、`stage=list_share_files`，不能再伪装成“分享里没有视频”。
+
+### 回归覆盖
+
+- legacy `success=true + 空列表` → 新协议读到真实目录和视频。
+- 基础 shareId 可用 → token、shareId、访问码三者一致。
+- 基础 shareId 返回空 → 自动切完整 shareId，并重新获取匹配 token。
+- accessToken 全失败 → 保持可重试读取失败，不产生假“无媒体”结论。
+
 ## v2.1.6-r104 — 六频道统一资源入口解析（Controlled Real-World Beta）
 
 本版只收口 Telegram/TGM 资源发现入口，不修改 GYING 搜索和后续四种转存执行语义。目标是让六个默认频道先稳定产出统一、可执行的资源候选，再进入既有媒体身份、缺集与转存链。

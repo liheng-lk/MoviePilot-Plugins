@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "Controlled Real-World Beta：r104 六频道统一资源入口解析。修复正文可见的 pan.* 等光鸭子域名无法进入 Resource Inbox、curGuildID/darkmode/#/share 等前端参数污染 canonical URL、光鸭 ?code=/消息内提取码未稳定写入候选与 legacy bridge、混合频道候选顺序不稳定及多 ED2K candidate_types 重复。regengguangya、guangyapan_episode、guangya_hdhive、pan_guangya、regeng115、vip115hot 均按消息真实链接识别协议，不按频道名硬编码；115 仍只做诊断信息。来源优先级固定为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。本版本只收口频道入口，不改变 GYING 与后续转存执行语义。",
-  "version": "2.1.6",
+  "description": "Controlled Real-World Beta：r105 光鸭原生分享访问闭环。六频道入口识别后，Direct GuangYa share 不再把 legacy `code=0 + 空列表` 误判为已确认空分享；凡目录事实未确认都会使用 `shareId + accessToken` 复核。带下划线的分享 ID 按基础 ID/完整 ID 逐个配对获取 accessToken 并用同一 shareId 列目录，基础 ID 返回空节点时继续尝试完整 ID；两种协议均无法确认时返回 retryable 读取失败，禁止伪装成“没有视频”。r104 六频道子域名、UI 参数清洗、访问码透传和消息边界保持。来源优先级固定为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。本版本仍不修改 GYING 搜索语义。",
+  "version": "2.1.7",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
