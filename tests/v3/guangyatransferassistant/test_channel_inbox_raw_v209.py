@@ -247,6 +247,14 @@ def test_live_guangyapan_episode_title_and_episode_templates():
             "凡人修仙传 177-191集 光鸭云盘链接：https://www.guangyapan.com/s/LIVE177",
             "凡人修仙传", "", None, "E177-E191",
         ),
+        (
+            "名称：财阀X刑警 第二季（2026）Disney+ 1080p 内封简中 S02E01-E12",
+            "财阀X刑警", "2026", 2, "S02E01-E12",
+        ),
+        (
+            "名称：寻她 (2026) 4K 高码 国粤多音轨",
+            "寻她", "2026", None, "",
+        ),
     ]
     for raw, title, year, season, episode_hint in cases:
         parsed = inbox.parse_message_title_metadata_v209(raw)
