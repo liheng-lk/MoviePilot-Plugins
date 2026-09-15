@@ -1,4 +1,4 @@
-"""光鸭转存助手 v2.1.8 运行入口。
+"""光鸭转存助手 v2.1.9 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
@@ -1380,9 +1380,34 @@ class GuangYaTransferAssistant(
         }
 
     def _dispatch_xunlei_flash(self, subscribe: Any) -> dict:
-        """Do not fall through to GuangYa/Magnet/ED2K while Xunlei landing is pending."""
+        """Keep real Xunlei landing pending, but never turn a final-target skip into success."""
         self._xunlei_pending_landing_v200 = False
         result = dict(super()._dispatch_xunlei_flash(subscribe) or {})
+
+        # r107: episode hard-gate "handled" means the Xunlei branch was inspected,
+        # not that a flash transfer happened.  Let the lower-priority channel
+        # source continue when Xunlei submitted nothing.
+        reason = str(result.get("reason") or "").strip()
+        if (
+            reason in {"empty_final_target", "episodes_outside_final_target"}
+            and not int(result.get("successful_files") or 0)
+            and not bool(result.get("pending_verification"))
+        ):
+            result["success"] = False
+            result["handled"] = False
+            result["skipped"] = True
+            result["message"] = f"迅雷未提交：{reason}；继续检查频道光鸭/Magnet/ED2K"
+            try:
+                self._plugin_log(
+                    "INFO",
+                    "【光鸭转存助手】【来源路由v2.1.9】source=xunlei action=skip "
+                    "reason=%s handled=False next=channel_lower_sources sid=%s",
+                    reason,
+                    int(getattr(subscribe, "id", 0) or 0),
+                )
+            except Exception:
+                pass
+
         if bool(getattr(self, "_xunlei_pending_landing_v200", False)):
             result["handled"] = True
             result["pending_verification"] = True
@@ -1600,8 +1625,180 @@ class GuangYaTransferAssistant(
         )
         return result
 
-    plugin_version = "2.1.8"
-    build_id = "20260915-r106"
+    # ------------------------------------------------------------------
+    # v2.1.9 / r107 — channel source submit ownership + terminal semantics
+    # ------------------------------------------------------------------
+    def _route_fix_local_v219(self):
+        local = getattr(self, "_route_fix_state_v219", None)
+        if local is None:
+            local = threading.local()
+            self._route_fix_state_v219 = local
+        return local
+
+    def _final_target_allows_submit_v211(
+        self,
+        subscribe: Any,
+        episodes: Any,
+    ):
+        """Final submit gate with current-source self-claim excluded.
+
+        A Magnet/ED2K source is persisted as state=new before its worker calls
+        cloudcollection.  That row is a valid claim for *other* candidates, but
+        it must not subtract itself from its own final_target.
+        """
+        def _positive_v219(values: Any) -> set[int]:
+            output = set()
+            for raw in values or []:
+                try:
+                    value = int(raw or 0)
+                except (TypeError, ValueError):
+                    continue
+                if value > 0:
+                    output.add(value)
+            return output
+
+        if self._is_movie_subscription(subscribe):
+            return True, set(), "movie"
+
+        wanted = _positive_v219(episodes)
+        snap_fn = getattr(self, "_episode_target_snapshot_v210", None)
+        if not callable(snap_fn):
+            return True, wanted, "no_snapshot"
+
+        route_local = self._route_fix_local_v219()
+        source_id = str(getattr(route_local, "submit_source_id", "") or "").strip()
+
+        episode_local = getattr(self, "_episode_snapshot_tls_v211", None)
+        if episode_local is None:
+            episode_local = threading.local()
+            self._episode_snapshot_tls_v211 = episode_local
+        previous_exclude = getattr(episode_local, "planner_exclude_source_id", None)
+        if source_id:
+            episode_local.planner_exclude_source_id = source_id
+
+        cache_key = None
+        if source_id:
+            try:
+                cache_key = self._target_cache_key_v210(subscribe)
+            except Exception:
+                cache_key = None
+
+        try:
+            try:
+                snap = dict(snap_fn(
+                    subscribe,
+                    current_source_id=source_id,
+                    # Real submission must not reuse a generic snapshot which
+                    # may already contain this just-created source as a claim.
+                    force_library=bool(source_id),
+                    log=False,
+                ) or {})
+            except TypeError:
+                snap = dict(snap_fn(
+                    subscribe,
+                    force_library=bool(source_id),
+                    log=False,
+                ) or {})
+        finally:
+            if previous_exclude is None:
+                try:
+                    delattr(episode_local, "planner_exclude_source_id")
+                except AttributeError:
+                    pass
+            else:
+                episode_local.planner_exclude_source_id = previous_exclude
+
+            # A source-specific snapshot must never poison the generic target
+            # cache because it deliberately excludes one active claim.
+            if source_id and cache_key is not None:
+                try:
+                    lock = getattr(self, "_episode_target_lock_v210", None)
+                    if lock is None:
+                        lock = threading.RLock()
+                        self._episode_target_lock_v210 = lock
+                    with lock:
+                        cache = getattr(self, "_episode_target_cache_v210", None)
+                        if isinstance(cache, dict):
+                            cache.pop(cache_key, None)
+                except Exception:
+                    pass
+
+        final = _positive_v219(snap.get("final_target") or [])
+        if not final:
+            return False, set(), "empty_final_target"
+        allowed = wanted.intersection(final) if wanted else final
+        if wanted and not allowed:
+            return False, set(), "episodes_outside_final_target"
+        return True, allowed, "ok"
+
+    def _submit_offline_source(self, source_id: str) -> dict:
+        """Bind the current source while all existing safety gates and cloudcollection code run."""
+        source_id = str(source_id or "").strip()
+        local = self._route_fix_local_v219()
+        previous = getattr(local, "submit_source_id", None)
+        local.submit_source_id = source_id
+
+        try:
+            try:
+                source = dict((self._source_store().get("items") or {}).get(source_id) or {})
+            except Exception:
+                source = {}
+            source_type = str(source.get("type") or "").strip().lower()
+            sid = int(source.get("subscribe_id") or 0)
+
+            if source_type in {"magnet", "ed2k"}:
+                try:
+                    self._plugin_log(
+                        "INFO",
+                        "【光鸭转存助手】【来源执行路由v2.1.9】sid=%s source=%s "
+                        "type=%s message_id=%s executor=guangya_cloudcollection "
+                        "api=resolve_res->create_task target=%s",
+                        sid,
+                        source_id[:60] or "-",
+                        source_type.upper(),
+                        str(source.get("message_id") or "-")[:80],
+                        ",".join(str(v) for v in (
+                            source.get("resolved_episodes")
+                            or source.get("target_episodes")
+                            or []
+                        )) or "movie/auto",
+                    )
+                except Exception:
+                    pass
+
+            result = dict(super()._submit_offline_source(source_id) or {})
+
+            if source_type in {"magnet", "ed2k"}:
+                data = result.get("data") if isinstance(result.get("data"), dict) else {}
+                try:
+                    self._plugin_log(
+                        "INFO" if bool(result.get("success")) else "WARNING",
+                        "【光鸭转存助手】【来源执行结果v2.1.9】sid=%s source=%s "
+                        "type=%s executor=guangya_cloudcollection success=%s "
+                        "skipped=%s reason=%s state=%s task=%s",
+                        sid,
+                        source_id[:60] or "-",
+                        source_type.upper(),
+                        bool(result.get("success")),
+                        bool(result.get("skipped")),
+                        str(result.get("reason") or "-")[:120],
+                        str(data.get("state") or source.get("state") or "-")[:80],
+                        str(data.get("task_id") or source.get("task_id") or "-")[:100],
+                    )
+                except Exception:
+                    pass
+            return result
+        finally:
+            if previous is None:
+                try:
+                    delattr(local, "submit_source_id")
+                except AttributeError:
+                    pass
+            else:
+                local.submit_source_id = previous
+
+    plugin_version = "2.1.9"
+    build_id = "20260915-r107"
 
     _button_async_paths_v218 = {
         "/transfer": "立即转存",
