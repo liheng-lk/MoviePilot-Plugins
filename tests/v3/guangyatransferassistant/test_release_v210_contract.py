@@ -12,22 +12,31 @@ PACKAGE = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["Gu
 README = (PLUGIN / "README.md").read_text(encoding="utf-8")
 
 
-def test_public_release_is_2111_r109():
-    assert LOCAL["version"] == PACKAGE["version"] == "2.1.11"
+def test_public_release_is_2112_r110():
+    assert LOCAL["version"] == PACKAGE["version"] == "2.1.12"
     assert LOCAL["description"] == PACKAGE["description"]
-    assert "r109" in str(LOCAL.get("description") or "")
-    assert "v2.1.11" in (PACKAGE.get("history") or {})
-    assert README.startswith("## v2.1.11-r109")
+    assert "r110" in str(LOCAL.get("description") or "")
+    assert "v2.1.12" in (PACKAGE.get("history") or {})
+    assert README.startswith("## v2.1.12-r110")
     start = ENTRY.rindex("\nclass GuangYaTransferAssistant(")
     final_class = ENTRY[start:]
-    assert 'plugin_version = "2.1.11"' in final_class
-    assert 'build_id = "20260915-r109"' in final_class
-    assert "光鸭转存助手 v2.1.11 运行入口。" in ENTRY[:1000]
+    assert 'plugin_version = "2.1.12"' in final_class
+    assert 'build_id = "20260915-r110"' in final_class
+    assert "光鸭转存助手 v2.1.12 运行入口。" in ENTRY[:1000]
 
 
 def test_public_release_keeps_single_file_runtime():
     runtime = sorted(path.relative_to(PLUGIN).as_posix() for path in PLUGIN.rglob("*.py"))
     assert runtime == ["__init__.py"]
+
+
+def test_2112_history_documents_same_share_growth_recheck():
+    history = str((PACKAGE.get("history") or {}).get("v2.1.12") or "")
+    for marker in (
+        "same shareId", "15 分钟", "no_new_episode", "synced",
+        "legacy_synced", "growth_checked_at_r110", "transferred", "force",
+    ):
+        assert marker in history
 
 
 def test_2111_history_documents_tombstone_truth_and_force_retry():

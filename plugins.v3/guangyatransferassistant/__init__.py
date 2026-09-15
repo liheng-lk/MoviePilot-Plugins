@@ -1,4 +1,4 @@
-"""光鸭转存助手 v2.1.11 运行入口。
+"""光鸭转存助手 v2.1.12 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
@@ -875,8 +875,11 @@ class GuangYaTransferAssistant(
                 pass
         return planned
 
+    _processed_growth_recheck_seconds_r110 = 15 * 60
+    _processed_growth_statuses_r110 = frozenset({"no_new_episode", "synced", "legacy_synced"})
+
     def _entry_processed(self, entry: dict, subscribe: Any = None) -> bool:
-        """Re-open a processed share immediately when the authoritative repair target changes."""
+        """缺集变化立即重开；同一可增长 share 在目标不变时也做有界复核。"""
         processed = bool(super()._entry_processed(entry, subscribe))
         if not processed or subscribe is None or self._is_movie_subscription(subscribe):
             return processed
@@ -892,20 +895,49 @@ class GuangYaTransferAssistant(
             int(value) for value in (row.get("emby_repair_targets_v212") or [])
             if str(value).isdigit() and int(value) > 0
         }
-        if stored == repair:
+        if stored != repair:
+            try:
+                self._plugin_log(
+                    "INFO",
+                    "【光鸭转存助手】【Emby缺集恢复v2.1.2】#%s %s processed分享立即重开：old=%s new=%s",
+                    int(getattr(subscribe, "id", 0) or 0),
+                    str(getattr(subscribe, "name", "") or ""),
+                    sorted(stored),
+                    sorted(repair),
+                )
+            except Exception:
+                pass
+            return False
+
+        status = str(row.get("status") or "").strip().lower()
+        if status not in self._processed_growth_statuses_r110:
             return processed
         try:
-            self._plugin_log(
-                "INFO",
-                "【光鸭转存助手】【Emby缺集恢复v2.1.2】#%s %s processed分享立即重开：old=%s new=%s",
-                int(getattr(subscribe, "id", 0) or 0),
-                str(getattr(subscribe, "name", "") or ""),
-                sorted(stored),
-                sorted(repair),
+            checked_at = float(
+                row.get("growth_checked_at_r110")
+                or row.get("emby_repair_checked_at_v212")
+                or 0
             )
-        except Exception:
-            pass
-        return False
+        except (TypeError, ValueError):
+            checked_at = 0.0
+        now = time.time()
+        if not checked_at or now - checked_at >= float(self._processed_growth_recheck_seconds_r110):
+            try:
+                self._plugin_log(
+                    "INFO",
+                    "【光鸭转存助手】【分享增长复核r110】#%s %s status=%s share_id=%s missing=%s age=%ss；"
+                    "同一 share 可能已追加文件，本轮重新读取目录",
+                    int(getattr(subscribe, "id", 0) or 0),
+                    str(getattr(subscribe, "name", "") or ""),
+                    status,
+                    str(entry.get("share_id") or "")[:100] or "-",
+                    ",".join(f"E{value:02d}" for value in sorted(repair)),
+                    int(max(0.0, now - checked_at)) if checked_at else -1,
+                )
+            except Exception:
+                pass
+            return False
+        return processed
 
     def _mark_entry_processed(
         self,
@@ -924,8 +956,11 @@ class GuangYaTransferAssistant(
             row = dict(records.get(key) or {})
             if not key or not row:
                 return
+            now = time.time()
             row["emby_repair_targets_v212"] = sorted(repair)
-            row["emby_repair_checked_at_v212"] = time.time()
+            row["emby_repair_checked_at_v212"] = now
+            if str(status or "").strip().lower() in self._processed_growth_statuses_r110:
+                row["growth_checked_at_r110"] = now
             records[key] = row
             self.save_data("processed_entries", records)
         except Exception:
@@ -1456,8 +1491,8 @@ class GuangYaTransferAssistant(
         )
         return result
 
-    plugin_version = "2.1.11"
-    build_id = "20260915-r109"
+    plugin_version = "2.1.12"
+    build_id = "20260915-r110"
 
 
     def get_api(self):

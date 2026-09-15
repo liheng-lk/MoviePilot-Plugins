@@ -81,14 +81,14 @@ def _project_entry_for_legacy_contracts() -> str:
     end = original.index("\n\n\nclass _GuangYaBundledModuleFinder", start)
     projected = original[:start] + "_BUNDLED_SOURCES = {}" + original[end:]
     projected = projected.replace(
-        "光鸭转存助手 v2.1.11 运行入口。",
+        "光鸭转存助手 v2.1.12 运行入口。",
         "光鸭转存助手 v2.0.13 运行入口。",
         1,
     )
     class_start = projected.rindex("\nclass GuangYaTransferAssistant(")
     head, tail = projected[:class_start], projected[class_start:]
-    tail = tail.replace('    plugin_version = "2.1.11"', '    plugin_version = "2.0.13"', 1)
-    tail = tail.replace('    build_id = "20260915-r109"', '    build_id = "20260911-r97"', 1)
+    tail = tail.replace('    plugin_version = "2.1.12"', '    plugin_version = "2.0.13"', 1)
+    tail = tail.replace('    build_id = "20260915-r110"', '    build_id = "20260911-r97"', 1)
     entry.write_text(head + tail, encoding="utf-8")
     return original
 
@@ -178,6 +178,7 @@ def main() -> int:
         HERE / "test_share_access_r105.py",
         HERE / "test_restore_submit_r106.py",
         HERE / "test_share_tombstone_r109.py",
+        HERE / "test_processed_growth_r110.py",
         HERE / "test_gying_detail_truth_r107.py",
         HERE / "test_r103_summary_gying_fallback.py",
     }
