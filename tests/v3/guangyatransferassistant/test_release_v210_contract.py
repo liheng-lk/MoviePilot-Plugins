@@ -80,13 +80,15 @@ def test_219_submit_gate_excludes_current_source_without_relaxing_other_gates():
     final_class = ENTRY[start:]
     for marker in (
         "def _route_fix_local_v219",
+        "def _current_submit_source_v219",
         "submit_source_id",
-        "current_source_id=source_id",
-        "force_library=bool(source_id)",
-        "planner_exclude_source_id",
-        "cache.pop(cache_key, None)",
+        "def _active_inflight_claims_v211",
+        "current_source_id=effective_source_id",
+        "def _invalidate_submit_target_cache_v219",
+        "cache.pop(key, None)",
         "executor=guangya_cloudcollection",
         "api=resolve_res->create_task",
+        "self_claim=excluded",
     ):
         assert marker in final_class
 
