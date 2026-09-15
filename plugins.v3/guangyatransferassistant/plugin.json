@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "Controlled Real-World Beta：r104 强化频道入口资源链接提取，兼容光鸭/迅雷的协议相对与无协议 URL、更多 copy/redirect/data 属性、包装跳转参数及常见 JS 转义；只扩大入口发现，不改变频道/观影来源优先级、媒体身份、MoviePilot 权威缺集、reservation/source claim、不可分割物理文件栅栏与真实落盘规则。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
-  "version": "2.1.6",
+  "description": "Controlled Real-World Beta：r105 修复“刷新频道”按钮服务器无效响应：MoviePilot V3 /refresh 改为标准 success/message/data 三段式并立即返回，真实频道抓取、解析和刷新后订阅处理转入后台，避免近 2000 条频道 items/routes 直接塞入 HTTP 响应；同时保留 r104 的光鸭/迅雷链接变体解析增强。媒体身份、权威缺集、Season、reservation/source claim、不可分割物理文件与真实落盘门禁不变。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+  "version": "2.1.7",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
