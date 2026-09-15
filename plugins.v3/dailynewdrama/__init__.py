@@ -18,7 +18,10 @@ from app.sdk.config import settings
 from app.sdk.media import MediaInfo, MetaInfo
 from app.sdk.events import Event, eventmanager
 from app.sdk.logging import logger
-from app.plugins import _PluginBase
+try:
+    from app.sdk.plugin import _PluginBase
+except ImportError:
+    from app.plugins import _PluginBase
 from app.schemas.types import EventType, MediaSource, MediaType
 from app.sdk.network import RequestUtils
 
