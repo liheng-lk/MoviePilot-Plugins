@@ -1,0 +1,27 @@
+name: GuangYa Transfer Assistant E2E Preflight
+
+on:
+  workflow_dispatch:
+
+jobs:
+  preflight:
+    runs-on: [self-hosted, linux, guangya-e2e]
+    timeout-minutes: 10
+    env:
+      MP_TEST_BASE_URL: http://mp.odn.cc
+      GUANGYA_TEST_ROOT: /g-box
+      MP_TEST_USERNAME: ${{ secrets.MP_TEST_USERNAME }}
+      MP_TEST_PASSWORD: ${{ secrets.MP_TEST_PASSWORD }}
+      GY_TEST_GUANGYA_SHARE: ${{ secrets.GY_TEST_GUANGYA_SHARE }}
+      GY_TEST_XUNLEI_SHARE: ${{ secrets.GY_TEST_XUNLEI_SHARE }}
+      GY_TEST_MAGNET: ${{ secrets.GY_TEST_MAGNET }}
+      GY_TEST_ED2K: ${{ secrets.GY_TEST_ED2K }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Environment preflight
+        run: python tests/v3/guangyatransferassistant/e2e_preflight.py
