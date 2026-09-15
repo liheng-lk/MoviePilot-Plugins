@@ -255,6 +255,30 @@ def test_live_guangyapan_episode_title_and_episode_templates():
             "名称：寻她 (2026) 4K 高码 国粤多音轨",
             "寻她", "2026", None, "",
         ),
+        (
+            "名称：冬城猎凶(2026)〖更08集〗〖4K.SDR〗〖内嵌简中〗",
+            "冬城猎凶", "2026", None, "E01-E08",
+        ),
+        (
+            "🎬 已更新：深渊无间 (2026)〖更 09 集〗〖4K〗〖高码率〗〖内嵌简中〗",
+            "深渊无间", "2026", None, "E01-E09",
+        ),
+        (
+            "名称：保镖恋人 (2026) 4K HDR10+ 内封简繁字幕",
+            "保镖恋人", "2026", None, "",
+        ),
+        (
+            "名称：小黄人与大怪兽 (2026) 4K REMUX HDR 杜比视界 国粤英多音轨 内封简繁字幕",
+            "小黄人与大怪兽", "2026", None, "",
+        ),
+        (
+            "名称：给阿嬷的情书 (2026)〖蓝光原盘 高码率 国语〗〖共5GB〗主演:李思潼/王彦桐",
+            "给阿嬷的情书", "2026", None, "",
+        ),
+        (
+            "四渡（2026） 长征时期，红军身处绝境。光鸭云盘链接：https://www.guangyapan.com/s/LIVE4",
+            "四渡", "2026", None, "",
+        ),
     ]
     for raw, title, year, season, episode_hint in cases:
         parsed = inbox.parse_message_title_metadata_v209(raw)
