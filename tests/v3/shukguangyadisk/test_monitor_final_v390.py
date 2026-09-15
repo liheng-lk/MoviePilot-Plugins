@@ -25,7 +25,7 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
 
     def test_final_monitor_is_first_mro_and_release_is_v390(self):
         entry = ENTRY.read_text(encoding="utf-8")
-        self.assertIn('plugin_version = "3.9.13"', entry)
+        self.assertIn('plugin_version = "3.9.14"', entry)
         class_slice = entry.split("class ShukGuangYaDisk(", 1)[1].split("):", 1)[0]
         self.assertLess(class_slice.index("_GuangYaFinalMonitorV390Mixin"), class_slice.index("_GuangYaOrganizerMonitorV366Mixin"))
         self.assertIn("as _GuangYaFinalMonitorV390Mixin", entry)
@@ -99,9 +99,9 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
     def test_federation_uses_fresh_v390_chunk(self):
         remote = REMOTE.read_text(encoding="utf-8")
         page = PAGE.read_text(encoding="utf-8")
-        self.assertIn("__federation_expose_AssistantPage-v390.js?v=3.9.13", remote)
+        self.assertIn("__federation_expose_AssistantPage-v390.js?v=3.9.14", remote)
         self.assertNotIn("AssistantPage-v381.js?v=3.8.1", remote)
-        self.assertIn("整理监控控制 · v3.9.13", page)
+        self.assertIn("整理监控控制 · v3.9.14", page)
         self.assertIn("install_registration_safe", page)
 
     def test_loose_container_skips_waiting_or_terminal_members(self):
@@ -188,6 +188,97 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
         selected2 = select(rows2, root="/root", now=now, interval=60, budget=2)
         self.assertIn(deep_known, selected2)
 
+    def test_new_multilevel_frontier_is_drilled_in_same_pulse(self):
+        core = CORE.read_text(encoding="utf-8")
+        tree = ast.parse(core)
+        pulse_node = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_watch_pulse"
+        )
+        module = ast.Module(body=[pulse_node], type_ignores=[])
+        ast.fix_missing_locations(module)
+
+        scan_order = []
+
+        class FakeTime:
+            @staticmethod
+            def time():
+                return 1000.0
+
+        class FakeLock:
+            def acquire(self, blocking=False):
+                return True
+
+            def release(self):
+                return None
+
+        class Plugin:
+            _enabled = True
+            _guangya_api = object()
+
+            def _save_monitor_status(self, **kwargs):
+                self.status = kwargs
+
+        watch_rows = {
+            "/root": {"path": "/root", "depth": 0, "last_checked": 0},
+            "/root/old-1": {"path": "/root/old-1", "depth": 1, "last_checked": 0},
+            "/root/old-2": {"path": "/root/old-2", "depth": 1, "last_checked": 0},
+            "/root/old-3": {"path": "/root/old-3", "depth": 1, "last_checked": 0},
+        }
+        resource_rows = {}
+
+        def scan_directory(plugin, path, watch, resources, *, reason, force_resource):
+            del plugin, watch, resources, reason, force_resource
+            scan_order.append(path)
+            chain = {
+                "/root": "/root/A",
+                "/root/A": "/root/A/B",
+                "/root/A/B": "/root/A/B/Season 01",
+            }
+            child = chain.get(path)
+            return {
+                "changed": child is not None,
+                "queued": path.endswith("Season 01"),
+                "refreshed": False,
+                "state_recheck": False,
+                "primary": 1 if path.endswith("Season 01") else 0,
+                "files": 1 if path.endswith("Season 01") else 0,
+                "new_children": [child] if child else [],
+            }
+
+        namespace = {
+            "Any": object,
+            "Dict": dict,
+            "List": list,
+            "time": FakeTime,
+            "_WATCH_BUDGET": 64,
+            "_WATCH_LIMIT": 20000,
+            "_RESOURCE_LIMIT": 10000,
+            "_WATCH_KEY": "watch",
+            "_RESOURCE_KEY": "resource",
+            "_scan_id": lambda prefix: prefix + "-test",
+            "_root": lambda plugin: "/root",
+            "_watch_interval": lambda plugin: 60.0,
+            "_watch_lock": lambda plugin: FakeLock(),
+            "_load_rows": lambda plugin, key: watch_rows if key == "watch" else resource_rows,
+            "_select_watch_paths": lambda rows, **kwargs: [
+                "/root", "/root/old-1", "/root/old-2", "/root/old-3"
+            ],
+            "_scan_directory": scan_directory,
+            "_save_rows": lambda *args, **kwargs: None,
+            "_log": lambda *args, **kwargs: None,
+        }
+        exec(compile(module, "<deep-watch-pulse>", "exec"), namespace)
+        pulse = namespace["_watch_pulse"]
+
+        result = pulse(Plugin(), trigger="test", budget=4)
+
+        self.assertEqual(
+            scan_order,
+            ["/root", "/root/A", "/root/A/B", "/root/A/B/Season 01"],
+        )
+        self.assertEqual(result["data"]["watch_queued"], 1)
+
     def test_watch_log_separates_created_refreshed_and_state_rechecks(self):
         core = CORE.read_text(encoding="utf-8")
         self.assertIn('"refreshed": refreshed', core)
@@ -225,8 +316,8 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
 
     def test_plugin_json_is_v390(self):
         data = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], "3.9.13")
-        self.assertIn("v3.9.13", data.get("history") or {})
+        self.assertEqual(data["version"], "3.9.14")
+        self.assertIn("v3.9.14", data.get("history") or {})
 
 
 if __name__ == "__main__":
