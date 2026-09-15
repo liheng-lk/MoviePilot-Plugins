@@ -12,17 +12,17 @@ PACKAGE = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["Gu
 README = (PLUGIN / "README.md").read_text(encoding="utf-8")
 
 
-def test_public_release_is_215_r103():
-    assert LOCAL["version"] == PACKAGE["version"] == "2.1.5"
+def test_public_release_is_217_r105():
+    assert LOCAL["version"] == PACKAGE["version"] == "2.1.7"
     assert LOCAL["description"] == PACKAGE["description"]
-    assert "r103" in str(LOCAL.get("description") or "")
-    assert "v2.1.5" in (PACKAGE.get("history") or {})
-    assert README.startswith("## v2.1.5-r103")
+    assert "r105" in str(LOCAL.get("description") or "")
+    assert "v2.1.7" in (PACKAGE.get("history") or {})
+    assert README.startswith("## v2.1.7-r105")
     start = ENTRY.rindex("\nclass GuangYaTransferAssistant(")
     final_class = ENTRY[start:]
-    assert 'plugin_version = "2.1.5"' in final_class
-    assert 'build_id = "20260913-r103"' in final_class
-    assert "光鸭转存助手 v2.1.5 运行入口。" in ENTRY[:1000]
+    assert 'plugin_version = "2.1.7"' in final_class
+    assert 'build_id = "20260915-r105"' in final_class
+    assert "光鸭转存助手 v2.1.7 运行入口。" in ENTRY[:1000]
 
 
 def test_public_release_keeps_single_file_runtime():
@@ -37,3 +37,18 @@ def test_215_history_documents_channel_fallback_summary_and_sequel_guard():
         "S01", "S02", "观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K",
     ):
         assert marker in history
+
+
+def test_217_refresh_is_async_and_v3_enveloped():
+    start = ENTRY.rindex("\nclass GuangYaTransferAssistant(")
+    final_class = ENTRY[start:]
+    for marker in (
+        "def _manual_refresh_worker_v217",
+        "name=\"GuangYaManualRefresh\"",
+        "\"success\": True",
+        "\"message\": \"频道刷新已进入后台队列",
+        "\"data\": {",
+        "\"queued\": True",
+        "manual_refresh_last_v217",
+    ):
+        assert marker in final_class
