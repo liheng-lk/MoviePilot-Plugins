@@ -252,6 +252,8 @@ class FinalMonitorV390ContractTest(unittest.TestCase):
             "List": list,
             "time": FakeTime,
             "_WATCH_BUDGET": 64,
+            "_WATCH_LIMIT": 20000,
+            "_RESOURCE_LIMIT": 10000,
             "_WATCH_KEY": "watch",
             "_RESOURCE_KEY": "resource",
             "_scan_id": lambda prefix: prefix + "-test",
