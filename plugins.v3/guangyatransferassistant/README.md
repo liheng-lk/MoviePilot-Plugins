@@ -1,3 +1,29 @@
+## v2.1.6-r104 — 六频道统一资源入口解析（Controlled Real-World Beta）
+
+本版只收口 Telegram/TGM 资源发现入口，不修改 GYING 搜索和后续四种转存执行语义。目标是让六个默认频道先稳定产出统一、可执行的资源候选，再进入既有媒体身份、缺集与转存链。
+
+### 六频道入口
+
+- `regengguangya`、`guangyapan_episode`、`guangya_hdhive`、`pan_guangya`、`regeng115`、`vip115hot` 全部按消息中的真实资源链接识别协议，不再依赖频道名推断。
+- RAW message scanner 继续覆盖正文、`href`、`data-url`、`data-clipboard-text`、`onclick`、JavaScript/JSON 和包装跳转。
+- 光鸭分享支持 `guangyapan.com` 的任意子域名与无 scheme 链接，例如 `pan.guangyapan.com/s/...`。
+- 115/其它网盘链接只保留诊断来源，不进入光鸭转存执行。
+
+### 光鸭链接归一化
+
+- `curGuildID`、`darkmode`、`#/share` 等前端 UI 参数不再污染 canonical URL。
+- `code`、`pwd`、`passcode`、`pass_code`、`password` 等访问参数保留。
+- 消息内“提取码/密码/访问码/口令”严格限定在同一 Telegram message block，不跨消息串码。
+- GuangYa candidate 与 legacy bridge 同时保留 `share_id`、`share_url`、`canonical_url`、`share_code/passcode`，避免后续只能依赖 URL 碰巧带码。
+
+### 统一候选
+
+候选优先级固定为：
+
+`迅雷秒传 > 光鸭直接转存 > Magnet > ED2K`
+
+同一消息中的多条 ED2K 会全部保留，但 `candidate_types` 只记录唯一协议类型。新增回归覆盖光鸭子域名、UI 参数清洗、隐藏 clipboard 分享、访问码透传、混合资源排序、多 ED2K 和跨消息密码隔离。
+
 ## v2.1.5-r103 — 频道后观影补搜、汇总去重与续作季号兼容（Controlled Real-World Beta）
 
 本版修复实机中频道批次检查了大量订阅，却出现大量“本地暂无资源”、`外部搜索无结果=0`，观影/GYING 实际没有进入同轮后备链的问题。
