@@ -107,15 +107,16 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "Controlled Real-World Beta：r105 修复“刷新频道”按钮服务器无效响应：MoviePilot V3 /refresh 改为标准 success/message/data 三段式并立即返回，真实频道抓取、解析和刷新后订阅处理转入后台，避免近 2000 条频道 items/routes 直接塞入 HTTP 响应；同时保留 r104 的光鸭/迅雷链接变体解析增强。媒体身份、权威缺集、Season、reservation/source claim、不可分割物理文件与真实落盘门禁不变。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+    "description": "Controlled Real-World Beta：r106 全面审计页面按钮接口：最终 get_api 对所有 POST 路由统一 MoviePilot V3 success/message/data 响应；立即转存、搜索缺失资源、检测资源来源、秒传预检/迅雷测试、刷新观影节点、观影会话测试、一键完整诊断全部改为后台单飞，避免网络慢、批量搜索或大响应再次触发“服务器无效响应”。轻量按钮保持同步；v2.1.7 后台刷新频道和 r104 链接解析增强继续保留。",
     "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,缺集,追更,单文件运行时,真实落盘,MP优先命名,最终命名确认,跨季保护,Season门禁,Emby缺集恢复,陈旧回执恢复,目标感知冷却,缺集重开,频道后观影补搜,汇总去重,续作季号兼容",
-    "version": "2.1.7",
+    "version": "2.1.8",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "release": true,
     "history": {
+      "v2.1.8": "r106 Button API Hardening（Controlled Real-World Beta）：全面审计 MoviePilot V3 页面按钮接口。最终 `get_api()` 对所有 POST 路由统一安装 `success/message/data` 三段式响应适配和异常隔离，避免旧模块扁平字典、额外字段或未捕获异常直接变成前端“服务器无效响应”。高耗时按钮统一转后台单飞：立即转存 `/transfer`、搜索缺失资源 `/providers/search/selected`、检测资源来源 `/providers/test`、秒传预检 `/xunlei/flash/preflight`、迅雷分享测试 `/xunlei/flash/test`、刷新观影节点 `/viewing/nodes/refresh`、观影会话测试 `/viewing/session/test`、完整诊断 `/diagnostics/full`。重复点击只合并；后台终态写入 `button_action_last_v218` 和 route health。`/refresh` 继续使用 v2.1.7 独立后台刷新。自检、路线切换、验证码交互、任务重试等轻量/交互型按钮保留同步，但也统一标准响应。",
       "v2.1.7": "r105 Manual Refresh API Hotfix（Controlled Real-World Beta）：修复首页“刷新频道”在频道索引接近 2000 条、并可能继续触发固定订阅处理时同步 HTTP 请求过重，前端出现“服务器无效响应”的问题。`/refresh` 现在严格返回 MoviePilot V3 `success/message/data` 三段式，点击后立即返回 `queued=true`；真实 Telegram/TGM 抓取、Raw HTML 解析、频道缓存更新与可选的刷新后订阅处理转入单飞后台线程，重复点击只合并，不再把完整 `items/routes` 回传浏览器。刷新结果写入 `manual_refresh_last_v217`、route health 与插件日志。保留 r104 的协议相对/无协议光鸭与迅雷 URL、copy/redirect/data 属性、包装跳转与 JS 转义解析增强；媒体身份、年份、Season、MoviePilot 权威缺集、reservation/source claim、不可分割物理文件和真实落盘门禁不变。",
       "v2.1.6": "r104 Channel URL Extraction Hardening（Controlled Real-World Beta）：针对 Telegram/TGM 同频道少量消息只有标题却未识别到可执行链接的问题，扩展 Raw HTML 入口提取，兼容 `//guangyapan.com/...`、无协议 `guangyapan.com/...`、对应迅雷写法，补齐 data-copy-text/data-clipboard-value/action/formaction/data-redirect/data-jump-url 等属性、更多 JSON URL 键和 redirect 包装参数，并解码常见 \\\\u003A/\\\\u002F/\\\\x3A/\\\\x2F JS 转义。最终仍只接受光鸭分享、迅雷分享、Magnet、ED2K 四类可执行协议；115/夸克/百度等继续只记录诊断，不进入转存。媒体身份、年份、Season、MoviePilot 权威缺集、reservation/source claim、不可分割物理文件和真实落盘门禁全部保持不变。",
       "v2.1.5": "r103 Channel→GYING Fallback & Summary Dedup（Controlled Real-World Beta）：修复 v1.12.5 channel_only 调度导致频道事件/手动刷新在大量 NO_LOCAL_RESOURCE 后不能在同一受控轮继续观影的问题。频道阶段保持纯被动，阶段结束后重新计算真实缺集、日历 due 与外部检索冷却，仅命中条件的订阅进入 `airing_pull` 完整来源链；频道阶段内部旧 external recall 在该编排下不再重复入队。手动刷新使用同一受控两阶段，不等于 `/gycheck` 强制全量外搜。批次汇总按 subscribe_id 合并多 run，只保留每订阅一个最终结果，并移除通知标题在正文中的重复首行；身份不足汇总增加真实标题证据。新增编号续作季号窄兼容：仅 MoviePilot S1 且订阅标题末尾数字 N 与资源显式 S0N 一致、真实标题强匹配时视为同一续作，普通 S01↔S02 冲突仍硬拒绝。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
