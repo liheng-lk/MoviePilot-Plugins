@@ -1,4 +1,4 @@
-"""光鸭转存助手 v2.1.7 运行入口。
+"""光鸭转存助手 v2.1.8 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
@@ -1600,13 +1600,269 @@ class GuangYaTransferAssistant(
         )
         return result
 
-    plugin_version = "2.1.7"
-    build_id = "20260915-r105"
+    plugin_version = "2.1.8"
+    build_id = "20260915-r106"
 
+    _button_async_paths_v218 = {
+        "/transfer": "立即转存",
+        "/providers/search/selected": "搜索缺失资源",
+        "/providers/test": "检测资源来源",
+        "/xunlei/flash/preflight": "秒传预检",
+        "/xunlei/flash/test": "迅雷分享测试",
+        "/viewing/nodes/refresh": "刷新观影节点",
+        "/viewing/session/test": "测试观影会话",
+        "/diagnostics/full": "一键完整诊断",
+    }
+
+    @staticmethod
+    def _button_response_envelope_v218(result: Any, default_message: str = "操作完成") -> dict:
+        """所有页面 POST 动作统一转换成 MoviePilot V3 success/message/data 三段式。"""
+        if isinstance(result, dict):
+            success = bool(result.get("success", True))
+            message = str(
+                result.get("message")
+                or (default_message if success else "操作失败")
+            )[:1000]
+            sentinel = object()
+            raw_data = result.get("data", sentinel)
+            extras = {
+                key: value
+                for key, value in result.items()
+                if key not in {"success", "message", "data"}
+            }
+            if raw_data is sentinel:
+                data = extras or None
+            elif isinstance(raw_data, dict):
+                data = dict(raw_data)
+                for key, value in extras.items():
+                    data.setdefault(key, value)
+            elif extras:
+                data = {"result": raw_data, **extras}
+            else:
+                data = raw_data
+            return {
+                "success": success,
+                "message": message,
+                "data": data,
+            }
+        return {
+            "success": True,
+            "message": default_message,
+            "data": result,
+        }
+
+    def _record_button_action_v218(
+        self,
+        path: str,
+        *,
+        success: bool,
+        message: str,
+        queued: bool = False,
+    ) -> None:
+        row = {
+            "path": str(path or ""),
+            "success": bool(success),
+            "message": str(message or "")[:500],
+            "queued": bool(queued),
+            "updated_at": self._now_text() if callable(getattr(self, "_now_text", None)) else "",
+        }
+        try:
+            state = dict(self.get_data("button_action_last_v218") or {})
+            state[str(path or "")] = row
+            if len(state) > 32:
+                state = dict(list(state.items())[-32:])
+            self.save_data("button_action_last_v218", state)
+        except Exception:
+            pass
+        try:
+            self._record_route_health(
+                last_button_action=str(path or ""),
+                last_button_action_success=bool(success),
+                last_button_action_message=str(message or "")[:300],
+                last_button_action_at=row["updated_at"],
+            )
+        except Exception:
+            pass
+
+    def _button_async_lock_v218(self, path: str):
+        locks = getattr(self, "_button_async_locks_v218", None)
+        if not isinstance(locks, dict):
+            locks = {}
+            self._button_async_locks_v218 = locks
+        lock = locks.get(path)
+        if lock is None:
+            lock = threading.Lock()
+            locks[path] = lock
+        return lock
+
+    def _wrap_button_endpoint_v218(self, path: str, endpoint: Any) -> Any:
+        if not callable(endpoint) or getattr(endpoint, "_guangya_button_v218", False):
+            return endpoint
+
+        label = str(self._button_async_paths_v218.get(path) or path.lstrip("/") or "操作")
+        is_async = path in self._button_async_paths_v218
+
+        if is_async:
+            @functools.wraps(endpoint)
+            def async_button(*args, **kwargs):
+                runtime_check = getattr(self, "_runtime_is_current", None)
+                if callable(runtime_check) and not runtime_check():
+                    return {
+                        "success": False,
+                        "message": "插件已热更新，请刷新当前页面后重试",
+                        "data": {"queued": False, "action": path},
+                    }
+
+                lock = self._button_async_lock_v218(path)
+                if not lock.acquire(blocking=False):
+                    return {
+                        "success": True,
+                        "message": f"{label}已经在后台执行，请勿重复点击",
+                        "data": {
+                            "queued": True,
+                            "coalesced": True,
+                            "action": path,
+                        },
+                    }
+
+                def worker() -> None:
+                    try:
+                        try:
+                            raw = endpoint(*args, **kwargs)
+                            result = self._button_response_envelope_v218(
+                                raw,
+                                default_message=f"{label}完成",
+                            )
+                        except Exception as err:
+                            result = {
+                                "success": False,
+                                "message": f"{label}执行异常：{type(err).__name__}",
+                                "data": {"error": str(err)[:500]},
+                            }
+                            try:
+                                self._plugin_log(
+                                    "EXCEPTION",
+                                    "【光鸭转存助手】【按钮后台v2.1.8】path=%s label=%s error=%s",
+                                    path,
+                                    label,
+                                    err,
+                                )
+                            except Exception:
+                                pass
+
+                        self._record_button_action_v218(
+                            path,
+                            success=bool(result.get("success")),
+                            message=str(result.get("message") or ""),
+                            queued=False,
+                        )
+                        try:
+                            self._plugin_log(
+                                "INFO" if result.get("success") else "WARNING",
+                                "【光鸭转存助手】【按钮后台v2.1.8】path=%s label=%s success=%s message=%s",
+                                path,
+                                label,
+                                bool(result.get("success")),
+                                str(result.get("message") or "")[:300],
+                            )
+                        except Exception:
+                            pass
+                    finally:
+                        try:
+                            lock.release()
+                        except Exception:
+                            pass
+
+                try:
+                    threading.Thread(
+                        target=worker,
+                        name="GuangYaButton-" + re.sub(r"[^A-Za-z0-9]+", "-", path).strip("-")[:40],
+                        daemon=True,
+                    ).start()
+                except Exception as err:
+                    try:
+                        lock.release()
+                    except Exception:
+                        pass
+                    return {
+                        "success": False,
+                        "message": f"{label}后台任务启动失败：{type(err).__name__}",
+                        "data": {"queued": False, "action": path},
+                    }
+
+                self._record_button_action_v218(
+                    path,
+                    success=True,
+                    message=f"{label}已进入后台队列",
+                    queued=True,
+                )
+                return {
+                    "success": True,
+                    "message": f"{label}已进入后台队列，可继续使用页面",
+                    "data": {
+                        "queued": True,
+                        "coalesced": False,
+                        "action": path,
+                    },
+                }
+
+            async_button._guangya_button_v218 = True
+            return async_button
+
+        @functools.wraps(endpoint)
+        def sync_button(*args, **kwargs):
+            try:
+                raw = endpoint(*args, **kwargs)
+                result = self._button_response_envelope_v218(raw)
+            except Exception as err:
+                try:
+                    self._plugin_log(
+                        "EXCEPTION",
+                        "【光鸭转存助手】【按钮响应v2.1.8】path=%s error=%s",
+                        path,
+                        err,
+                    )
+                except Exception:
+                    pass
+                result = {
+                    "success": False,
+                    "message": f"操作执行异常：{type(err).__name__}",
+                    "data": {"error": str(err)[:500]},
+                }
+            self._record_button_action_v218(
+                path,
+                success=bool(result.get("success")),
+                message=str(result.get("message") or ""),
+                queued=False,
+            )
+            return result
+
+        sync_button._guangya_button_v218 = True
+        return sync_button
+
+    def _harden_button_routes_v218(self, routes: Any):
+        hardened = []
+        for raw in list(routes or []):
+            if not isinstance(raw, dict):
+                continue
+            item = dict(raw)
+            path = str(item.get("path") or "")
+            methods = {
+                str(value or "").upper()
+                for value in (item.get("methods") or [])
+            }
+            if "POST" in methods and callable(item.get("endpoint")):
+                item["endpoint"] = self._wrap_button_endpoint_v218(
+                    path,
+                    item.get("endpoint"),
+                )
+            hardened.append(item)
+        return hardened
 
     def get_api(self):
-        """统一 Bearer 鉴权，并为页面按钮安装标准响应适配。"""
-        return force_bear_auth(super().get_api())
+        """统一 Bearer 鉴权、POST 三段式响应，以及高耗时按钮后台化。"""
+        routes = force_bear_auth(super().get_api())
+        return self._harden_button_routes_v218(routes)
 
     @staticmethod
     def _normalize_page_api_auth(node: Any) -> None:
