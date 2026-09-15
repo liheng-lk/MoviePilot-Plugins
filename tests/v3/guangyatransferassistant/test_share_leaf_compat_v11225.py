@@ -64,16 +64,21 @@ def test_v11225_files_parse_and_mro_is_wired_before_auto_recovery():
     assert head.index("GuangYaShareLeafCompatV11225Mixin") < head.index("GuangYaAutoRecoveryV11224Mixin")
 
 
-def test_v11225_retry_request_includes_share_id_and_access_token():
+def test_v11225_retry_preserves_opaque_full_share_id_and_token_primary_listing():
     method = text.split("    def _inspect_share_with_share_id_v11225(", 1)[1].split("    def _inspect_share(", 1)[0]
-    assert '"shareId": list_share_id' in method
+    assert 'full_share_id.split("_", 1)[0]' not in method
+    assert 'data={"shareId": full_share_id, "code": code}' in method
     assert '"accessToken": token' in method
     assert '"parentId": parent_id' in method
-    assert 'full_share_id.split("_", 1)[0]' in method
+    assert '("token_page1", 1, False)' in method
+    assert '("token_page0", 0, False)' in method
+    assert 'payload["shareId"] = full_share_id' in method
+    assert '"access_share_id_v216": full_share_id' in method
+    assert '"share_access_attempts_v216": access_attempts' in method
 
 
-def test_v11225_retries_when_legacy_fails_or_leaf_paths_empty():
-    """P0-1：legacy success=False 或空叶子路径时都必须进入 shareId 新协议。"""
+def test_v11225_retries_when_legacy_fails_empty_result_or_leaf_paths_empty():
+    """legacy success=False、0 节点假成功、空叶子路径都必须进入 shareId 新协议。"""
     predicate = text.split("    def _probe_has_empty_leaf_paths_v11225(", 1)[1].split(
         "    def _inspect_share_with_share_id_v11225(", 1
     )[0]
@@ -82,8 +87,9 @@ def test_v11225_retries_when_legacy_fails_or_leaf_paths_empty():
     inspect_method = text.split("    def _inspect_share(self, share_url", 1)[1]
     assert "super()._inspect_share(share_url)" in inspect_method
     assert "_probe_has_empty_leaf_paths_v11225" in inspect_method
-    assert "need_share_id = (not legacy_ok) or empty_paths" in inspect_method
-    assert 'reason = "legacy_failed" if not legacy_ok else "empty_leaf_paths"' in inspect_method
+    assert "empty_result = legacy_ok and legacy_file_count <= 0 and legacy_leaf_count <= 0" in inspect_method
+    assert "need_share_id = (not legacy_ok) or empty_paths or empty_result" in inspect_method
+    assert 'reason = "legacy_empty_result"' in inspect_method
     assert "retryable" in inspect_method
     assert "stage=list_share_files" in inspect_method
 

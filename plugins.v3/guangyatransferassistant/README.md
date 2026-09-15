@@ -1,3 +1,176 @@
+## v2.1.12-r110 — 同一光鸭分享增长复核（Controlled Real-World Beta）
+
+本版继续检查“分享已经可读、也能转存，但为什么后续热更仍可能不触发”的 processed 去重层。
+
+### 问题
+
+同一个光鸭 shareId 可能长期复用并持续追加新集。旧逻辑如果在订阅已经缺 E04 时第一次检查该分享只看到 E01-E03，会把消息记为 `no_new_episode`。之后即使发布者仍用同一个 shareId 加入 E04，只要 Emby 的缺集集合仍然是 E04，processed key 和 repair target 都不变，这条分享可能一直被跳过。
+
+### r110 行为
+
+- TV 仍有真实缺集时，以下 processed 状态视为“内容可能继续增长”：
+  - `no_new_episode`
+  - `synced`
+  - `legacy_synced`
+- 同一记录最多每 **15 分钟**重新读取一次分享目录。
+- 缺集集合发生变化时仍立即重开，不等待 15 分钟。
+- 再次确认没有新增后刷新增长检查时间，避免每 5 分钟频道 tick 都访问同一分享。
+- `transferred` 等真实完成状态不会因为时间到期而自动重开。
+- 电影、当前没有真实缺集的 TV 不参与增长复核。
+- 人工 force 继续直接绕过 processed 去重。
+
+## v2.1.11-r109 — 光鸭分享失败退避与失效判定（Controlled Real-World Beta）
+
+本版继续沿“频道光鸭链接 → 分享读取 → 转存提交”真实执行链检查，修复一个会让资源看起来长时间“不工作”的状态缓存问题。
+
+### 修复
+
+- 临时 API / 网络 / 协议失败：只退避 **90 秒**，用于抑制同一瞬时批次重复请求。
+- 下一次 5 分钟频道轮询时临时退避一定已经过期，可以重新访问分享。
+- 人工 `/gycheck` / force 检查 **完全绕过 tombstone**，不会再出现“明明手动检查却仍只打印 tombstone_hit”的情况。
+- 临时 tombstone 命中保持 `API_ERROR / FAILED_RETRYABLE`，不再伪装成 `SHARE_EXPIRED`。
+- 只有明确“分享不存在 / 已失效 / 已删除 / 已过期”证据才进入 12 小时失效缓存。
+- `invalid share`、HTTP 404、分享链接错误、提取码/访问码错误都不再直接判定永久失效。
+- `AUTH_ERROR` 是账号/登录层错误，不再污染某个 share_id 的 tombstone。
+
+### 保持不变
+
+r108 的完整 opaque composite shareId、accessToken 主协议、token-only 分享目录读取、page 1/0 有界兼容以及 `restore_share = accessToken + fileIds + parentId` 均保持不变。
+
+## v2.1.10-r108 — 光鸭原生分享协议校正（Controlled Real-World Beta）
+
+本版继续处理“光鸭链接已经识别，但分享资源访问/转存不稳定”这一段，并校正 r105/r106 中对 composite shareId 的兼容假设。
+
+### 当前协议真相
+
+- `/s/<path-segment>` 的完整路径段就是 **opaque composite shareId**。
+- 下划线是 shareId 本身的一部分，不能把下划线前的数字前缀当成另一个“基础 shareId”优先请求。
+- `get_share_access_token` 始终使用完整 shareId + 显式访问码。
+- 获取 accessToken 后，`get_share_page_files_list` 主路径只发送 `accessToken + parentId + pagination`。
+- 为兼容不同历史端点，token-only 的 page=1 空结果会有界尝试 page=0；仍无法确认时才携带**同一个完整 shareId**重试。
+- 所有兼容分支都禁止截断 shareId。
+
+### 转存提交
+
+`restore_share` 回归当前 SDK / MoviePilot CloudSubscribe 标准 payload：
+
+```text
+accessToken
+fileIds
+parentId
+```
+
+不再额外发送 `shareId`。shareId 只用于日志/诊断，真正的分享上下文由 accessToken 与从该 token 枚举出的 fileIds 共同保证。
+
+### 安全边界
+
+- 缺 accessToken：提交前 fail closed。
+- token/list 返回 0 节点：仍视为“目录事实未确认”，继续可重试，不伪装成“分享没有视频”。
+- 文件列表、媒体身份、Season、缺集、目标目录、远程可见性/大小确认均继续沿用既有硬门禁。
+- r104 六频道入口与 r107 GYING detail failover 保持不变。
+
+## v2.1.9-r107 — 观影 GYING 节点与详情真实性修复（Controlled Real-World Beta）
+
+本版开始处理“观影不起作用”。不重写现有 PoW/CloakBrowser/验证码体系，只修最终运行链里两个会直接造成假失败或假成功的断点。
+
+### 当前内容节点
+
+- 对照当前 PanSou GYING 实现，新配置默认内容站改为 `https://www.xn--wcv59z.com`。
+- 现有中文镜像、`gying.page` / `urlop` 节点发现、旧域候选和自动切换继续保留，不把单域名写死。
+- 手工 Cookie 仍只绑定首选节点；浏览器验证 Cookie 仍不会跨节点传播。
+
+### downurl 真实性
+
+旧逻辑可能出现：
+
+```text
+搜索页有卡片
+→ /res/downurl 全部报错
+→ except continue
+→ resources=0
+→ success=True
+→ failover 不启动
+```
+
+r107 改为：
+
+```text
+搜索页有卡片
+→ 统计真实 detail/downurl 尝试
+→ 全部失败：success=False → 节点进入 search_error → 既有 failover 换节点
+→ 至少一个详情成功：本轮协议成立
+   └─ 即使没有对应迅雷/网盘资源，也允许合法 resources=0
+```
+
+通用 GYING 搜索和迅雷精准召回都使用同一条判定，避免“页面能搜到但资源永远 0”被误认为正常。
+
+## v2.1.8-r106 — 光鸭原生分享写盘提交闭环（Controlled Real-World Beta）
+
+本版继续 r105：分享目录已经能真实读到后，进一步确保 `restore_share` 提交时 accessToken、shareId 和 fileIds 来自同一个分享协议分支。
+
+### 修复
+
+- r105 可能通过基础 shareId（例如 `ABC`）取得 accessToken 并列出文件，但原逻辑写盘时又使用 URL 中完整 shareId（例如 `ABC_suffix`）。
+- 现在提交优先使用 `access_share_id_v216`，其次兼容 `share_id_request_v11225`，最后才使用原始 `share_id`。
+- 因此实际 payload 保证类似：
+  - `accessToken = token(ABC)`
+  - `shareId = ABC`
+  - `fileIds = 从 ABC 列表得到的文件 ID`
+- 如果 probe 标记成功但 accessToken 丢失，直接返回可重试失败，不发送无令牌的 `restore_share` 请求。
+
+### 回归覆盖
+
+- r105 基础 shareId/token → restore_share 继续使用同一基础 shareId。
+- 旧 v1.12.25 probe 只有 `share_id_request_v11225` 时仍兼容。
+- legacy 正常分享没有新字段时继续使用原始 shareId。
+- 缺 accessToken 时请求数必须为 0。
+- 写盘成功后仍继续原有远程文件可见性/大小确认，不因为 API 返回成功就提前宣告完成。
+
+## v2.1.7-r105 — 光鸭原生分享访问闭环（Controlled Real-World Beta）
+
+本版承接 r104 六频道入口，只处理 **光鸭分享链接已经识别后，能否真正读到分享目录与文件**。GYING、迅雷、Magnet、ED2K 执行链本轮不改。
+
+### 修复的真实断点
+
+- legacy 列目录如果返回 `code=0` 但 `0 节点 / 0 叶子`，不再当成“分享确实为空”。
+- 这类结果属于“目录事实未确认”，必须继续用 `shareId + accessToken` 协议复核。
+- 带下划线的 shareId 会同时兼容基础 ID 和完整 ID；每个 ID 都先独立获取自己的 accessToken，再用同一个 ID/token 对列目录。
+- 基础 ID 请求成功但目录为空时，不提前结束，会继续尝试完整 ID。
+- 两种 ID 都无法确认目录时返回 `retryable=true`、`stage=list_share_files`，不能再伪装成“分享里没有视频”。
+
+### 回归覆盖
+
+- legacy `success=true + 空列表` → 新协议读到真实目录和视频。
+- 基础 shareId 可用 → token、shareId、访问码三者一致。
+- 基础 shareId 返回空 → 自动切完整 shareId，并重新获取匹配 token。
+- accessToken 全失败 → 保持可重试读取失败，不产生假“无媒体”结论。
+
+## v2.1.6-r104 — 六频道统一资源入口解析（Controlled Real-World Beta）
+
+本版只收口 Telegram/TGM 资源发现入口，不修改 GYING 搜索和后续四种转存执行语义。目标是让六个默认频道先稳定产出统一、可执行的资源候选，再进入既有媒体身份、缺集与转存链。
+
+### 六频道入口
+
+- `regengguangya`、`guangyapan_episode`、`guangya_hdhive`、`pan_guangya`、`regeng115`、`vip115hot` 全部按消息中的真实资源链接识别协议，不再依赖频道名推断。
+- RAW message scanner 继续覆盖正文、`href`、`data-url`、`data-clipboard-text`、`onclick`、JavaScript/JSON 和包装跳转。
+- 光鸭分享支持 `guangyapan.com` 的任意子域名与无 scheme 链接，例如 `pan.guangyapan.com/s/...`。
+- 115/其它网盘链接只保留诊断来源，不进入光鸭转存执行。
+
+### 光鸭链接归一化
+
+- `curGuildID`、`darkmode`、`#/share` 等前端 UI 参数不再污染 canonical URL。
+- `code`、`pwd`、`passcode`、`pass_code`、`password` 等访问参数保留。
+- 消息内“提取码/密码/访问码/口令”严格限定在同一 Telegram message block，不跨消息串码。
+- GuangYa candidate 与 legacy bridge 同时保留 `share_id`、`share_url`、`canonical_url`、`share_code/passcode`，避免后续只能依赖 URL 碰巧带码。
+
+### 统一候选
+
+候选优先级固定为：
+
+`迅雷秒传 > 光鸭直接转存 > Magnet > ED2K`
+
+同一消息中的多条 ED2K 会全部保留，但 `candidate_types` 只记录唯一协议类型。新增回归覆盖光鸭子域名、UI 参数清洗、隐藏 clipboard 分享、访问码透传、混合资源排序、多 ED2K 和跨消息密码隔离。
+
 ## v2.1.5-r103 — 频道后观影补搜、汇总去重与续作季号兼容（Controlled Real-World Beta）
 
 本版修复实机中频道批次检查了大量订阅，却出现大量“本地暂无资源”、`外部搜索无结果=0`，观影/GYING 实际没有进入同轮后备链的问题。

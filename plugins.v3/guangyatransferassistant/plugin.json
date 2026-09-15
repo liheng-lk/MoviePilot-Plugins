@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "Controlled Real-World Beta：r103 修复频道/手动刷新只看 Telegram、观影 GYING 被饿死，以及批次汇总重复标题/重复订阅计数。频道仍先执行；仅对频道后仍真实缺失且满足更新日历与外部检索冷却的订阅继续观影完整来源链，避免 158 个订阅无脑全搜。汇总改为每订阅一个最终结果。编号续作仅在“标题明确以 2~9 结尾 + MoviePilot S1 + 发布方同号 Sxx + 真实标题强匹配”时兼容季号，普通跨季继续硬拒绝。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
-  "version": "2.1.5",
+  "description": "Controlled Real-World Beta：r110 同一光鸭分享增长复核。修复 processed_entries 在缺集集合不变时可能永久跳过同一 shareId 后续追加文件的问题：TV 仍有真实缺集，且 processed 状态为 no_new_episode / synced / legacy_synced 时，15 分钟后允许重新读取同一分享目录；缺集集合变化仍立即重开。transferred、身份过滤、电影和无缺集资源不做周期复核，避免无意义请求。r109 force/tombstone 真相与 r108 opaque shareId/accessToken/restore_share 协议保持。来源优先级固定为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+  "version": "2.1.12",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
