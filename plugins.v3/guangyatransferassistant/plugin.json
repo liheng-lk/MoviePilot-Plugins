@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "Controlled Real-World Beta：r106 全面审计页面按钮接口：最终 get_api 对所有 POST 路由统一 MoviePilot V3 success/message/data 响应；立即转存、搜索缺失资源、检测资源来源、秒传预检/迅雷测试、刷新观影节点、观影会话测试、一键完整诊断全部改为后台单飞，避免网络慢、批量搜索或大响应再次触发“服务器无效响应”。轻量按钮保持同步；v2.1.7 后台刷新频道和 r104 链接解析增强继续保留。 来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
-  "version": "2.1.8",
+  "description": "Controlled Real-World Beta：r107 修复频道 Magnet/ED2K 已正确解析却在调用光鸭 cloudcollection 前被自身 source claim/reservation 误扣为空的问题；真实提交 hard gate 现在排除当前 source 自身、强制刷新权威缺集，并继续保留其它来源 claim、pending_library、未来集、Season、媒体身份和物理文件门禁。同步修复 empty_final_target 被迅雷包装层误报为“秒传优先完成”：空目标只表示未提交并继续正确频道来源。Magnet/ED2K 继续走光鸭 resolve_res→create_task，迅雷只走 userres 秒传，光鸭分享继续直转。",
+  "version": "2.1.9",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
