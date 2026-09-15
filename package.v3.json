@@ -107,7 +107,7 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "Controlled Real-World Beta：r104 六频道统一资源入口解析。修复正文可见的 pan.* 等光鸭子域名无法进入 Resource Inbox、curGuildID/darkmode/#/share 等前端参数污染 canonical URL、光鸭 ?code=/消息内提取码未稳定写入候选与 legacy bridge、混合频道候选顺序不稳定及多 ED2K candidate_types 重复。regengguangya、guangyapan_episode、guangya_hdhive、pan_guangya、regeng115、vip115hot 均按消息真实链接识别协议，不按频道名硬编码；115 仍只做诊断信息。来源优先级固定为迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。本版本只收口频道入口，不改变 GYING 与后续转存执行语义。",
+    "description": "Controlled Real-World Beta：r104 六频道统一资源入口解析。修复正文可见的 pan.* 等光鸭子域名无法进入 Resource Inbox、curGuildID/darkmode/#/share 等前端参数污染 canonical URL、光鸭 ?code=/消息内提取码未稳定写入候选与 legacy bridge、混合频道候选顺序不稳定及多 ED2K candidate_types 重复。regengguangya、guangyapan_episode、guangya_hdhive、pan_guangya、regeng115、vip115hot 均按消息真实链接识别协议，不按频道名硬编码；115 仍只做诊断信息。来源优先级固定为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。本版本只收口频道入口，不改变 GYING 与后续转存执行语义。",
     "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,缺集,追更,单文件运行时,真实落盘,MP优先命名,最终命名确认,跨季保护,Season门禁,Emby缺集恢复,陈旧回执恢复,目标感知冷却,缺集重开,频道后观影补搜,汇总去重,续作季号兼容,六频道入口,光鸭子域名,访问码透传",
     "version": "2.1.6",
     "icon": "Guangyadisk_A.png",
