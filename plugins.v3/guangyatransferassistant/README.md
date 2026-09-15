@@ -1,3 +1,23 @@
+## v2.1.7-r105 — 刷新频道 API 热修（Controlled Real-World Beta）
+
+本版修复首页点击“刷新频道”后前端提示“服务器无效响应”的问题。
+
+### 刷新接口
+
+- `/refresh` 改为 MoviePilot V3 标准 `success / message / data` 三段式响应。
+- 点击后立即返回 `queued=true`，HTTP 请求不再等待 Telegram/TGM 抓取、Raw HTML 解析和订阅后续处理。
+- 真实刷新在后台单飞执行；重复点击会合并，不会并发打多个频道刷新任务。
+- 不再把完整频道 `items` 和 `routes` 直接返回浏览器，避免接近 2000 条索引时响应过大。
+- 后台结果写入插件日志、route health 和 `manual_refresh_last_v217`。
+
+### 入口解析
+
+- 保留 v2.1.6-r104 的协议相对/无协议光鸭与迅雷 URL 兼容。
+- 保留 copy / clipboard / redirect / jump / data 属性及常见 JS 转义解析。
+- 最终可执行协议仍只有：光鸭分享、迅雷分享、Magnet、ED2K。
+
+媒体身份、年份、Season、MoviePilot 权威缺集、reservation/source claim、不可分割物理文件与真实落盘门禁全部保持不变。
+
 ## v2.1.5-r103 — 频道后观影补搜、汇总去重与续作季号兼容（Controlled Real-World Beta）
 
 本版修复实机中频道批次检查了大量订阅，却出现大量“本地暂无资源”、`外部搜索无结果=0`，观影/GYING 实际没有进入同轮后备链的问题。
