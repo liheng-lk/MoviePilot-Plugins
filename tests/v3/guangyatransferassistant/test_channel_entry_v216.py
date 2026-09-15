@@ -220,6 +220,8 @@ def test_legacy_canonicalizer_keeps_only_access_parameters():
     assert legacy["_share_identity"](canonical) == "LEGACY01|qwer"
 
 
-def test_release_marker_v216_r104():
-    assert 'plugin_version = "2.1.6"' in ENTRY[ENTRY.rindex("\nclass GuangYaTransferAssistant("):]
-    assert 'build_id = "20260915-r104"' in ENTRY[ENTRY.rindex("\nclass GuangYaTransferAssistant("):]
+def test_r104_entry_contract_survives_later_release():
+    resource = _bundled("resource_inbox_v209")
+    assert "_with_guangya_passcode" in resource
+    assert 'source_priority = {"xunlei": 0, "guangya": 1, "magnet": 2, "ed2k": 3}' in resource
+    assert '"share_code": str((guangya or {}).get("passcode") or "")' in resource
