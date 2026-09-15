@@ -1,3 +1,29 @@
+## v2.1.9-r107 — 频道来源提交所有权与终态语义修复（Controlled Real-World Beta）
+
+本版针对实机出现的“频道已经解析出 ED2K/Magnet，但没有真正调用对应光鸭云添加接口，反而出现观影迅雷 empty_final_target”做提交链收口。
+
+### 当前来源不再自锁
+
+- Magnet/ED2K source 在进入后台 worker 前会先持久化为 `new`，这是其它候选需要看到的在途 claim。
+- 真正提交该 source 时，`final_target` 只排除**其它来源**的 claim/reservation，不再把当前 source 自己扣掉。
+- 当前 source 的真实提交会强制刷新 MoviePilot/Emby 权威缺集，避免复用“刚创建 source 之后”的旧通用快照。
+- 这种 source-specific 快照使用后立即从通用 target cache 清除，避免反过来放宽其它来源。
+
+### 接口路由保持固定
+
+- 光鸭原生分享：直接转存链。
+- 迅雷分享：迅雷解析/JSON → 光鸭 userres 秒传。
+- Magnet / ED2K：光鸭 `/cloudcollection/v1/resolve_res -> /cloudcollection/v1/create_task -> list_task`。
+- 新增 `【来源执行路由v2.1.9】` 与 `【来源执行结果v2.1.9】` 日志，可直接看到 source、类型、message_id、目标集、executor、taskId。
+
+### empty_final_target 不再伪装成迅雷成功
+
+- `empty_final_target` / `episodes_outside_final_target` 只表示本次迅雷**没有提交**。
+- 不再返回 `handled=True/success=True`，因此不会再生成“观影迅雷分享秒传优先完成；empty final_target...”这种矛盾通知。
+- 若频道已有 ED2K/Magnet 等正确来源，会继续由其既有执行链处理；真实迅雷落盘 pending 仍保持原来的阻断重复转存语义。
+
+其它来源 claim、`pending_library`、未来集、Season、媒体身份、物理文件完整子集和真实落盘门禁均不放宽。
+
 ## v2.1.8-r106 — 页面按钮接口全面加固（Controlled Real-World Beta）
 
 本版沿着 v2.1.7 “刷新频道服务器无效响应”继续审计全部页面按钮接口。
