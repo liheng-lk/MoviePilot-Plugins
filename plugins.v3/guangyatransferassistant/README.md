@@ -1,3 +1,35 @@
+## v2.1.10-r108 — 光鸭原生分享协议校正（Controlled Real-World Beta）
+
+本版继续处理“光鸭链接已经识别，但分享资源访问/转存不稳定”这一段，并校正 r105/r106 中对 composite shareId 的兼容假设。
+
+### 当前协议真相
+
+- `/s/<path-segment>` 的完整路径段就是 **opaque composite shareId**。
+- 下划线是 shareId 本身的一部分，不能把下划线前的数字前缀当成另一个“基础 shareId”优先请求。
+- `get_share_access_token` 始终使用完整 shareId + 显式访问码。
+- 获取 accessToken 后，`get_share_page_files_list` 主路径只发送 `accessToken + parentId + pagination`。
+- 为兼容不同历史端点，token-only 的 page=1 空结果会有界尝试 page=0；仍无法确认时才携带**同一个完整 shareId**重试。
+- 所有兼容分支都禁止截断 shareId。
+
+### 转存提交
+
+`restore_share` 回归当前 SDK / MoviePilot CloudSubscribe 标准 payload：
+
+```text
+accessToken
+fileIds
+parentId
+```
+
+不再额外发送 `shareId`。shareId 只用于日志/诊断，真正的分享上下文由 accessToken 与从该 token 枚举出的 fileIds 共同保证。
+
+### 安全边界
+
+- 缺 accessToken：提交前 fail closed。
+- token/list 返回 0 节点：仍视为“目录事实未确认”，继续可重试，不伪装成“分享没有视频”。
+- 文件列表、媒体身份、Season、缺集、目标目录、远程可见性/大小确认均继续沿用既有硬门禁。
+- r104 六频道入口与 r107 GYING detail failover 保持不变。
+
 ## v2.1.9-r107 — 观影 GYING 节点与详情真实性修复（Controlled Real-World Beta）
 
 本版开始处理“观影不起作用”。不重写现有 PoW/CloakBrowser/验证码体系，只修最终运行链里两个会直接造成假失败或假成功的断点。

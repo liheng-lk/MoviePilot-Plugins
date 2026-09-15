@@ -1,4 +1,4 @@
-"""r105 GuangYa direct-share access protocol regressions."""
+"""r108 corrected GuangYa direct-share access protocol regressions."""
 from __future__ import annotations
 
 import ast
@@ -57,7 +57,7 @@ def _share_identity(url: str) -> str:
 
 
 def _resource_module():
-    pkg = "_guangya_r105_contract"
+    pkg = "_guangya_r108_contract"
     package = types.ModuleType(pkg)
     package.__path__ = []
     sys.modules[pkg] = package
@@ -106,8 +106,6 @@ class _BaseProbe:
         self.logs.append(args)
 
     def _inspect_share(self, share_url):
-        # Reproduce the old false-success shape: endpoint returned code=0 but no nodes
-        # because shareId was omitted from get_share_page_files_list.
         return {
             "success": True,
             "share_id": _share_identity(share_url).split("|", 1)[0],
@@ -117,11 +115,7 @@ class _BaseProbe:
         }
 
 
-class _BaseTokenFailure(_BaseProbe):
-    pass
-
-
-class _ClientBaseIdWorks:
+class _ClientFullOpaqueWorks:
     API_BASE_URL = "https://api.guangyapan.test"
 
     def __init__(self):
@@ -131,13 +125,11 @@ class _ClientBaseIdWorks:
         data = dict(data or {})
         self.calls.append((url, data, need_auth))
         if "get_share_access_token" in url:
-            assert data["code"] == "ab12"
-            if data["shareId"] == "ABC":
-                return {"code": 0, "msg": "success", "data": {"accessToken": "tok-base"}}
-            return {"code": 404, "msg": "share not found"}
+            assert data == {"shareId": "ABC_suffix", "code": "ab12"}
+            return {"code": 0, "msg": "success", "data": {"accessToken": "tok-full"}}
         if "get_share_page_files_list" in url:
-            assert data["shareId"] == "ABC"
-            assert data["accessToken"] == "tok-base"
+            assert data["accessToken"] == "tok-full"
+            assert "shareId" not in data
             if not data["parentId"]:
                 return {
                     "code": 0,
@@ -148,19 +140,17 @@ class _ClientBaseIdWorks:
                 return {
                     "code": 0,
                     "msg": "success",
-                    "data": {
-                        "list": [{
-                            "fileId": "file1",
-                            "fileName": "Demo.S01E01.1080p.mkv",
-                            "type": 1,
-                            "fileSize": 123456,
-                        }]
-                    },
+                    "data": {"list": [{
+                        "fileId": "file1",
+                        "fileName": "Demo.S01E01.1080p.mkv",
+                        "type": 1,
+                        "fileSize": 123456,
+                    }]},
                 }
         raise AssertionError((url, data))
 
 
-class _ClientFullIdAfterBaseEmpty:
+class _ClientPageZeroFallback:
     API_BASE_URL = "https://api.guangyapan.test"
 
     def __init__(self):
@@ -169,26 +159,46 @@ class _ClientFullIdAfterBaseEmpty:
     def _request(self, method="POST", url="", data=None, need_auth=False):
         data = dict(data or {})
         self.calls.append((url, data, need_auth))
-        share_id = data.get("shareId")
         if "get_share_access_token" in url:
-            return {"code": 0, "msg": "success", "data": {"accessToken": f"tok-{share_id}"}}
+            assert data["shareId"] == "ABC_suffix"
+            return {"code": 0, "msg": "success", "data": {"accessToken": "tok-full"}}
         if "get_share_page_files_list" in url:
-            assert data["accessToken"] == f"tok-{share_id}"
-            if share_id == "ABC":
+            assert "shareId" not in data
+            if data["page"] == 1:
                 return {"code": 0, "msg": "success", "data": {"list": []}}
-            if share_id == "ABC_suffix":
-                return {
-                    "code": 0,
-                    "msg": "success",
-                    "data": {
-                        "list": [{
-                            "fileId": "file2",
-                            "fileName": "Demo.S01E02.2160p.mp4",
-                            "type": 1,
-                            "fileSize": 222,
-                        }]
-                    },
-                }
+            if data["page"] == 0:
+                return {"code": 0, "msg": "success", "data": {"list": [{
+                    "fileId": "file2",
+                    "fileName": "Demo.S01E02.2160p.mp4",
+                    "type": 1,
+                    "fileSize": 222,
+                }]}}
+        raise AssertionError((url, data))
+
+
+class _ClientFullShareListCompat:
+    API_BASE_URL = "https://api.guangyapan.test"
+
+    def __init__(self):
+        self.calls = []
+
+    def _request(self, method="POST", url="", data=None, need_auth=False):
+        data = dict(data or {})
+        self.calls.append((url, data, need_auth))
+        if "get_share_access_token" in url:
+            assert data["shareId"] == "ABC_suffix"
+            return {"code": 0, "msg": "success", "data": {"accessToken": "tok-full"}}
+        if "get_share_page_files_list" in url:
+            assert data["accessToken"] == "tok-full"
+            if "shareId" not in data:
+                return {"code": 400, "msg": "shareId required by legacy endpoint"}
+            assert data["shareId"] == "ABC_suffix"
+            return {"code": 0, "msg": "success", "data": {"list": [{
+                "fileId": "file3",
+                "fileName": "Demo.S01E03.mkv",
+                "type": 1,
+                "fileSize": 333,
+            }]}}
         raise AssertionError((url, data))
 
 
@@ -202,6 +212,7 @@ class _ClientAccessFails:
         data = dict(data or {})
         self.calls.append((url, data, need_auth))
         if "get_share_access_token" in url:
+            assert data["shareId"] == "ABC_suffix"
             return {"code": 403, "msg": "invalid share or code"}
         raise AssertionError("list endpoint must not be called without access token")
 
@@ -216,36 +227,48 @@ def _probe(client):
     return Probe(client)
 
 
-def test_legacy_success_empty_list_is_not_treated_as_confirmed_empty_share():
-    client = _ClientBaseIdWorks()
+def test_full_composite_share_id_is_opaque_and_token_only_list_is_primary():
+    client = _ClientFullOpaqueWorks()
     probe = _probe(client)
     result = probe._inspect_share("https://www.guangyapan.com/s/ABC_suffix?code=ab12")
     assert result["success"] is True
     assert result["share_id"] == "ABC_suffix"
-    assert result["access_share_id_v216"] == "ABC"
-    assert result["share_access_attempts_v216"] == ["ABC"]
+    assert result["access_share_id_v216"] == "ABC_suffix"
+    assert result["share_access_attempts_v216"] == ["ABC_suffix"]
+    assert result["share_list_protocol_r108"] == "token_page1"
     assert result["file_count"] == 2
     assert result["leaf_count"] == 1
     assert result["files"][0]["relative_path"] == "Demo/Demo.S01E01.1080p.mkv"
-    assert result["files"][0]["size"] == 123456
     access = [call for call in client.calls if "get_share_access_token" in call[0]]
     listing = [call for call in client.calls if "get_share_page_files_list" in call[0]]
-    assert access[0][1] == {"shareId": "ABC", "code": "ab12"}
+    assert access[0][1] == {"shareId": "ABC_suffix", "code": "ab12"}
+    assert all("shareId" not in call[1] for call in listing)
     assert all(call[2] is False for call in access + listing)
 
 
-def test_base_share_id_empty_result_falls_through_to_full_share_id_with_matching_token():
-    client = _ClientFullIdAfterBaseEmpty()
+def test_token_only_page1_empty_can_retry_page0_without_changing_share_identity():
+    client = _ClientPageZeroFallback()
     probe = _probe(client)
     result = probe._inspect_share("https://www.guangyapan.com/s/ABC_suffix?code=ab12")
     assert result["success"] is True
     assert result["access_share_id_v216"] == "ABC_suffix"
-    assert result["share_access_attempts_v216"] == ["ABC", "ABC_suffix"]
-    assert result["leaf_count"] == 1
+    assert result["share_access_attempts_v216"] == ["ABC_suffix"]
+    assert result["share_list_protocol_r108"] == "token_page0"
     assert result["files"][0]["relative_path"] == "Demo.S01E02.2160p.mp4"
 
 
-def test_unconfirmed_empty_share_fails_retryable_instead_of_becoming_no_media():
+def test_list_compat_retry_may_add_only_the_full_share_id_never_a_numeric_prefix():
+    client = _ClientFullShareListCompat()
+    probe = _probe(client)
+    result = probe._inspect_share("https://www.guangyapan.com/s/ABC_suffix?code=ab12")
+    assert result["success"] is True
+    assert result["share_list_protocol_r108"] == "token_fullshare_page1"
+    compat = [call for call in client.calls if "get_share_page_files_list" in call[0] and "shareId" in call[1]]
+    assert compat
+    assert {call[1]["shareId"] for call in compat} == {"ABC_suffix"}
+
+
+def test_unconfirmed_share_access_failure_stays_retryable_and_never_truncates_id():
     client = _ClientAccessFails()
     probe = _probe(client)
     result = probe._inspect_share("https://www.guangyapan.com/s/ABC_suffix?code=wrong")
@@ -253,12 +276,14 @@ def test_unconfirmed_empty_share_fails_retryable_instead_of_becoming_no_media():
     assert result["retryable"] is True
     assert result["reason"] == "legacy_empty_result"
     assert result["stage"] == "list_share_files"
-    assert result["share_access_attempts_v216"] == ["ABC", "ABC_suffix"]
+    assert result["share_access_attempts_v216"] == ["ABC_suffix"]
     assert "分享读取失败" in result["message"]
 
 
-def test_r105_share_access_contract_survives_later_release():
+def test_r108_share_access_contract_survives_later_release():
     share = _bundled("share_leaf_compat_v11225")
-    assert "legacy_empty_result" in share
-    assert '"access_share_id_v216": list_share_id' in share
-    assert '"share_access_attempts_v216": list(access_attempts)' in share
+    assert 'full_share_id.split("_", 1)[0]' not in share
+    assert 'data={"shareId": full_share_id, "code": code}' in share
+    assert '("token_page1", 1, False)' in share
+    assert '("token_fullshare_page1", 1, True)' in share
+    assert '"access_share_id_v216": full_share_id' in share

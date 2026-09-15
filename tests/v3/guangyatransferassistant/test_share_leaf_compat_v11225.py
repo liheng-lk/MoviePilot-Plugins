@@ -64,16 +64,17 @@ def test_v11225_files_parse_and_mro_is_wired_before_auto_recovery():
     assert head.index("GuangYaShareLeafCompatV11225Mixin") < head.index("GuangYaAutoRecoveryV11224Mixin")
 
 
-def test_v11225_retry_request_pairs_share_id_with_access_token():
+def test_v11225_retry_preserves_opaque_full_share_id_and_token_primary_listing():
     method = text.split("    def _inspect_share_with_share_id_v11225(", 1)[1].split("    def _inspect_share(", 1)[0]
-    assert '"shareId": list_share_id' in method
+    assert 'full_share_id.split("_", 1)[0]' not in method
+    assert 'data={"shareId": full_share_id, "code": code}' in method
     assert '"accessToken": token' in method
     assert '"parentId": parent_id' in method
-    assert 'full_share_id.split("_", 1)[0]' in method
-    assert "get_share_access_token" in method
-    assert 'data={"shareId": list_share_id, "code": code}' in method
-    assert '"access_share_id_v216": list_share_id' in method
-    assert '"share_access_attempts_v216": list(access_attempts)' in method
+    assert '("token_page1", 1, False)' in method
+    assert '("token_page0", 0, False)' in method
+    assert 'payload["shareId"] = full_share_id' in method
+    assert '"access_share_id_v216": full_share_id' in method
+    assert '"share_access_attempts_v216": access_attempts' in method
 
 
 def test_v11225_retries_when_legacy_fails_empty_result_or_leaf_paths_empty():
