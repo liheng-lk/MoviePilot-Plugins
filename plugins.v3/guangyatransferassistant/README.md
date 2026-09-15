@@ -1,3 +1,25 @@
+## v2.1.8-r106 — 光鸭原生分享写盘提交闭环（Controlled Real-World Beta）
+
+本版继续 r105：分享目录已经能真实读到后，进一步确保 `restore_share` 提交时 accessToken、shareId 和 fileIds 来自同一个分享协议分支。
+
+### 修复
+
+- r105 可能通过基础 shareId（例如 `ABC`）取得 accessToken 并列出文件，但原逻辑写盘时又使用 URL 中完整 shareId（例如 `ABC_suffix`）。
+- 现在提交优先使用 `access_share_id_v216`，其次兼容 `share_id_request_v11225`，最后才使用原始 `share_id`。
+- 因此实际 payload 保证类似：
+  - `accessToken = token(ABC)`
+  - `shareId = ABC`
+  - `fileIds = 从 ABC 列表得到的文件 ID`
+- 如果 probe 标记成功但 accessToken 丢失，直接返回可重试失败，不发送无令牌的 `restore_share` 请求。
+
+### 回归覆盖
+
+- r105 基础 shareId/token → restore_share 继续使用同一基础 shareId。
+- 旧 v1.12.25 probe 只有 `share_id_request_v11225` 时仍兼容。
+- legacy 正常分享没有新字段时继续使用原始 shareId。
+- 缺 accessToken 时请求数必须为 0。
+- 写盘成功后仍继续原有远程文件可见性/大小确认，不因为 API 返回成功就提前宣告完成。
+
 ## v2.1.7-r105 — 光鸭原生分享访问闭环（Controlled Real-World Beta）
 
 本版承接 r104 六频道入口，只处理 **光鸭分享链接已经识别后，能否真正读到分享目录与文件**。GYING、迅雷、Magnet、ED2K 执行链本轮不改。

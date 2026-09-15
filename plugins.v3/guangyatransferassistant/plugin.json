@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "Controlled Real-World Beta：r105 光鸭原生分享访问闭环。六频道入口识别后，Direct GuangYa share 不再把 legacy `code=0 + 空列表` 误判为已确认空分享；凡目录事实未确认都会使用 `shareId + accessToken` 复核。带下划线的分享 ID 按基础 ID/完整 ID 逐个配对获取 accessToken 并用同一 shareId 列目录，基础 ID 返回空节点时继续尝试完整 ID；两种协议均无法确认时返回 retryable 读取失败，禁止伪装成“没有视频”。r104 六频道子域名、UI 参数清洗、访问码透传和消息边界保持。来源优先级固定为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。本版本仍不修改 GYING 搜索语义。",
-  "version": "2.1.7",
+  "description": "Controlled Real-World Beta：r106 光鸭原生分享写盘提交闭环。r105 已确保分享目录可真实读取，本版修复 restore_share 提交仍可能把“基础 shareId 的 accessToken”与“URL 完整 shareId”混用的问题。现在 restore_share 优先使用 probe.access_share_id_v216，其次兼容 share_id_request_v11225，最后才回退原始 share_id，保证 accessToken / shareId / fileIds 同源；缺少 accessToken 时在发请求前 fail closed 并返回 retryable restore_share/missing_access_token。r104 六频道入口与 r105 分享目录复核保持。来源优先级固定为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。本版本仍不修改 GYING 搜索语义。",
+  "version": "2.1.8",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,

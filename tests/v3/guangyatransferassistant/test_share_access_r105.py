@@ -257,7 +257,8 @@ def test_unconfirmed_empty_share_fails_retryable_instead_of_becoming_no_media():
     assert "分享读取失败" in result["message"]
 
 
-def test_release_marker_r105():
-    final = ENTRY[ENTRY.rindex("\nclass GuangYaTransferAssistant("):]
-    assert 'plugin_version = "2.1.7"' in final
-    assert 'build_id = "20260915-r105"' in final
+def test_r105_share_access_contract_survives_later_release():
+    share = _bundled("share_leaf_compat_v11225")
+    assert "legacy_empty_result" in share
+    assert '"access_share_id_v216": list_share_id' in share
+    assert '"share_access_attempts_v216": list(access_attempts)' in share
