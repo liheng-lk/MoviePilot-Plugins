@@ -231,7 +231,7 @@ def _precise_method():
 def test_precise_xunlei_all_downurl_fail_returns_failure_for_existing_failover():
     method = _precise_method()
     probe = _PreciseProbe([RuntimeError("detail-a"), RuntimeError("detail-b")])
-    rows, state = method(probe, "Demo", force=True)
+    rows, state = method(probe, "Demo")
     assert rows == []
     assert state["success"] is False
     assert "详情接口全部失败" in state["message"]
@@ -244,7 +244,7 @@ def test_precise_xunlei_one_detail_success_but_no_xunlei_is_valid_zero():
         {"rows": [{"url": "magnet:?xt=urn:btih:ABC", "name": "Demo"}]},
         RuntimeError("detail-b"),
     ])
-    rows, state = method(probe, "Demo", force=True)
+    rows, state = method(probe, "Demo")
     assert rows == []
     assert state["success"] is True
     assert state["xunlei_resources"] == 0
@@ -272,7 +272,12 @@ def test_detail_failure_helper_only_fires_when_every_attempt_failed():
     assert helper(0, 0, 0) is False
 
 
-def test_release_marker_r107():
-    final = ENTRY[ENTRY.rindex("\nclass GuangYaTransferAssistant("):]
-    assert 'plugin_version = "2.1.9"' in final
-    assert 'build_id = "20260915-r107"' in final
+def test_r107_detail_truth_behavior_survives_later_release():
+    runtime = _bundled("gying_runtime_v193")
+    hardening = _bundled("gying_hardening_v193")
+    assert "_gying_all_attempted_details_failed" in runtime
+    assert "detail_attempted" in runtime
+    assert "detail_succeeded" in runtime
+    assert "detail_failed" in runtime
+    assert "_gying_all_attempted_details_failed" in hardening
+    assert "detail_attempted" in hardening
