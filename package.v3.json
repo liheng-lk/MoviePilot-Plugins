@@ -107,7 +107,7 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "Controlled Real-World Beta：r107 修复频道 Magnet/ED2K 已正确解析却在调用光鸭 cloudcollection 前被自身 source claim/reservation 误扣为空的问题；真实提交 hard gate 现在排除当前 source 自身、强制刷新权威缺集，并继续保留其它来源 claim、pending_library、未来集、Season、媒体身份和物理文件门禁。同步修复 empty_final_target 被迅雷包装层误报为“秒传优先完成”：空目标只表示未提交并继续正确频道来源。Magnet/ED2K 继续走光鸭 resolve_res→create_task，迅雷只走 userres 秒传，光鸭分享继续直转。",
+    "description": "Controlled Real-World Beta：r107 修复频道 Magnet/ED2K 已正确解析却在调用光鸭 cloudcollection 前被自身 source claim/reservation 误扣为空的问题；真实提交 hard gate 现在排除当前 source 自身、强制刷新权威缺集，并继续保留其它来源 claim、pending_library、未来集、Season、媒体身份和物理文件门禁。同步修复 empty_final_target 被迅雷包装层误报为“秒传优先完成”：空目标只表示未提交并继续正确频道来源。Magnet/ED2K 继续走光鸭 resolve_res→create_task，迅雷只走 userres 秒传，光鸭分享继续直转。 来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
     "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,缺集,追更,单文件运行时,真实落盘,MP优先命名,最终命名确认,跨季保护,Season门禁,Emby缺集恢复,陈旧回执恢复,目标感知冷却,缺集重开,频道后观影补搜,汇总去重,续作季号兼容",
     "version": "2.1.9",
     "icon": "Guangyadisk_A.png",
