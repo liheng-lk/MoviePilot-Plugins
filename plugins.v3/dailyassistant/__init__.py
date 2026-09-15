@@ -10,7 +10,10 @@ from apscheduler.triggers.cron import CronTrigger
 from app.chain.download import DownloadChain
 from app.chain.media import MediaChain
 from app.chain.subscribe import SubscribeChain
-from app.plugins import _PluginBase
+try:
+    from app.sdk.plugin import _PluginBase
+except ImportError:
+    from app.plugins import _PluginBase
 from app.sdk.config import settings
 from app.sdk.events import eventmanager
 from app.sdk.logging import logger
