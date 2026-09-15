@@ -1,3 +1,34 @@
+## v2.1.8-r106 — 页面按钮接口全面加固（Controlled Real-World Beta）
+
+本版沿着 v2.1.7 “刷新频道服务器无效响应”继续审计全部页面按钮接口。
+
+### 统一响应
+
+- 最终 `get_api()` 对所有 POST 路由统一转换为 MoviePilot V3 `success / message / data` 三段式。
+- 旧模块即使返回扁平字典、额外字段或抛出异常，也不会直接把异常响应暴露给前端。
+- 所有按钮动作记录到 `button_action_last_v218` 和 route health，便于状态页和日志追踪。
+
+### 高耗时按钮后台化
+
+以下动作点击后立即返回 `queued=true`，真实工作在后台单飞执行：
+
+- 立即转存 `/transfer`
+- 搜索缺失资源 `/providers/search/selected`
+- 检测资源来源 `/providers/test`
+- 秒传预检 `/xunlei/flash/preflight`
+- 迅雷分享测试 `/xunlei/flash/test`
+- 刷新观影节点 `/viewing/nodes/refresh`
+- 观影会话测试 `/viewing/session/test`
+- 一键完整诊断 `/diagnostics/full`
+
+重复点击同一动作只会合并，不会重复启动多个后台任务。
+
+### 保持同步的按钮
+
+本地自检、路线切换、验证码点击/刷新/撤销、来源重试/停用、日志清理等轻量或强交互动作仍同步执行，但同样经过标准响应包装。
+
+v2.1.7 的后台刷新频道和 v2.1.6/r104 的频道资源链接解析增强继续保留。
+
 ## v2.1.7-r105 — 刷新频道 API 热修（Controlled Real-World Beta）
 
 本版修复首页点击“刷新频道”后前端提示“服务器无效响应”的问题。
