@@ -1,4 +1,4 @@
-"""光鸭转存助手 v2.1.6 运行入口。
+"""光鸭转存助手 v2.1.7 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
@@ -1396,24 +1396,168 @@ class GuangYaTransferAssistant(
     # ------------------------------------------------------------------
     # v2.1.4 / r102 — refresh/dispatch observability
     # ------------------------------------------------------------------
+    def _manual_refresh_worker_v217(self, guard: Any) -> None:
+        """后台完成频道刷新；HTTP 层不再等待抓取/解析/订阅处理。"""
+        started_at = self._now_text() if callable(getattr(self, "_now_text", None)) else ""
+        try:
+            try:
+                self._inspect_cache.clear()
+            except Exception:
+                pass
+
+            items = list(self.refresh_channels(force=True) or [])
+            active_items = sum(
+                1 for item in items
+                if isinstance(item, dict) and not bool(item.get("stale"))
+            )
+            routes = []
+            if bool(getattr(self, "_auto_transfer_on_refresh", False)) and active_items:
+                routes = list(
+                    self._process_selected_subscriptions(
+                        trigger="手动刷新",
+                        refresh_channel=False,
+                    ) or []
+                )
+
+            queued = sum(
+                1 for row in routes
+                if isinstance(row, dict) and bool(row.get("queued"))
+            )
+            summary = {
+                "success": True,
+                "started_at": started_at,
+                "finished_at": self._now_text() if callable(getattr(self, "_now_text", None)) else "",
+                "channel_items": len(items),
+                "active_items": active_items,
+                "routes": len(routes),
+                "queued": queued,
+            }
+            try:
+                self.save_data("manual_refresh_last_v217", summary)
+            except Exception:
+                pass
+            try:
+                self._record_route_health(
+                    last_manual_refresh_at=summary["finished_at"],
+                    last_manual_refresh_success=True,
+                    last_manual_refresh_channel_items=len(items),
+                    last_manual_refresh_routes=len(routes),
+                    last_manual_refresh_queued=queued,
+                )
+            except Exception:
+                pass
+            self._plugin_log(
+                "INFO",
+                "【光鸭转存助手】【调度出口v2.1.7】source=manual_refresh "
+                "channel_items=%s active=%s routes=%s queued=%s",
+                len(items),
+                active_items,
+                len(routes),
+                queued,
+            )
+        except Exception as err:
+            failed = {
+                "success": False,
+                "started_at": started_at,
+                "finished_at": self._now_text() if callable(getattr(self, "_now_text", None)) else "",
+                "error": f"{type(err).__name__}: {str(err)[:500]}",
+            }
+            try:
+                self.save_data("manual_refresh_last_v217", failed)
+            except Exception:
+                pass
+            try:
+                self._record_route_health(
+                    last_manual_refresh_at=failed["finished_at"],
+                    last_manual_refresh_success=False,
+                    last_manual_refresh_error=failed["error"],
+                )
+            except Exception:
+                pass
+            self._plugin_log(
+                "EXCEPTION",
+                "【光鸭转存助手】【调度出口v2.1.7】source=manual_refresh failed=%s",
+                failed["error"],
+            )
+        finally:
+            try:
+                guard.release()
+            except Exception:
+                pass
+
     def api_refresh(self) -> dict:
+        """MoviePilot V3 页面刷新：立即返回标准三段式响应，真实刷新后台执行。"""
         self._plugin_log(
             "INFO",
-            "【光鸭转存助手】【调度入口v2.1.6】source=manual_refresh auto=%s selected=%s",
+            "【光鸭转存助手】【调度入口v2.1.7】source=manual_refresh auto=%s selected=%s",
             bool(getattr(self, "_auto_transfer_on_refresh", False)),
             len(getattr(self, "_selected_subscriptions", []) or []),
         )
-        result = dict(super().api_refresh() or {})
-        routes = list(result.get("routes") or [])
-        queued = sum(1 for row in routes if isinstance(row, dict) and bool(row.get("queued")))
-        self._plugin_log(
-            "INFO",
-            "【光鸭转存助手】【调度出口v2.1.6】source=manual_refresh channel_items=%s routes=%s queued=%s",
-            int(result.get("count") or 0),
-            len(routes),
-            queued,
-        )
-        return result
+
+        runtime_check = getattr(self, "_runtime_is_current", None)
+        if callable(runtime_check) and not runtime_check():
+            return {
+                "success": False,
+                "message": "插件已热更新，请刷新当前页面后重试",
+                "data": {"queued": False},
+            }
+        if not bool(getattr(self, "_enabled", False)):
+            return {
+                "success": False,
+                "message": "插件当前未启用",
+                "data": {"queued": False},
+            }
+
+        guard = getattr(self, "_manual_refresh_api_lock_v217", None)
+        if guard is None:
+            guard = threading.Lock()
+            self._manual_refresh_api_lock_v217 = guard
+
+        if not guard.acquire(blocking=False):
+            last = {}
+            try:
+                last = dict(self.get_data("manual_refresh_last_v217") or {})
+            except Exception:
+                last = {}
+            return {
+                "success": True,
+                "message": "频道刷新已经在后台执行，请勿重复点击",
+                "data": {
+                    "queued": True,
+                    "coalesced": True,
+                    "last": last or None,
+                },
+            }
+
+        try:
+            thread = threading.Thread(
+                target=self._manual_refresh_worker_v217,
+                args=(guard,),
+                name="GuangYaManualRefresh",
+                daemon=True,
+            )
+            thread.start()
+        except Exception as err:
+            try:
+                guard.release()
+            except Exception:
+                pass
+            return {
+                "success": False,
+                "message": f"频道刷新任务启动失败：{type(err).__name__}",
+                "data": {"queued": False},
+            }
+
+        return {
+            "success": True,
+            "message": "频道刷新已进入后台队列，可继续使用页面；结果会写入状态页和插件日志",
+            "data": {
+                "queued": True,
+                "coalesced": False,
+                "auto_transfer": bool(getattr(self, "_auto_transfer_on_refresh", False)),
+                "selected": len(getattr(self, "_selected_subscriptions", []) or []),
+            },
+        }
 
     def _process_selected_subscriptions(
         self,
@@ -1427,7 +1571,7 @@ class GuangYaTransferAssistant(
         queued = sum(1 for row in rows if isinstance(row, dict) and bool(row.get("queued")))
         self._plugin_log(
             "INFO",
-            "【光鸭转存助手】【订阅调度v2.1.6】trigger=%s selected=%s routes=%s queued=%s",
+            "【光鸭转存助手】【订阅调度v2.1.7】trigger=%s selected=%s routes=%s queued=%s",
             str(trigger or "-")[:80],
             len(getattr(self, "_selected_subscriptions", []) or []),
             len(rows),
@@ -1438,7 +1582,7 @@ class GuangYaTransferAssistant(
     def _tick(self, host_service: bool = True) -> None:
         self._plugin_log(
             "INFO",
-            "【光鸭转存助手】【调度入口v2.1.6】source=tick host=%s auto=%s selected=%s",
+            "【光鸭转存助手】【调度入口v2.1.7】source=tick host=%s auto=%s selected=%s",
             bool(host_service),
             bool(getattr(self, "_auto_transfer_on_refresh", False)),
             len(getattr(self, "_selected_subscriptions", []) or []),
@@ -1449,15 +1593,15 @@ class GuangYaTransferAssistant(
         worker = bool(getattr(self, "_async_route_worker_running", False))
         self._plugin_log(
             "INFO",
-            "【光鸭转存助手】【调度出口v2.1.6】source=tick strict_new=%s async_pending=%s worker=%s",
+            "【光鸭转存助手】【调度出口v2.1.7】source=tick strict_new=%s async_pending=%s worker=%s",
             strict_new,
             pending,
             worker,
         )
         return result
 
-    plugin_version = "2.1.6"
-    build_id = "20260915-r104"
+    plugin_version = "2.1.7"
+    build_id = "20260915-r105"
 
 
     def get_api(self):
