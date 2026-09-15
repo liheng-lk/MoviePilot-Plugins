@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "Controlled Real-World Beta：r106 光鸭原生分享写盘提交闭环。r105 已确保分享目录可真实读取，本版修复 restore_share 提交仍可能把“基础 shareId 的 accessToken”与“URL 完整 shareId”混用的问题。现在 restore_share 优先使用 probe.access_share_id_v216，其次兼容 share_id_request_v11225，最后才回退原始 share_id，保证 accessToken / shareId / fileIds 同源；缺少 accessToken 时在发请求前 fail closed 并返回 retryable restore_share/missing_access_token。r104 六频道入口与 r105 分享目录复核保持。来源优先级固定为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。本版本仍不修改 GYING 搜索语义。",
-  "version": "2.1.8",
+  "description": "Controlled Real-World Beta：r107 观影 GYING 节点与详情真实性修复。默认内容站对齐当前 PanSou GYING 实现的 https://www.xn--wcv59z.com，并继续保留现有中文镜像、发布页发现与自动切换；旧 gying.org 不再作为新配置默认值。修复搜索页已有卡片但 /res/downurl 全部失败时仍返回 success=True/resources=0 的假成功：通用资源搜索与迅雷精准召回现在都会在所有真实详情尝试均失败时返回 success=False，交给既有最多 3 节点 failover；只要至少一个 downurl 成功，即使确实没有对应网盘/迅雷资源，仍保留合法 0 结果，不制造重试风暴。r104-r106 光鸭原生链保持不变。来源优先级固定为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+  "version": "2.1.9",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,

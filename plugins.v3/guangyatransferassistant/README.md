@@ -1,3 +1,38 @@
+## v2.1.9-r107 — 观影 GYING 节点与详情真实性修复（Controlled Real-World Beta）
+
+本版开始处理“观影不起作用”。不重写现有 PoW/CloakBrowser/验证码体系，只修最终运行链里两个会直接造成假失败或假成功的断点。
+
+### 当前内容节点
+
+- 对照当前 PanSou GYING 实现，新配置默认内容站改为 `https://www.xn--wcv59z.com`。
+- 现有中文镜像、`gying.page` / `urlop` 节点发现、旧域候选和自动切换继续保留，不把单域名写死。
+- 手工 Cookie 仍只绑定首选节点；浏览器验证 Cookie 仍不会跨节点传播。
+
+### downurl 真实性
+
+旧逻辑可能出现：
+
+```text
+搜索页有卡片
+→ /res/downurl 全部报错
+→ except continue
+→ resources=0
+→ success=True
+→ failover 不启动
+```
+
+r107 改为：
+
+```text
+搜索页有卡片
+→ 统计真实 detail/downurl 尝试
+→ 全部失败：success=False → 节点进入 search_error → 既有 failover 换节点
+→ 至少一个详情成功：本轮协议成立
+   └─ 即使没有对应迅雷/网盘资源，也允许合法 resources=0
+```
+
+通用 GYING 搜索和迅雷精准召回都使用同一条判定，避免“页面能搜到但资源永远 0”被误认为正常。
+
 ## v2.1.8-r106 — 光鸭原生分享写盘提交闭环（Controlled Real-World Beta）
 
 本版继续 r105：分享目录已经能真实读到后，进一步确保 `restore_share` 提交时 accessToken、shareId 和 fileIds 来自同一个分享协议分支。

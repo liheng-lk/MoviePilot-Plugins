@@ -178,7 +178,8 @@ def test_missing_access_token_fails_before_restore_request():
     assert probe.client.payloads == []
 
 
-def test_release_marker_r106():
-    final = ENTRY[ENTRY.rindex("\nclass GuangYaTransferAssistant("):]
-    assert 'plugin_version = "2.1.8"' in final
-    assert 'build_id = "20260915-r106"' in final
+def test_r106_restore_pairing_contract_survives_later_release():
+    legacy = _bundled("legacy")
+    assert 'probe.get("access_share_id_v216")' in legacy
+    assert 'probe.get("share_id_request_v11225")' in legacy
+    assert '"reason": "missing_access_token"' in legacy

@@ -12,22 +12,31 @@ PACKAGE = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["Gu
 README = (PLUGIN / "README.md").read_text(encoding="utf-8")
 
 
-def test_public_release_is_218_r106():
-    assert LOCAL["version"] == PACKAGE["version"] == "2.1.8"
+def test_public_release_is_219_r107():
+    assert LOCAL["version"] == PACKAGE["version"] == "2.1.9"
     assert LOCAL["description"] == PACKAGE["description"]
-    assert "r106" in str(LOCAL.get("description") or "")
-    assert "v2.1.8" in (PACKAGE.get("history") or {})
-    assert README.startswith("## v2.1.8-r106")
+    assert "r107" in str(LOCAL.get("description") or "")
+    assert "v2.1.9" in (PACKAGE.get("history") or {})
+    assert README.startswith("## v2.1.9-r107")
     start = ENTRY.rindex("\nclass GuangYaTransferAssistant(")
     final_class = ENTRY[start:]
-    assert 'plugin_version = "2.1.8"' in final_class
-    assert 'build_id = "20260915-r106"' in final_class
-    assert "光鸭转存助手 v2.1.8 运行入口。" in ENTRY[:1000]
+    assert 'plugin_version = "2.1.9"' in final_class
+    assert 'build_id = "20260915-r107"' in final_class
+    assert "光鸭转存助手 v2.1.9 运行入口。" in ENTRY[:1000]
 
 
 def test_public_release_keeps_single_file_runtime():
     runtime = sorted(path.relative_to(PLUGIN).as_posix() for path in PLUGIN.rglob("*.py"))
     assert runtime == ["__init__.py"]
+
+
+def test_219_history_documents_gying_detail_truth():
+    history = str((PACKAGE.get("history") or {}).get("v2.1.9") or "")
+    for marker in (
+        "www.xn--wcv59z.com", "PanSou", "downurl", "全部失败",
+        "success=False", "failover", "合法 0 结果",
+    ):
+        assert marker in history
 
 
 def test_218_history_documents_restore_submit_pairing():
