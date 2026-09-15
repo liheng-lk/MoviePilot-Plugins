@@ -1,3 +1,21 @@
+## v2.1.11-r109 — 光鸭分享失败退避与失效判定（Controlled Real-World Beta）
+
+本版继续沿“频道光鸭链接 → 分享读取 → 转存提交”真实执行链检查，修复一个会让资源看起来长时间“不工作”的状态缓存问题。
+
+### 修复
+
+- 临时 API / 网络 / 协议失败：只退避 **90 秒**，用于抑制同一瞬时批次重复请求。
+- 下一次 5 分钟频道轮询时临时退避一定已经过期，可以重新访问分享。
+- 人工 `/gycheck` / force 检查 **完全绕过 tombstone**，不会再出现“明明手动检查却仍只打印 tombstone_hit”的情况。
+- 临时 tombstone 命中保持 `API_ERROR / FAILED_RETRYABLE`，不再伪装成 `SHARE_EXPIRED`。
+- 只有明确“分享不存在 / 已失效 / 已删除 / 已过期”证据才进入 12 小时失效缓存。
+- `invalid share`、HTTP 404、分享链接错误、提取码/访问码错误都不再直接判定永久失效。
+- `AUTH_ERROR` 是账号/登录层错误，不再污染某个 share_id 的 tombstone。
+
+### 保持不变
+
+r108 的完整 opaque composite shareId、accessToken 主协议、token-only 分享目录读取、page 1/0 有界兼容以及 `restore_share = accessToken + fileIds + parentId` 均保持不变。
+
 ## v2.1.10-r108 — 光鸭原生分享协议校正（Controlled Real-World Beta）
 
 本版继续处理“光鸭链接已经识别，但分享资源访问/转存不稳定”这一段，并校正 r105/r106 中对 composite shareId 的兼容假设。

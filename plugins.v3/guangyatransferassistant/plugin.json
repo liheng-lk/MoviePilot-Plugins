@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "Controlled Real-World Beta：r108 光鸭原生分享协议校正。按当前光鸭 Web/SDK 与 MoviePilot CloudSubscribe 行为，将 /s/<path-segment> 完整视为 opaque composite shareId，不再按下划线截断或优先尝试数字前缀；完整 shareId 仅用于获取 accessToken，目录读取以 accessToken+parentId 为主并对 page=1/0 做有界兼容，只有 token-only 无法确认目录事实时才携带完整 shareId 重试。restore_share 回归标准 payload：accessToken + fileIds + parentId，不再额外发送 shareId。0 节点仍按可重试“目录事实未确认”处理，避免假无资源。r104 六频道入口、r107 GYING 详情 failover 保持。来源优先级固定为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
-  "version": "2.1.10",
+  "description": "Controlled Real-World Beta：r109 光鸭分享失败退避与失效判定修复。人工 force 检查现在绕过 share tombstone，临时 API/网络/协议失败只做 90 秒退避并保持 API_ERROR/重试语义，不再伪报 SHARE_EXPIRED；只有明确“已失效/不存在/已删除/已过期”等证据才进入 12 小时失效缓存。`invalid share`、404、分享链接错误、提取码/访问码错误不再直接判永久失效，避免错误 code 把同一 share_id 封锁 12 小时。r108 完整 opaque shareId、token-only 目录读取与标准 restore_share payload 保持。来源优先级固定为观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+  "version": "2.1.11",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
