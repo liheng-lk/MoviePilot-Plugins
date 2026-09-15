@@ -12,17 +12,17 @@ PACKAGE = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["Gu
 README = (PLUGIN / "README.md").read_text(encoding="utf-8")
 
 
-def test_public_release_is_218_r106():
-    assert LOCAL["version"] == PACKAGE["version"] == "2.1.8"
+def test_public_release_is_219_r107():
+    assert LOCAL["version"] == PACKAGE["version"] == "2.1.9"
     assert LOCAL["description"] == PACKAGE["description"]
-    assert "r106" in str(LOCAL.get("description") or "")
-    assert "v2.1.8" in (PACKAGE.get("history") or {})
-    assert README.startswith("## v2.1.8-r106")
+    assert "r107" in str(LOCAL.get("description") or "")
+    assert "v2.1.9" in (PACKAGE.get("history") or {})
+    assert README.startswith("## v2.1.9-r107")
     start = ENTRY.rindex("\nclass GuangYaTransferAssistant(")
     final_class = ENTRY[start:]
-    assert 'plugin_version = "2.1.8"' in final_class
-    assert 'build_id = "20260915-r106"' in final_class
-    assert "光鸭转存助手 v2.1.8 运行入口。" in ENTRY[:1000]
+    assert 'plugin_version = "2.1.9"' in final_class
+    assert 'build_id = "20260915-r107"' in final_class
+    assert "光鸭转存助手 v2.1.9 运行入口。" in ENTRY[:1000]
 
 
 def test_public_release_keeps_single_file_runtime():
@@ -71,5 +71,34 @@ def test_218_all_post_routes_are_hardened_and_heavy_buttons_are_async():
         "if \"POST\" in methods",
         "return self._harden_button_routes_v218(routes)",
         "button_action_last_v218",
+    ):
+        assert marker in final_class
+
+
+def test_219_submit_gate_excludes_current_source_without_relaxing_other_gates():
+    start = ENTRY.rindex("\nclass GuangYaTransferAssistant(")
+    final_class = ENTRY[start:]
+    for marker in (
+        "def _route_fix_local_v219",
+        "submit_source_id",
+        "current_source_id=source_id",
+        "force_library=bool(source_id)",
+        "planner_exclude_source_id",
+        "cache.pop(cache_key, None)",
+        "executor=guangya_cloudcollection",
+        "api=resolve_res->create_task",
+    ):
+        assert marker in final_class
+
+
+def test_219_xunlei_empty_target_is_not_reported_as_completed():
+    start = ENTRY.rindex("\nclass GuangYaTransferAssistant(")
+    final_class = ENTRY[start:]
+    for marker in (
+        'reason in {"empty_final_target", "episodes_outside_final_target"}',
+        'result["success"] = False',
+        'result["handled"] = False',
+        'result["skipped"] = True',
+        "迅雷未提交：{reason}；继续检查频道光鸭/Magnet/ED2K",
     ):
         assert marker in final_class
