@@ -85,6 +85,7 @@ def test_fixture_a_guangya_query_fragment():
     assert len(row["candidates"]) == 1
     assert row["candidates"][0]["type"] == "guangya"
     assert "curGuildID" not in row["candidates"][0]["identity"]
+    assert row["candidates"][0]["uri"] == "https://www.guangyapan.com/s/AAA"
     assert row["season_hint"] == 2
     assert "寻踪者" in row["match_title"]
 
@@ -224,6 +225,35 @@ def test_title_templates_alias_and_update():
     assert c["match_title"] == "爱情没有神话" and "EP30" in str(c.get("episode_hint") or "EP30") or c.get("episode_hint") == "E30"
     d = inbox.parse_message_title_metadata_v209("名称：赴汤蹈火/亡命闺蜜(2026)")
     assert "赴汤蹈火" in d["title_candidates"] and "亡命闺蜜" in d["title_candidates"]
+
+
+def test_live_guangyapan_episode_title_and_episode_templates():
+    inbox = _load("resource_inbox_v209", PLUGIN / "resource_inbox_v209.py")
+
+    cases = [
+        (
+            "🎬 已更新：交锋（2026）〖更新 18集〗〖4K〗〖国剧〗",
+            "交锋", "2026", None, "E01-E18",
+        ),
+        (
+            "名称：生逢其时 (2026) [4K] [国语中字] [更至16集]",
+            "生逢其时", "2026", None, "E01-E16",
+        ),
+        (
+            "名称：兰香如故（2026）4K 60FPS S01E01 - E06",
+            "兰香如故", "2026", 1, "S01E01-E06",
+        ),
+        (
+            "凡人修仙传 177-191集 光鸭云盘链接：https://www.guangyapan.com/s/LIVE177",
+            "凡人修仙传", "", None, "E177-E191",
+        ),
+    ]
+    for raw, title, year, season, episode_hint in cases:
+        parsed = inbox.parse_message_title_metadata_v209(raw)
+        assert parsed["match_title"] == title, (raw, parsed)
+        assert parsed["year"] == year, (raw, parsed)
+        assert parsed["season_hint"] == season, (raw, parsed)
+        assert parsed["episode_hint"] == episode_hint, (raw, parsed)
 
 
 def test_old_parser_miss_inbox_hit_integration():
