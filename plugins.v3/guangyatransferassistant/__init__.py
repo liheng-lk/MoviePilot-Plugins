@@ -910,7 +910,12 @@ class GuangYaTransferAssistant(
             return False
 
         status = str(row.get("status") or "").strip().lower()
-        if status not in self._processed_growth_statuses_r110:
+        growth_statuses = getattr(
+            self,
+            "_processed_growth_statuses_r110",
+            frozenset({"no_new_episode", "synced", "legacy_synced"}),
+        )
+        if status not in growth_statuses:
             return processed
         try:
             checked_at = float(
@@ -921,7 +926,8 @@ class GuangYaTransferAssistant(
         except (TypeError, ValueError):
             checked_at = 0.0
         now = time.time()
-        if not checked_at or now - checked_at >= float(self._processed_growth_recheck_seconds_r110):
+        growth_seconds = float(getattr(self, "_processed_growth_recheck_seconds_r110", 15 * 60) or 15 * 60)
+        if not checked_at or now - checked_at >= growth_seconds:
             try:
                 self._plugin_log(
                     "INFO",
@@ -959,7 +965,12 @@ class GuangYaTransferAssistant(
             now = time.time()
             row["emby_repair_targets_v212"] = sorted(repair)
             row["emby_repair_checked_at_v212"] = now
-            if str(status or "").strip().lower() in self._processed_growth_statuses_r110:
+            growth_statuses = getattr(
+                self,
+                "_processed_growth_statuses_r110",
+                frozenset({"no_new_episode", "synced", "legacy_synced"}),
+            )
+            if str(status or "").strip().lower() in growth_statuses:
                 row["growth_checked_at_r110"] = now
             records[key] = row
             self.save_data("processed_entries", records)

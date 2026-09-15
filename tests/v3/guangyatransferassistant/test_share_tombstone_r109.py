@@ -87,7 +87,9 @@ def test_auth_failure_does_not_poison_share_specific_tombstone():
     assert 'marker("guangya", share_id_only, error, temporary=True)' in block
 
 
-def test_release_marker_r109():
+def test_r109_tombstone_behavior_survives_later_release():
     final = ENTRY[ENTRY.rindex("\nclass GuangYaTransferAssistant("):]
-    assert 'plugin_version = "2.1.11"' in final
-    assert 'build_id = "20260915-r109"' in final
+    assert "_share_tombstone_status_v109" in _bundled("production_safety_v208")
+    assert "_tombstone_temp_ttl_v208 = 90" in _bundled("production_safety_v208")
+    assert "【资源退避r109】" in _bundled("legacy")
+    assert "plugin_version" in final

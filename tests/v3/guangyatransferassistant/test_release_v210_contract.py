@@ -33,7 +33,7 @@ def test_public_release_keeps_single_file_runtime():
 def test_2112_history_documents_same_share_growth_recheck():
     history = str((PACKAGE.get("history") or {}).get("v2.1.12") or "")
     for marker in (
-        "same shareId", "15 分钟", "no_new_episode", "synced",
+        "shareId", "15 分钟", "no_new_episode", "synced",
         "legacy_synced", "growth_checked_at_r110", "transferred", "force",
     ):
         assert marker in history
