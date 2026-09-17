@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - .github/patch_shukguangyadisk_v3916.py
+      - .github/run_patch_shukguangyadisk_v3916.py
       - .github/workflows/patch-shukguangyadisk-v3916.yml
 
 permissions:
@@ -18,13 +19,13 @@ jobs:
         with:
           fetch-depth: 0
       - name: Apply and verify v3.9.16 patch
-        run: python .github/patch_shukguangyadisk_v3916.py
+        run: python .github/run_patch_shukguangyadisk_v3916.py
       - name: Commit v3.9.16
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm -f .github/patch_shukguangyadisk_v3916.py .github/workflows/patch-shukguangyadisk-v3916.yml
+          git rm -f .github/patch_shukguangyadisk_v3916.py .github/run_patch_shukguangyadisk_v3916.py .github/workflows/patch-shukguangyadisk-v3916.yml
           git add plugins.v3/shukguangyadisk/__init__.py plugins.v3/shukguangyadisk/plugin.json plugins.v3/shukguangyadisk/README.md package.v3.json tests/v3/shukguangyadisk/test_orphan_inflight_reconcile_v3916.py
           git diff --cached --check
           git commit -m "fix(shukguangyadisk): reconcile orphan inflight state in v3.9.16"
