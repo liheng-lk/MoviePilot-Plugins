@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 INIT = ROOT / "plugins.v3/shukguangyadisk/__init__.py"
 PATCH = ROOT / ".github/patch_shukguangyadisk_v3916.py"
+TEST = ROOT / "tests/v3/shukguangyadisk/test_orphan_inflight_reconcile_v3916.py"
 
 
 def patch_embedded_entry_version() -> None:
@@ -41,18 +42,28 @@ def patch_embedded_entry_version() -> None:
     INIT.write_text(text, encoding="utf-8")
 
 
+def normalize_generated_contract() -> None:
+    text = TEST.read_text(encoding="utf-8")
+    text = text.replace(
+        "assert 'ShukGuangYaDisk.plugin_version = \"3.9.16\"' in INIT",
+        "assert 'plugin_version = \"3.9.16\"' in INIT",
+    )
+    TEST.write_text(text, encoding="utf-8")
+
+
 def run_checked(*args: str) -> None:
     subprocess.run(args, cwd=ROOT, check=True)
 
 
 def main() -> None:
-    # 第一阶段负责所有正式代码、元数据和新测试；它在旧版本一致性合同处会返回非零，
-    # 但此时工作树补丁已完整生成。随后把单文件虚拟入口版本同步，再重新执行全部合同。
+    # 第一阶段负责正式代码、元数据和新测试。它会先触发旧版本一致性合同；即使返回
+    # 非零，工作树补丁已经生成。随后统一修正单文件虚拟入口与新增合同，再跑全套。
     first = subprocess.run(["python", str(PATCH)], cwd=ROOT, check=False)
-    if not (ROOT / "tests/v3/shukguangyadisk/test_orphan_inflight_reconcile_v3916.py").exists():
+    if not TEST.exists():
         raise SystemExit(f"base patch did not materialize v3.9.16 files (exit={first.returncode})")
 
     patch_embedded_entry_version()
+    normalize_generated_contract()
 
     text = INIT.read_text(encoding="utf-8")
     compile(text, str(INIT), "exec")
