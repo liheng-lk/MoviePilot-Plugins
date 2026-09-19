@@ -129,7 +129,7 @@ DEFAULT_SOURCE_KEYS = [
 ]
 
 
-def fetch_source(key: str, limit: int = 20, proxy: bool = False) -> Dict[str, Any]:
+def fetch_source(key: str, limit: int = 20, proxy: bool = False, recent_days: int = 30) -> Dict[str, Any]:
     spec = SOURCE_MAP.get(str(key or ""))
     if not spec:
         return {"ok": False, "key": key, "label": key, "items": [], "error": "未知榜单"}
@@ -137,7 +137,7 @@ def fetch_source(key: str, limit: int = 20, proxy: bool = False) -> Dict[str, An
     chain = RecommendChain()
     try:
         if spec.kind == "tmdb_latest":
-            items = _tmdb_latest(chain, spec, limit)
+            items = _tmdb_latest(chain, spec, limit, recent_days=recent_days)
         elif spec.kind == "watch_provider":
             items = _tmdb_provider(chain, spec, limit, WATCH_PROVIDERS)
         elif spec.kind == "watch_provider_genre":
