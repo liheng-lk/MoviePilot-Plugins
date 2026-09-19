@@ -385,7 +385,56 @@ def domestic_platform(spec: Any, limit: int, proxy: bool) -> List[Dict[str, Any]
     rows: List[Dict[str, Any]] = []
     key = spec.arg or spec.key
 
-    if key == "iqiyi":
+    if key == "tencent":
+        data = _domestic_json(
+            "https://pbaccess.video.qq.com/trpc.universal_backend_service.page_server_rpc.PageServer/GetPageData",
+            method="POST",
+            params={
+                "video_appid": "1000005",
+                "vplatform": "2",
+                "vversion_name": "8.9.10",
+                "new_mark_label_enabled": "1",
+            },
+            payload={
+                "page_params": {
+                    "channel_id": "100113",
+                    "filter_params": "sort=75",
+                    "page_type": "channel_operation",
+                    "page_id": "channel_list_second_page",
+                }
+            },
+            proxy=proxy,
+        )
+        modules = ((data.get("data") or {}).get("module_list_datas") or [])
+        for module in modules:
+            for m in module.get("module_datas") or []:
+                for item in (((m.get("item_data_lists") or {}).get("item_datas")) or []):
+                    p = item.get("item_params") or {}
+                    cid = p.get("cid") or item.get("id")
+                    title = p.get("mz_title") or p.get("title")
+                    if not title or not cid:
+                        continue
+                    year = p.get("publish_date")
+                    try:
+                        tag = json.loads(p.get("uni_imgtag") or p.get("imgtag") or "{}")
+                        year = (tag.get("tag_2") or {}).get("text") or year
+                    except Exception:
+                        pass
+                    rows.append({
+                        "title": title,
+                        "year": year,
+                        "type": "tv",
+                        "poster": p.get("new_pic_vt") or p.get("image_url") or "",
+                        "detail_link": f"https://v.qq.com/x/cover/{cid}.html",
+                    })
+                    if len(rows) >= max(1, limit):
+                        break
+                if len(rows) >= max(1, limit):
+                    break
+            if len(rows) >= max(1, limit):
+                break
+
+    elif key == "iqiyi":
         data = _domestic_json(
             "https://pcw-api.iqiyi.com/search/recommend/list",
             params={"channel_id": 2, "data_type": 1, "page_id": 1, "ret_num": max(48, limit), "mode": 4},
