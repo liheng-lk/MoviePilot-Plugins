@@ -1,14 +1,14 @@
 {
   "DailyAssistant": {
     "name": "每日助手",
-    "description": "监控最新电影和电视剧，TMDB 精确识别、去重后只创建 MoviePilot 原生订阅。",
+    "description": "以 TMDB 最新电影/电视剧为主源，豆瓣、猫眼、腾讯补漏，精确识别、日期过滤和去重后只创建 MoviePilot 原生订阅。",
     "labels": "MoviePilot订阅,最新电影,最新电视剧,TMDB,豆瓣,猫眼",
-    "version": "1.3.1",
+    "version": "1.3.2",
     "icon": "movie.jpg",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
-    "history": {
+    "history": {\n      "v1.3.2": "最新影视源优化：新增 TMDB 最新电影与最新电视剧主源，分别按上映日期/首播日期倒序发现；默认自动订阅源移除 TMDB Trending，Trending 不再驱动订阅；豆瓣、猫眼、腾讯继续作为补漏，所有候选仍需通过近期/未来日期窗口、媒体库和现有订阅检查后才调用 SubscribeChain.add。",
       "v1.3.1": "职责收口为纯 MoviePilot 订阅：移除运行时 GYSub、光鸭转存、逐集日历和插件事件依赖；默认每10分钟检查最新影视，按上映/首播日期窗口过滤老片老剧，TMDB 精确识别后检查媒体库和现有订阅，仅对缺失项目调用 SubscribeChain.add 创建订阅。",
       "v1.3.0": "新增高频最新影视发现与 MoviePilot 原生订阅能力。"
     }
