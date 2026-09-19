@@ -69,7 +69,7 @@ class DailyAssistant(_PluginBase):
     plugin_name = "每日助手"
     plugin_desc = "TMDB 最新电影/电视剧为主源，豆瓣/猫眼/腾讯补漏，精确识别后只创建 MoviePilot 订阅。"
     plugin_icon = "movie.jpg"
-    plugin_version = "1.3.4"
+    plugin_version = "1.3.5"
     plugin_author = "liheng-lk"
     plugin_label = "MoviePilot订阅,最新电影,最新电视剧,TMDB,豆瓣,猫眼"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -182,7 +182,6 @@ class DailyAssistant(_PluginBase):
                 row["title"] = str(getattr(info, "title", None) or row.get("title") or "")
                 row["year"] = getattr(info, "year", None) or row.get("year")
                 row["tmdb_id"] = self._candidate_tmdb_id(info) or tmdb_id
-                row = self._resolve_tv_season(info, row)
                 return row, info
 
         for field, source in (
@@ -202,8 +201,6 @@ class DailyAssistant(_PluginBase):
                 row["tmdb_id"] = self._candidate_tmdb_id(info)
                 row["title"] = str(getattr(info, "title", None) or row.get("title") or "")
                 row["year"] = getattr(info, "year", None) or row.get("year")
-                row["season"] = row.get("season") or getattr(info, "season", None)
-                row = self._resolve_tv_season(info, row)
                 return row, info
 
         title = str(row.get("title") or "").strip()
@@ -234,13 +231,12 @@ class DailyAssistant(_PluginBase):
         row["tmdb_id"] = self._candidate_tmdb_id(info)
         row["title"] = str(getattr(info, "title", None) or title)
         row["year"] = getattr(info, "year", None) or row.get("year")
-        row = self._resolve_tv_season(info, row)
         return row, info
 
-    def _resolve_tv_season(self, info: Any, row: Dict[str, Any]) -> Dict[str, Any]:
-        """为多季电视剧解析本次应订阅的真实季号，优先使用 TMDB 季首播日期。"""
+    def _expand_candidates(self, info: Any, row: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """电影保持单候选；电视剧按日期窗口内的真实季展开为独立候选。"""
         if str(row.get("media_type") or "").lower() != "tv":
-            return row
+            return [dict(row)]
 
         explicit = row.get("season")
         try:
@@ -248,13 +244,13 @@ class DailyAssistant(_PluginBase):
         except (TypeError, ValueError):
             explicit_season = None
         if explicit_season and explicit_season > 0:
-            row["season"] = explicit_season
-            return row
+            candidate = dict(row)
+            candidate["season"] = explicit_season
+            return [candidate]
 
         today = datetime.date.today()
-        candidates: List[Tuple[datetime.date, int]] = []
-        season_info = getattr(info, "season_info", None) or []
-        for item in season_info:
+        expanded: List[Dict[str, Any]] = []
+        for item in getattr(info, "season_info", None) or []:
             if isinstance(item, dict):
                 number = item.get("season_number")
                 air_value = item.get("air_date")
@@ -271,24 +267,15 @@ class DailyAssistant(_PluginBase):
             if not air_date:
                 continue
             delta = (air_date - today).days
-            if -self._recent_days <= delta <= self._future_days:
-                candidates.append((air_date, season_number))
+            if not (-self._recent_days <= delta <= self._future_days):
+                continue
+            candidate = dict(row)
+            candidate["season"] = season_number
+            candidate["air_date"] = air_date.isoformat()
+            expanded.append(candidate)
 
-        if candidates:
-            # 同一作品如果多季都处于窗口，订阅首播日期最新的那一季。
-            _, season = max(candidates, key=lambda value: (value[0], value[1]))
-            row["season"] = season
-            return row
-
-        # 兜底：只有当 MoviePilot 明确给出当前季时才采用，不再无条件回退 S01。
-        current = getattr(info, "season", None)
-        try:
-            current_season = int(current) if current not in (None, "") else None
-        except (TypeError, ValueError):
-            current_season = None
-        if current_season and current_season > 0:
-            row["season"] = current_season
-        return row
+        expanded.sort(key=lambda item: (str(item.get("air_date") or ""), int(item.get("season") or 0)))
+        return expanded
 
     def _season_air_date(self, info: Any, season: Any) -> Optional[datetime.date]:
         try:
@@ -443,6 +430,54 @@ class DailyAssistant(_PluginBase):
             data = dict(ordered)
         self.save_data("dailyassistant_processed", data)
 
+    @staticmethod
+    def _processed_ttl(status: str) -> datetime.timedelta:
+        if status == "library":
+            return datetime.timedelta(days=7)
+        return datetime.timedelta(hours=24)
+
+    def _processed_valid(
+        self,
+        identity: str,
+        entry: Dict[str, Any],
+        info: Any,
+        row: Dict[str, Any],
+        processed: Dict[str, Any],
+    ) -> bool:
+        """历史账本只是缓存；到期后重新向 MoviePilot 核验真实状态。"""
+        if not identity or not isinstance(entry, dict):
+            return False
+        status = str(entry.get("status") or "")
+        try:
+            updated_at = datetime.datetime.fromisoformat(str(entry.get("updated_at") or ""))
+        except (TypeError, ValueError):
+            updated_at = datetime.datetime.min
+        if datetime.datetime.now() - updated_at <= self._processed_ttl(status):
+            return True
+
+        if self._library_has_content(info, row):
+            self._remember_processed(row, "library", source=entry.get("source") or "")
+            return True
+
+        mtype = _mtype(str(row.get("media_type") or "tv"))
+        meta = MetaInfo(str(row.get("title") or getattr(info, "title", "") or ""))
+        meta.type = mtype
+        if mtype == MediaType.TV and row.get("season"):
+            meta.begin_season = int(row["season"])
+        try:
+            if SubscribeChain().exists(mediainfo=info, meta=meta):
+                self._remember_processed(row, "exists", source=entry.get("source") or "")
+                return True
+        except Exception as err:
+            logger.debug("【每日助手】历史订阅复核失败 %s: %s", row.get("title"), err)
+            # 复核失败时保守保留，避免网络瞬断导致重复订阅。
+            return True
+
+        processed.pop(identity, None)
+        self.save_data("dailyassistant_processed", processed)
+        logger.info("【每日助手】【历史释放】%s 不再存在于媒体库/订阅，允许重新处理", identity)
+        return False
+
     def _subscribe(self, info: Any, row: Dict[str, Any]) -> Dict[str, Any]:
         mtype = _mtype(str(row.get("media_type") or "tv"))
         meta = MetaInfo(str(row.get("title") or getattr(info, "title", "") or ""))
@@ -507,9 +542,9 @@ class DailyAssistant(_PluginBase):
             try:
                 if fresh:
                     with fresh(True):
-                        result = fetch_source(source_key, self._rank_limit, self._proxy)
+                        result = fetch_source(source_key, self._rank_limit, self._proxy, recent_days=self._recent_days)
                 else:
-                    result = fetch_source(source_key, self._rank_limit, self._proxy)
+                    result = fetch_source(source_key, self._rank_limit, self._proxy, recent_days=self._recent_days)
             except Exception as err:
                 result = {"ok": False, "label": source_key, "items": [], "error": str(err)}
 
@@ -522,65 +557,76 @@ class DailyAssistant(_PluginBase):
             })
 
             for raw in result.get("items") or []:
-                row, info = self._resolve_tmdb(raw)
-                tmdb_id = str(row.get("tmdb_id") or "")
-                media_type = str(row.get("media_type") or "")
-                identity = f"{tmdb_id}:{media_type}" if tmdb_id else ""
-                if not identity or identity in seen or not info:
-                    unresolved += 1 if not tmdb_id or not info else 0
-                    continue
-                seen.add(identity)
-
-                processed_identity = self._identity(row)
-                if processed_identity and processed_identity in processed:
-                    processed_skip += 1
+                base_row, info = self._resolve_tmdb(raw)
+                tmdb_id = str(base_row.get("tmdb_id") or "")
+                media_type = str(base_row.get("media_type") or "")
+                if not tmdb_id or not info:
+                    unresolved += 1
                     continue
 
-                try:
-                    vote = float(row.get("vote_average") or getattr(info, "vote_average", 0) or 0)
-                except (TypeError, ValueError):
-                    vote = 0
-                if self._vote_min > 0 and vote < self._vote_min:
-                    continue
-                if not self._is_latest(info, row):
-                    outdated += 1
-                    continue
-                if self._library_has_content(info, row):
-                    library += 1
-                    self._remember_processed(row, "library", source=row.get("source_label") or source_key)
-                    processed[self._identity(row)] = {"status": "library"}
+                candidates = self._expand_candidates(info, base_row)
+                if media_type == "tv" and not candidates:
+                    unresolved += 1
+                    logger.debug("【每日助手】%s 未解析到日期窗口内的真实季，跳过", base_row.get("title"))
                     continue
 
-                sub = self._subscribe(info, row)
-                if sub.get("status") == "created":
-                    release_date = self._release_date(info, row)
-                    created.append({
-                        "title": getattr(info, "title", None) or row.get("title"),
-                        "year": getattr(info, "year", None) or row.get("year"),
-                        "media_type": media_type,
-                        "season": row.get("season"),
-                        "tmdb_id": tmdb_id,
-                        "release_date": release_date.isoformat() if release_date else "",
-                        "source": row.get("source_label") or source_key,
-                    })
-                    self._remember_processed(row, "created", source=created[-1]["source"])
-                    processed[self._identity(row)] = {"status": "created"}
-                    logger.info(
-                        "【每日助手】【订阅成功】%s (%s) type=%s season=%s TMDB=%s source=%s",
-                        created[-1]["title"], created[-1]["year"] or "-", media_type,
-                        (f"S{int(row.get('season')):02d}" if row.get("season") else "-"),
-                        tmdb_id, created[-1]["source"],
-                    )
-                elif sub.get("status") == "exists":
-                    existed += 1
-                    self._remember_processed(row, "exists", source=row.get("source_label") or source_key)
-                    processed[self._identity(row)] = {"status": "exists"}
-                else:
-                    failed += 1
-                    logger.warning(
-                        "【每日助手】【订阅失败】%s TMDB=%s: %s",
-                        row.get("title"), tmdb_id, sub.get("message") or "未知错误",
-                    )
+                for row in candidates:
+                    identity = self._identity(row)
+                    if not identity or identity in seen:
+                        continue
+                    seen.add(identity)
+
+                    entry = processed.get(identity)
+                    if entry and self._processed_valid(identity, entry, info, row, processed):
+                        processed_skip += 1
+                        continue
+
+                    try:
+                        vote = float(row.get("vote_average") or getattr(info, "vote_average", 0) or 0)
+                    except (TypeError, ValueError):
+                        vote = 0
+                    if self._vote_min > 0 and vote < self._vote_min:
+                        continue
+                    if not self._is_latest(info, row):
+                        outdated += 1
+                        continue
+                    if self._library_has_content(info, row):
+                        library += 1
+                        self._remember_processed(row, "library", source=row.get("source_label") or source_key)
+                        processed[identity] = self._load_processed().get(identity, {"status": "library"})
+                        continue
+
+                    sub = self._subscribe(info, row)
+                    if sub.get("status") == "created":
+                        release_date = self._release_date(info, row)
+                        created.append({
+                            "title": getattr(info, "title", None) or row.get("title"),
+                            "year": getattr(info, "year", None) or row.get("year"),
+                            "media_type": media_type,
+                            "season": row.get("season"),
+                            "tmdb_id": tmdb_id,
+                            "release_date": release_date.isoformat() if release_date else "",
+                            "source": row.get("source_label") or source_key,
+                        })
+                        self._remember_processed(row, "created", source=created[-1]["source"])
+                        processed[identity] = self._load_processed().get(identity, {"status": "created"})
+                        logger.info(
+                            "【每日助手】【订阅成功】%s (%s) type=%s season=%s TMDB=%s source=%s",
+                            created[-1]["title"], created[-1]["year"] or "-", media_type,
+                            (f"S{int(row.get('season')):02d}" if row.get("season") else "-"),
+                            tmdb_id, created[-1]["source"],
+                        )
+                    elif sub.get("status") == "exists":
+                        existed += 1
+                        self._remember_processed(row, "exists", source=row.get("source_label") or source_key)
+                        processed[identity] = self._load_processed().get(identity, {"status": "exists"})
+                    else:
+                        failed += 1
+                        logger.warning(
+                            "【每日助手】【订阅失败】%s season=%s TMDB=%s: %s",
+                            row.get("title"), row.get("season") or "-", tmdb_id,
+                            sub.get("message") or "未知错误",
+                        )
 
         payload = {
             "updated_at": now.isoformat(timespec="seconds"),
