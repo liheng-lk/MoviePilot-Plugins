@@ -22,6 +22,8 @@ except Exception:
 
 
 LATEST_SOURCE_KEYS = [
+    "tmdb_latest_movie",
+    "tmdb_latest_tv",
     "douban_showing",
     "douban_coming",
     "douban_new_movies",
@@ -30,7 +32,6 @@ LATEST_SOURCE_KEYS = [
     "maoyan_tv",
     "tencent_hot",
     "tencent_tv",
-    "tmdb_trending",
 ]
 
 
@@ -66,9 +67,9 @@ class DailyAssistant(_PluginBase):
     """高频发现最新影视，只创建 MoviePilot 原生订阅。"""
 
     plugin_name = "每日助手"
-    plugin_desc = "监控最新电影和电视剧，TMDB 精确识别、去重后直接创建 MoviePilot 订阅。"
+    plugin_desc = "TMDB 最新电影/电视剧为主源，豆瓣/猫眼/腾讯补漏，精确识别后只创建 MoviePilot 订阅。"
     plugin_icon = "movie.jpg"
-    plugin_version = "1.3.1"
+    plugin_version = "1.3.2"
     plugin_author = "liheng-lk"
     plugin_label = "MoviePilot订阅,最新电影,最新电视剧,TMDB,豆瓣,猫眼"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
