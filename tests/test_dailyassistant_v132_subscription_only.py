@@ -40,3 +40,13 @@ def test_dailyassistant_v133_has_library_any_content_guard_and_persistent_ledger
     assert 'self._remember_processed(row, "exists"' in ENTRY
     assert 'self._remember_processed(row, "library"' in ENTRY
     assert "processed_skip" in ENTRY
+
+
+def test_dailyassistant_v134_resolves_real_tv_season():
+    assert "def _resolve_tv_season" in ENTRY
+    assert 'item.get("season_number")' in ENTRY
+    assert 'item.get("air_date")' in ENTRY
+    assert "season_number <= 0" in ENTRY
+    assert 'row["season"] = season' in ENTRY
+    assert 'raw_season = row.get("season")' in ENTRY
+    assert 'getattr(info, "season", None)' in ENTRY  # fallback only
