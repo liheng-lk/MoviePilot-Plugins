@@ -1,25 +1,37 @@
-"""每日助手：把全媒体榜单发现统一送入光鸭 GYSub 固定转存路线。"""
+"""每日助手：只负责发现最新电影/电视剧并创建 MoviePilot 订阅。"""
 from __future__ import annotations
 
 import datetime
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from apscheduler.triggers.cron import CronTrigger
-
 from app.chain.download import DownloadChain
 from app.chain.media import MediaChain
 from app.chain.subscribe import SubscribeChain
 from app.plugins import _PluginBase
-from app.sdk.config import settings
-from app.sdk.events import eventmanager
 from app.sdk.logging import logger
 from app.sdk.media import MetaInfo
-from app.schemas.types import EventType, MediaSource, MediaType
+from app.schemas.types import MediaSource, MediaType
 
-from .sources import DEFAULT_SOURCE_KEYS, SOURCE_MAP, fetch_source, source_options
-from .hardening_v110 import DailyAssistantV110Mixin
-from .airing_calendar_v120 import DailyAssistantCalendarV120Mixin\nfrom .realtime_v130 import DailyAssistantRealtimeV130Mixin
+from .sources import SOURCE_MAP, fetch_source, source_options
+
+try:
+    from app.runtime.cache import fresh
+except Exception:
+    fresh = None
+
+
+LATEST_SOURCE_KEYS = [
+    "douban_showing",
+    "douban_coming",
+    "douban_new_movies",
+    "douban_tv_recent",
+    "maoyan_movie",
+    "maoyan_tv",
+    "tencent_hot",
+    "tencent_tv",
+    "tmdb_trending",
+]
 
 
 def _as_list(value: Any) -> List[str]:
@@ -50,135 +62,134 @@ def _safe_float(value: Any, default: float, minimum: float, maximum: float) -> f
     return max(minimum, min(number, maximum))
 
 
-class DailyAssistantV100(_PluginBase):
-    """聚合电影、剧集、动漫、综艺、纪录片和流媒体榜单，并通过 GYSub 接入光鸭转存。"""
+class DailyAssistant(_PluginBase):
+    """高频发现最新影视，只创建 MoviePilot 原生订阅。"""
 
     plugin_name = "每日助手"
-    plugin_desc = "实时发现最新电影/电视剧 → TMDB 统一识别 → 直接创建 MoviePilot 订阅；不触发任何转存。"
+    plugin_desc = "监控最新电影和电视剧，TMDB 精确识别、去重后直接创建 MoviePilot 订阅。"
     plugin_icon = "movie.jpg"
-    plugin_version = "1.0.0"
+    plugin_version = "1.3.1"
     plugin_author = "liheng-lk"
-    plugin_label = "榜单,Netflix,HBO,AppleTV,Disney,Prime,Hulu,Crunchyroll,豆瓣,猫眼,IMDb,TMDB,AniList,Bangumi,GYSub"
+    plugin_label = "MoviePilot订阅,最新电影,最新电视剧,TMDB,豆瓣,猫眼"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
     plugin_config_prefix = "dailyassistant_"
     plugin_order = 19
     auth_level = 1
 
     _enabled = False
-    _cron = "15 8 * * *"
     _onlyonce = False
     _proxy = False
-    _rank_limit = 20
+    _interval_minutes = 10
+    _rank_limit = 30
     _vote_min = 0.0
-    _auto_gysub = False
-    _source_keys: List[str] = list(DEFAULT_SOURCE_KEYS)
-    _auto_source_keys: List[str] = []
-    _gysub_pending_ttl = datetime.timedelta(minutes=15)
+    _recent_days = 30
+    _future_days = 60
+    _source_keys: List[str] = list(LATEST_SOURCE_KEYS)
 
     def init_plugin(self, config: Optional[dict] = None) -> None:
-        """加载配置。"""
         config = config or {}
         self._enabled = bool(config.get("enabled", False))
-        self._cron = str(config.get("cron") or "15 8 * * *").strip()
         self._onlyonce = bool(config.get("onlyonce", False))
         self._proxy = bool(config.get("proxy", False))
-        self._rank_limit = _safe_int(config.get("rank_limit"), 20, 1, 50)
+        self._interval_minutes = _safe_int(config.get("interval_minutes"), 10, 5, 60)
+        self._rank_limit = _safe_int(config.get("rank_limit"), 30, 5, 100)
         self._vote_min = _safe_float(config.get("vote_min"), 0.0, 0.0, 10.0)
-        self._auto_gysub = bool(config.get("auto_gysub", False))
-        source_keys = _as_list(config.get("source_keys"))
-        self._source_keys = [key for key in source_keys if key in SOURCE_MAP] or list(DEFAULT_SOURCE_KEYS)
-        self._auto_source_keys = [key for key in _as_list(config.get("auto_source_keys")) if key in SOURCE_MAP]
+        self._recent_days = _safe_int(config.get("recent_days"), 30, 1, 180)
+        self._future_days = _safe_int(config.get("future_days"), 60, 0, 365)
+        source_keys = [key for key in _as_list(config.get("source_keys")) if key in SOURCE_MAP]
+        self._source_keys = source_keys or list(LATEST_SOURCE_KEYS)
 
     def get_state(self) -> bool:
-        """返回插件启用状态。"""
         return self._enabled
 
+    def _save_config(self, *, onlyonce: Optional[bool] = None) -> None:
+        self.update_config({
+            "enabled": self._enabled,
+            "onlyonce": self._onlyonce if onlyonce is None else onlyonce,
+            "proxy": self._proxy,
+            "interval_minutes": self._interval_minutes,
+            "rank_limit": self._rank_limit,
+            "vote_min": self._vote_min,
+            "recent_days": self._recent_days,
+            "future_days": self._future_days,
+            "source_keys": self._source_keys,
+        })
+
     def get_service(self) -> List[Dict[str, Any]]:
-        """注册每日刷新和一次性立即刷新。"""
         services: List[Dict[str, Any]] = []
         if self._onlyonce:
             services.append({
                 "id": "DailyAssistantOnce",
-                "name": "每日助手立即刷新",
+                "name": "每日助手立即订阅检查",
                 "trigger": "date",
                 "func": self.refresh,
                 "kwargs": {"run_date": datetime.datetime.now() + datetime.timedelta(seconds=3)},
                 "func_kwargs": {"manual": True},
             })
             self._save_config(onlyonce=False)
-        if self._enabled and self._cron:
-            try:
-                trigger = CronTrigger.from_crontab(self._cron)
-                services.append({
-                    "id": "DailyAssistant",
-                    "name": "每日助手榜单刷新",
-                    "trigger": trigger,
-                    "func": self.refresh,
-                    "func_kwargs": {"manual": False},
-                })
-            except Exception as err:
-                logger.error("【每日助手】Cron 配置无效 %s: %s", self._cron, err)
+        if self._enabled:
+            services.append({
+                "id": "DailyAssistantSubscribe",
+                "name": "每日助手最新影视订阅",
+                "trigger": "interval",
+                "func": self.refresh,
+                "kwargs": {"minutes": self._interval_minutes},
+                "func_kwargs": {"manual": False},
+            })
         return services
-
-    def _save_config(self, *, onlyonce: Optional[bool] = None) -> None:
-        self.update_config({
-            "enabled": self._enabled,
-            "cron": self._cron,
-            "onlyonce": self._onlyonce if onlyonce is None else onlyonce,
-            "proxy": self._proxy,
-            "rank_limit": self._rank_limit,
-            "vote_min": self._vote_min,
-            "auto_gysub": self._auto_gysub,
-            "source_keys": self._source_keys,
-            "auto_source_keys": self._auto_source_keys,
-        })
-
-    @staticmethod
-    def _candidate_identity(item: Dict[str, Any]) -> str:
-        tmdb_id = str(item.get("tmdb_id") or "")
-        media_type = str(item.get("media_type") or "")
-        if tmdb_id:
-            season = _safe_int(item.get("season"), 1, 1, 99) if media_type == "tv" else 0
-            return f"tmdb:{tmdb_id}:{media_type}:s{season:02d}"
-        return f"title:{str(item.get('title') or '').casefold()}:{item.get('year') or ''}:{media_type}"
 
     @staticmethod
     def _candidate_tmdb_id(info: Any) -> str:
-        return str(getattr(info, "tmdb_id", None) or (
-            getattr(info, "media_id", None)
-            if str(getattr(getattr(info, "media_source", None), "value", getattr(info, "media_source", ""))).lower() == "tmdb"
-            else ""
-        ) or "").strip()
+        return str(
+            getattr(info, "tmdb_id", None)
+            or (
+                getattr(info, "media_id", None)
+                if str(
+                    getattr(
+                        getattr(info, "media_source", None),
+                        "value",
+                        getattr(info, "media_source", ""),
+                    )
+                ).lower() == "tmdb"
+                else ""
+            )
+            or ""
+        ).strip()
 
     def _resolve_tmdb(self, item: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[Any]]:
-        """把非 TMDB 榜单条目安全投影为 TMDB 身份；多候选时宁可不自动订阅。"""
         row = dict(item)
-        media_type = str(row.get("media_type") or "tv")
-        mtype = _mtype(media_type)
+        mtype = _mtype(str(row.get("media_type") or "tv"))
         tmdb_id = str(row.get("tmdb_id") or "").strip()
         chain = MediaChain()
 
         if tmdb_id:
             try:
-                info = chain.recognize_media(mtype=mtype, media_source=MediaSource.TMDB, media_id=tmdb_id)
-                if info:
-                    row["title"] = str(getattr(info, "title", None) or row.get("title") or "")
-                    row["year"] = getattr(info, "year", None) or row.get("year")
-                    row["tmdb_id"] = self._candidate_tmdb_id(info) or tmdb_id
-                    row["poster"] = getattr(info, "poster_path", None) or getattr(info, "poster", None) or row.get("poster") or ""
-                    row["season"] = row.get("season") or getattr(info, "season", None)
-                    return row, info
+                info = chain.recognize_media(
+                    mtype=mtype,
+                    media_source=MediaSource.TMDB,
+                    media_id=tmdb_id,
+                    cache=False,
+                )
+            except TypeError:
+                info = chain.recognize_media(
+                    mtype=mtype, media_source=MediaSource.TMDB, media_id=tmdb_id
+                )
             except Exception as err:
-                logger.debug("【每日助手】TMDB %s 详情识别失败: %s", tmdb_id, err)
-            return row, None
+                logger.debug("【每日助手】TMDB识别失败 %s: %s", tmdb_id, err)
+                info = None
+            if info:
+                row["title"] = str(getattr(info, "title", None) or row.get("title") or "")
+                row["year"] = getattr(info, "year", None) or row.get("year")
+                row["tmdb_id"] = self._candidate_tmdb_id(info) or tmdb_id
+                row["season"] = row.get("season") or getattr(info, "season", None)
+                return row, info
 
-        source_pairs = (
+        for field, source in (
             ("imdb_id", MediaSource.IMDb),
             ("anilist_id", MediaSource.AniList),
             ("bangumi_id", MediaSource.Bangumi),
             ("douban_id", MediaSource.Douban),
-        )
-        for field, source in source_pairs:
+        ):
             media_id = str(row.get(field) or "").strip()
             if not media_id:
                 continue
@@ -186,26 +197,24 @@ class DailyAssistantV100(_PluginBase):
                 info = chain.recognize_media(mtype=mtype, media_source=source, media_id=media_id)
             except Exception:
                 info = None
-            if info:
-                candidate_tmdb = self._candidate_tmdb_id(info)
-                if candidate_tmdb:
-                    row["tmdb_id"] = candidate_tmdb
-                    row["title"] = str(getattr(info, "title", None) or row.get("title") or "")
-                    row["year"] = getattr(info, "year", None) or row.get("year")
-                    return row, info
+            if info and self._candidate_tmdb_id(info):
+                row["tmdb_id"] = self._candidate_tmdb_id(info)
+                row["title"] = str(getattr(info, "title", None) or row.get("title") or "")
+                row["year"] = getattr(info, "year", None) or row.get("year")
+                row["season"] = row.get("season") or getattr(info, "season", None)
+                return row, info
 
         title = str(row.get("title") or "").strip()
         if not title:
             return row, None
         try:
             _, medias = chain.search(title=title, media_source=MediaSource.TMDB)
-        except Exception as err:
-            logger.debug("【每日助手】标题识别失败 %s: %s", title, err)
+        except Exception:
             return row, None
 
         wanted_year = str(row.get("year") or "").strip()
         title_norm = re.sub(r"\W+", "", title.casefold())
-        candidates = []
+        matches = []
         for info in medias or []:
             if getattr(info, "type", None) != mtype:
                 continue
@@ -216,19 +225,54 @@ class DailyAssistantV100(_PluginBase):
                 re.sub(r"\W+", "", str(getattr(info, "en_title", "") or "").casefold()),
             }
             if title_norm and title_norm in aliases:
-                candidates.append(info)
-        if len(candidates) != 1:
+                matches.append(info)
+        if len(matches) != 1:
             return row, None
-        info = candidates[0]
-        candidate_tmdb = self._candidate_tmdb_id(info)
-        if not candidate_tmdb:
-            return row, None
-        row["tmdb_id"] = candidate_tmdb
-        row["title"] = str(getattr(info, "title", None) or row.get("title") or "")
+        info = matches[0]
+        row["tmdb_id"] = self._candidate_tmdb_id(info)
+        row["title"] = str(getattr(info, "title", None) or title)
         row["year"] = getattr(info, "year", None) or row.get("year")
-        row["poster"] = getattr(info, "poster_path", None) or getattr(info, "poster", None) or row.get("poster") or ""
         row["season"] = row.get("season") or getattr(info, "season", None)
         return row, info
+
+    @staticmethod
+    def _parse_date(value: Any) -> Optional[datetime.date]:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        try:
+            return datetime.date.fromisoformat(text[:10])
+        except ValueError:
+            return None
+
+    def _release_date(self, info: Any, row: Dict[str, Any]) -> Optional[datetime.date]:
+        if str(row.get("media_type") or "") == "movie":
+            values = (
+                getattr(info, "release_date", None),
+                row.get("release_date"),
+                row.get("air_date"),
+            )
+        else:
+            values = (
+                getattr(info, "first_air_date", None),
+                getattr(info, "release_date", None),
+                row.get("first_air_date"),
+                row.get("air_date"),
+                row.get("release_date"),
+            )
+        for value in values:
+            parsed = self._parse_date(value)
+            if parsed:
+                return parsed
+        return None
+
+    def _is_latest(self, info: Any, row: Dict[str, Any]) -> bool:
+        release_date = self._release_date(info, row)
+        if not release_date:
+            return False
+        today = datetime.date.today()
+        delta = (release_date - today).days
+        return -self._recent_days <= delta <= self._future_days
 
     @staticmethod
     def _library_complete(info: Any, row: Dict[str, Any]) -> bool:
@@ -244,169 +288,73 @@ class DailyAssistantV100(_PluginBase):
         except Exception:
             return False
 
-    @staticmethod
-    def _pending_row(row: Dict[str, Any]) -> Dict[str, Any]:
-        """持久化最小 GYSub 请求事实，避免保存整份榜单对象。"""
-        return {
-            key: row.get(key)
-            for key in ("title", "year", "media_type", "season", "tmdb_id", "source_key", "source_label")
-            if row.get(key) not in (None, "")
-        }
-
-    def _subscription_exists(self, row: Dict[str, Any]) -> bool:
-        """用 MoviePilot 当前订阅仓储按 TMDB+季确认 GYSub 是否真正落库。"""
-        tmdb_id = str(row.get("tmdb_id") or "").strip()
-        media_type = str(row.get("media_type") or "tv").lower()
-        if not tmdb_id or media_type not in {"movie", "tv"}:
-            return False
-        mtype = _mtype(media_type)
-        try:
-            info = MediaChain().recognize_media(
-                mtype=mtype,
-                media_source=MediaSource.TMDB,
-                media_id=tmdb_id,
-                cache=False,
-            )
-        except TypeError:
-            info = MediaChain().recognize_media(mtype=mtype, media_source=MediaSource.TMDB, media_id=tmdb_id)
-        except Exception as err:
-            logger.debug("【每日助手】GYSub 落库确认识别失败 TMDB %s: %s", tmdb_id, err)
-            return False
-        if not info:
-            return False
+    def _subscribe(self, info: Any, row: Dict[str, Any]) -> Dict[str, Any]:
+        mtype = _mtype(str(row.get("media_type") or "tv"))
         meta = MetaInfo(str(row.get("title") or getattr(info, "title", "") or ""))
         meta.type = mtype
+
+        season = None
         if mtype == MediaType.TV:
-            meta.begin_season = _safe_int(row.get("season"), 1, 1, 99)
-        try:
-            return bool(SubscribeChain().exists(mediainfo=info, meta=meta))
-        except Exception as err:
-            logger.debug("【每日助手】GYSub 落库确认失败 TMDB %s: %s", tmdb_id, err)
-            return False
-
-    def _confirm_gysub(self, row: Dict[str, Any], *, source: str) -> None:
-        identity = self._candidate_identity(row)
-        submitted = self.get_data("gysub_submitted") or {}
-        if not isinstance(submitted, dict):
-            submitted = {}
-        submitted[identity] = {
-            "confirmed_at": datetime.datetime.now().isoformat(timespec="seconds"),
-            "source": source,
-            "row": self._pending_row(row),
-        }
-        self.save_data("gysub_submitted", submitted)
-        pending = self.get_data("gysub_pending") or {}
-        if isinstance(pending, dict) and identity in pending:
-            pending.pop(identity, None)
-            self.save_data("gysub_pending", pending)
-
-    def _reconcile_pending_gysub(self) -> Dict[str, int]:
-        """把广播请求与实际 MoviePilot 订阅事实对账；超时请求自动释放以允许重试。"""
-        pending = self.get_data("gysub_pending") or {}
-        if not isinstance(pending, dict) or not pending:
-            return {"confirmed": 0, "expired": 0, "pending": 0}
-        now = datetime.datetime.now()
-        confirmed = 0
-        expired = 0
-        changed = False
-        submitted = self.get_data("gysub_submitted") or {}
-        if not isinstance(submitted, dict):
-            submitted = {}
-        for identity, entry in list(pending.items()):
-            entry = entry if isinstance(entry, dict) else {}
-            row = entry.get("row") if isinstance(entry.get("row"), dict) else {}
-            if row and self._subscription_exists(row):
-                submitted[identity] = {
-                    "confirmed_at": now.isoformat(timespec="seconds"),
-                    "source": entry.get("source") or "每日助手",
-                    "row": row,
-                }
-                pending.pop(identity, None)
-                confirmed += 1
-                changed = True
-                continue
+            raw_season = row.get("season") or getattr(info, "season", None)
             try:
-                requested_at = datetime.datetime.fromisoformat(str(entry.get("requested_at") or ""))
+                season = int(raw_season) if raw_season not in (None, "") else None
             except (TypeError, ValueError):
-                requested_at = now - self._gysub_pending_ttl - datetime.timedelta(seconds=1)
-            if now - requested_at > self._gysub_pending_ttl:
-                pending.pop(identity, None)
-                expired += 1
-                changed = True
-        if changed:
-            self.save_data("gysub_pending", pending)
-            self.save_data("gysub_submitted", submitted)
-        return {"confirmed": confirmed, "expired": expired, "pending": len(pending)}
+                season = None
+            if season:
+                meta.begin_season = season
 
-    def _dispatch_gysub(self, row: Dict[str, Any], *, source: str = "每日助手") -> Dict[str, Any]:
-        """发送光鸭 GYSub 请求；只有 MoviePilot 订阅实际存在后才写入已确认去重状态。"""
-        tmdb_id = str(row.get("tmdb_id") or "").strip()
-        media_type = str(row.get("media_type") or "tv").lower()
-        if not tmdb_id or media_type not in {"movie", "tv"}:
-            return {"success": False, "status": "rejected", "message": "缺少 TMDB 精确身份，未提交 GYSub"}
-        identity = self._candidate_identity(row)
-        if self._subscription_exists(row):
-            self._confirm_gysub(row, source=source)
-            return {"success": True, "status": "confirmed", "confirmed": True, "message": f"GYSub 已存在：{row.get('title')}"}
-
-        now = datetime.datetime.now()
-        pending = self.get_data("gysub_pending") or {}
-        if not isinstance(pending, dict):
-            pending = {}
-        existing = pending.get(identity)
-        if isinstance(existing, dict):
-            try:
-                requested_at = datetime.datetime.fromisoformat(str(existing.get("requested_at") or ""))
-            except (TypeError, ValueError):
-                requested_at = now - self._gysub_pending_ttl - datetime.timedelta(seconds=1)
-            if now - requested_at <= self._gysub_pending_ttl:
-                return {
-                    "success": True,
-                    "status": "pending",
-                    "confirmed": False,
-                    "message": f"GYSub 请求处理中：{row.get('title')}，等待 MoviePilot 订阅落库确认",
-                }
-            pending.pop(identity, None)
-
-        arg = f"tmdb:{tmdb_id} {media_type}"
-        if media_type == "tv":
-            season = _safe_int(row.get("season"), 1, 1, 99)
-            arg += f" S{season:02d}"
-        event_data = {"action": "guangya_direct_subscribe", "arg_str": arg}
+        chain = SubscribeChain()
         try:
-            eventmanager.send_event(EventType.PluginAction, event_data)
+            if chain.exists(mediainfo=info, meta=meta):
+                return {"status": "exists", "success": True}
         except Exception as err:
-            logger.error("【每日助手】GYSub 事件发送失败 %s: %s", arg, err)
-            return {"success": False, "status": "failed", "message": str(err)}
+            logger.debug("【每日助手】订阅存在性检查失败 %s: %s", row.get("title"), err)
 
-        pending[identity] = {
-            "requested_at": now.isoformat(timespec="seconds"),
-            "source": source,
-            "arg": arg,
-            "row": self._pending_row(row),
-        }
-        self.save_data("gysub_pending", pending)
-        logger.info("【每日助手】已发送 GYSub 请求：%s %s source=%s，等待订阅落库确认", row.get("title"), arg, source)
-        return {
-            "success": True,
-            "status": "requested",
-            "confirmed": False,
-            "message": f"已发送 GYSub 请求：{row.get('title')} ({arg})，等待落库确认",
-        }
+        media_source = getattr(info, "media_source", None) or MediaSource.TMDB
+        media_id = getattr(info, "media_id", None) or getattr(info, "tmdb_id", None) or row.get("tmdb_id")
+        if not media_id:
+            return {"status": "failed", "success": False, "message": "缺少媒体ID"}
+
+        try:
+            sid, err_msg = chain.add(
+                title=getattr(info, "title", None) or str(row.get("title") or ""),
+                year=getattr(info, "year", None) or row.get("year"),
+                mtype=mtype,
+                media_source=media_source,
+                media_id=str(media_id),
+                season=season,
+                message=False,
+                exist_ok=True,
+                username="每日助手",
+            )
+        except Exception as err:
+            return {"status": "failed", "success": False, "message": str(err)}
+
+        if sid:
+            return {"status": "created", "success": True, "id": sid}
+        return {"status": "failed", "success": False, "message": err_msg or "添加失败"}
 
     def refresh(self, manual: bool = False) -> Dict[str, Any]:
-        """刷新所有启用榜单，统一识别、去重并可按榜单自动提交 GYSub。"""
-        statuses: List[Dict[str, Any]] = []
-        candidates: List[Dict[str, Any]] = []
+        now = datetime.datetime.now()
         seen = set()
-        filtered_library = 0
+        created: List[Dict[str, Any]] = []
+        existed = 0
+        library = 0
+        outdated = 0
         unresolved = 0
-        auto_requested = 0
-        auto_confirmed = 0
-        auto_failed = 0
+        failed = 0
+        statuses: List[Dict[str, Any]] = []
 
         for source_key in self._source_keys:
-            result = fetch_source(source_key, self._rank_limit, self._proxy)
+            try:
+                if fresh:
+                    with fresh(True):
+                        result = fetch_source(source_key, self._rank_limit, self._proxy)
+                else:
+                    result = fetch_source(source_key, self._rank_limit, self._proxy)
+            except Exception as err:
+                result = {"ok": False, "label": source_key, "items": [], "error": str(err)}
+
             statuses.append({
                 "key": source_key,
                 "label": result.get("label") or source_key,
@@ -414,179 +362,178 @@ class DailyAssistantV100(_PluginBase):
                 "count": len(result.get("items") or []),
                 "error": result.get("error") or "",
             })
+
             for raw in result.get("items") or []:
                 row, info = self._resolve_tmdb(raw)
-                vote = row.get("vote_average")
-                try:
-                    if self._vote_min > 0 and vote is not None and float(vote) < self._vote_min:
-                        continue
-                except (TypeError, ValueError):
-                    pass
-                if self._library_complete(info, row):
-                    filtered_library += 1
-                    continue
-                identity = self._candidate_identity(row)
-                if identity in seen:
+                tmdb_id = str(row.get("tmdb_id") or "")
+                media_type = str(row.get("media_type") or "")
+                identity = f"{tmdb_id}:{media_type}" if tmdb_id else ""
+                if not identity or identity in seen or not info:
+                    unresolved += 1 if not tmdb_id or not info else 0
                     continue
                 seen.add(identity)
-                row["index"] = len(candidates) + 1
-                row["resolved"] = bool(row.get("tmdb_id"))
-                if not row["resolved"]:
-                    unresolved += 1
-                candidates.append(row)
 
-        reconcile = self._reconcile_pending_gysub()
-        payload = {
-            "batch_id": datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
-            "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
-            "manual": bool(manual),
-            "source_count": len(self._source_keys),
-            "statuses": statuses,
-            "candidates": candidates,
-            "filtered_library": filtered_library,
-            "unresolved": unresolved,
-            "gysub_reconcile": reconcile,
-        }
-        self.save_data("dailyassistant_candidates", payload)
-
-        if self._auto_gysub and self._auto_source_keys:
-            for row in candidates:
-                if row.get("source_key") not in self._auto_source_keys or not row.get("tmdb_id"):
+                try:
+                    vote = float(row.get("vote_average") or getattr(info, "vote_average", 0) or 0)
+                except (TypeError, ValueError):
+                    vote = 0
+                if self._vote_min > 0 and vote < self._vote_min:
                     continue
-                result = self._dispatch_gysub(row, source="每日助手自动订阅")
-                if not result.get("success"):
-                    auto_failed += 1
-                elif result.get("status") == "requested":
-                    auto_requested += 1
-                elif result.get("status") == "confirmed":
-                    auto_confirmed += 1
+                if not self._is_latest(info, row):
+                    outdated += 1
+                    continue
+                if self._library_complete(info, row):
+                    library += 1
+                    continue
 
-        payload["auto_requested"] = auto_requested
-        payload["auto_confirmed"] = auto_confirmed
-        payload["auto_success"] = auto_requested + auto_confirmed
-        payload["auto_failed"] = auto_failed
-        self.save_data("dailyassistant_candidates", payload)
+                sub = self._subscribe(info, row)
+                if sub.get("status") == "created":
+                    release_date = self._release_date(info, row)
+                    created.append({
+                        "title": getattr(info, "title", None) or row.get("title"),
+                        "year": getattr(info, "year", None) or row.get("year"),
+                        "media_type": media_type,
+                        "tmdb_id": tmdb_id,
+                        "release_date": release_date.isoformat() if release_date else "",
+                        "source": row.get("source_label") or source_key,
+                    })
+                    logger.info(
+                        "【每日助手】【订阅成功】%s (%s) type=%s TMDB=%s source=%s",
+                        created[-1]["title"], created[-1]["year"] or "-", media_type,
+                        tmdb_id, created[-1]["source"],
+                    )
+                elif sub.get("status") == "exists":
+                    existed += 1
+                else:
+                    failed += 1
+                    logger.warning(
+                        "【每日助手】【订阅失败】%s TMDB=%s: %s",
+                        row.get("title"), tmdb_id, sub.get("message") or "未知错误",
+                    )
+
+        payload = {
+            "updated_at": now.isoformat(timespec="seconds"),
+            "manual": bool(manual),
+            "created": created,
+            "created_count": len(created),
+            "exists_count": existed,
+            "library_count": library,
+            "outdated_count": outdated,
+            "unresolved_count": unresolved,
+            "failed_count": failed,
+            "statuses": statuses,
+            "interval_minutes": self._interval_minutes,
+            "recent_days": self._recent_days,
+            "future_days": self._future_days,
+        }
+        self.save_data("dailyassistant_last_run", payload)
         logger.info(
-            "【每日助手】刷新完成：榜单=%s 候选=%s 媒体库过滤=%s 未识别=%s GYSub请求=%s 确认=%s 失败=%s 待确认=%s",
-            len(self._source_keys), len(candidates), filtered_library, unresolved,
-            auto_requested, auto_confirmed, auto_failed, reconcile.get("pending", 0),
+            "【每日助手】订阅检查完成：新增=%s 已订阅=%s 已入库=%s 非最新=%s 未识别=%s 失败=%s",
+            len(created), existed, library, outdated, unresolved, failed,
         )
         return {
             "success": True,
             "data": payload,
-            "message": f"发现 {len(candidates)} 个候选，自动 GYSub 请求 {auto_requested} 个，已确认 {auto_confirmed} 个",
+            "message": f"新增订阅 {len(created)}，已订阅 {existed}，已入库 {library}",
         }
 
     def api_refresh(self) -> Dict[str, Any]:
-        """手动刷新榜单 API。"""
         return self.refresh(manual=True)
 
-    def api_gysub(self, index: int = 0, batch_id: str = "") -> Dict[str, Any]:
-        """把候选条目提交给光鸭 GYSub。"""
-        payload = self.get_data("dailyassistant_candidates") or {}
-        if batch_id and str(payload.get("batch_id") or "") != str(batch_id):
-            return {"success": False, "message": "候选批次已刷新，请重新打开页面"}
-        candidates = payload.get("candidates") or []
-        try:
-            row = next(item for item in candidates if int(item.get("index") or 0) == int(index))
-        except (StopIteration, TypeError, ValueError):
-            return {"success": False, "message": "候选序号不存在"}
-        return self._dispatch_gysub(dict(row))
-
     def api_state(self) -> Dict[str, Any]:
-        """返回最近一次发现状态。"""
-        return {"success": True, "data": self.get_data("dailyassistant_candidates") or {}}
+        return {"success": True, "data": self.get_data("dailyassistant_last_run") or {}}
 
     def get_api(self) -> List[Dict[str, Any]]:
-        """注册插件 API。"""
         return [
-            {"path": "/refresh", "endpoint": self.api_refresh, "methods": ["GET"], "summary": "刷新每日助手榜单"},
-            {"path": "/gysub", "endpoint": self.api_gysub, "methods": ["GET"], "summary": "提交候选到 GYSub"},
-            {"path": "/state", "endpoint": self.api_state, "methods": ["GET"], "summary": "读取每日助手状态"},
+            {"path": "/refresh", "endpoint": self.api_refresh, "methods": ["GET"], "summary": "立即检查最新影视并订阅"},
+            {"path": "/state", "endpoint": self.api_state, "methods": ["GET"], "summary": "读取最近订阅检查状态"},
         ]
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
-        """返回每日助手配置表单。"""
         options = source_options()
         return [{
             "component": "VForm",
             "content": [
                 {"component": "VRow", "content": [
-                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "enabled", "label": "启用每日助手"}}]},
-                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "onlyonce", "label": "保存后立即刷新"}}]},
-                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "proxy", "label": "外部榜单使用代理"}}]},
-                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "auto_gysub", "label": "启用自动 GYSub"}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [
+                        {"component": "VSwitch", "props": {"model": "enabled", "label": "启用最新影视订阅"}}
+                    ]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [
+                        {"component": "VSwitch", "props": {"model": "onlyonce", "label": "保存后立即检查"}}
+                    ]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [
+                        {"component": "VSwitch", "props": {"model": "proxy", "label": "外部来源使用代理"}}
+                    ]},
                 ]},
                 {"component": "VRow", "content": [
-                    {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [{"component": "VTextField", "props": {"model": "cron", "label": "刷新 Cron", "placeholder": "15 8 * * *"}}]},
-                    {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [{"component": "VTextField", "props": {"model": "rank_limit", "label": "每榜最多候选"}}]},
-                    {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [{"component": "VTextField", "props": {"model": "vote_min", "label": "最低评分（0=不限）"}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [
+                        {"component": "VTextField", "props": {"model": "interval_minutes", "label": "检查间隔（分钟）", "hint": "5-60，默认10", "persistentHint": True}}
+                    ]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [
+                        {"component": "VTextField", "props": {"model": "recent_days", "label": "已上映回看天数"}}
+                    ]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [
+                        {"component": "VTextField", "props": {"model": "future_days", "label": "提前订阅天数"}}
+                    ]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [
+                        {"component": "VTextField", "props": {"model": "vote_min", "label": "最低评分（0=不限）"}}
+                    ]},
                 ]},
                 {"component": "VRow", "content": [
-                    {"component": "VCol", "props": {"cols": 12}, "content": [{"component": "VSelect", "props": {"model": "source_keys", "label": "启用榜单", "items": options, "multiple": True, "chips": True, "clearable": True}}]},
-                    {"component": "VCol", "props": {"cols": 12}, "content": [{"component": "VSelect", "props": {"model": "auto_source_keys", "label": "允许自动 GYSub 的榜单", "hint": "只有同时开启“自动 GYSub”的这些榜单会自动订阅，其余只作为候选。", "persistentHint": True, "items": options, "multiple": True, "chips": True, "clearable": True}}]},
+                    {"component": "VCol", "props": {"cols": 12}, "content": [
+                        {"component": "VSelect", "props": {
+                            "model": "source_keys",
+                            "label": "最新影视来源",
+                            "items": options,
+                            "multiple": True,
+                            "chips": True,
+                            "clearable": True,
+                        }}
+                    ]}
                 ]},
             ],
         }], {
-            "enabled": False, "cron": "15 8 * * *", "onlyonce": False, "proxy": False,
-            "rank_limit": 20, "vote_min": 0.0, "auto_gysub": False,
-            "source_keys": list(DEFAULT_SOURCE_KEYS), "auto_source_keys": [],
+            "enabled": False,
+            "onlyonce": False,
+            "proxy": False,
+            "interval_minutes": 10,
+            "rank_limit": 30,
+            "vote_min": 0.0,
+            "recent_days": 30,
+            "future_days": 60,
+            "source_keys": list(LATEST_SOURCE_KEYS),
         }
 
     def get_page(self) -> List[dict]:
-        """展示最近发现、榜单状态和 GYSub 操作。"""
-        payload = self.get_data("dailyassistant_candidates") or {}
-        candidates = payload.get("candidates") or []
-        statuses = payload.get("statuses") or []
-        batch_id = str(payload.get("batch_id") or "")
-        reconcile = payload.get("gysub_reconcile") or {}
-        status_lines = [
-            f"{'✅' if item.get('ok') else '❌'} {item.get('label')}: {item.get('count', 0)}" + (f" · {item.get('error')}" if item.get("error") else "")
-            for item in statuses
-        ]
+        data = self.get_data("dailyassistant_last_run") or {}
+        created = data.get("created") or []
         cards: List[dict] = [{
             "component": "VAlert",
-            "props": {"type": "info", "variant": "tonal", "text": (
-                f"更新时间：{payload.get('updated_at') or '尚未刷新'} · 候选 {len(candidates)} · "
-                f"已入库过滤 {payload.get('filtered_library', 0)} · 待识别 {payload.get('unresolved', 0)} · "
-                f"GYSub待确认 {reconcile.get('pending', 0)}"
-            )},
+            "props": {
+                "type": "info",
+                "variant": "tonal",
+                "text": (
+                    f"最近检查：{data.get('updated_at') or '尚未运行'} · "
+                    f"新增订阅 {data.get('created_count', 0)} · "
+                    f"已订阅 {data.get('exists_count', 0)} · "
+                    f"已入库 {data.get('library_count', 0)} · "
+                    f"非最新过滤 {data.get('outdated_count', 0)}"
+                ),
+            },
         }]
-        if status_lines:
-            cards.append({"component": "VCard", "props": {"variant": "tonal", "class": "mb-3"}, "content": [{"component": "VCardText", "text": "\n".join(status_lines)}]})
-        for row in candidates[:200]:
-            title = f"#{row.get('index')} {row.get('title')} ({row.get('year') or '-'})"
-            subtitle = f"{row.get('source_label')} · {row.get('media_type')} · TMDB {row.get('tmdb_id') or '待识别'}"
-            content = [{"component": "VCardTitle", "text": title}, {"component": "VCardSubtitle", "text": subtitle}]
-            if row.get("tmdb_id"):
-                content.append({
-                    "component": "VCardActions",
-                    "content": [{
-                        "component": "VBtn",
-                        "props": {"text": "加入 GYSub", "variant": "tonal", "prependIcon": "mdi-cloud-download-outline"},
-                        "events": {"click": {
-                            "api": "plugin/DailyAssistant/gysub", "method": "get",
-                            "params": {"index": str(row.get("index") or ""), "batch_id": batch_id, "apikey": settings.API_TOKEN},
-                        }},
-                    }],
-                })
-            cards.append({"component": "VCard", "props": {"variant": "outlined", "class": "mb-2"}, "content": content})
+        for item in created[:100]:
+            cards.append({
+                "component": "VCard",
+                "props": {"variant": "outlined", "class": "mb-2"},
+                "content": [
+                    {"component": "VCardTitle", "text": f"{item.get('title')} ({item.get('year') or '-'})"},
+                    {"component": "VCardSubtitle", "text": f"{item.get('media_type')} · TMDB {item.get('tmdb_id')} · {item.get('release_date') or '日期未知'}"},
+                ],
+            })
         return cards
 
     def stop_service(self) -> None:
-        """插件停用时无常驻线程需要回收。"""
         return None
 
-
-class DailyAssistant(DailyAssistantRealtimeV130Mixin, DailyAssistantCalendarV120Mixin, DailyAssistantV110Mixin, DailyAssistantV100):
-    """v1.2.0 最终运行类：榜单 + GYSub + 整季逐集上映日历。"""
-
-    plugin_version = "1.2.0"
-
-
-# MoviePilot PluginLoader 按模块 globals 插入顺序寻找第一个 _PluginBase 子类。
-# v1.1.0 暴露了 DailyAssistantV100，导致宿主先加载旧基类而不是 DailyAssistant。
-# 最终类创建完成后删除旧公开符号，只保留正式插件类供 Loader 发现。
-del DailyAssistantV100
 
 __all__ = ["DailyAssistant"]
