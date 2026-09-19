@@ -127,6 +127,25 @@ def tmdb_provider_genre(chain: RecommendChain, spec: Any, limit: int, providers:
     return normalize(rows, spec, limit)
 
 
+def tmdb_latest(chain: RecommendChain, spec: Any, limit: int) -> List[Dict[str, Any]]:
+    """使用 MoviePilot 的 TMDB discover 能力按上映/首播日期倒序读取最新影视。"""
+    if spec.media == "movie":
+        rows = chain.tmdb_movies(
+            sort_by="primary_release_date.desc",
+            vote_average=0.0,
+            vote_count=0,
+            page=1,
+        ) or []
+    else:
+        rows = chain.tmdb_tvs(
+            sort_by="first_air_date.desc",
+            vote_average=0.0,
+            vote_count=0,
+            page=1,
+        ) or []
+    return normalize(rows, spec, limit)
+
+
 def tmdb_genre(chain: RecommendChain, spec: Any, limit: int) -> List[Dict[str, Any]]:
     kwargs = {"with_genres": spec.arg, "page": 1}
     rows: List[Any] = []
