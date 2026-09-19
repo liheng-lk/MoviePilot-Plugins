@@ -30,3 +30,13 @@ def test_dailyassistant_v132_manifest_is_valid_json():
     import json
     data = json.loads(PACKAGE)
     assert data["DailyAssistant"]["version"] == "1.3.2"
+
+
+def test_dailyassistant_v133_has_library_any_content_guard_and_persistent_ledger():
+    assert "def _library_has_content" in ENTRY
+    assert 'self.get_data("dailyassistant_processed")' in ENTRY
+    assert 'self.save_data("dailyassistant_processed", data)' in ENTRY
+    assert 'self._remember_processed(row, "created"' in ENTRY
+    assert 'self._remember_processed(row, "exists"' in ENTRY
+    assert 'self._remember_processed(row, "library"' in ENTRY
+    assert "processed_skip" in ENTRY
