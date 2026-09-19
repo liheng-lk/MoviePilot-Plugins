@@ -13,6 +13,11 @@ from app.sdk.logging import logger
 from app.sdk.media import MetaInfo
 from app.schemas.types import MediaSource, MediaType
 
+try:
+    from app.sdk._legacy.subscribe import SubscribeHistoryOper
+except Exception:
+    from app.db.oper.subscribehistory import SubscribeHistoryOper
+
 from .sources import SOURCE_MAP, fetch_source, source_options
 
 try:
@@ -77,7 +82,7 @@ class DailyAssistant(_PluginBase):
     plugin_name = "每日助手"
     plugin_desc = "国内平台优先监控新剧与动漫，结合 TMDB/豆瓣/猫眼补漏，精确识别后只创建 MoviePilot 订阅。"
     plugin_icon = "movie.jpg"
-    plugin_version = "1.3.6"
+    plugin_version = "1.3.7"
     plugin_author = "liheng-lk"
     plugin_label = "MoviePilot订阅,最新电影,最新电视剧,动漫,爱奇艺,优酷,腾讯视频,芒果TV,哔哩哔哩,TMDB"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -440,7 +445,7 @@ class DailyAssistant(_PluginBase):
 
     @staticmethod
     def _processed_ttl(status: str) -> datetime.timedelta:
-        if status == "library":
+        if status in {"library", "completed"}:
             return datetime.timedelta(days=7)
         return datetime.timedelta(hours=24)
 
@@ -481,10 +486,43 @@ class DailyAssistant(_PluginBase):
             # 复核失败时保守保留，避免网络瞬断导致重复订阅。
             return True
 
+        if self._history_exists(info, row):
+            self._remember_processed(row, "completed", source=entry.get("source") or "")
+            return True
+
         processed.pop(identity, None)
         self.save_data("dailyassistant_processed", processed)
         logger.info("【每日助手】【历史释放】%s 不再存在于媒体库/订阅，允许重新处理", identity)
         return False
+
+    @staticmethod
+    def _history_exists(info: Any, row: Dict[str, Any]) -> bool:
+        """检查 MoviePilot 已完成订阅历史，避免完成后再次创建订阅。"""
+        media_source = getattr(info, "media_source", None) or MediaSource.TMDB
+        media_id = (
+            getattr(info, "media_id", None)
+            or getattr(info, "tmdb_id", None)
+            or row.get("tmdb_id")
+        )
+        if not media_id:
+            return False
+        season = None
+        if _mtype(str(row.get("media_type") or "tv")) == MediaType.TV:
+            try:
+                season = int(row.get("season")) if row.get("season") not in (None, "") else None
+            except (TypeError, ValueError):
+                season = None
+        try:
+            return bool(
+                SubscribeHistoryOper().exists(
+                    media_source=media_source,
+                    media_id=str(media_id),
+                    season=season,
+                )
+            )
+        except Exception as err:
+            logger.debug("【每日助手】订阅历史检查失败 %s: %s", row.get("title"), err)
+            return False
 
     def _subscribe(self, info: Any, row: Dict[str, Any]) -> Dict[str, Any]:
         mtype = _mtype(str(row.get("media_type") or "tv"))
@@ -602,6 +640,16 @@ class DailyAssistant(_PluginBase):
                         library += 1
                         self._remember_processed(row, "library", source=row.get("source_label") or source_key)
                         processed[identity] = self._load_processed().get(identity, {"status": "library"})
+                        continue
+
+                    if self._history_exists(info, row):
+                        existed += 1
+                        self._remember_processed(row, "completed", source=row.get("source_label") or source_key)
+                        processed[identity] = self._load_processed().get(identity, {"status": "completed"})
+                        logger.info(
+                            "【每日助手】【历史已完成】%s season=%s TMDB=%s，跳过重新订阅",
+                            row.get("title"), row.get("season") or "-", tmdb_id,
+                        )
                         continue
 
                     sub = self._subscribe(info, row)
