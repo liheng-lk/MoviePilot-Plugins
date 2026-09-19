@@ -69,7 +69,7 @@ class DailyAssistant(_PluginBase):
     plugin_name = "每日助手"
     plugin_desc = "TMDB 最新电影/电视剧为主源，豆瓣/猫眼/腾讯补漏，精确识别后只创建 MoviePilot 订阅。"
     plugin_icon = "movie.jpg"
-    plugin_version = "1.3.3"
+    plugin_version = "1.3.4"
     plugin_author = "liheng-lk"
     plugin_label = "MoviePilot订阅,最新电影,最新电视剧,TMDB,豆瓣,猫眼"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -183,6 +183,7 @@ class DailyAssistant(_PluginBase):
                 row["year"] = getattr(info, "year", None) or row.get("year")
                 row["tmdb_id"] = self._candidate_tmdb_id(info) or tmdb_id
                 row["season"] = row.get("season") or getattr(info, "season", None)
+                row = self._resolve_tv_season(info, row)
                 return row, info
 
         for field, source in (
@@ -203,6 +204,7 @@ class DailyAssistant(_PluginBase):
                 row["title"] = str(getattr(info, "title", None) or row.get("title") or "")
                 row["year"] = getattr(info, "year", None) or row.get("year")
                 row["season"] = row.get("season") or getattr(info, "season", None)
+                row = self._resolve_tv_season(info, row)
                 return row, info
 
         title = str(row.get("title") or "").strip()
@@ -234,7 +236,81 @@ class DailyAssistant(_PluginBase):
         row["title"] = str(getattr(info, "title", None) or title)
         row["year"] = getattr(info, "year", None) or row.get("year")
         row["season"] = row.get("season") or getattr(info, "season", None)
+        row = self._resolve_tv_season(info, row)
         return row, info
+
+    def _resolve_tv_season(self, info: Any, row: Dict[str, Any]) -> Dict[str, Any]:
+        """为多季电视剧解析本次应订阅的真实季号，优先使用 TMDB 季首播日期。"""
+        if str(row.get("media_type") or "").lower() != "tv":
+            return row
+
+        explicit = row.get("season")
+        try:
+            explicit_season = int(explicit) if explicit not in (None, "") else None
+        except (TypeError, ValueError):
+            explicit_season = None
+        if explicit_season and explicit_season > 0:
+            row["season"] = explicit_season
+            return row
+
+        today = datetime.date.today()
+        candidates: List[Tuple[datetime.date, int]] = []
+        season_info = getattr(info, "season_info", None) or []
+        for item in season_info:
+            if isinstance(item, dict):
+                number = item.get("season_number")
+                air_value = item.get("air_date")
+            else:
+                number = getattr(item, "season_number", None)
+                air_value = getattr(item, "air_date", None)
+            try:
+                season_number = int(number)
+            except (TypeError, ValueError):
+                continue
+            if season_number <= 0:
+                continue
+            air_date = self._parse_date(air_value)
+            if not air_date:
+                continue
+            delta = (air_date - today).days
+            if -self._recent_days <= delta <= self._future_days:
+                candidates.append((air_date, season_number))
+
+        if candidates:
+            # 同一作品如果多季都处于窗口，订阅首播日期最新的那一季。
+            _, season = max(candidates, key=lambda value: (value[0], value[1]))
+            row["season"] = season
+            return row
+
+        # 兜底：只有当 MoviePilot 明确给出当前季时才采用，不再无条件回退 S01。
+        current = getattr(info, "season", None)
+        try:
+            current_season = int(current) if current not in (None, "") else None
+        except (TypeError, ValueError):
+            current_season = None
+        if current_season and current_season > 0:
+            row["season"] = current_season
+        return row
+
+    def _season_air_date(self, info: Any, season: Any) -> Optional[datetime.date]:
+        try:
+            wanted = int(season)
+        except (TypeError, ValueError):
+            return None
+        for item in getattr(info, "season_info", None) or []:
+            if isinstance(item, dict):
+                number = item.get("season_number")
+                air_value = item.get("air_date")
+            else:
+                number = getattr(item, "season_number", None)
+                air_value = getattr(item, "air_date", None)
+            try:
+                number = int(number)
+            except (TypeError, ValueError):
+                continue
+            if number == wanted:
+                return self._parse_date(air_value)
+        return None
 
     @staticmethod
     def _parse_date(value: Any) -> Optional[datetime.date]:
@@ -254,12 +330,14 @@ class DailyAssistant(_PluginBase):
                 row.get("air_date"),
             )
         else:
+            season_date = self._season_air_date(info, row.get("season")) if row.get("season") else None
             values = (
+                season_date,
+                row.get("air_date"),
+                row.get("release_date"),
                 getattr(info, "first_air_date", None),
                 getattr(info, "release_date", None),
                 row.get("first_air_date"),
-                row.get("air_date"),
-                row.get("release_date"),
             )
         for value in values:
             parsed = self._parse_date(value)
@@ -332,9 +410,10 @@ class DailyAssistant(_PluginBase):
         season = ""
         if media_type == "tv":
             try:
-                season = f":s{int(row.get('season') or 1):02d}"
+                value = int(row.get("season")) if row.get("season") not in (None, "") else None
+                season = f":s{value:02d}" if value and value > 0 else ":s00"
             except (TypeError, ValueError):
-                season = ":s01"
+                season = ":s00"
         return f"tmdb:{tmdb_id}:{media_type}{season}" if tmdb_id and media_type else ""
 
     def _load_processed(self) -> Dict[str, Any]:
@@ -373,13 +452,14 @@ class DailyAssistant(_PluginBase):
 
         season = None
         if mtype == MediaType.TV:
-            raw_season = row.get("season") or getattr(info, "season", None)
+            raw_season = row.get("season")
             try:
                 season = int(raw_season) if raw_season not in (None, "") else None
             except (TypeError, ValueError):
                 season = None
-            if season:
-                meta.begin_season = season
+            if not season or season <= 0:
+                return {"status": "failed", "success": False, "message": "未能确定当前新季季号"}
+            meta.begin_season = season
 
         chain = SubscribeChain()
         try:
@@ -480,6 +560,7 @@ class DailyAssistant(_PluginBase):
                         "title": getattr(info, "title", None) or row.get("title"),
                         "year": getattr(info, "year", None) or row.get("year"),
                         "media_type": media_type,
+                        "season": row.get("season"),
                         "tmdb_id": tmdb_id,
                         "release_date": release_date.isoformat() if release_date else "",
                         "source": row.get("source_label") or source_key,
@@ -487,8 +568,9 @@ class DailyAssistant(_PluginBase):
                     self._remember_processed(row, "created", source=created[-1]["source"])
                     processed[self._identity(row)] = {"status": "created"}
                     logger.info(
-                        "【每日助手】【订阅成功】%s (%s) type=%s TMDB=%s source=%s",
+                        "【每日助手】【订阅成功】%s (%s) type=%s season=%s TMDB=%s source=%s",
                         created[-1]["title"], created[-1]["year"] or "-", media_type,
+                        (f"S{int(row.get('season')):02d}" if row.get("season") else "-"),
                         tmdb_id, created[-1]["source"],
                     )
                 elif sub.get("status") == "exists":
