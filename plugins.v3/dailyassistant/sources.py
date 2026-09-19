@@ -20,6 +20,7 @@ from .source_backends import (
     netflix as _netflix,
     normalize as _normalize,
     tmdb_genre as _tmdb_genre,
+    tmdb_latest as _tmdb_latest,
     tmdb_provider as _tmdb_provider,
     tmdb_provider_genre as _tmdb_provider_genre,
     year_value as _year_value,
@@ -50,6 +51,8 @@ WATCH_PROVIDERS = {
 }
 
 SOURCES: List[SourceSpec] = [
+    SourceSpec("tmdb_latest_movie", "TMDB · 最新电影", "TMDB", "tmdb_latest", "movie"),
+    SourceSpec("tmdb_latest_tv", "TMDB · 最新电视剧", "TMDB", "tmdb_latest", "tv"),
     SourceSpec("documentary", "纪录片", "类型", "tmdb_genre", "mixed", "99"),
     SourceSpec("anime", "日漫", "动画", "builtin", "tv", "douban_tv_animation"),
     SourceSpec("variety", "综艺", "类型", "tmdb_genre", "tv", "10764"),
@@ -133,7 +136,9 @@ def fetch_source(key: str, limit: int = 20, proxy: bool = False) -> Dict[str, An
 
     chain = RecommendChain()
     try:
-        if spec.kind == "watch_provider":
+        if spec.kind == "tmdb_latest":
+            items = _tmdb_latest(chain, spec, limit)
+        elif spec.kind == "watch_provider":
             items = _tmdb_provider(chain, spec, limit, WATCH_PROVIDERS)
         elif spec.kind == "watch_provider_genre":
             items = _tmdb_provider_genre(chain, spec, limit, WATCH_PROVIDERS)
