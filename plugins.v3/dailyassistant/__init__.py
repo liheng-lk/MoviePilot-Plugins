@@ -19,7 +19,7 @@ from app.schemas.types import EventType, MediaSource, MediaType
 
 from .sources import DEFAULT_SOURCE_KEYS, SOURCE_MAP, fetch_source, source_options
 from .hardening_v110 import DailyAssistantV110Mixin
-from .airing_calendar_v120 import DailyAssistantCalendarV120Mixin
+from .airing_calendar_v120 import DailyAssistantCalendarV120Mixin\nfrom .realtime_v130 import DailyAssistantRealtimeV130Mixin
 
 
 def _as_list(value: Any) -> List[str]:
@@ -54,7 +54,7 @@ class DailyAssistantV100(_PluginBase):
     """聚合电影、剧集、动漫、综艺、纪录片和流媒体榜单，并通过 GYSub 接入光鸭转存。"""
 
     plugin_name = "每日助手"
-    plugin_desc = "全媒体榜单发现 → TMDB 统一识别 → GYSub → 光鸭转存；支持候选模式与按榜单自动订阅。"
+    plugin_desc = "实时发现最新电影/电视剧 → TMDB 统一识别 → 直接创建 MoviePilot 订阅；不触发任何转存。"
     plugin_icon = "movie.jpg"
     plugin_version = "1.0.0"
     plugin_author = "liheng-lk"
@@ -578,7 +578,7 @@ class DailyAssistantV100(_PluginBase):
         return None
 
 
-class DailyAssistant(DailyAssistantCalendarV120Mixin, DailyAssistantV110Mixin, DailyAssistantV100):
+class DailyAssistant(DailyAssistantRealtimeV130Mixin, DailyAssistantCalendarV120Mixin, DailyAssistantV110Mixin, DailyAssistantV100):
     """v1.2.0 最终运行类：榜单 + GYSub + 整季逐集上映日历。"""
 
     plugin_version = "1.2.0"
