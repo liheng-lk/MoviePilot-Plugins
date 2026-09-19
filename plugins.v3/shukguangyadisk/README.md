@@ -1,6 +1,16 @@
-# 光鸭云盘助手 3.9.16
+# 光鸭云盘助手 3.9.17
 
 MoviePilot V3 光鸭云盘存储与自动整理插件，Python 运行时保持唯一 `__init__.py`。
+
+## 3.9.17 标准 SxxExxx 原生解析修复
+
+针对实机仍出现 `S01E02-E02` / `S01E181-E181`：
+
+- 根因不是最终 rename，而是标准 `SxxExxx` 文件被再次送入 `recommend_episode_format`，部分 MoviePilot 版本会把单集解释为 `episode_end == episode_start`。
+- 标准 `SxxExxx` / `SxxExxx-Eyyy` 现在直接使用 MoviePilot 原生季集解析，不再追加 `epformat`。
+- 仅 `01.mp4`、`EP01`、`第01集` 等弱/非标准命名继续走集号适配。
+- 对解析结果增加 `episode_end == episode_start -> None` 收口，单集不再进入范围命名。
+- 存储层 3.9.16 的最终命名兜底继续保留，形成“上游不生成 + 下游不落盘”的双保险。
 
 ## 3.9.16 单集重复区间命名修复
 
