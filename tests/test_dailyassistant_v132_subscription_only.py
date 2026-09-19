@@ -8,7 +8,7 @@ PACKAGE = (ROOT / "package.v3.json").read_text(encoding="utf-8")
 
 
 def test_dailyassistant_v132_is_subscription_only():
-    assert 'plugin_version = "1.3.6"' in ENTRY
+    assert 'plugin_version = "1.3.7"' in ENTRY
     assert "SubscribeChain().add" not in ENTRY  # use local chain instance, not legacy string contract
     assert "chain.add(" in ENTRY
     assert "EventType.PluginAction" not in ENTRY
@@ -29,7 +29,7 @@ def test_dailyassistant_v132_latest_sources_are_primary():
 def test_dailyassistant_v132_manifest_is_valid_json():
     import json
     data = json.loads(PACKAGE)
-    assert data["DailyAssistant"]["version"] == "1.3.6"
+    assert data["DailyAssistant"]["version"] == "1.3.7"
 
 
 def test_dailyassistant_v133_has_library_any_content_guard_and_persistent_ledger():
@@ -81,3 +81,11 @@ def test_dailyassistant_v136_domestic_and_anime_defaults():
     assert 'SourceSpec("bilibili_anime"' in SOURCES
     assert 'SourceSpec("bilibili_guochuang"' in SOURCES
     assert 'mtype == MediaType.MOVIE and wanted_year' in ENTRY
+
+
+def test_dailyassistant_v137_blocks_completed_subscription_history():
+    assert "SubscribeHistoryOper" in ENTRY
+    assert "def _history_exists" in ENTRY
+    assert 'self._remember_processed(row, "completed"' in ENTRY
+    assert '"【每日助手】【历史已完成】' in ENTRY
+    assert 'status in {"library", "completed"}' in ENTRY
