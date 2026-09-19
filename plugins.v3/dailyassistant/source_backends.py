@@ -4,6 +4,8 @@ from __future__ import annotations
 import csv
 import io
 import re
+import json
+import urllib.parse
 from dataclasses import replace
 from typing import Any, Dict, Iterable, List
 
@@ -356,6 +358,125 @@ def maoyan(spec: Any, limit: int, proxy: bool) -> List[Dict[str, Any]]:
         rows.sort(key=lambda item: (item.get("rank") or 9999, item.get("media_type") or ""))
         return rows[:limit]
     return maoyan_one(spec, spec.media, limit, proxy)
+
+
+DOMESTIC_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36"
+
+
+def _domestic_json(url: str, *, method: str = "GET", params: Dict[str, Any] | None = None,
+                   payload: Dict[str, Any] | None = None, proxy: bool = False) -> Dict[str, Any]:
+    headers = {
+        "User-Agent": DOMESTIC_UA,
+        "Referer": urllib.parse.urlsplit(url).scheme + "://" + urllib.parse.urlsplit(url).netloc + "/",
+    }
+    request = RequestUtils(headers=headers, proxies=settings.PROXY if proxy else None)
+    response = (
+        request.post_res(url, params=params, json=payload)
+        if method.upper() == "POST"
+        else request.get_res(url, params=params)
+    )
+    if response is None or getattr(response, "status_code", 500) >= 400:
+        raise RuntimeError(f"HTTP {getattr(response, 'status_code', '无响应')}")
+    return response.json() or {}
+
+
+def domestic_platform(spec: Any, limit: int, proxy: bool) -> List[Dict[str, Any]]:
+    """国内平台新剧/在播剧；逻辑与每日新剧助手同源，但输出统一为 DailyAssistant candidate。"""
+    rows: List[Dict[str, Any]] = []
+    key = spec.arg or spec.key
+
+    if key == "iqiyi":
+        data = _domestic_json(
+            "https://pcw-api.iqiyi.com/search/recommend/list",
+            params={"channel_id": 2, "data_type": 1, "page_id": 1, "ret_num": max(48, limit), "mode": 4},
+            proxy=proxy,
+        )
+
+        def walk(obj: Any) -> None:
+            if len(rows) >= max(1, limit):
+                return
+            if isinstance(obj, dict):
+                title = obj.get("name") or obj.get("title") or obj.get("albumName")
+                aid = obj.get("albumId") or obj.get("album_id") or obj.get("qipuId") or obj.get("id")
+                if title and aid:
+                    rows.append({
+                        "title": title,
+                        "year": obj.get("year") or obj.get("publishTime"),
+                        "type": "tv",
+                        "poster": obj.get("imageUrl") or obj.get("image_url") or obj.get("poster") or "",
+                        "detail_link": obj.get("pageUrl") or obj.get("url") or f"https://www.iqiyi.com/a_{aid}.html",
+                    })
+                for value in obj.values():
+                    walk(value)
+            elif isinstance(obj, list):
+                for value in obj:
+                    walk(value)
+
+        walk(data.get("data") or data)
+
+    elif key == "youku":
+        base = "https://www.youku.com/category/data"
+        params_value = json.dumps({"type": "电视剧"}, ensure_ascii=False, separators=(",", ":"))
+        data = _domestic_json(base, params={"params": params_value, "optionRefresh": 1, "pageNo": 1}, proxy=proxy)
+        filter_data = ((data.get("data") or {}).get("filterData") or {})
+        session = filter_data.get("session")
+        if session:
+            second = _domestic_json(
+                base,
+                params={
+                    "session": json.dumps(session, ensure_ascii=False, separators=(",", ":")),
+                    "params": params_value,
+                    "pageNo": 1,
+                },
+                proxy=proxy,
+            )
+            if second:
+                data = second
+        for item in (((data.get("data") or {}).get("filterData") or {}).get("listData") or [])[:max(1, limit)]:
+            rows.append({
+                "title": item.get("title"),
+                "year": item.get("rightTagText"),
+                "type": "tv",
+                "poster": item.get("img") or "",
+                "detail_link": item.get("videoLink") or "",
+            })
+
+    elif key == "mgtv":
+        data = _domestic_json(
+            "https://pianku.api.mgtv.com/rider/list/pcweb/v3",
+            params={
+                "allowedRC": "1", "platform": "pcweb", "channelId": "2",
+                "pn": "1", "pc": str(max(80, limit)), "hudong": "1", "_support": "10000000",
+            },
+            proxy=proxy,
+        )
+        for item in (((data.get("data") or {}).get("hitDocs") or [])[:max(1, limit)]):
+            rows.append({
+                "title": item.get("title"),
+                "year": item.get("year"),
+                "type": "tv",
+                "poster": item.get("img") or item.get("image") or "",
+                "detail_link": f"https://www.mgtv.com/b/{item.get('clipId') or item.get('id')}.html",
+            })
+
+    elif key in {"bilibili_tv", "bilibili_anime", "bilibili_guochuang"}:
+        season_type = 5 if key == "bilibili_tv" else (1 if key == "bilibili_anime" else 4)
+        data = _domestic_json(
+            "https://api.bilibili.com/pgc/season/index/result",
+            params={"season_type": season_type, "type": 1, "page": 1, "pagesize": max(50, limit), "is_finish": 0},
+            proxy=proxy,
+        )
+        for item in (((data.get("data") or {}).get("list") or [])[:max(1, limit)]):
+            media_id = item.get("media_id") or item.get("season_id")
+            rows.append({
+                "title": item.get("title"),
+                "year": item.get("year") or item.get("release_date"),
+                "type": "tv",
+                "poster": item.get("cover") or "",
+                "detail_link": f"https://www.bilibili.com/bangumi/media/md{media_id}" if media_id else "",
+            })
+
+    return normalize(rows, spec, limit)
 
 
 def anilist(spec: Any, limit: int) -> List[Dict[str, Any]]:
