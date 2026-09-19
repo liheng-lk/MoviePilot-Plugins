@@ -1,14 +1,14 @@
 {
   "DailyAssistant": {
     "name": "每日助手",
-    "description": "全媒体榜单发现 + GYSub 助手，并提供整季逐集上映日历给光鸭转存助手，用当前应播集驱动追更。",
-    "labels": "榜单,Netflix,HBO,Apple TV+,Disney+,Crunchyroll,Amazon Prime,Hulu,猫眼,豆瓣,IMDb,TMDB,AniList,Bangumi,腾讯视频,GYSub,光鸭转存",
-    "version": "1.2.0",
+    "description": "实时追踪最新电影和电视剧，统一 TMDB 识别后直接创建 MoviePilot 订阅；支持高频增量发现、去重和逐集上映日历，不触发任何转存。",
+    "labels": "实时订阅,最新电影,最新电视剧,榜单,Netflix,HBO,Apple TV+,Disney+,Crunchyroll,Amazon Prime,Hulu,猫眼,豆瓣,IMDb,TMDB,AniList,Bangumi,腾讯视频",
+    "version": "1.3.0",
     "icon": "movie.jpg",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
-    "history": {
+    "history": {\n      "v1.3.0": "新增实时影视订阅模式：默认每10分钟增量刷新，候选统一 TMDB 身份后直接调用 MoviePilot SubscribeChain.add 创建订阅；彻底移除自动 GYSub/光鸭转存触发。默认只对正在上映、即将上映、新片、近期剧集、猫眼/腾讯实时来源及 TMDB 趋势执行自动订阅，避免 TOP250 和历史热门榜一次性灌入；可在配置中调整间隔和自动订阅来源。",
       "v1.2.0": "新增逐集上映日历提供器：通过 MoviePilot TMDB season detail 缓存整季每集 air_date，并向光鸭转存助手提供插件间只读日历；季详情不可用时回退 next_episode_to_air。",
       "v1.1.2": "修复注册服务失败：MoviePilot 当前调度器把 service.kwargs 作为 APScheduler 触发器参数，回调参数必须放入 func_kwargs；立即刷新改为 date trigger 的 run_date 参数，定时刷新 manual 参数改为 func_kwargs。",
       "v1.1.1": "修复安装失败：MoviePilot PluginLoader 会按模块符号顺序加载首个插件基类，v1.1.0 暴露 DailyAssistantV100 导致误加载旧类；现在只向宿主暴露最终 DailyAssistant 插件类。",
