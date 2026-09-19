@@ -69,7 +69,7 @@ class DailyAssistant(_PluginBase):
     plugin_name = "每日助手"
     plugin_desc = "TMDB 最新电影/电视剧为主源，豆瓣/猫眼/腾讯补漏，精确识别后只创建 MoviePilot 订阅。"
     plugin_icon = "movie.jpg"
-    plugin_version = "1.3.2"
+    plugin_version = "1.3.3"
     plugin_author = "liheng-lk"
     plugin_label = "MoviePilot订阅,最新电影,最新电视剧,TMDB,豆瓣,猫眼"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -276,7 +276,8 @@ class DailyAssistant(_PluginBase):
         return -self._recent_days <= delta <= self._future_days
 
     @staticmethod
-    def _library_complete(info: Any, row: Dict[str, Any]) -> bool:
+    def _library_has_content(info: Any, row: Dict[str, Any]) -> bool:
+        """只要媒体库里已经存在该作品任意内容，就视为存在并跳过订阅。"""
         if not info:
             return False
         try:
@@ -284,10 +285,86 @@ class DailyAssistant(_PluginBase):
             meta.type = _mtype(str(row.get("media_type") or "tv"))
             if row.get("season"):
                 meta.begin_season = int(row["season"])
-            complete, _ = DownloadChain().get_no_exists_info(meta=meta, mediainfo=info)
-            return bool(complete)
-        except Exception:
+            complete, no_exists = DownloadChain().get_no_exists_info(meta=meta, mediainfo=info)
+            if complete:
+                return True
+            if meta.type != MediaType.TV:
+                return False
+
+            seasons = getattr(info, "seasons", None) or {}
+            if row.get("season"):
+                expected_seasons = {int(row["season"])}
+            else:
+                expected_seasons = {int(season) for season, episodes in seasons.items() if episodes}
+            if not expected_seasons:
+                return False
+
+            missing_by_season: Dict[int, Any] = {}
+            for season_map in (no_exists or {}).values():
+                if not isinstance(season_map, dict):
+                    continue
+                for season, detail in season_map.items():
+                    try:
+                        missing_by_season[int(season)] = detail
+                    except (TypeError, ValueError):
+                        continue
+
+            for season in expected_seasons:
+                detail = missing_by_season.get(season)
+                if detail is None:
+                    # 该季没有出现在缺失列表，说明整季已存在。
+                    return True
+                missing_episodes = getattr(detail, "episodes", None)
+                if missing_episodes is None and isinstance(detail, dict):
+                    missing_episodes = detail.get("episodes")
+                # MoviePilot 用 [] 表示整季不存在；非空列表表示只缺部分集，即库里已有内容。
+                if missing_episodes:
+                    return True
             return False
+        except Exception as err:
+            logger.debug("【每日助手】媒体库存在性检查失败 %s: %s", row.get("title"), err)
+            return False
+
+    @staticmethod
+    def _identity(row: Dict[str, Any]) -> str:
+        tmdb_id = str(row.get("tmdb_id") or "").strip()
+        media_type = str(row.get("media_type") or "").lower()
+        season = ""
+        if media_type == "tv":
+            try:
+                season = f":s{int(row.get('season') or 1):02d}"
+            except (TypeError, ValueError):
+                season = ":s01"
+        return f"tmdb:{tmdb_id}:{media_type}{season}" if tmdb_id and media_type else ""
+
+    def _load_processed(self) -> Dict[str, Any]:
+        data = self.get_data("dailyassistant_processed") or {}
+        return data if isinstance(data, dict) else {}
+
+    def _remember_processed(self, row: Dict[str, Any], status: str, *, source: str = "") -> None:
+        identity = self._identity(row)
+        if not identity:
+            return
+        data = self._load_processed()
+        data[identity] = {
+            "status": status,
+            "title": row.get("title"),
+            "year": row.get("year"),
+            "media_type": row.get("media_type"),
+            "season": row.get("season"),
+            "tmdb_id": row.get("tmdb_id"),
+            "source": source or row.get("source_label") or row.get("source_key") or "",
+            "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        }
+        # 防止无限增长；保留最近 5000 条处理记录。
+        if len(data) > 5000:
+            ordered = sorted(
+                data.items(),
+                key=lambda item: str((item[1] or {}).get("updated_at") or ""),
+                reverse=True,
+            )[:5000]
+            data = dict(ordered)
+        self.save_data("dailyassistant_processed", data)
 
     def _subscribe(self, info: Any, row: Dict[str, Any]) -> Dict[str, Any]:
         mtype = _mtype(str(row.get("media_type") or "tv"))
@@ -345,6 +422,8 @@ class DailyAssistant(_PluginBase):
         unresolved = 0
         failed = 0
         statuses: List[Dict[str, Any]] = []
+        processed = self._load_processed()
+        processed_skip = 0
 
         for source_key in self._source_keys:
             try:
@@ -374,6 +453,11 @@ class DailyAssistant(_PluginBase):
                     continue
                 seen.add(identity)
 
+                processed_identity = self._identity(row)
+                if processed_identity and processed_identity in processed:
+                    processed_skip += 1
+                    continue
+
                 try:
                     vote = float(row.get("vote_average") or getattr(info, "vote_average", 0) or 0)
                 except (TypeError, ValueError):
@@ -383,8 +467,10 @@ class DailyAssistant(_PluginBase):
                 if not self._is_latest(info, row):
                     outdated += 1
                     continue
-                if self._library_complete(info, row):
+                if self._library_has_content(info, row):
                     library += 1
+                    self._remember_processed(row, "library", source=row.get("source_label") or source_key)
+                    processed[self._identity(row)] = {"status": "library"}
                     continue
 
                 sub = self._subscribe(info, row)
@@ -398,6 +484,8 @@ class DailyAssistant(_PluginBase):
                         "release_date": release_date.isoformat() if release_date else "",
                         "source": row.get("source_label") or source_key,
                     })
+                    self._remember_processed(row, "created", source=created[-1]["source"])
+                    processed[self._identity(row)] = {"status": "created"}
                     logger.info(
                         "【每日助手】【订阅成功】%s (%s) type=%s TMDB=%s source=%s",
                         created[-1]["title"], created[-1]["year"] or "-", media_type,
@@ -405,6 +493,8 @@ class DailyAssistant(_PluginBase):
                     )
                 elif sub.get("status") == "exists":
                     existed += 1
+                    self._remember_processed(row, "exists", source=row.get("source_label") or source_key)
+                    processed[self._identity(row)] = {"status": "exists"}
                 else:
                     failed += 1
                     logger.warning(
@@ -422,6 +512,8 @@ class DailyAssistant(_PluginBase):
             "outdated_count": outdated,
             "unresolved_count": unresolved,
             "failed_count": failed,
+            "processed_skip_count": processed_skip,
+            "processed_total": len(self._load_processed()),
             "statuses": statuses,
             "interval_minutes": self._interval_minutes,
             "recent_days": self._recent_days,
@@ -429,13 +521,13 @@ class DailyAssistant(_PluginBase):
         }
         self.save_data("dailyassistant_last_run", payload)
         logger.info(
-            "【每日助手】订阅检查完成：新增=%s 已订阅=%s 已入库=%s 非最新=%s 未识别=%s 失败=%s",
-            len(created), existed, library, outdated, unresolved, failed,
+            "【每日助手】订阅检查完成：新增=%s 已订阅=%s 已入库=%s 历史跳过=%s 非最新=%s 未识别=%s 失败=%s",
+            len(created), existed, library, processed_skip, outdated, unresolved, failed,
         )
         return {
             "success": True,
             "data": payload,
-            "message": f"新增订阅 {len(created)}，已订阅 {existed}，已入库 {library}",
+            "message": f"新增订阅 {len(created)}，已订阅 {existed}，已入库 {library}，历史跳过 {processed_skip}",
         }
 
     def api_refresh(self) -> Dict[str, Any]:
@@ -518,6 +610,7 @@ class DailyAssistant(_PluginBase):
                     f"新增订阅 {data.get('created_count', 0)} · "
                     f"已订阅 {data.get('exists_count', 0)} · "
                     f"已入库 {data.get('library_count', 0)} · "
+                    f"历史跳过 {data.get('processed_skip_count', 0)} · "
                     f"非最新过滤 {data.get('outdated_count', 0)}"
                 ),
             },
