@@ -148,11 +148,12 @@ def tmdb_latest(
             page=1,
         ) or []
     else:
+        # 电视剧不能按整部剧 first_air_date 做下限过滤，否则老剧的新季会被源头漏掉。
+        # TV 的“最新”由入口层根据 TMDB season_info.air_date 逐季判断。
         rows = chain.tmdb_tvs(
-            sort_by="first_air_date.desc",
+            sort_by="popularity.desc",
             vote_average=0.0,
             vote_count=0,
-            release_date=lower_bound,
             page=1,
         ) or []
     return normalize(rows, spec, limit)
