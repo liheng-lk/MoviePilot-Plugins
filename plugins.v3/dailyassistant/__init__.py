@@ -182,7 +182,6 @@ class DailyAssistant(_PluginBase):
                 row["title"] = str(getattr(info, "title", None) or row.get("title") or "")
                 row["year"] = getattr(info, "year", None) or row.get("year")
                 row["tmdb_id"] = self._candidate_tmdb_id(info) or tmdb_id
-                row["season"] = row.get("season") or getattr(info, "season", None)
                 row = self._resolve_tv_season(info, row)
                 return row, info
 
@@ -235,7 +234,6 @@ class DailyAssistant(_PluginBase):
         row["tmdb_id"] = self._candidate_tmdb_id(info)
         row["title"] = str(getattr(info, "title", None) or title)
         row["year"] = getattr(info, "year", None) or row.get("year")
-        row["season"] = row.get("season") or getattr(info, "season", None)
         row = self._resolve_tv_season(info, row)
         return row, info
 
@@ -355,7 +353,7 @@ class DailyAssistant(_PluginBase):
 
     @staticmethod
     def _library_has_content(info: Any, row: Dict[str, Any]) -> bool:
-        """只要媒体库里已经存在该作品任意内容，就视为存在并跳过订阅。"""
+        """电影存在即跳过；电视剧只检查目标季，目标季已有任意内容即跳过。"""
         if not info:
             return False
         try:
