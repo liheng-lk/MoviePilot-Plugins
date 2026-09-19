@@ -24,6 +24,7 @@ except Exception:
 LATEST_SOURCE_KEYS = [
     "tmdb_latest_movie",
     "tmdb_latest_tv",
+    "tencent_direct_tv",
     "iqiyi_tv",
     "youku_tv",
     "tencent_tv",
@@ -224,7 +225,7 @@ class DailyAssistant(_PluginBase):
         for info in medias or []:
             if getattr(info, "type", None) != mtype:
                 continue
-            if wanted_year and str(getattr(info, "year", "") or "") != wanted_year:
+            if mtype == MediaType.MOVIE and wanted_year and str(getattr(info, "year", "") or "") != wanted_year:
                 continue
             aliases = {
                 re.sub(r"\W+", "", str(getattr(info, "title", "") or "").casefold()),
