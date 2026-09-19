@@ -54,6 +54,7 @@ WATCH_PROVIDERS = {
 SOURCES: List[SourceSpec] = [
     SourceSpec("tmdb_latest_movie", "TMDB · 最新电影", "TMDB", "tmdb_latest", "movie"),
     SourceSpec("tmdb_latest_tv", "TMDB · 最新电视剧", "TMDB", "tmdb_latest", "tv"),
+    SourceSpec("tencent_direct_tv", "腾讯视频 · 新剧/在播", "国内平台", "domestic_platform", "tv", "tencent"),
     SourceSpec("iqiyi_tv", "爱奇艺 · 新剧/在播", "国内平台", "domestic_platform", "tv", "iqiyi"),
     SourceSpec("youku_tv", "优酷 · 新剧/在播", "国内平台", "domestic_platform", "tv", "youku"),
     SourceSpec("mgtv_tv", "芒果TV · 新剧/在播", "国内平台", "domestic_platform", "tv", "mgtv"),
