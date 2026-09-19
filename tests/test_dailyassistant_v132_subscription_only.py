@@ -8,7 +8,7 @@ PACKAGE = (ROOT / "package.v3.json").read_text(encoding="utf-8")
 
 
 def test_dailyassistant_v132_is_subscription_only():
-    assert 'plugin_version = "1.3.2"' in ENTRY
+    assert 'plugin_version = "1.3.5"' in ENTRY
     assert "SubscribeChain().add" not in ENTRY  # use local chain instance, not legacy string contract
     assert "chain.add(" in ENTRY
     assert "EventType.PluginAction" not in ENTRY
@@ -29,7 +29,7 @@ def test_dailyassistant_v132_latest_sources_are_primary():
 def test_dailyassistant_v132_manifest_is_valid_json():
     import json
     data = json.loads(PACKAGE)
-    assert data["DailyAssistant"]["version"] == "1.3.2"
+    assert data["DailyAssistant"]["version"] == "1.3.5"
 
 
 def test_dailyassistant_v133_has_library_any_content_guard_and_persistent_ledger():
@@ -50,3 +50,15 @@ def test_dailyassistant_v134_resolves_real_tv_season():
     assert 'row["season"] = season' in ENTRY
     assert 'raw_season = row.get("season")' in ENTRY
     assert 'getattr(info, "season", None)' in ENTRY  # fallback only
+
+
+def test_dailyassistant_v135_expands_tv_seasons_and_self_heals_ledger():
+    assert "def _expand_candidates" in ENTRY
+    assert 'candidate["season"] = season_number' in ENTRY
+    assert "def _processed_valid" in ENTRY
+    assert 'datetime.timedelta(hours=24)' in ENTRY
+    assert 'datetime.timedelta(days=7)' in ENTRY
+    assert 'processed.pop(identity, None)' in ENTRY
+    assert 'recent_days=self._recent_days' in ENTRY
+    assert 'row["season"] = row.get("season") or getattr(info, "season", None)' not in ENTRY
+    assert 'release_date=lower_bound' in BACKENDS
