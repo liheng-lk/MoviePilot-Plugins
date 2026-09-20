@@ -112,7 +112,8 @@ class SingleInitV3911ContractTest(unittest.TestCase):
 
     def test_legacy_entry_mro_and_final_monitor_are_preserved(self):
         entry = source_text("__init__.py")
-        self.assertIn('plugin_version = "3.9.14"', entry)
+        current = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))["version"]
+        self.assertIn(f'plugin_version = "{current}"', entry)
         class_slice = entry.split("class ShukGuangYaDisk(", 1)[1].split("):", 1)[0]
         self.assertLess(
             class_slice.index("_GuangYaFinalMonitorV390Mixin"),
@@ -126,10 +127,10 @@ class SingleInitV3911ContractTest(unittest.TestCase):
         local = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
         package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
         remote = (PLUGIN / "dist" / "assets" / "remoteEntry.js").read_text(encoding="utf-8")
-        self.assertEqual(local["version"], "3.9.14")
-        self.assertEqual(package["version"], "3.9.14")
-        self.assertIn("v3.9.14", local["history"])
-        self.assertIn("?v=3.9.14", remote)
+        current = local["version"]
+        self.assertEqual(package["version"], current)
+        self.assertIn(f"v{current}", local["history"])
+        self.assertIn(f"?v={current}", remote)
 
 
 if __name__ == "__main__":
