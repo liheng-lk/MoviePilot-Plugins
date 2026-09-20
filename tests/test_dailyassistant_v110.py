@@ -16,7 +16,7 @@ class DailyAssistantCurrentContractTests(unittest.TestCase):
         ast.parse(SOURCES)
         self.assertIn("class DailyAssistant(_PluginBase):", ENTRY)
         self.assertIn('plugin_version = "1.3.8"', ENTRY)
-        self.assertIn("__all__ = ["DailyAssistant"]", ENTRY)
+        self.assertIn('__all__ = ["DailyAssistant"]', ENTRY)
 
     def test_source_failures_are_observable_from_host_network(self):
         self.assertIn("SOURCE_TEST_KEYS", ENTRY)
