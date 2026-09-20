@@ -8,7 +8,7 @@ PACKAGE = (ROOT / "package.v3.json").read_text(encoding="utf-8")
 
 
 def test_dailyassistant_v132_is_subscription_only():
-    assert 'plugin_version = "1.3.7"' in ENTRY
+    assert 'plugin_version = "1.3.8"' in ENTRY
     assert "SubscribeChain().add" not in ENTRY  # use local chain instance, not legacy string contract
     assert "chain.add(" in ENTRY
     assert "EventType.PluginAction" not in ENTRY
@@ -29,7 +29,7 @@ def test_dailyassistant_v132_latest_sources_are_primary():
 def test_dailyassistant_v132_manifest_is_valid_json():
     import json
     data = json.loads(PACKAGE)
-    assert data["DailyAssistant"]["version"] == "1.3.7"
+    assert data["DailyAssistant"]["version"] == "1.3.8"
 
 
 def test_dailyassistant_v133_has_library_any_content_guard_and_persistent_ledger():
@@ -89,3 +89,14 @@ def test_dailyassistant_v137_blocks_completed_subscription_history():
     assert 'self._remember_processed(row, "completed"' in ENTRY
     assert '"【每日助手】【历史已完成】' in ENTRY
     assert 'status in {"library", "completed"}' in ENTRY
+
+
+def test_dailyassistant_v138_has_host_network_source_diagnostics():
+    assert "SOURCE_TEST_KEYS" in ENTRY
+    assert "def source_test" in ENTRY
+    assert 'self.save_data("dailyassistant_source_test", payload)' in ENTRY
+    assert '"samples": samples' in ENTRY
+    assert '"elapsed_ms"' in ENTRY
+    assert '"/source-test"' in ENTRY
+    assert "def manual_refresh" in ENTRY
+    assert "source_result = self.source_test()" in ENTRY
