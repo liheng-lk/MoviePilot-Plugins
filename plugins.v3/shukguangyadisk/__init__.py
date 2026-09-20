@@ -86,6 +86,24 @@ _ENTRY_SOURCE = "\"\"\"光鸭云盘助手 MoviePilot V3 单文件插件入口。
 exec(compile(_ENTRY_SOURCE, __file__, "exec"), globals(), globals())
 
 
+# MoviePilot 官方 V3 发布门禁要求主插件类以真实 ClassDef 存在于 __init__.py，
+# 不能只存在于 exec() 的字符串源码中。保留单文件内嵌运行时，同时用物理包装类
+# 暴露最终插件入口；私有基类继续承载既有 MRO 与全部功能。
+_BundledShukGuangYaDisk = ShukGuangYaDisk
+
+
+class ShukGuangYaDisk(_BundledShukGuangYaDisk):
+    """光鸭云盘助手 MoviePilot V3 单文件物理入口。"""
+
+    plugin_name = "光鸭云盘助手"
+    plugin_desc = "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。"
+    plugin_version = "3.9.22"
+    plugin_author = "liheng-lk"
+    plugin_icon = "Guangyadisk_A.png"
+    plugin_label = "存储,光鸭云盘,自动整理,目录监控,MoviePilot,挂载,Emby,WebDAV"
+    author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
+
+
 def _single_init_get_organizer_api(self) -> _BundleList[_BundleDict[str, _BundleAny]]:
     """安装/注册安全的静态 Organizer API 表。
 
