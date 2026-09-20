@@ -150,9 +150,9 @@ class DailyAssistant(_PluginBase):
                 "id": "DailyAssistantOnce",
                 "name": "每日助手立即订阅检查",
                 "trigger": "date",
-                "func": self.refresh,
+                "func": self.manual_refresh,
                 "kwargs": {"run_date": datetime.datetime.now() + datetime.timedelta(seconds=3)},
-                "func_kwargs": {"manual": True},
+                "func_kwargs": {},
             })
             self._save_config(onlyonce=False)
         if self._enabled:
@@ -790,8 +790,15 @@ class DailyAssistant(_PluginBase):
     def api_source_test(self) -> Dict[str, Any]:
         return self.source_test()
 
+    def manual_refresh(self) -> Dict[str, Any]:
+        """人工检查：先从宿主网络实测来源，再执行订阅扫描。"""
+        source_result = self.source_test()
+        refresh_result = self.refresh(manual=True)
+        refresh_result["source_test"] = source_result.get("data") or {}
+        return refresh_result
+
     def api_refresh(self) -> Dict[str, Any]:
-        return self.refresh(manual=True)
+        return self.manual_refresh()
 
     def api_state(self) -> Dict[str, Any]:
         return {"success": True, "data": self.get_data("dailyassistant_last_run") or {}}
