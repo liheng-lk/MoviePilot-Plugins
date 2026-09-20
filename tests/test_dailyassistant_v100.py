@@ -19,7 +19,7 @@ class DailyAssistantContract(unittest.TestCase):
 
     def test_plugin_identity_is_current_subscription_only_runtime(self):
         self.assertIn('plugin_name = "每日助手"', ENTRY)
-        self.assertIn('plugin_version = "1.3.8"', ENTRY)
+        self.assertIn('plugin_version = "1.3.9"', ENTRY)
         self.assertIn("from app.chain.subscribe import SubscribeChain", ENTRY)
         self.assertIn("SubscribeChain().exists", ENTRY)
         self.assertIn("chain.add(", ENTRY)
@@ -113,7 +113,7 @@ class DailyAssistantContract(unittest.TestCase):
     def test_package_index_publishes_current_dailyassistant(self):
         package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
         item = package["DailyAssistant"]
-        self.assertEqual(item["version"], "1.3.8")
+        self.assertEqual(item["version"], "1.3.9")
         self.assertEqual(item["system_version"], ">=3.0.0")
         self.assertIn("MoviePilot", item["description"])
         self.assertIn("v1.3.8", item["history"])

@@ -15,7 +15,7 @@ class DailyAssistantCurrentContractTests(unittest.TestCase):
         ast.parse(ENTRY)
         ast.parse(SOURCES)
         self.assertIn("class DailyAssistant(_PluginBase):", ENTRY)
-        self.assertIn('plugin_version = "1.3.8"', ENTRY)
+        self.assertIn('plugin_version = "1.3.9"', ENTRY)
         self.assertIn('__all__ = ["DailyAssistant"]', ENTRY)
 
     def test_source_failures_are_observable_from_host_network(self):
@@ -42,9 +42,9 @@ class DailyAssistantCurrentContractTests(unittest.TestCase):
     def test_package_index_is_current(self):
         package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
         item = package["DailyAssistant"]
-        self.assertEqual(item["version"], "1.3.8")
+        self.assertEqual(item["version"], "1.3.9")
         self.assertEqual(item["system_version"], ">=3.0.0")
-        self.assertEqual(next(iter(item["history"])), "v1.3.8")
+        self.assertEqual(next(iter(item["history"])), "v1.3.9")
         self.assertIn("来源实测", item["history"]["v1.3.8"])
 
 

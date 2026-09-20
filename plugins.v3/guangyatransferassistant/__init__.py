@@ -1,4 +1,4 @@
-"""光鸭转存助手 v2.1.9 运行入口。
+"""光鸭转存助手 v2.1.10 运行入口。
 
 v1.9.0 增加 ResourceGroup、缺集决策和高置信 Episode Resolver；
 v1.9.1 重构紧凑状态页；v1.9.2 重新整理插件配置页，并补齐观影 GYING
@@ -1400,7 +1400,7 @@ class GuangYaTransferAssistant(
             try:
                 self._plugin_log(
                     "INFO",
-                    "【光鸭转存助手】【来源路由v2.1.9】source=xunlei action=skip "
+                    "【光鸭转存助手】【来源路由v2.1.10】source=xunlei action=skip "
                     "reason=%s handled=False next=channel_lower_sources sid=%s",
                     reason,
                     int(getattr(subscribe, "id", 0) or 0),
@@ -1626,7 +1626,7 @@ class GuangYaTransferAssistant(
         return result
 
     # ------------------------------------------------------------------
-    # v2.1.9 / r107 — channel source submit ownership + terminal semantics
+    # v2.1.10 / r107 — channel source submit ownership + terminal semantics
     # ------------------------------------------------------------------
     def _route_fix_local_v219(self):
         local = getattr(self, "_route_fix_state_v219", None)
@@ -1710,7 +1710,7 @@ class GuangYaTransferAssistant(
                 try:
                     self._plugin_log(
                         "INFO",
-                        "【光鸭转存助手】【来源执行路由v2.1.9】sid=%s source=%s "
+                        "【光鸭转存助手】【来源执行路由v2.1.10】sid=%s source=%s "
                         "type=%s message_id=%s executor=guangya_cloudcollection "
                         "api=resolve_res->create_task target=%s self_claim=excluded",
                         sid,
@@ -1733,7 +1733,7 @@ class GuangYaTransferAssistant(
                 try:
                     self._plugin_log(
                         "INFO" if bool(result.get("success")) else "WARNING",
-                        "【光鸭转存助手】【来源执行结果v2.1.9】sid=%s source=%s "
+                        "【光鸭转存助手】【来源执行结果v2.1.10】sid=%s source=%s "
                         "type=%s executor=guangya_cloudcollection success=%s "
                         "skipped=%s reason=%s state=%s task=%s",
                         sid,
@@ -1768,7 +1768,7 @@ class GuangYaTransferAssistant(
             else:
                 local.submit_source_id = previous
 
-    plugin_version = "2.1.9"
+    plugin_version = "2.1.10"
     build_id = "20260915-r107"
 
     _button_async_paths_v218 = {

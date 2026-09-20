@@ -12,17 +12,17 @@ PACKAGE = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["Gu
 README = (PLUGIN / "README.md").read_text(encoding="utf-8")
 
 
-def test_public_release_is_219_r107():
-    assert LOCAL["version"] == PACKAGE["version"] == "2.1.9"
+def test_public_release_is_2110_r107():
+    assert LOCAL["version"] == PACKAGE["version"] == "2.1.10"
     assert LOCAL["description"] == PACKAGE["description"]
     assert "r107" in str(LOCAL.get("description") or "")
-    assert "v2.1.9" in (PACKAGE.get("history") or {})
-    assert README.startswith("## v2.1.9-r107")
+    assert "v2.1.10" in (PACKAGE.get("history") or {})
+    assert README.startswith("## v2.1.10-r107")
     start = ENTRY.rindex("\nclass GuangYaTransferAssistant(")
     final_class = ENTRY[start:]
-    assert 'plugin_version = "2.1.9"' in final_class
+    assert 'plugin_version = "2.1.10"' in final_class
     assert 'build_id = "20260915-r107"' in final_class
-    assert "光鸭转存助手 v2.1.9 运行入口。" in ENTRY[:1000]
+    assert "光鸭转存助手 v2.1.10 运行入口。" in ENTRY[:1000]
 
 
 def test_public_release_keeps_single_file_runtime():

@@ -1,4 +1,4 @@
-## v2.1.9-r107 — 频道来源提交所有权与终态语义修复（Controlled Real-World Beta）
+## v2.1.10-r107 — 频道来源提交所有权与终态语义修复（Controlled Real-World Beta）
 
 本版针对实机出现的“频道已经解析出 ED2K/Magnet，但没有真正调用对应光鸭云添加接口，反而出现观影迅雷 empty_final_target”做提交链收口。
 
@@ -14,7 +14,7 @@
 - 光鸭原生分享：直接转存链。
 - 迅雷分享：迅雷解析/JSON → 光鸭 userres 秒传。
 - Magnet / ED2K：光鸭 `/cloudcollection/v1/resolve_res -> /cloudcollection/v1/create_task -> list_task`。
-- 新增 `【来源执行路由v2.1.9】` 与 `【来源执行结果v2.1.9】` 日志，可直接看到 source、类型、message_id、目标集、executor、taskId。
+- 新增 `【来源执行路由v2.1.10】` 与 `【来源执行结果v2.1.10】` 日志，可直接看到 source、类型、message_id、目标集、executor、taskId。
 
 ### empty_final_target 不再伪装成迅雷成功
 
