@@ -17,44 +17,35 @@ class DailyAssistantContract(unittest.TestCase):
         ast.parse(SOURCES)
         ast.parse(BACKENDS)
 
-    def test_plugin_identity_and_gysub_bridge(self):
+    def test_plugin_identity_is_current_subscription_only_runtime(self):
         self.assertIn('plugin_name = "每日助手"', ENTRY)
-        self.assertIn('plugin_version = "1.2.0"', ENTRY)
-        self.assertIn('"action": "guangya_direct_subscribe"', ENTRY)
-        self.assertIn("eventmanager.send_event(EventType.PluginAction", ENTRY)
-        self.assertIn("MediaSource.TMDB", ENTRY)
-        self.assertIn('"api": "plugin/DailyAssistant/gysub"', ENTRY)
-        self.assertIn('"apikey": settings.API_TOKEN', ENTRY)
-
-    def test_gysub_delivery_is_confirmed_from_moviepilot_subscription_facts(self):
+        self.assertIn('plugin_version = "1.3.8"', ENTRY)
         self.assertIn("from app.chain.subscribe import SubscribeChain", ENTRY)
-        self.assertIn("def _subscription_exists", ENTRY)
-        self.assertIn("SubscribeChain().exists(mediainfo=info, meta=meta)", ENTRY)
-        self.assertIn('self.save_data("gysub_pending", pending)', ENTRY)
-        self.assertIn("def _reconcile_pending_gysub", ENTRY)
-        self.assertIn('"confirmed_at"', ENTRY)
-        self.assertIn("等待 MoviePilot 订阅落库确认", ENTRY)
-        dispatch_start = ENTRY.index("def _dispatch_gysub")
-        refresh_start = ENTRY.index("def refresh", dispatch_start)
-        dispatch = ENTRY[dispatch_start:refresh_start]
-        send_pos = dispatch.index("eventmanager.send_event")
-        pending_pos = dispatch.index('self.save_data("gysub_pending", pending)')
-        self.assertLess(send_pos, pending_pos)
-        self.assertNotIn('submitted[identity] = datetime.datetime.now().isoformat', dispatch)
+        self.assertIn("SubscribeChain().exists", ENTRY)
+        self.assertIn("chain.add(", ENTRY)
+        self.assertIn("MediaSource.TMDB", ENTRY)
+        self.assertNotIn("guangya_direct_subscribe", ENTRY)
+        self.assertNotIn("EventType.PluginAction", ENTRY)
 
-    def test_gysub_identity_separates_tv_seasons(self):
-        self.assertIn('return f"tmdb:{tmdb_id}:{media_type}:s{season:02d}"', ENTRY)
-        self.assertIn('_safe_int(item.get("season"), 1, 1, 99)', ENTRY)
-        self.assertNotIn('return f"tmdb:{tmdb_id}:{item.get(\'media_type\') or \'\'}"', ENTRY)
+    def test_completed_subscription_history_is_a_hard_duplicate_gate(self):
+        self.assertIn("SubscribeHistoryOper", ENTRY)
+        self.assertIn("def _history_exists", ENTRY)
+        self.assertIn("SubscribeHistoryOper().exists(", ENTRY)
+        self.assertIn('self._remember_processed(row, "completed"', ENTRY)
+        self.assertIn("【历史已完成】", ENTRY)
 
-    def test_auto_gysub_relies_on_existing_subscription_and_pending_ttl_not_permanent_emit_dedupe(self):
-        self.assertIn("_gysub_pending_ttl = datetime.timedelta(minutes=15)", ENTRY)
-        self.assertIn("reconcile = self._reconcile_pending_gysub()", ENTRY)
-        self.assertIn('result.get("status") == "requested"', ENTRY)
-        auto_start = ENTRY.index("if self._auto_gysub and self._auto_source_keys:")
-        api_start = ENTRY.index("def api_refresh", auto_start)
-        auto_block = ENTRY[auto_start:api_start]
-        self.assertNotIn('if self._candidate_identity(row) in submitted:', auto_block)
+    def test_identity_separates_tv_seasons(self):
+        self.assertIn("def _identity", ENTRY)
+        self.assertIn('season = f":s{value:02d}"', ENTRY)
+        self.assertIn('return f"tmdb:{tmdb_id}:{media_type}{season}"', ENTRY)
+
+    def test_processed_ledger_is_bounded_cache_not_permanent_dedupe(self):
+        self.assertIn("def _processed_ttl", ENTRY)
+        self.assertIn('if status in {"library", "completed"}:', ENTRY)
+        self.assertIn("return datetime.timedelta(days=7)", ENTRY)
+        self.assertIn("return datetime.timedelta(hours=24)", ENTRY)
+        self.assertIn("def _processed_valid", ENTRY)
+        self.assertIn("processed.pop(identity, None)", ENTRY)
 
     def test_all_media_catalog_is_present(self):
         static_required = (
@@ -112,18 +103,20 @@ class DailyAssistantContract(unittest.TestCase):
         self.assertIn('"watch_provider_genre"', SOURCES)
         self.assertIn('"tencent:10762"', SOURCES)
 
-    def test_candidate_and_auto_modes_are_separate(self):
-        self.assertIn("auto_gysub", ENTRY)
-        self.assertIn("auto_source_keys", ENTRY)
-        self.assertIn("if self._auto_gysub and self._auto_source_keys:", ENTRY)
-        self.assertIn('if row.get("source_key") not in self._auto_source_keys', ENTRY)
+    def test_runtime_uses_one_source_selection_path(self):
+        self.assertIn("_source_keys", ENTRY)
+        self.assertIn("LATEST_SOURCE_KEYS", ENTRY)
+        self.assertIn("for source_key in self._source_keys:", ENTRY)
+        self.assertNotIn("auto_gysub", ENTRY)
+        self.assertNotIn("auto_source_keys", ENTRY)
 
-    def test_package_index_publishes_dailyassistant(self):
+    def test_package_index_publishes_current_dailyassistant(self):
         package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
         item = package["DailyAssistant"]
-        self.assertEqual(item["version"], "1.2.0")
+        self.assertEqual(item["version"], "1.3.8")
         self.assertEqual(item["system_version"], ">=3.0.0")
-        self.assertIn("GYSub", item["description"])
+        self.assertIn("MoviePilot", item["description"])
+        self.assertIn("v1.3.8", item["history"])
 
 
 if __name__ == "__main__":
