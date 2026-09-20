@@ -13,7 +13,8 @@
       "v1.1": "修复上传目标目录 fileId 失效导致 code=142；任务 145/147 自动切换文件可见性确认；增加上传幂等检查与 90 秒落盘确认，避免误判失败和重复上传。",
       "v1.0": "独立项目首个正式版本：整合 MoviePilot V2 兼容、Vue Federation、双登录、整理上传、上传进度监控、DNS/OSS 重试与 WebDAV。"
     },
-    "v3": false
+    "v3": false,
+    "release": true
   },
   "DailyNewDrama": {
     "name": "每日新剧助手",
@@ -36,6 +37,7 @@
       "v1.1": "新增豆瓣 Frodo 直连主通道、RSSHub 自动备用和 FlareSolverr Cloudflare 过盾兜底；增加分层数据源错误日志与 Cloudflare Challenge 检测。",
       "v1.0": "豆瓣即将播出主源 + 近期热播补充；媒体库/订阅/重复提醒过滤；支持序号命令与消息按钮订阅；数据源异常保留上次候选。"
     },
-    "v3": false
+    "v3": false,
+    "release": true
   }
 }

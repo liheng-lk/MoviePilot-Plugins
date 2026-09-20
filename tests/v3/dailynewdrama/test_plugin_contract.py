@@ -6,8 +6,8 @@ text=(V3/"__init__.py").read_text(encoding="utf-8")
 platform=(V3/"platform_sources.py").read_text(encoding="utf-8")
 idx=json.loads((ROOT/"package.v3.json").read_text(encoding="utf-8"))["DailyNewDrama"]
 v2=json.loads((ROOT/"package.v2.json").read_text(encoding="utf-8"))["DailyNewDrama"]
-assert "plugin_version = \"3.0.1\"" in text
-assert idx["version"]=="3.0.1" and idx["system_version"]==">=3.0.0"
+assert "plugin_version = \"3.0.2\"" in text
+assert idx["version"]=="3.0.2" and idx["system_version"]==">=3.0.0"
 assert v2.get("v3") is False
 for old in ("from app.core.config import","from app.core.context import","from app.core.event import","from app.core.metainfo import","from app.log import","from app.utils.http import"):
     assert old not in text

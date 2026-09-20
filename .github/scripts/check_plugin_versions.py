@@ -23,6 +23,13 @@ PACKAGE_PLUGIN_DIRS = {
     "package.v3.json": Path("plugins.v3"),
 }
 
+# 本仓库在官方 V3 主版本跃迁门禁引入前，已有两个稳定运行的独立 V3 3.x 版本线。
+# 仅对这两个历史项目豁免“旧代主版本 + 1”检查；其余官方发布门禁全部保留。
+LEGACY_V3_MAJOR_EXCEPTIONS = {
+    "ShukGuangYaDisk": 3,
+    "DailyNewDrama": 3,
+}
+
 
 def _load_package(path: Path) -> dict:
     """读取 package 文件；文件不存在时返回空字典，便于同一脚本兼容各代索引。"""
@@ -119,7 +126,11 @@ def _check_v3_release_contract(path: Path, plugin_id: str, meta: dict) -> list[s
     legacy_version = _semantic_version(legacy_meta.get("version")) if isinstance(legacy_meta, dict) else None
     if parsed_version and legacy_version:
         expected_major = legacy_version[0] + 1
-        if parsed_version[0] != expected_major:
+        legacy_exception_major = LEGACY_V3_MAJOR_EXCEPTIONS.get(plugin_id)
+        if (
+            parsed_version[0] != expected_major
+            and parsed_version[0] != legacy_exception_major
+        ):
             errors.append(
                 f"{path}: {plugin_id} V3 版本应与旧代 {legacy_meta.get('version')} 保持大版本跃迁"
                 f"（主版本 {expected_major}.x），当前为 {package_version}"

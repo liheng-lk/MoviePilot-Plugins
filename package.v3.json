@@ -1,45 +1,65 @@
 {
   "DailyAssistant": {
     "name": "每日助手",
-    "description": "全媒体榜单发现 + GYSub 助手，并提供整季逐集上映日历给光鸭转存助手，用当前应播集驱动追更。",
-    "labels": "榜单,Netflix,HBO,Apple TV+,Disney+,Crunchyroll,Amazon Prime,Hulu,猫眼,豆瓣,IMDb,TMDB,AniList,Bangumi,腾讯视频,GYSub,光鸭转存",
-    "version": "1.2.0",
+    "description": "国内平台优先监控新剧与动漫，腾讯/爱奇艺/优酷/芒果/B站直连补齐，结合 TMDB/豆瓣/猫眼识别去重后只创建 MoviePilot 原生订阅。",
+    "labels": "MoviePilot订阅,最新电影,最新电视剧,动漫,腾讯视频,爱奇艺,优酷,芒果TV,哔哩哔哩,TMDB",
+    "version": "1.3.9",
     "icon": "movie.jpg",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
-      "v1.2.0": "新增逐集上映日历提供器：通过 MoviePilot TMDB season detail 缓存整季每集 air_date，并向光鸭转存助手提供插件间只读日历；季详情不可用时回退 next_episode_to_air。",
-      "v1.1.2": "修复注册服务失败：MoviePilot 当前调度器把 service.kwargs 作为 APScheduler 触发器参数，回调参数必须放入 func_kwargs；立即刷新改为 date trigger 的 run_date 参数，定时刷新 manual 参数改为 func_kwargs。",
-      "v1.1.1": "修复安装失败：MoviePilot PluginLoader 会按模块符号顺序加载首个插件基类，v1.1.0 暴露 DailyAssistantV100 导致误加载旧类；现在只向宿主暴露最终 DailyAssistant 插件类。",
-      "v1.1.0": "新增多来源候选合并，修复同媒体跨榜单丢失自动订阅资格；榜单故障使用48小时缓存但禁止缓存触发新自动订阅；GYSub pending 每5分钟与 MoviePilot 订阅事实对账；修正腾讯少儿为 TMDB Kids 10762。",
-      "v1.0.0": "新增全媒体榜单发现层；候选统一到 TMDB 精确身份，支持手动或按榜单自动提交 GYSub，并复用光鸭转存助手现有固定路线。"
-    }
+      "v1.3.9": "按 MoviePilot 官方插件合同修正宿主入口：_PluginBase 使用 app.plugins 公开兼容入口；同步版本、history 与 Release 发布元数据，确保新版可被市场识别和更新。",
+      "v1.3.8": "新增宿主网络来源实测：人工检查会先由 MoviePilot 所在服务器逐项测试腾讯视频直连、爱奇艺、优酷、芒果TV、B站剧集/番剧/国创、Bangumi、豆瓣动画和 TMDB，记录可达性、耗时、候选数量、标题样本与失败原因；/source-test API 可单独执行。外部平台不可达不再靠猜测，后续只依据宿主实际结果调整来源。",
+      "v1.3.7": "修复已下载/已完成内容重复订阅：在媒体库检查和当前订阅检查之外，新增 MoviePilot SubscribeHistoryOper 完成历史门禁，按 media_source + media_id + season 查询已完成订阅；命中后直接记录 completed 并跳过 SubscribeChain.add，防止活动订阅完成后被移出当前表、下一轮又重新创建并立刻完成。completed 历史每7天复核一次。",
+      "v1.3.6": "国内平台与动漫覆盖增强：默认订阅源改为国内优先，新增腾讯视频直连、爱奇艺、优酷、芒果TV、哔哩哔哩剧集、B站番剧、B站国创，并默认启用 Bangumi 今日动漫和豆瓣动画补漏；Netflix/HBO/Disney/Prime 等海外平台继续保留为可选源但不进入默认实时订阅链；电视剧标题识别不再用当前季年份硬匹配整剧首播年份，避免 S02/S03 国产剧识别失败。",
+      "v1.3.5": "订阅闭环增强：电视剧候选按 TMDB season_info 的真实季首播日期展开为独立季候选，S02/S03 可同时分别检查和订阅；processed 幂等账本改为缓存语义，created/exists 24小时、library 7天后自动向 MoviePilot 复核，订阅/媒体库事实消失则释放并允许重新处理；电影 TMDB 最新源在请求阶段增加 release_date 下限，电视剧避免使用整剧 first_air_date 下限以防漏掉老剧新季；同时移除非 TMDB 补漏识别链路中的默认 S01 污染。",
+      "v1.3.4": "修复多季剧总订阅 S01：电视剧候选不再采用 MediaInfo 默认 season=1 作为显式季号，而是优先读取 TMDB season_info 的各季 air_date，在当前日期窗口内选首播日期最新的真实季（忽略 S00），并以真实季号参与媒体库检查、订阅去重、持久账本和 SubscribeChain.add；多季老剧的新季也按季首播日期判断是否属于最新内容。",
+      "v1.3.3": "修复媒体库存在性与重复订阅：电视剧不再只判断是否完整，只要媒体库已有该作品任意季/任意集即视为存在并跳过；新增 dailyassistant_processed 持久幂等账本，订阅创建成功、MoviePilot 已订阅、媒体库已存在三种终态都会记录，后续轮询直接按 TMDB+类型+季跳过，不再重复提交。",
+      "v1.3.2": "最新影视源优化：新增 TMDB 最新电影与最新电视剧主源，分别按上映日期/首播日期倒序发现；默认自动订阅源移除 TMDB Trending，Trending 不再驱动订阅；豆瓣、猫眼、腾讯继续作为补漏，所有候选仍需通过近期/未来日期窗口、媒体库和现有订阅检查后才调用 SubscribeChain.add。",
+      "v1.3.1": "职责收口为纯 MoviePilot 订阅：移除运行时 GYSub、光鸭转存、逐集日历和插件事件依赖；默认每10分钟检查最新影视，按上映/首播日期窗口过滤老片老剧，TMDB 精确识别后检查媒体库和现有订阅，仅对缺失项目调用 SubscribeChain.add 创建订阅。",
+      "v1.3.0": "新增高频最新影视发现与 MoviePilot 原生订阅能力。"
+    },
+    "release": true
   },
   "DailyNewDrama": {
     "name": "每日新剧助手",
     "description": "MoviePilot V3 新剧与在播剧聚合助手，支持多平台发现、过滤、通知和一键订阅。",
     "labels": "豆瓣,腾讯视频,爱奇艺,优酷,芒果TV,哔哩哔哩,电视剧,订阅,推荐,通知",
-    "version": "3.0.1",
+    "version": "3.0.2",
     "icon": "movie.jpg",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v3.0.2": "按 MoviePilot 官方插件合同修正宿主入口：_PluginBase 使用 app.plugins 公开兼容入口；同步版本、history 与 Release 发布元数据，确保新版可被市场识别和更新。",
       "v3.0.1": "修复已入库剧集过滤和候选推送不完整的问题。",
       "v3.0.0": "推出 MoviePilot V3 版本，支持多平台新剧发现、过滤、通知和一键订阅。"
-    }
+    },
+    "release": true
   },
   "ShukGuangYaDisk": {
     "name": "光鸭云盘助手",
     "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
     "labels": "存储,光鸭云盘,自动整理,目录监控,MoviePilot,挂载,Emby,WebDAV",
-    "version": "3.9.13",
+    "version": "3.9.25",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v3.9.25": "按 MoviePilot 官方插件合同修正宿主入口：_PluginBase 使用 app.plugins 公开兼容入口；同步单文件运行时、Federation 缓存版本、插件清单和 Release 元数据，确保新版可安装、更新并加载。",
+      "v3.9.24": "发布体系修复稳定版：全仓库按 MoviePilot 官方发布教程收口目录、物理主类、版本、history、V2/V3 回退、Federation、Release Tag/ZIP 与安装合同；所有 3.9.24 文件在同一原子提交中完成后再触发官方 Release，避免同版本缓存和中间态打包导致无法安装/更新。保留单文件统一整理链及 SxxExxx-Exxx 收口修复。",
+      "v3.9.23": "正式可升级版本：修复同版本重发导致 MoviePilot 已记录 3.9.22 后无法再次触发更新的问题；所有 3.9.23 文件已完成同步后再按官方 Release 流程重打包。继续包含官方 V3 发布合同、真实物理主类、单文件统一整理链与 SxxExxx-Exxx 单集重复区间收口。",
+      "v3.9.22": "按 MoviePilot 官方 V3 发布规范修复：主插件类现在以真实 ClassDef 物理定义在 plugins.v3/shukguangyadisk/__init__.py，类级 plugin_version 与 package.v3.json 完全一致；发布流程恢复官方工作流，使用官方版本门禁、目录选择、Federation CSS 校验、标准 Tag/ZIP 命名及 --latest Release 发布。保留单文件运行时与 SxxExxx-Exxx 收口修复。",
+      "v3.9.21": "修复插件市场无法更新：光鸭云盘助手改为 MoviePilot V3 原生源码文件列表分发，不再依赖 GitHub Release ZIP 下载；保留 v3.9.20 的单文件统一整理链和 SxxExxx-Exxx 收口修复。",
+      "v3.9.20": "修复单文件资源绕过统一 MoviePilot 预览/命名链的问题：移除成员<2时直接走旧快速路径的旁路，单文件电视剧也统一经过 MoviePilot 预览、目标校验、TransferRename 命名修正与真实整理；同时把预览中的 episode_end==episode 归一为空结束集，避免标准 SxxExxx 被记录成 SxxExxx-Exxx。",
+      "v3.9.19": "将单集重复区间修正提升到 MoviePilot TransferRename 最终模板渲染边界：所有光鸭整理路径统一把 SxxExxx-Exxx 收口为 SxxExxx，再进入 move/copy；覆盖原生目录批量、标准 SxE、弱命名兼容与 EpisodeFormat 路径，真正 SxxExxx-Eyyy 多集范围保持不变。",
+      "v3.9.18": "修复同一文件同时包含标准 SxxExxx 与同号重复集标记（如 S16E688.第688集）时被误识别为单集范围的问题：检测到主 SxE + 同号“第xxx集/EPxxx”等标记时，仅用精确主 SxE 模板解析，后续同号标记按冗余描述处理；真正 SxxExxx-Eyyy 多集范围保持不变。",
+      "v3.9.17": "修复标准 SxxExxx 剧集被二次 episode_format 解析成重复区间的问题：标准 S01E02/S01E181 文件不再调用 recommend_episode_format，也不再向 MoviePilot 叠加 epformat，直接使用 MoviePilot 原生季集解析；仅弱命名与非标准命名继续启用集号适配。同步将 parsed_end==parsed_start 归一为空区间，避免生成 S01E02-E02。",
+      "v3.9.16": "修复剧集单集被错误命名为重复区间：MoviePilot 偶发返回 SxxExxx-Exxx 时，光鸭存储重命名、move/copy 终态确认与事务保护统一收口为 SxxExxx；真正多集范围 SxxExxx-Eyyy 保持不变。同步修正 package.v3.json、plugin.json 与单文件运行时版本到 3.9.16。",
+      "v3.9.15": "修复历史 TransferPending 反复 claim 但源文件已不存在的问题：旧兼容 discard 现在严格检查实际删除数；新增 durable admission 安全清理，在惰性监控启动后仅处理当前光鸭存储且位于监控根内的历史登记，先取得 canonical lease，再向光鸭远端复核源路径，确认不存在时通过 MoviePilot abandon_unstarted 删除，源仍存在、网络不确定、有效租约或已有执行证据一律保留并释放 claim；使用独立 v3.9.15 迁移标记，已执行过 v3.3/v3.4 旧迁移的安装也会重新检查。",
+      "v3.9.14": "修复新建多级目录监控同轮无法下钻：watch pulse 新发现的子目录不再追加到旧目录队尾，而是作为受固定预算限制的 depth-first frontier 插入队首，使 剧名/多级子目录/Season/视频 可在同一次增量轮询内连续发现并进入资源队列；仍保持普通轮 64、全量并行时 12 的远端读取上限，不改变 MoviePilot 识别、命名、移动和单 Worker 主链。新增同一 pulse 连续下钻回归测试。",
       "v3.9.13": "修复热更新后旧任务路径持续刷 handoff 的根因：新插件实例在未取得私有 Worker owner 前禁止执行 inflight→retry 恢复，避免把旧 Worker 的真实执行证据提前改写；owner 接管前重新核验旧实例当前路径下的 inflight 状态，若旧实例已请求交接且已无真实 inflight、只剩 retry/终态或源目录已无主媒体，则撤销陈旧 owner 占用并立即接管，不再无限显示旧 Season/目录。旧线程仍被 stop/sentinel 约束，退出时不会清除新 owner。新增热更新恢复顺序与陈旧 owner 回收回归测试。",
       "v3.9.12": "修复深层目录视频漏整理：增量 watch 调度为从未扫描的目录保留固定预算并优先继续最深 frontier，避免大量根目录/一级目录长期占满 64 个扫描名额；已登记的所有目录按用户 monitor interval 进入最久未检查的公平轮转，不再让深层目录固定等待 15 分钟冷扫描。每轮远端目录读取仍受 64（全量期间 12）预算限制，独立全量巡检继续兜底；新增深层目录饥饿回归测试和 watch 未扫描/最大深度诊断字段。",
       "v3.9.11": "修复真实资源无 durable task 时被旧 MoviePilot admission 阻断：普通自动整理仍以 manual=False 执行；仅在明确命中“整理源文件已按不同输入准入”且历史中没有可复用 durable task 时，解析冲突消息中的具体源路径，只对该成员单次调用 MoviePilot 受保护的 inactive replacement。宿主数据库仍会拒绝有效租约或真实历史绑定，因此不会越过活动任务；目录/整季任务不再因单个成员冲突而把整组 inflight 一起 blocked。",
@@ -106,16 +126,22 @@
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
-    "description": "Controlled Real-World Beta：r103 修复频道/手动刷新只看 Telegram、观影 GYING 被饿死，以及批次汇总重复标题/重复订阅计数。频道仍先执行；仅对频道后仍真实缺失且满足更新日历与外部检索冷却的订阅继续观影完整来源链，避免 158 个订阅无脑全搜。汇总改为每订阅一个最终结果。编号续作仅在“标题明确以 2~9 结尾 + MoviePilot S1 + 发布方同号 Sxx + 真实标题强匹配”时兼容季号，普通跨季继续硬拒绝。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+    "description": "Controlled Real-World Beta：r107 修复频道 Magnet/ED2K 已正确解析却在调用光鸭 cloudcollection 前被自身 source claim/reservation 误扣为空的问题；真实提交 hard gate 现在排除当前 source 自身、强制刷新权威缺集，并继续保留其它来源 claim、pending_library、未来集、Season、媒体身份和物理文件门禁。同步修复 empty_final_target 被迅雷包装层误报为“秒传优先完成”：空目标只表示未提交并继续正确频道来源。Magnet/ED2K 继续走光鸭 resolve_res→create_task，迅雷只走 userres 秒传，光鸭分享继续直转。 来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
     "labels": "光鸭云盘,转存,秒传,迅雷,迅雷分享,订阅,Telegram,Magnet,ED2K,ResourceGroup,云添加,离线下载,观影,GYING,缺集,追更,单文件运行时,真实落盘,MP优先命名,最终命名确认,跨季保护,Season门禁,Emby缺集恢复,陈旧回执恢复,目标感知冷却,缺集重开,频道后观影补搜,汇总去重,续作季号兼容",
-    "version": "2.1.5",
+    "version": "2.1.10",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "release": true,
     "history": {
+      "v2.1.10": "按 MoviePilot 官方插件合同修正宿主入口：_PluginBase 使用 app.plugins，PluginManager 使用 app.sdk.plugins；同步单文件运行时、插件清单和 Release 元数据，确保新版可安装、更新并加载。",
+      "v2.1.9": "r107 Channel Source Submit Ownership Fix（Controlled Real-World Beta）：修复频道 Magnet/ED2K 候选已正确解析并创建 source 后，state=new 的当前 source 自身又被 active claim/reservation 从 final_target 扣除，导致在真正调用光鸭 `/cloudcollection/v1/resolve_res -> /cloudcollection/v1/create_task` 前触发 `empty_final_target` 自锁的问题。最终提交门禁现在带当前 source 上下文：仅排除当前来源自身 claim/reservation，真实提交强制刷新权威缺集且 source-specific snapshot 不写入通用缓存；其它来源 claim、pending_library、未来集、Season、媒体身份和物理文件门禁全部保持。同步修复迅雷 hard gate 空目标返回 `success=True/handled=True` 被上层包装成“观影迅雷分享秒传优先完成”的错误终态；空目标改为未提交并继续光鸭分享/Magnet/ED2K。协议分流不变：光鸭分享直转，迅雷走 userres 秒传，Magnet/ED2K 走 cloudcollection。",
+      "v2.1.8": "r106 Button API Hardening（Controlled Real-World Beta）：全面审计 MoviePilot V3 页面按钮接口。最终 `get_api()` 对所有 POST 路由统一安装 `success/message/data` 三段式响应适配和异常隔离，避免旧模块扁平字典、额外字段或未捕获异常直接变成前端“服务器无效响应”。高耗时按钮统一转后台单飞：立即转存 `/transfer`、搜索缺失资源 `/providers/search/selected`、检测资源来源 `/providers/test`、秒传预检 `/xunlei/flash/preflight`、迅雷分享测试 `/xunlei/flash/test`、刷新观影节点 `/viewing/nodes/refresh`、观影会话测试 `/viewing/session/test`、完整诊断 `/diagnostics/full`。重复点击只合并；后台终态写入 `button_action_last_v218` 和 route health。`/refresh` 继续使用 v2.1.7 独立后台刷新。自检、路线切换、验证码交互、任务重试等轻量/交互型按钮保留同步，但也统一标准响应。",
+      "v2.1.7": "r105 Manual Refresh API Hotfix（Controlled Real-World Beta）：修复首页“刷新频道”在频道索引接近 2000 条、并可能继续触发固定订阅处理时同步 HTTP 请求过重，前端出现“服务器无效响应”的问题。`/refresh` 现在严格返回 MoviePilot V3 `success/message/data` 三段式，点击后立即返回 `queued=true`；真实 Telegram/TGM 抓取、Raw HTML 解析、频道缓存更新与可选的刷新后订阅处理转入单飞后台线程，重复点击只合并，不再把完整 `items/routes` 回传浏览器。刷新结果写入 `manual_refresh_last_v217`、route health 与插件日志。保留 r104 的协议相对/无协议光鸭与迅雷 URL、copy/redirect/data 属性、包装跳转与 JS 转义解析增强；媒体身份、年份、Season、MoviePilot 权威缺集、reservation/source claim、不可分割物理文件和真实落盘门禁不变。",
+      "v2.1.6": "r104 Channel URL Extraction Hardening（Controlled Real-World Beta）：针对 Telegram/TGM 同频道少量消息只有标题却未识别到可执行链接的问题，扩展 Raw HTML 入口提取，兼容 `//guangyapan.com/...`、无协议 `guangyapan.com/...`、对应迅雷写法，补齐 data-copy-text/data-clipboard-value/action/formaction/data-redirect/data-jump-url 等属性、更多 JSON URL 键和 redirect 包装参数，并解码常见 \\\\u003A/\\\\u002F/\\\\x3A/\\\\x2F JS 转义。最终仍只接受光鸭分享、迅雷分享、Magnet、ED2K 四类可执行协议；115/夸克/百度等继续只记录诊断，不进入转存。媒体身份、年份、Season、MoviePilot 权威缺集、reservation/source claim、不可分割物理文件和真实落盘门禁全部保持不变。",
       "v2.1.5": "r103 Channel→GYING Fallback & Summary Dedup（Controlled Real-World Beta）：修复 v1.12.5 channel_only 调度导致频道事件/手动刷新在大量 NO_LOCAL_RESOURCE 后不能在同一受控轮继续观影的问题。频道阶段保持纯被动，阶段结束后重新计算真实缺集、日历 due 与外部检索冷却，仅命中条件的订阅进入 `airing_pull` 完整来源链；频道阶段内部旧 external recall 在该编排下不再重复入队。手动刷新使用同一受控两阶段，不等于 `/gycheck` 强制全量外搜。批次汇总按 subscribe_id 合并多 run，只保留每订阅一个最终结果，并移除通知标题在正文中的重复首行；身份不足汇总增加真实标题证据。新增编号续作季号窄兼容：仅 MoviePilot S1 且订阅标题末尾数字 N 与资源显式 S0N 一致、真实标题强匹配时视为同一续作，普通 S01↔S02 冲突仍硬拒绝。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+      "v2.1.4": "r102 Channel Parse & Dispatch Observability（Controlled Real-World Beta）：修复 Telegram 镜像把 `光鸭云盘资源频道 Forwarded from 光鸭云盘资源频道` 拼进标题，导致 Resource Inbox/频道标题无法稳定命中 MoviePilot 订阅的问题；仅对已知光鸭频道 Forwarded 模板做前缀归一化，并清理尾部 NF/NETFLIX 展示标签，不引入通用模糊匹配。补齐 `更新至N集` 与 `SxxEyy-Ezz` 的 season/episode 元数据恢复；频道发现日志中的 `媒体匹配` 改为准确的 `媒体解析`，并新增 manual_refresh、tick、selected-subscription queue 的调度入口/出口证据。最终 TMDB/年份/Season/物理文件/Emby final_target 门禁、reservation/source claim/pending-library、四来源执行协议均不放宽。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
       "v2.1.3": "r101 Target-Aware External Search Cooldown（Controlled Real-World Beta）：修复实机中 Emby/日历已经得到 final_target（例如全缺 E01-E20），但 external_search_guard 仅按 subscribe_id 记 last_at，导致上一轮空结果仍把新订阅/新增缺集拦在约 180 分钟冷却中的问题。现在 TV 外部检索持久记录上一次实际目标集 target_episodes_v213；仅当当前目标出现新增/重新开放的集号时绕过旧冷却一次，同一目标或目标缩小时继续遵守既有 10 分钟 airing_pull / 180 分钟普通自动冷却。r100 Emby authoritative gap recovery、processed 分享重开、reservation/source claim/pending-library、future、Season/身份/物理缺集门禁全部保持。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
       "v2.1.2": "r100 Emby Authoritative Gap Recovery（Controlled Real-World Beta）：修复目标计算已经以 Emby 实际库为准，但直接光鸭分享文件规划仍把 subscribe.note、media_facts、transfer_inventory 当永久完成事实，导致日志中 final_target=E01-E06 后同一分享 11 个视频仍被全部过滤为可用=0。现在仅在同一轮已有 library_state=OK 且 final_target 明确时，把这些历史 note/事实/库存降为软缓存并允许对应缺集重新进入 planner；旧 transfer receipt 也不能永久盖住 Emby 当前缺口。processed 分享在权威修复目标变化时立即重开，不再必须等 15 分钟增长复核。reservation、source claim、pending-library、future episode、Season/媒体身份/最终物理缺集门禁继续收紧，未取得权威 Emby 快照时保持原 fail-closed 去重。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
       "v2.1.1": "r99 Cross-Season Physical File Guard（Controlled Real-World Beta）：修复统一 Episode Resolver 把订阅 season_hint 放在真实路径显式 Sxx/Season xx 之前，导致例如 S03 订阅中的 S06E04 被误解释为 S03E04 的跨季风险。现在真实 payload 显式季号优先，season hint 仅用于 04.mkv 等弱命名；Direct/Magnet/ED2K 的最终物理文件门禁再次校验 actual_season == expected_season，显式跨季文件在提交/落盘前硬拒绝；多季资源仍可解析，但只允许当前订阅 Season 的文件继续。迅雷既有跨季 share 栅栏、权威缺集、reservation/source claim、真实落盘、MP 优先命名及来源优先级保持不变。",
@@ -213,8 +239,7 @@
       "v1.2.0": "增强资源解析、精确匹配、缓存、路径安全和失败退避。",
       "v1.1.0": "修复频道刷新后不转存，并增加文件级增量去重。",
       "v1.0.1": "新增转存成功失败通知、任务确认和后台日志。",
-      "v1.0.0": "首版支持 Telegram 频道资源匹配、光鸭转存和订阅分流。",
-      "v2.1.4": "r102 Channel Parse & Dispatch Observability（Controlled Real-World Beta）：修复 Telegram 镜像把 `光鸭云盘资源频道 Forwarded from 光鸭云盘资源频道` 拼进标题，导致 Resource Inbox/频道标题无法稳定命中 MoviePilot 订阅的问题；仅对已知光鸭频道 Forwarded 模板做前缀归一化，并清理尾部 NF/NETFLIX 展示标签，不引入通用模糊匹配。补齐 `更新至N集` 与 `SxxEyy-Ezz` 的 season/episode 元数据恢复；频道发现日志中的 `媒体匹配` 改为准确的 `媒体解析`，并新增 manual_refresh、tick、selected-subscription queue 的调度入口/出口证据。最终 TMDB/年份/Season/物理文件/Emby final_target 门禁、reservation/source claim/pending-library、四来源执行协议均不放宽。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。"
+      "v1.0.0": "首版支持 Telegram 频道资源匹配、光鸭转存和订阅分流。"
     }
   }
 }

@@ -10,6 +10,7 @@ from app.sdk.logging import logger
 from .source_backends import (
     anilist as _anilist,
     builtin as _builtin,
+    domestic_platform as _domestic_platform,
     douban_collection as _douban_collection,
     douban_discover as _douban_discover,
     douban_recommend as _douban_recommend,
@@ -20,6 +21,7 @@ from .source_backends import (
     netflix as _netflix,
     normalize as _normalize,
     tmdb_genre as _tmdb_genre,
+    tmdb_latest as _tmdb_latest,
     tmdb_provider as _tmdb_provider,
     tmdb_provider_genre as _tmdb_provider_genre,
     year_value as _year_value,
@@ -50,6 +52,15 @@ WATCH_PROVIDERS = {
 }
 
 SOURCES: List[SourceSpec] = [
+    SourceSpec("tmdb_latest_movie", "TMDB · 最新电影", "TMDB", "tmdb_latest", "movie"),
+    SourceSpec("tmdb_latest_tv", "TMDB · 最新电视剧", "TMDB", "tmdb_latest", "tv"),
+    SourceSpec("tencent_direct_tv", "腾讯视频 · 新剧/在播", "国内平台", "domestic_platform", "tv", "tencent"),
+    SourceSpec("iqiyi_tv", "爱奇艺 · 新剧/在播", "国内平台", "domestic_platform", "tv", "iqiyi"),
+    SourceSpec("youku_tv", "优酷 · 新剧/在播", "国内平台", "domestic_platform", "tv", "youku"),
+    SourceSpec("mgtv_tv", "芒果TV · 新剧/在播", "国内平台", "domestic_platform", "tv", "mgtv"),
+    SourceSpec("bilibili_tv", "哔哩哔哩 · 剧集", "国内平台", "domestic_platform", "tv", "bilibili_tv"),
+    SourceSpec("bilibili_anime", "哔哩哔哩 · 番剧", "动漫", "domestic_platform", "tv", "bilibili_anime"),
+    SourceSpec("bilibili_guochuang", "哔哩哔哩 · 国创", "动漫", "domestic_platform", "tv", "bilibili_guochuang"),
     SourceSpec("documentary", "纪录片", "类型", "tmdb_genre", "mixed", "99"),
     SourceSpec("anime", "日漫", "动画", "builtin", "tv", "douban_tv_animation"),
     SourceSpec("variety", "综艺", "类型", "tmdb_genre", "tv", "10764"),
@@ -126,14 +137,18 @@ DEFAULT_SOURCE_KEYS = [
 ]
 
 
-def fetch_source(key: str, limit: int = 20, proxy: bool = False) -> Dict[str, Any]:
+def fetch_source(key: str, limit: int = 20, proxy: bool = False, recent_days: int = 30) -> Dict[str, Any]:
     spec = SOURCE_MAP.get(str(key or ""))
     if not spec:
         return {"ok": False, "key": key, "label": key, "items": [], "error": "未知榜单"}
 
     chain = RecommendChain()
     try:
-        if spec.kind == "watch_provider":
+        if spec.kind == "domestic_platform":
+            items = _domestic_platform(spec, limit, proxy)
+        elif spec.kind == "tmdb_latest":
+            items = _tmdb_latest(chain, spec, limit, recent_days=recent_days)
+        elif spec.kind == "watch_provider":
             items = _tmdb_provider(chain, spec, limit, WATCH_PROVIDERS)
         elif spec.kind == "watch_provider_genre":
             items = _tmdb_provider_genre(chain, spec, limit, WATCH_PROVIDERS)

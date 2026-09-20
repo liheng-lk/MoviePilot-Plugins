@@ -1,7 +1,7 @@
 {
   "name": "光鸭转存助手",
-  "description": "Controlled Real-World Beta：r103 修复频道/手动刷新只看 Telegram、观影 GYING 被饿死，以及批次汇总重复标题/重复订阅计数。频道仍先执行；仅对频道后仍真实缺失且满足更新日历与外部检索冷却的订阅继续观影完整来源链，避免 158 个订阅无脑全搜。汇总改为每订阅一个最终结果。编号续作仅在“标题明确以 2~9 结尾 + MoviePilot S1 + 发布方同号 Sxx + 真实标题强匹配”时兼容季号，普通跨季继续硬拒绝。来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
-  "version": "2.1.5",
+  "description": "Controlled Real-World Beta：r107 修复频道 Magnet/ED2K 已正确解析却在调用光鸭 cloudcollection 前被自身 source claim/reservation 误扣为空的问题；真实提交 hard gate 现在排除当前 source 自身、强制刷新权威缺集，并继续保留其它来源 claim、pending_library、未来集、Season、媒体身份和物理文件门禁。同步修复 empty_final_target 被迅雷包装层误报为“秒传优先完成”：空目标只表示未提交并继续正确频道来源。Magnet/ED2K 继续走光鸭 resolve_res→create_task，迅雷只走 userres 秒传，光鸭分享继续直转。 来源优先级：观影迅雷秒传 > 光鸭直接转存 > Magnet > ED2K。",
+  "version": "2.1.10",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,

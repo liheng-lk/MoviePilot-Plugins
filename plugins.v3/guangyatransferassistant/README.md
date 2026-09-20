@@ -1,3 +1,80 @@
+## v2.1.10-r107 — 频道来源提交所有权与终态语义修复（Controlled Real-World Beta）
+
+本版针对实机出现的“频道已经解析出 ED2K/Magnet，但没有真正调用对应光鸭云添加接口，反而出现观影迅雷 empty_final_target”做提交链收口。
+
+### 当前来源不再自锁
+
+- Magnet/ED2K source 在进入后台 worker 前会先持久化为 `new`，这是其它候选需要看到的在途 claim。
+- 真正提交该 source 时，`final_target` 只排除**其它来源**的 claim/reservation，不再把当前 source 自己扣掉。
+- 当前 source 的真实提交会强制刷新 MoviePilot/Emby 权威缺集，避免复用“刚创建 source 之后”的旧通用快照。
+- 这种 source-specific 快照使用后立即从通用 target cache 清除，避免反过来放宽其它来源。
+
+### 接口路由保持固定
+
+- 光鸭原生分享：直接转存链。
+- 迅雷分享：迅雷解析/JSON → 光鸭 userres 秒传。
+- Magnet / ED2K：光鸭 `/cloudcollection/v1/resolve_res -> /cloudcollection/v1/create_task -> list_task`。
+- 新增 `【来源执行路由v2.1.10】` 与 `【来源执行结果v2.1.10】` 日志，可直接看到 source、类型、message_id、目标集、executor、taskId。
+
+### empty_final_target 不再伪装成迅雷成功
+
+- `empty_final_target` / `episodes_outside_final_target` 只表示本次迅雷**没有提交**。
+- 不再返回 `handled=True/success=True`，因此不会再生成“观影迅雷分享秒传优先完成；empty final_target...”这种矛盾通知。
+- 若频道已有 ED2K/Magnet 等正确来源，会继续由其既有执行链处理；真实迅雷落盘 pending 仍保持原来的阻断重复转存语义。
+
+其它来源 claim、`pending_library`、未来集、Season、媒体身份、物理文件完整子集和真实落盘门禁均不放宽。
+
+## v2.1.8-r106 — 页面按钮接口全面加固（Controlled Real-World Beta）
+
+本版沿着 v2.1.7 “刷新频道服务器无效响应”继续审计全部页面按钮接口。
+
+### 统一响应
+
+- 最终 `get_api()` 对所有 POST 路由统一转换为 MoviePilot V3 `success / message / data` 三段式。
+- 旧模块即使返回扁平字典、额外字段或抛出异常，也不会直接把异常响应暴露给前端。
+- 所有按钮动作记录到 `button_action_last_v218` 和 route health，便于状态页和日志追踪。
+
+### 高耗时按钮后台化
+
+以下动作点击后立即返回 `queued=true`，真实工作在后台单飞执行：
+
+- 立即转存 `/transfer`
+- 搜索缺失资源 `/providers/search/selected`
+- 检测资源来源 `/providers/test`
+- 秒传预检 `/xunlei/flash/preflight`
+- 迅雷分享测试 `/xunlei/flash/test`
+- 刷新观影节点 `/viewing/nodes/refresh`
+- 观影会话测试 `/viewing/session/test`
+- 一键完整诊断 `/diagnostics/full`
+
+重复点击同一动作只会合并，不会重复启动多个后台任务。
+
+### 保持同步的按钮
+
+本地自检、路线切换、验证码点击/刷新/撤销、来源重试/停用、日志清理等轻量或强交互动作仍同步执行，但同样经过标准响应包装。
+
+v2.1.7 的后台刷新频道和 v2.1.6/r104 的频道资源链接解析增强继续保留。
+
+## v2.1.7-r105 — 刷新频道 API 热修（Controlled Real-World Beta）
+
+本版修复首页点击“刷新频道”后前端提示“服务器无效响应”的问题。
+
+### 刷新接口
+
+- `/refresh` 改为 MoviePilot V3 标准 `success / message / data` 三段式响应。
+- 点击后立即返回 `queued=true`，HTTP 请求不再等待 Telegram/TGM 抓取、Raw HTML 解析和订阅后续处理。
+- 真实刷新在后台单飞执行；重复点击会合并，不会并发打多个频道刷新任务。
+- 不再把完整频道 `items` 和 `routes` 直接返回浏览器，避免接近 2000 条索引时响应过大。
+- 后台结果写入插件日志、route health 和 `manual_refresh_last_v217`。
+
+### 入口解析
+
+- 保留 v2.1.6-r104 的协议相对/无协议光鸭与迅雷 URL 兼容。
+- 保留 copy / clipboard / redirect / jump / data 属性及常见 JS 转义解析。
+- 最终可执行协议仍只有：光鸭分享、迅雷分享、Magnet、ED2K。
+
+媒体身份、年份、Season、MoviePilot 权威缺集、reservation/source claim、不可分割物理文件与真实落盘门禁全部保持不变。
+
 ## v2.1.5-r103 — 频道后观影补搜、汇总去重与续作季号兼容（Controlled Real-World Beta）
 
 本版修复实机中频道批次检查了大量订阅，却出现大量“本地暂无资源”、`外部搜索无结果=0`，观影/GYING 实际没有进入同轮后备链的问题。

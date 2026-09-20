@@ -7,9 +7,8 @@ ENTRY = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 
 
 def test_v195_uses_public_plugin_manager_sdk():
-    assert "from app.sdk.plugin import PluginManager" in LEGACY
-    assert "except ImportError:" in LEGACY
     assert "from app.sdk.plugins import PluginManager" in LEGACY
+    assert "from app.sdk.plugin import PluginManager" not in LEGACY
     assert "from app.runtime.extensions.plugin_manager import PluginManager" not in LEGACY
     assert 'running.get("ShukGuangYaDisk")' in LEGACY
     assert 'getattr(plugin, "_client", None)' in LEGACY
