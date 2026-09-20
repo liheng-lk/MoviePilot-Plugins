@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
   "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
-  "version": "3.9.23",
+  "version": "3.9.24",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v3.9.24": "发布体系修复稳定版：按 MoviePilot 官方仓库目录、版本、Federation、Release Tag/ZIP 合同完成全仓库发布链修复；新增安装合同、ZIP 结构与发布资产校验，统一单文件内嵌/物理入口/前端缓存版本，修复同版本重发与半成品打包导致无法安装/更新的问题。保留 v3.9.20+ 单文件统一整理和单集重复区间收口。",
     "v3.9.23": "修复同版本重发导致 MoviePilot 已记录 3.9.22 后无法再次触发更新的问题：正式发布新的可升级版本，并保持官方 V3 Release 规范。",
     "v3.9.22": "修复版本历史页“更新到最新版本”无动作：恢复 MoviePilot V3 Release 分发，让版本历史加载明确的最新 Release、仓库地址与 ZIP 资产，不再走 release=false 下无 repo_url 的通用兜底更新路径；保留 v3.9.20/3.9.21 的单文件整理与 SxxExxx-Exxx 收口修复。",
     "v3.9.21": "修复插件市场无法更新：光鸭云盘助手改为 MoviePilot V3 原生源码文件列表分发，不再依赖 GitHub Release ZIP 下载；保留 v3.9.20 的单文件统一整理链和 SxxExxx-Exxx 收口修复。",

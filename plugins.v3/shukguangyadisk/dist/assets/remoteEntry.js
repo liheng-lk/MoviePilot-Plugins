@@ -1,8 +1,8 @@
-// v3.9.23 single-init runtime; v390 page chunk remains the current UI implementation.
-const legacyPageCompat = './__federation_expose_AssistantPage-v352.js?v=3.9.23';
+// v3.9.24 single-init runtime; v390 page chunk remains the current UI implementation.
+const legacyPageCompat = './__federation_expose_AssistantPage-v352.js?v=3.9.24';
 
 const moduleMap = {
-  './Page': () => import('./__federation_expose_AssistantPage-v390.js?v=3.9.23').then((mod) => () => mod.default),
+  './Page': () => import('./__federation_expose_AssistantPage-v390.js?v=3.9.24').then((mod) => () => mod.default),
   './Config': () => import('./__federation_expose_AssistantConfig-v300.js?v=3.0.0').then((mod) => () => mod.default),
 };
 
