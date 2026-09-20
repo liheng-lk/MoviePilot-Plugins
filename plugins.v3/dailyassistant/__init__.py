@@ -48,6 +48,20 @@ LATEST_SOURCE_KEYS = [
 ]
 
 
+SOURCE_TEST_KEYS = [
+    "tencent_direct_tv",
+    "iqiyi_tv",
+    "youku_tv",
+    "mgtv_tv",
+    "bilibili_tv",
+    "bilibili_anime",
+    "bilibili_guochuang",
+    "bangumi_calendar",
+    "douban_animation",
+    "tmdb_latest_tv",
+]
+
+
 def _as_list(value: Any) -> List[str]:
     if isinstance(value, (list, tuple, set)):
         return [str(item) for item in value if str(item or "").strip()]
@@ -82,7 +96,7 @@ class DailyAssistant(_PluginBase):
     plugin_name = "每日助手"
     plugin_desc = "国内平台优先监控新剧与动漫，结合 TMDB/豆瓣/猫眼补漏，精确识别后只创建 MoviePilot 订阅。"
     plugin_icon = "movie.jpg"
-    plugin_version = "1.3.7"
+    plugin_version = "1.3.8"
     plugin_author = "liheng-lk"
     plugin_label = "MoviePilot订阅,最新电影,最新电视剧,动漫,爱奇艺,优酷,腾讯视频,芒果TV,哔哩哔哩,TMDB"
     author_url = "https://github.com/liheng-lk/MoviePilot-Plugins"
@@ -594,11 +608,13 @@ class DailyAssistant(_PluginBase):
             except Exception as err:
                 result = {"ok": False, "label": source_key, "items": [], "error": str(err)}
 
+            source_items = result.get("items") or []
             statuses.append({
                 "key": source_key,
                 "label": result.get("label") or source_key,
                 "ok": bool(result.get("ok")),
-                "count": len(result.get("items") or []),
+                "count": len(source_items),
+                "samples": [str(item.get("title") or "") for item in source_items[:5] if item.get("title")],
                 "error": result.get("error") or "",
             })
 
@@ -712,6 +728,68 @@ class DailyAssistant(_PluginBase):
             "message": f"新增订阅 {len(created)}，已订阅 {existed}，已入库 {library}，历史跳过 {processed_skip}",
         }
 
+    def source_test(self) -> Dict[str, Any]:
+        """从 MoviePilot 宿主网络实测各实时来源，并记录条目数、样本和错误。"""
+        import time
+
+        results: List[Dict[str, Any]] = []
+        for source_key in SOURCE_TEST_KEYS:
+            started = time.monotonic()
+            try:
+                result = fetch_source(
+                    source_key,
+                    min(max(self._rank_limit, 10), 30),
+                    self._proxy,
+                    recent_days=self._recent_days,
+                )
+                items = result.get("items") or []
+                samples = []
+                for item in items[:8]:
+                    title = str(item.get("title") or "").strip()
+                    if not title:
+                        continue
+                    season = item.get("season")
+                    samples.append(
+                        f"{title}{f' S{int(season):02d}' if season not in (None, '') else ''}"
+                    )
+                results.append({
+                    "key": source_key,
+                    "label": result.get("label") or source_key,
+                    "ok": bool(result.get("ok")) and bool(items),
+                    "count": len(items),
+                    "elapsed_ms": int((time.monotonic() - started) * 1000),
+                    "samples": samples,
+                    "error": result.get("error") or ("" if items else "接口可访问但未抓到候选"),
+                })
+            except Exception as err:
+                results.append({
+                    "key": source_key,
+                    "label": source_key,
+                    "ok": False,
+                    "count": 0,
+                    "elapsed_ms": int((time.monotonic() - started) * 1000),
+                    "samples": [],
+                    "error": str(err)[:300],
+                })
+
+        payload = {
+            "tested_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            "proxy": self._proxy,
+            "results": results,
+            "healthy": [item["key"] for item in results if item["ok"]],
+            "failed": [item["key"] for item in results if not item["ok"]],
+        }
+        self.save_data("dailyassistant_source_test", payload)
+        logger.info(
+            "【每日助手】【来源实测】健康=%s 失败=%s",
+            ",".join(payload["healthy"]) or "-",
+            ",".join(payload["failed"]) or "-",
+        )
+        return {"success": True, "data": payload}
+
+    def api_source_test(self) -> Dict[str, Any]:
+        return self.source_test()
+
     def api_refresh(self) -> Dict[str, Any]:
         return self.refresh(manual=True)
 
@@ -722,6 +800,7 @@ class DailyAssistant(_PluginBase):
         return [
             {"path": "/refresh", "endpoint": self.api_refresh, "methods": ["GET"], "summary": "立即检查最新影视并订阅"},
             {"path": "/state", "endpoint": self.api_state, "methods": ["GET"], "summary": "读取最近订阅检查状态"},
+            {"path": "/source-test", "endpoint": self.api_source_test, "methods": ["GET"], "summary": "从 MoviePilot 宿主网络实测实时来源"},
         ]
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
@@ -781,6 +860,7 @@ class DailyAssistant(_PluginBase):
 
     def get_page(self) -> List[dict]:
         data = self.get_data("dailyassistant_last_run") or {}
+        source_test = self.get_data("dailyassistant_source_test") or {}
         created = data.get("created") or []
         cards: List[dict] = [{
             "component": "VAlert",
@@ -797,6 +877,22 @@ class DailyAssistant(_PluginBase):
                 ),
             },
         }]
+        if source_test:
+            healthy = source_test.get("healthy") or []
+            failed_sources = source_test.get("failed") or []
+            cards.append({
+                "component": "VAlert",
+                "props": {
+                    "type": "success" if healthy and not failed_sources else "warning",
+                    "variant": "tonal",
+                    "text": (
+                        f"来源实测 {source_test.get('tested_at') or '-'} · "
+                        f"健康 {len(healthy)} · 失败 {len(failed_sources)} · "
+                        f"失败源：{', '.join(failed_sources) if failed_sources else '无'}"
+                    ),
+                },
+            })
+
         for item in created[:100]:
             cards.append({
                 "component": "VCard",
