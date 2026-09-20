@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
   "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
-  "version": "3.9.18",
+  "version": "3.9.19",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v3.9.19": "将单集重复区间修正提升到 MoviePilot TransferRename 最终模板渲染边界：所有光鸭整理路径统一把 SxxExxx-Exxx 收口为 SxxExxx，再进入 move/copy；覆盖原生目录批量、标准 SxE、弱命名兼容与 EpisodeFormat 路径，真正 SxxExxx-Eyyy 多集范围保持不变。",
     "v3.9.18": "修复同一文件同时包含标准 SxxExxx 与同号重复集标记（如 S16E688.第688集）时被误识别为单集范围的问题：检测到主 SxE + 同号“第xxx集/EPxxx”等标记时，仅用精确主 SxE 模板解析，后续同号标记按冗余描述处理；真正 SxxExxx-Eyyy 多集范围保持不变。",
     "v3.9.17": "修复标准 SxxExxx 剧集被二次 episode_format 解析成重复区间的问题：标准 S01E02/S01E181 文件不再调用 recommend_episode_format，也不再向 MoviePilot 叠加 epformat，直接使用 MoviePilot 原生季集解析；仅弱命名与非标准命名继续启用集号适配。同步将 parsed_end==parsed_start 归一为空区间，避免生成 S01E02-E02。",
     "v3.9.16": "修复剧集单集被错误命名为重复区间：MoviePilot 偶发返回 SxxExxx-Exxx 时，光鸭存储重命名、move/copy 终态确认与事务保护统一收口为 SxxExxx；真正多集范围 SxxExxx-Eyyy 保持不变。同步修正 package.v3.json、plugin.json 与单文件运行时版本到 3.9.16。",
