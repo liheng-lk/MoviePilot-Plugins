@@ -32,6 +32,9 @@ jobs:
       - name: Check federation plugin CSS
         run: python .github/scripts/check_federation_css.py
 
+      - name: Check install contracts
+        run: python .github/scripts/check_install_contracts.py
+
       - name: Build and release changed plugins
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -97,6 +100,26 @@ jobs:
               rm -f "$asset"
               (cd "$(dirname "$plugin_dir")" && zip -r "$GITHUB_WORKSPACE/$asset" "$(basename "$plugin_dir")" -x "*/__pycache__/*" -x "*.pyc") >/dev/null
 
+              echo "Verify release ZIP layout for $plugin_id"
+              ASSET="$asset" PLUGIN_ROOT="$(basename "$plugin_dir")" python - <<'PY'
+import os
+import sys
+import zipfile
+
+asset = os.environ["ASSET"]
+plugin_root = os.environ["PLUGIN_ROOT"]
+with zipfile.ZipFile(asset) as archive:
+    names = set(archive.namelist())
+required = f"{plugin_root}/__init__.py"
+if required not in names:
+    print(f"Release asset missing required entry: {required}", file=sys.stderr)
+    raise SystemExit(1)
+if any(name.startswith("/") or ".." in name.split("/") for name in names):
+    print("Release asset contains unsafe path", file=sys.stderr)
+    raise SystemExit(1)
+print(f"Release ZIP layout OK: {required}")
+PY
+
               # Re-running a version replaces the release asset for that plugin.
               if gh release view "$tag" >/dev/null 2>&1; then
                 echo "Release $tag exists, deleting..."
@@ -108,6 +131,13 @@ jobs:
 
               echo "Creating release $tag"
               gh release create "$tag" "$asset" --title "$tag" --notes "$release_notes" --latest --target "$GITHUB_SHA"
+
+              published_asset="$(gh release view "$tag" --json assets --jq '.assets[].name' | grep -Fx "$asset" || true)"
+              if [ "$published_asset" != "$asset" ]; then
+                echo "Published asset verification failed for $tag: expected $asset" >&2
+                exit 1
+              fi
+              echo "Published asset verified: $tag / $asset"
 
               echo "$tag" >> processed_tags.txt
             done
