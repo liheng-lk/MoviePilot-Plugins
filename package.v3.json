@@ -37,12 +37,13 @@
     "name": "光鸭云盘助手",
     "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
     "labels": "存储,光鸭云盘,自动整理,目录监控,MoviePilot,挂载,Emby,WebDAV",
-    "version": "3.9.21",
+    "version": "3.9.22",
     "icon": "Guangyadisk_A.png",
     "author": "liheng-lk",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v3.9.22": "修复版本历史页“更新到最新版本”无动作：恢复 MoviePilot V3 Release 分发，让版本历史加载明确的最新 Release、仓库地址与 ZIP 资产，不再走 release=false 下无 repo_url 的通用兜底更新路径；保留 v3.9.20/3.9.21 的单文件整理与 SxxExxx-Exxx 收口修复。",
       "v3.9.21": "修复插件市场无法更新：光鸭云盘助手改为 MoviePilot V3 原生源码文件列表分发，不再依赖 GitHub Release ZIP 下载；保留 v3.9.20 的单文件统一整理链和 SxxExxx-Exxx 收口修复。",
       "v3.9.20": "修复单文件资源绕过统一 MoviePilot 预览/命名链的问题：移除成员<2时直接走旧快速路径的旁路，单文件电视剧也统一经过 MoviePilot 预览、目标校验、TransferRename 命名修正与真实整理；同时把预览中的 episode_end==episode 归一为空结束集，避免标准 SxxExxx 被记录成 SxxExxx-Exxx。",
       "v3.9.19": "将单集重复区间修正提升到 MoviePilot TransferRename 最终模板渲染边界：所有光鸭整理路径统一把 SxxExxx-Exxx 收口为 SxxExxx，再进入 move/copy；覆盖原生目录批量、标准 SxE、弱命名兼容与 EpisodeFormat 路径，真正 SxxExxx-Eyyy 多集范围保持不变。",
@@ -113,7 +114,7 @@
       "v3.1.0": "新增网盘整理预览与执行，支持移动复制和字幕跟随。",
       "v3.0.0": "推出 MoviePilot V3 专用版本，支持双登录、上传、WebDAV 和 Emby。"
     },
-    "release": false
+    "release": true
   },
   "GuangYaTransferAssistant": {
     "name": "光鸭转存助手",
