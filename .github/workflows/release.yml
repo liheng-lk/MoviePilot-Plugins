@@ -101,24 +101,7 @@ jobs:
               (cd "$(dirname "$plugin_dir")" && zip -r "$GITHUB_WORKSPACE/$asset" "$(basename "$plugin_dir")" -x "*/__pycache__/*" -x "*.pyc") >/dev/null
 
               echo "Verify release ZIP layout for $plugin_id"
-              ASSET="$asset" PLUGIN_ROOT="$(basename "$plugin_dir")" python - <<'PY'
-import os
-import sys
-import zipfile
-
-asset = os.environ["ASSET"]
-plugin_root = os.environ["PLUGIN_ROOT"]
-with zipfile.ZipFile(asset) as archive:
-    names = set(archive.namelist())
-required = f"{plugin_root}/__init__.py"
-if required not in names:
-    print(f"Release asset missing required entry: {required}", file=sys.stderr)
-    raise SystemExit(1)
-if any(name.startswith("/") or ".." in name.split("/") for name in names):
-    print("Release asset contains unsafe path", file=sys.stderr)
-    raise SystemExit(1)
-print(f"Release ZIP layout OK: {required}")
-PY
+              python .github/scripts/verify_release_zip.py "$asset" "$(basename "$plugin_dir")"
 
               # Re-running a version replaces the release asset for that plugin.
               if gh release view "$tag" >/dev/null 2>&1; then
