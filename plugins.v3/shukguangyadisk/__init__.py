@@ -1,9 +1,9 @@
-"""光鸭云盘助手 v3.9.20 单文件运行时。
+"""光鸭云盘助手 v3.9.21 单文件运行时。
 
 本文件物理承载插件全部 Python 运行时代码。历史模块作为只读源码段内嵌，并通过
 轻量内存加载器保持既有相对导入、补丁安装顺序与 MoviePilot 行为不变。
 
-v3.9.20 MoviePilot V3 SDK 运行态保障：
+v3.9.21 MoviePilot V3 SDK 运行态保障：
 1. 热更新时主动清理本插件旧虚拟子模块和旧 Finder，避免重载继续引用上一版本代码；
 2. Organizer API 注册改为静态声明，不再通过 super().get_organizer_api() 在安装事务中
    间接触发 init_organizer_monitor()，真正做到安装/注册期零远端访问、零监控初始化；
@@ -235,7 +235,7 @@ def _single_init_api_organize_monitor_status(self):
 # 覆盖入口类 API 注册路径；运行期其它 MRO/补丁行为保持 3.9.0 原样。
 ShukGuangYaDisk.api_organize_monitor_status = _single_init_api_organize_monitor_status
 ShukGuangYaDisk.get_organizer_api = _single_init_get_organizer_api
-ShukGuangYaDisk.plugin_version = "3.9.20"
+ShukGuangYaDisk.plugin_version = "3.9.21"
 ShukGuangYaDisk.single_file_runtime = True
 ShukGuangYaDisk.runtime_layout = "single-init-bundled"
 
