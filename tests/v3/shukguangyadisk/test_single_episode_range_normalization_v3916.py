@@ -30,7 +30,8 @@ def test_single_episode_same_range_is_normalized_at_all_storage_boundaries():
 
 def test_multi_episode_ranges_are_not_collapsed_by_pattern_contract():
     assert "(?P=ep)" in RENAME
-    assert r"\s*-\s*E" in RENAME
+    assert "_SAME_EPISODE_RANGE_RE = re.compile" in RENAME
+    assert "lambda match: match.group(1)" in RENAME
     assert "S01E181-E182" not in RENAME
 
 
@@ -38,7 +39,9 @@ def test_v3916_release_versions_are_synchronized():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))["ShukGuangYaDisk"]
     plugin = json.loads((ROOT / "plugins.v3/shukguangyadisk/plugin.json").read_text(encoding="utf-8"))
     remote = (ROOT / "plugins.v3/shukguangyadisk/dist/assets/remoteEntry.js").read_text(encoding="utf-8")
-    assert package["version"] == "3.9.16"
-    assert plugin["version"] == "3.9.16"
-    assert 'plugin_version = "3.9.16"' in ENTRY
-    assert "__federation_expose_AssistantPage-v352.js?v=3.9.16" in remote
+    current = package["version"]
+    assert plugin["version"] == current
+    assert f'plugin_version = "{current}"' in ENTRY
+    assert f"v={current}" in remote
+    assert "v3.9.16" in package["history"]
+    assert "v3.9.16" in plugin["history"]
