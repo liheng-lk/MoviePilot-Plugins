@@ -1,12 +1,13 @@
 {
   "name": "光鸭云盘助手",
   "description": "MoviePilot V3 光鸭云盘存储助手，支持自动整理、目录监控、上传、WebDAV 与 Emby。",
-  "version": "3.9.20",
+  "version": "3.9.21",
   "icon": "Guangyadisk_A.png",
   "author": "liheng-lk",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+    "v3.9.21": "修复插件市场无法更新：光鸭云盘助手改为 MoviePilot V3 原生源码文件列表分发，不再依赖 GitHub Release ZIP 下载；保留 v3.9.20 的单文件统一整理链和 SxxExxx-Exxx 收口修复。",
     "v3.9.20": "修复单文件资源绕过统一 MoviePilot 预览/命名链的问题：移除成员<2时直接走旧快速路径的旁路，单文件电视剧也统一经过 MoviePilot 预览、目标校验、TransferRename 命名修正与真实整理；同时把预览中的 episode_end==episode 归一为空结束集，避免标准 SxxExxx 被记录成 SxxExxx-Exxx。",
     "v3.9.19": "将单集重复区间修正提升到 MoviePilot TransferRename 最终模板渲染边界：所有光鸭整理路径统一把 SxxExxx-Exxx 收口为 SxxExxx，再进入 move/copy；覆盖原生目录批量、标准 SxE、弱命名兼容与 EpisodeFormat 路径，真正 SxxExxx-Eyyy 多集范围保持不变。",
     "v3.9.18": "修复同一文件同时包含标准 SxxExxx 与同号重复集标记（如 S16E688.第688集）时被误识别为单集范围的问题：检测到主 SxE + 同号“第xxx集/EPxxx”等标记时，仅用精确主 SxE 模板解析，后续同号标记按冗余描述处理；真正 SxxExxx-Eyyy 多集范围保持不变。",
