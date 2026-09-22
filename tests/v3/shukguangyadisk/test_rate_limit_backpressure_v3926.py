@@ -82,16 +82,16 @@ def test_dispatch_defers_entire_queue_during_rate_limit_cooldown():
     assert "next_due" in WATCH
 
 
-def test_v3926_release_metadata_is_atomic_and_new():
+def test_v3927_release_metadata_is_atomic_and_new():
     package = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
     manifest = json.loads(
         (ROOT / "plugins.v3" / "shukguangyadisk" / "plugin.json").read_text(encoding="utf-8")
     )
     entry = (PLUGIN / "__init__.py").read_text(encoding="utf-8")
 
-    assert package["ShukGuangYaDisk"]["version"] == "3.9.26"
-    assert manifest["version"] == "3.9.26"
+    assert package["ShukGuangYaDisk"]["version"] == "3.9.27"
+    assert manifest["version"] == "3.9.27"
     assert package["ShukGuangYaDisk"]["release"] is True
-    assert "v3.9.26" in package["ShukGuangYaDisk"]["history"]
-    assert "v3.9.26" in manifest["history"]
-    assert 'plugin_version = "3.9.26"' in entry
+    assert "v3.9.27" in package["ShukGuangYaDisk"]["history"]
+    assert "v3.9.27" in manifest["history"]
+    assert 'plugin_version = "3.9.27"' in entry

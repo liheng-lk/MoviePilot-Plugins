@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 TARGET_VERSIONS = {
     "DailyAssistant": "1.3.9",
     "DailyNewDrama": "3.0.2",
-    "ShukGuangYaDisk": "3.9.26",
+    "ShukGuangYaDisk": "3.9.27",
     "GuangYaTransferAssistant": "2.1.10",
 }
 
